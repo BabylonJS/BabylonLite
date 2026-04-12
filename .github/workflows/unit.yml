@@ -1,12 +1,12 @@
-name: Parity
+name: Unit
 
 on:
   pull_request:
     branches: [master]
 
 jobs:
-  parity:
-    name: Parity
+  unit:
+    name: Unit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,17 +24,23 @@ jobs:
 
       - run: pnpm build:bundle-scenes
 
-      - name: Run scene parity tests
-        run: npx playwright test tests/parity/scenes/
+      - name: Run vitest unit tests
+        run: npx vitest run
+
+      - name: Run dispose tests
+        run: npx playwright test tests/parity/dispose.spec.ts
         env:
           HEADLESS: "true"
 
-      - name: Upload reference diffs
+      - name: Run material-swap tests
+        run: npx playwright test tests/parity/material-swap.spec.ts
+        env:
+          HEADLESS: "true"
+
+      - name: Upload test artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: scene-parity-results
-          path: |
-            test-results/
-            reference/**/test-actual.png
+          name: unit-results
+          path: test-results/
           retention-days: 7

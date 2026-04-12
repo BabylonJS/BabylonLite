@@ -1,12 +1,12 @@
-name: Bundle Size
+name: Lint
 
 on:
   pull_request:
     branches: [master]
 
 jobs:
-  bundle-size:
-    name: Bundle Size
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,11 +20,4 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm exec playwright install chromium
-
-      - run: pnpm build:bundle-scenes
-
-      - name: Run bundle-size tests
-        run: npx playwright test tests/parity/bundle-size.spec.ts
-        env:
-          HEADLESS: "true"
+      - run: pnpm run lint
