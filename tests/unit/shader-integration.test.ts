@@ -147,7 +147,7 @@ describe("PBR template + fragments integration", () => {
     it("composes PBR + shadow", () => {
         const template = createPbrTemplate({ ...defaultPbrConfig, normalMode: "tangent" });
         const result = composeShader(template, [createPbrShadowFragment()]);
-        expect(result.fragmentWGSL).toContain("computeShadowWithESM");
+        expect(result.fragmentWGSL).toContain("computeShadowESM_0");
         expect(result.fragmentWGSL).toContain("@group(2)");
         expect(result.shadowBGLDescriptor).not.toBeNull();
         expect(result.shadowBGLDescriptor!.entries.length).toBe(3);
@@ -177,7 +177,7 @@ describe("PBR template + fragments integration", () => {
         expect(result.fragmentWGSL).toContain("visibility_Kelemen");
         expect(result.fragmentWGSL).toContain("normalDistributionFunction_CharlieSheen");
         expect(result.fragmentWGSL).toContain("environmentHorizonOcclusion");
-        expect(result.fragmentWGSL).toContain("computeShadowWithESM");
+        expect(result.fragmentWGSL).toContain("computeShadowESM_0");
         // UBO has all extension fields
         expect(result.meshUboSpec.offsets.has("ccParams")).toBe(true);
         expect(result.meshUboSpec.offsets.has("sheenParams")).toBe(true);
