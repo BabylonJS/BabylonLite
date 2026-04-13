@@ -32,6 +32,7 @@ This guide shows how to translate a Babylon.js (BJS) scene to Babylon Lite, side
 | `new Vector3(x, y, z)` | `{ x, y, z }` or `[x, y, z]` |
 | `new Color3(r, g, b)` | `[r, g, b]` |
 | `Matrix.Identity()` | `mat4Identity()` |
+| `mesh.dispose()` | `removeFromScene(scene, mesh)` |
 | `scene.onBeforeRenderObservable.add(fn)` | `scene.onBeforeRender(fn)` |
 
 ---
@@ -185,6 +186,25 @@ sphere.material = createStandardMaterial();
 scene.add(sphere);
 ```
 
+### 9. Removing & Disposing Entities
+
+BJS uses `mesh.dispose()` on individual objects. Lite uses `removeFromScene()` which removes the mesh from the scene and destroys all its GPU resources (buffers, textures, skeleton data).
+
+```typescript
+// ❌ Babylon.js
+sphere.dispose();
+
+// ✅ Babylon Lite
+removeFromScene(scene, sphere);
+```
+
+For full teardown:
+```typescript
+// ✅ Babylon Lite — tear down everything
+scene.dispose();   // releases all meshes, renderables, disposables
+engine.dispose();  // destroys GPU device, render targets, swapchain
+```
+
 ---
 
 ## Full Example: Porting a PBR Scene
@@ -239,5 +259,5 @@ await engine.start(scene);
 | **Assign camera explicitly** | Either use `createDefaultCamera(scene)` (auto-assigns) or set `scene.camera = myCamera` manually. |
 | **Materials are optional** | `createStandardMaterial()` / `createPbrMaterial()` return props objects. Assign to `mesh.material`. |
 | **WebGPU only** | No WebGL fallback. `createEngine()` throws if WebGPU is unavailable. |
-| **No `dispose()` on meshes** | Call `scene.dispose()` then `engine.dispose()` to clean up everything. |
+| **No `dispose()` on meshes** | Use `removeFromScene(scene, mesh)` to remove a single mesh and destroy its GPU resources. Use `scene.dispose()` + `engine.dispose()` to tear down everything. |
 | **Tree-shakable imports** | Import only what you use. Unused features are stripped from the bundle. |
