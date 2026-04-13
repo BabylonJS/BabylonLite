@@ -75,13 +75,15 @@ export async function buildBundleScenes(): Promise<void> {
         return new Promise((res, rej) => {
             const child = spawn(process.execPath, ["--import", "tsx", workerScript, scene], {
                 env: { ...process.env, BUNDLE_OUT_DIR: outDir },
-                stdio: "inherit",
+                stdio: ["ignore", "ignore", "pipe"],
             });
+            let stderr = "";
+            child.stderr!.on("data", (d: Buffer) => { stderr += d.toString(); });
             child.on("exit", (code) => {
                 if (code === 0) {
                     res();
                 } else {
-                    rej(new Error(`Build failed for ${scene} (exit code ${code})`));
+                    rej(new Error(`Build failed for ${scene} (exit ${code}): ${stderr}`));
                 }
             });
             child.on("error", rej);
