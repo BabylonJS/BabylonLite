@@ -7,11 +7,16 @@
  * - Point lights
  * - Scene clear color
  * - SubMesh → multi-material handling
+ * - Parent-child hierarchy via parentId
  */
 
 import type { Engine } from "../engine/engine.js";
 import type { EngineInternal } from "../engine/engine.js";
 import type { LoaderResult } from "../loader-results.js";
+import type { LightBase } from "../light/types.js";
+import type { Mesh } from "../mesh/mesh.js";
+import type { TransformNode } from "../scene/transform-node.js";
+import { createTransformNode } from "../scene/transform-node.js";
 import { createStandardMaterial } from "../material/standard/standard-material.js";
 import type { StandardMaterialProps } from "../material/standard/standard-material.js";
 import { uploadMeshToGPU, initMeshTransform } from "../mesh/mesh.js";
@@ -306,7 +311,7 @@ export async function loadBabylon(engine: Engine, url: string, opts: LoadBabylon
     }
 
     // Lights (point lights only for now)
-    const lights: import("../light/types.js").LightBase[] = [];
+    const lights: LightBase[] = [];
     if (data.lights) {
         for (const ld of data.lights) {
             if (ld.type === 0 && ld.position) {
@@ -333,12 +338,16 @@ export async function loadBabylon(engine: Engine, url: string, opts: LoadBabylon
         }
     }
 
-    // Meshes
-    const meshes: import("../mesh/mesh.js").Mesh[] = [];
+    // Meshes — each carries its own TRS; parentId links are used for world-matrix chaining.
+    const allMeshes: Mesh[] = [];
     if (data.meshes) {
         const maxMeshes = opts.maxMeshes ?? Infinity;
         let meshCount = 0;
 
+        // nodeMap: .babylon node id → first Mesh (geometry node) or TransformNode (container)
+        const nodeMap = new Map<string, Mesh | TransformNode>();
+
+        // First pass: create Mesh(es) for geometry nodes; TransformNode for pure containers.
         for (const md of data.meshes) {
             if (meshCount >= maxMeshes) {
                 break;
@@ -346,89 +355,136 @@ export async function loadBabylon(engine: Engine, url: string, opts: LoadBabylon
             if (md.isVisible === false) {
                 continue;
             }
-            if (!md.positions || !md.normals || !md.indices) {
-                continue;
-            }
-            if (md.indices.length === 0) {
-                continue;
-            }
 
-            const positions = new Float32Array(md.positions);
-            const normals = new Float32Array(md.normals);
-            const allIndices = new Uint32Array(md.indices);
-            const uvs = md.uvs ? new Float32Array(md.uvs) : undefined;
-            const uvs2 = md.uvs2 ? new Float32Array(md.uvs2) : undefined;
+            if (md.positions && md.normals && md.indices && md.indices.length > 0) {
+                const positions = new Float32Array(md.positions);
+                const normals = new Float32Array(md.normals);
+                const allIndices = new Uint32Array(md.indices);
+                const uvs = md.uvs ? new Float32Array(md.uvs) : undefined;
+                const uvs2 = md.uvs2 ? new Float32Array(md.uvs2) : undefined;
 
-            // Resolve material IDs for this mesh
-            let matIds: string[] | null = null;
-            if (md.materialId) {
-                const multi = multiMatMap.get(md.materialId);
-                matIds = multi ?? [md.materialId];
-            }
-
-            // Default subMesh: whole mesh, materialIndex 0
-            const subMeshes = md.subMeshes ?? [
-                {
-                    materialIndex: 0,
-                    verticesStart: 0,
-                    verticesCount: positions.length / 3,
-                    indexStart: 0,
-                    indexCount: allIndices.length,
-                },
-            ];
-
-            for (const sub of subMeshes) {
-                if (sub.indexCount === 0) {
-                    continue;
+                let matIds: string[] | null = null;
+                if (md.materialId) {
+                    const multi = multiMatMap.get(md.materialId);
+                    matIds = multi ?? [md.materialId];
                 }
 
-                const subIndices = allIndices.slice(sub.indexStart, sub.indexStart + sub.indexCount);
-                const gpu = uploadMeshToGPU(device, positions, normals, subIndices, uvs, uvs2);
+                const subMeshes = md.subMeshes ?? [
+                    {
+                        materialIndex: 0,
+                        verticesStart: 0,
+                        verticesCount: positions.length / 3,
+                        indexStart: 0,
+                        indexCount: allIndices.length,
+                    },
+                ];
 
-                // Resolve material for this sub-mesh
-                let mat: StandardMaterialProps;
-                if (matIds && sub.materialIndex < matIds.length) {
-                    mat = materialMap.get(matIds[sub.materialIndex]!) ?? createStandardMaterial();
-                } else if (matIds && matIds.length === 1) {
-                    mat = materialMap.get(matIds[0]!) ?? createStandardMaterial();
-                } else {
-                    mat = createStandardMaterial();
+                let firstMesh: Mesh | null = null;
+                for (const sub of subMeshes) {
+                    if (sub.indexCount === 0) {
+                        continue;
+                    }
+
+                    const subIndices = allIndices.slice(sub.indexStart, sub.indexStart + sub.indexCount);
+                    const gpu = uploadMeshToGPU(device, positions, normals, subIndices, uvs, uvs2);
+
+                    let mat: StandardMaterialProps;
+                    if (matIds && sub.materialIndex < matIds.length) {
+                        mat = materialMap.get(matIds[sub.materialIndex]!) ?? createStandardMaterial();
+                    } else if (matIds && matIds.length === 1) {
+                        mat = materialMap.get(matIds[0]!) ?? createStandardMaterial();
+                    } else {
+                        mat = createStandardMaterial();
+                    }
+
+                    const mesh = {
+                        name: md.name + (subMeshes.length > 1 ? `_sub${sub.materialIndex}` : ""),
+                        id: md.id,
+                        material: mat,
+                        receiveShadows: false,
+                        _materialDirty: false,
+                        _gpu: gpu,
+                    } as unknown as MeshInternal;
+
+                    mesh._cpuPositions = positions;
+                    mesh._cpuNormals = normals;
+                    mesh._cpuUvs = uvs;
+                    mesh._cpuIndices = subIndices;
+
+                    // Each mesh carries its own TRS from the node.
+                    initMeshTransform(
+                        mesh,
+                        md.position?.[0] ?? 0,
+                        md.position?.[1] ?? 0,
+                        md.position?.[2] ?? 0,
+                        md.rotation?.[0] ?? 0,
+                        md.rotation?.[1] ?? 0,
+                        md.rotation?.[2] ?? 0,
+                        md.scaling?.[0] ?? 1,
+                        md.scaling?.[1] ?? 1,
+                        md.scaling?.[2] ?? 1
+                    );
+
+                    allMeshes.push(mesh as unknown as Mesh);
+                    if (firstMesh === null) {
+                        firstMesh = mesh as unknown as Mesh;
+                    }
+                    meshCount++;
                 }
 
-                const mesh = {
-                    name: md.name + (subMeshes.length > 1 ? `_sub${sub.materialIndex}` : ""),
-                    id: md.id,
-                    material: mat,
-                    receiveShadows: false,
-                    _materialDirty: false,
-                    _gpu: gpu,
-                } as unknown as MeshInternal;
-
-                // Retain CPU geometry for detailed picking
-                mesh._cpuPositions = positions;
-                mesh._cpuNormals = normals;
-                mesh._cpuUvs = uvs;
-                mesh._cpuIndices = subIndices;
-
-                initMeshTransform(
-                    mesh,
-                    md.position ? md.position[0]! : 0,
-                    md.position ? md.position[1]! : 0,
-                    md.position ? md.position[2]! : 0,
-                    md.rotation ? md.rotation[0]! : 0,
-                    md.rotation ? md.rotation[1]! : 0,
-                    md.rotation ? md.rotation[2]! : 0,
-                    md.scaling ? md.scaling[0]! : 1,
-                    md.scaling ? md.scaling[1]! : 1,
-                    md.scaling ? md.scaling[2]! : 1
+                if (firstMesh !== null) {
+                    nodeMap.set(md.id, firstMesh);
+                }
+            } else {
+                // Container node (no geometry) — TransformNode used only for parent linking.
+                const rx = md.rotation?.[0] ?? 0,
+                    ry = md.rotation?.[1] ?? 0,
+                    rz = md.rotation?.[2] ?? 0;
+                const cx = Math.cos(rx * 0.5),
+                    sx_ = Math.sin(rx * 0.5);
+                const cy = Math.cos(ry * 0.5),
+                    sy_ = Math.sin(ry * 0.5);
+                const cz = Math.cos(rz * 0.5),
+                    sz_ = Math.sin(rz * 0.5);
+                const qx = sx_ * cy * cz + cx * sy_ * sz_;
+                const qy = cx * sy_ * cz - sx_ * cy * sz_;
+                const qz = cx * cy * sz_ + sx_ * sy_ * cz;
+                const qw = cx * cy * cz - sx_ * sy_ * sz_;
+                const tn = createTransformNode(
+                    md.name,
+                    md.position?.[0] ?? 0,
+                    md.position?.[1] ?? 0,
+                    md.position?.[2] ?? 0,
+                    qx,
+                    qy,
+                    qz,
+                    qw,
+                    md.scaling?.[0] ?? 1,
+                    md.scaling?.[1] ?? 1,
+                    md.scaling?.[2] ?? 1
                 );
+                nodeMap.set(md.id, tn);
+            }
+        }
 
-                meshes.push(mesh as unknown as import("../mesh/mesh.js").Mesh);
-                meshCount++;
+        // Second pass: wire parent links so world matrices chain correctly.
+        for (const md of data.meshes) {
+            if (md.isVisible === false || !md.parentId) {
+                continue;
+            }
+            const parent = nodeMap.get(md.parentId);
+            if (!parent) {
+                continue;
+            }
+            // Wire every mesh belonging to this node to the parent.
+            for (const mesh of allMeshes) {
+                if ((mesh as Mesh).id === md.id) {
+                    (mesh as Mesh).parent = parent;
+                }
             }
         }
     }
 
     // Return LoaderResult — scene.add() handles entity registration, clearColor, and cleanup.
-    return { entities: [...lights, ...meshes], clearColor };
+    return { entities: [...lights, ...allMeshes], clearColor };
 }
