@@ -4,6 +4,7 @@ import { mat4LookAtLH, mat4PerspectiveLH, mat4Multiply, mat4Identity } from "../
 import type { IWorldMatrixProvider, IParentable } from "../scene/parentable.js";
 import { createWorldMatrixState } from "../scene/world-matrix-state.js";
 import { ObservableVec3 } from "../math/observable-vec3.js";
+import type { SceneNode } from "../scene/scene-node.js";
 
 /** ArcRotateCamera — orbits around a target point.
  *  Uses Babylon.js convention: left-handed, alpha=rotation around Y, beta=elevation.
@@ -23,6 +24,7 @@ export interface ArcRotateCamera extends IWorldMatrixProvider, IParentable {
     fov: number;
     nearPlane: number;
     farPlane: number;
+    children: SceneNode[];
 
     /** Inertia coefficient for rotation and zoom (0 = instant stop, 0.9 = default, 1 = no decay). */
     inertia: number;
@@ -108,6 +110,7 @@ export function createArcRotateCamera(alpha: number, beta: number, radius: numbe
         fov: 0.8,
         nearPlane: 0.1,
         farPlane: 1000,
+        children: [] as SceneNode[],
 
         inertia: 0.9,
         panningInertia: 0.9,

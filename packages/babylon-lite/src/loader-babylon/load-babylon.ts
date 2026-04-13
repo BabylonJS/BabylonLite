@@ -16,6 +16,7 @@ import type { LoaderResult } from "../loader-results.js";
 import type { LightBase } from "../light/types.js";
 import type { Mesh } from "../mesh/mesh.js";
 import type { TransformNode } from "../scene/transform-node.js";
+import type { SceneNode } from "../scene/scene-node.js";
 import { createTransformNode } from "../scene/transform-node.js";
 import { createStandardMaterial } from "../material/standard/standard-material.js";
 import type { StandardMaterialProps } from "../material/standard/standard-material.js";
@@ -23,7 +24,6 @@ import { uploadMeshToGPU, initMeshTransform } from "../mesh/mesh.js";
 import type { MeshInternal } from "../mesh/mesh.js";
 import { createPointLight } from "../light/point-light.js";
 import { loadTexture2D } from "../texture/texture-2d.js";
-
 // ─── .babylon JSON Types ───────────────────────────────────────────
 
 interface BabylonScene {
@@ -340,12 +340,12 @@ export async function loadBabylon(engine: Engine, url: string, opts: LoadBabylon
 
     // Meshes — each carries its own TRS; parentId links are used for world-matrix chaining.
     const allMeshes: Mesh[] = [];
+    const nodeMap = new Map<string, Mesh | TransformNode>();
+    const meshesByNodeId = new Map<string, Mesh[]>();
+    const childNodeIds = new Set<string>();
     if (data.meshes) {
         const maxMeshes = opts.maxMeshes ?? Infinity;
         let meshCount = 0;
-
-        // nodeMap: .babylon node id → first Mesh (geometry node) or TransformNode (container)
-        const nodeMap = new Map<string, Mesh | TransformNode>();
 
         // First pass: create Mesh(es) for geometry nodes; TransformNode for pure containers.
         for (const md of data.meshes) {
@@ -426,6 +426,10 @@ export async function loadBabylon(engine: Engine, url: string, opts: LoadBabylon
                     );
 
                     allMeshes.push(mesh as unknown as Mesh);
+                    if (!meshesByNodeId.has(md.id)) {
+                        meshesByNodeId.set(md.id, []);
+                    }
+                    meshesByNodeId.get(md.id)!.push(mesh as unknown as Mesh);
                     if (firstMesh === null) {
                         firstMesh = mesh as unknown as Mesh;
                     }
@@ -467,7 +471,7 @@ export async function loadBabylon(engine: Engine, url: string, opts: LoadBabylon
             }
         }
 
-        // Second pass: wire parent links so world matrices chain correctly.
+        // Second pass: wire parent links and children so world matrices chain correctly.
         for (const md of data.meshes) {
             if (md.isVisible === false || !md.parentId) {
                 continue;
@@ -476,15 +480,32 @@ export async function loadBabylon(engine: Engine, url: string, opts: LoadBabylon
             if (!parent) {
                 continue;
             }
-            // Wire every mesh belonging to this node to the parent.
-            for (const mesh of allMeshes) {
-                if ((mesh as Mesh).id === md.id) {
-                    (mesh as Mesh).parent = parent;
+            childNodeIds.add(md.id);
+            // Wire all mesh submeshes belonging to this node to the parent
+            const childMeshes = meshesByNodeId.get(md.id) ?? [];
+            for (const child of childMeshes) {
+                child.parent = parent;
+                (parent as unknown as { children: SceneNode[] }).children.push(child);
+            }
+            // Wire TransformNode children (container nodes with no geometry)
+            if (childMeshes.length === 0) {
+                const childNode = nodeMap.get(md.id);
+                if (childNode) {
+                    childNode.parent = parent;
+                    (parent as unknown as { children: SceneNode[] }).children.push(childNode);
                 }
             }
         }
     }
 
     // Return LoaderResult — scene.add() handles entity registration, clearColor, and cleanup.
-    return { entities: [...lights, ...allMeshes], clearColor };
+    // Only root entities (not children of any other node) are included; scene.add() recurses.
+    const rootMeshes = allMeshes.filter((m) => !childNodeIds.has(m.id!));
+    const rootTransformNodes: TransformNode[] = [];
+    for (const [id, node] of nodeMap) {
+        if (!childNodeIds.has(id) && !meshesByNodeId.has(id)) {
+            rootTransformNodes.push(node as TransformNode);
+        }
+    }
+    return { entities: [...lights, ...rootMeshes, ...rootTransformNodes], clearColor };
 }

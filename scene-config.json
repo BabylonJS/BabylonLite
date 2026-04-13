@@ -118,7 +118,7 @@
         "slug": "scene12-shader-balls",
         "name": "Scene 12 \u2014 PBR Shader Balls",
         "maxMad": 0.025,
-        "maxRawKB": 96,
+        "maxRawKB": 97,
         "maxGzipKB": 37,
         "description": "3 shader balls with metallic reflectance textures, directional light, env rotation.",
         "tags": ["pbr", "gltf"]

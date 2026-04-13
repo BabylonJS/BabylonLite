@@ -9,11 +9,11 @@ import type { ShadowGenerator } from "../shadow/shadow-generator.js";
 import type { FogConfig } from "../material/standard/standard-material.js";
 import type { Renderable, PrePassRenderable, SceneUniformUpdater, MeshGroupBuilder } from "../render/renderable.js";
 import type { TransformNode } from "./transform-node.js";
+import type { SceneNode } from "./scene-node.js";
 import type { SkyboxData } from "../loader-skybox/load-skybox.js";
 import type { EnvironmentTextures } from "../loader-env/load-env.js";
 import type { ComposedShader } from "../shader/fragment-types.js";
 import type { LoaderResult } from "../loader-results.js";
-import { collectMeshes, isTransformNode } from "./transform-node.js";
 
 /** Image processing configuration. */
 export interface ImageProcessingConfig {
@@ -76,8 +76,8 @@ export interface SceneContext {
     /** Run all deferred builders (called by engine.start before the render loop). */
     _build(): Promise<void>;
 
-    /** Add an entity (mesh, light, transform node, shadow generator, or loader result) to the scene. */
-    add(entity: Mesh | LightBase | ShadowGenerator | TransformNode | LoaderResult): void;
+    /** Add an entity (mesh, light, camera, transform node, shadow generator, or loader result) to the scene. */
+    add(entity: Mesh | LightBase | Camera | ShadowGenerator | TransformNode | LoaderResult): void;
 
     // ─── Dispose infrastructure ────────────────────────────────
 
@@ -285,7 +285,7 @@ export function createSceneContext(engine: Engine): SceneContext {
             ctx.shadowGenerators.length = 0;
             ctx.camera = null;
         },
-        add(entity: Mesh | LightBase | ShadowGenerator | TransformNode | LoaderResult) {
+        add(entity: Mesh | LightBase | Camera | ShadowGenerator | TransformNode | LoaderResult) {
             // LoaderResult from loadGltf / loadBabylon — process each field present
             if ("entities" in entity) {
                 const result = entity as LoaderResult;
@@ -307,16 +307,8 @@ export function createSceneContext(engine: Engine): SceneContext {
                 }
                 return;
             }
-            // TransformNode: set parent links and add all meshes to flat list
-            if (isTransformNode(entity)) {
-                const meshes = collectMeshes(entity, entity.parent ?? undefined);
-                for (const m of meshes) {
-                    ctx.add(m);
-                }
-                return;
-            }
             if ("_gpu" in entity && "material" in entity) {
-                const mesh = entity as Mesh;
+                const mesh = entity as unknown as Mesh;
                 ctx.meshes.push(mesh);
                 installMaterialSetter(ctx, mesh);
                 const build = mesh.material ? ((mesh.material as any)._buildGroup as MeshGroupBuilder | undefined) : undefined;
@@ -333,8 +325,16 @@ export function createSceneContext(engine: Engine): SceneContext {
                     }
                     group.push(mesh);
                 }
-            } else {
+            } else if ("lightType" in entity) {
                 ctx.lights.push(entity as LightBase);
+            }
+            // Recurse into children of meshes, lights, cameras — set parent links
+            const kids = (entity as unknown as SceneNode).children;
+            if (kids?.length) {
+                for (const child of kids) {
+                    (child as unknown as SceneNode).parent = entity as unknown as SceneNode;
+                    ctx.add(child);
+                }
             }
         },
     };

@@ -128,7 +128,7 @@ export async function loadGltf(engine: Engine, url: string): Promise<LoaderResul
 /** Build a TransformNode tree mirroring the glTF node hierarchy.
  *  Meshes are attached as children. Non-mesh nodes become
  *  pure TransformNodes preserving TRS for cloning/repositioning.
- *  Parent links are set by collectMeshes when the tree is added to the scene. */
+ *  Parent links are set by scene.add() when the tree is added to the scene. */
 function buildNodeHierarchy(json: any, meshes: Mesh[], meshDatas: GltfMeshData[]): TransformNode {
     // Map nodeIndex → uploaded Mesh[]
     const nodeToMeshes = new Map<number, Mesh[]>();

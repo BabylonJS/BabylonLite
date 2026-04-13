@@ -64,11 +64,11 @@ importers:
         specifier: ^4.1.0
         version: 4.1.0(@types/node@25.5.0)(vite@6.4.1(@types/node@25.5.0)(terser@5.46.1)(tsx@4.21.0))
 
-  apps/manual-lab:
+  lab:
     dependencies:
       babylon-lite:
         specifier: workspace:*
-        version: link:../../packages/babylon-lite
+        version: link:../packages/babylon-lite
     devDependencies:
       '@babylonjs/core':
         specifier: ^8.56.2

@@ -6,11 +6,13 @@
 
 import type { Mat4 } from "../math/types.js";
 import type { IWorldMatrixProvider, IParentable } from "../scene/parentable.js";
+import type { SceneNode } from "../scene/scene-node.js";
 
 /** Shared base for all light types.
  *  Provides pipeline integration callbacks so render pipelines are light-agnostic. */
 export interface LightBase extends IWorldMatrixProvider, IParentable {
     readonly lightType: string;
+    children: SceneNode[];
     /** Mesh IDs excluded from this light. If set, these meshes are NOT lit by this light. */
     excludedMeshIds?: ReadonlySet<string>;
     /** If non-empty, ONLY these mesh IDs are lit by this light. Takes priority over excludedMeshIds. */

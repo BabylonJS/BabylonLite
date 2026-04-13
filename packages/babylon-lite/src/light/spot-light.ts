@@ -3,6 +3,7 @@
  *  Push-based dirty tracking via ObservableVec3. */
 
 import type { LightBase } from "./types.js";
+import type { SceneNode } from "../scene/scene-node.js";
 import { createLightBase, applyWorldMatrixAccessors, ObservableVec3 } from "./light-base.js";
 import { localMatrixFromDirection } from "./light-matrix.js";
 
@@ -28,6 +29,7 @@ export function createSpotLight(position: [number, number, number], direction: [
     const light = applyWorldMatrixAccessors<SpotLight>(
         {
             lightType: "spot" as const,
+            children: [] as SceneNode[],
             position: new ObservableVec3(position[0], position[1], position[2], onDirty),
             direction: new ObservableVec3(direction[0], direction[1], direction[2], onDirty),
             angle,

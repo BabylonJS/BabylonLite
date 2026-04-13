@@ -35,8 +35,9 @@ export type { LoaderResult } from "./loader-results.js";
 // ─── Hierarchy ───────────────────────────────────────────────────────
 export type { IWorldMatrixProvider, IParentable } from "./scene/parentable.js";
 export { setParent } from "./scene/set-parent.js";
-export { createTransformNode, cloneTransformNode, collectMeshes } from "./scene/transform-node.js";
+export { createTransformNode, cloneTransformNode } from "./scene/transform-node.js";
 export type { TransformNode } from "./scene/transform-node.js";
+export type { SceneNode } from "./scene/scene-node.js";
 export { loadBabylon } from "./loader-babylon/load-babylon.js";
 export { loadEnvironment } from "./loader-env/load-env.js";
 export { loadHdrEnvironment } from "./loader-hdr/load-hdr.js";

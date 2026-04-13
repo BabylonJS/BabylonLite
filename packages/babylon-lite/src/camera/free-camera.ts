@@ -5,6 +5,7 @@ import { mat4LookAtLH, mat4PerspectiveLH, mat4Multiply, mat4Identity } from "../
 import type { IWorldMatrixProvider, IParentable } from "../scene/parentable.js";
 import { createWorldMatrixState } from "../scene/world-matrix-state.js";
 import { ObservableVec3 } from "../math/observable-vec3.js";
+import type { SceneNode } from "../scene/scene-node.js";
 
 /** FreeCamera — positioned in world space, looking at a target point.
  *  Matches Babylon.js FreeCamera: position + target, left-handed.
@@ -83,6 +84,7 @@ export function createFreeCamera(position: Vec3, target: Vec3): FreeCamera {
         speed: 2.0,
         angularSensitivity: 2000,
         inertia: 0.9,
+        children: [] as SceneNode[],
 
         get parent() {
             return wm.parent;

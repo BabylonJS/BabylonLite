@@ -2,6 +2,7 @@
  *  Push-based dirty tracking via ObservableVec3. */
 
 import type { LightBase } from "./types.js";
+import type { SceneNode } from "../scene/scene-node.js";
 import { createLightBase, applyWorldMatrixAccessors, ObservableVec3 } from "./light-base.js";
 import { localMatrixFromDirection } from "./light-matrix.js";
 
@@ -21,6 +22,7 @@ export function createHemisphericLight(direction: [number, number, number] = [0,
     const light = applyWorldMatrixAccessors<HemisphericLight>(
         {
             lightType: "hemispheric" as const,
+            children: [] as SceneNode[],
             direction: new ObservableVec3(direction[0], direction[1], direction[2], onDirty),
             intensity,
             diffuseColor: [1, 1, 1] as [number, number, number],

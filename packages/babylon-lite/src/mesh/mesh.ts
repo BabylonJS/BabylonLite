@@ -1,15 +1,16 @@
 /** High-level Mesh — position/rotation/scaling + material + GPU geometry.
  *  Plain data (no scene reference). The scene collects meshes via scene.add(). */
 
-import type { Mat4 } from "../math/types.js";
-import { mat4Compose, mat4Translation, mat4Identity } from "../math/mat4.js";
+import { mat4Compose, mat4Identity } from "../math/mat4.js";
 import type { StandardMaterialProps } from "../material/standard/standard-material.js";
 import type { PbrMaterialProps } from "../material/pbr/pbr-material.js";
 import type { SkeletonData, MorphTargetData } from "../animation/types.js";
 import { ObservableVec3 } from "../math/observable-vec3.js";
+import { ObservableQuat } from "../math/observable-quat.js";
 import type { ThinInstanceData } from "./thin-instance.js";
-import type { IWorldMatrixProvider } from "../scene/parentable.js";
 import { createWorldMatrixState } from "../scene/world-matrix-state.js";
+import type { SceneNode } from "../scene/scene-node.js";
+import { eulerToQuat, createEulerProxy } from "../scene/scene-node.js";
 
 // ─── Mesh GPU Geometry ───────────────────────────────────────────────
 
@@ -28,14 +29,11 @@ export interface MeshGPU {
 // ─── Mesh ────────────────────────────────────────────────────────────
 
 /** A renderable mesh — plain data with transform, material, and GPU geometry.
- *  Works with both standard and PBR pipelines; routing is based on material type. */
-export interface Mesh {
-    name: string;
+ *  Works with both standard and PBR pipelines; routing is based on material type.
+ *  Extends SceneNode for the full TRS + parent + children hierarchy. */
+export interface Mesh extends SceneNode {
     /** Unique ID from source file (e.g. .babylon). Used for light include/exclude filtering. */
     id?: string;
-    position: ObservableVec3;
-    rotation: ObservableVec3;
-    scaling: ObservableVec3;
     material: StandardMaterialProps | PbrMaterialProps;
     receiveShadows: boolean;
     /** World-space bounding box (set by loaders for camera framing). */
@@ -50,10 +48,8 @@ export interface Mesh {
     renderOrder?: number;
     /** Thin instance data (CPU-side). GPU buffer managed by render system. */
     thinInstances?: ThinInstanceData | null;
-    // IWorldMatrixProvider + IParentable (installed by initMeshTransform)
-    parent: IWorldMatrixProvider | null;
-    readonly worldMatrix: Mat4;
-    readonly worldMatrixVersion: number;
+    // name, children, position, rotation, rotationQuaternion, scaling,
+    // parent, worldMatrix, worldMatrixVersion — all inherited from SceneNode
 }
 
 /** @internal Mesh with internal GPU fields — for engine/renderable code only. Not re-exported from index.ts. */
@@ -66,55 +62,28 @@ export interface MeshInternal extends Mesh {
     _cpuIndices?: Uint32Array;
 }
 
-/** Wire ObservableVec3 position/rotation/scaling onto a partially-built mesh object.
+/** Wire ObservableVec3/ObservableQuat TRS and children onto a partially-built mesh object.
  *  Used by all mesh creation paths (factories, loaders). */
 export function initMeshTransform(mesh: Mesh, px = 0, py = 0, pz = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1): void {
-    function meshLocalMatrix(): Mat4 {
-        const ppx = mesh.position.x,
-            ppy = mesh.position.y,
-            ppz = mesh.position.z;
-        const rrx = mesh.rotation.x,
-            rry = mesh.rotation.y,
-            rrz = mesh.rotation.z;
-        const ssx = mesh.scaling.x,
-            ssy = mesh.scaling.y,
-            ssz = mesh.scaling.z;
+    const wm = createWorldMatrixState(() => {
+        const p = mesh.position,
+            rq = mesh.rotationQuaternion,
+            s = mesh.scaling;
+        const isIdentity = p.x === 0 && p.y === 0 && p.z === 0 && rq.x === 0 && rq.y === 0 && rq.z === 0 && rq.w === 1 && s.x === 1 && s.y === 1 && s.z === 1;
+        return isIdentity ? mat4Identity() : mat4Compose(p.x, p.y, p.z, rq.x, rq.y, rq.z, rq.w, s.x, s.y, s.z);
+    });
+    const onWmDirty = () => wm.markLocalDirty();
 
-        // Fast path: no rotation → translation × scale
-        if (rrx === 0 && rry === 0 && rrz === 0) {
-            if (ssx === 1 && ssy === 1 && ssz === 1) {
-                return mat4Translation(ppx, ppy, ppz);
-            }
-            const m = mat4Identity();
-            m[0] = ssx;
-            m[5] = ssy;
-            m[10] = ssz;
-            m[12] = ppx;
-            m[13] = ppy;
-            m[14] = ppz;
-            return m;
-        }
+    const [iqx, iqy, iqz, iqw] = eulerToQuat(rx, ry, rz);
+    const rq = new ObservableQuat(iqx, iqy, iqz, iqw, onWmDirty);
+    mesh.rotationQuaternion = rq;
+    mesh.rotation = createEulerProxy(rq);
+    mesh.position = new ObservableVec3(px, py, pz, onWmDirty);
+    mesh.scaling = new ObservableVec3(sx, sy, sz, onWmDirty);
 
-        // Euler XYZ → quaternion → compose
-        const cx = Math.cos(rrx * 0.5),
-            sx2 = Math.sin(rrx * 0.5);
-        const cy = Math.cos(rry * 0.5),
-            sy2 = Math.sin(rry * 0.5);
-        const cz = Math.cos(rrz * 0.5),
-            sz2 = Math.sin(rrz * 0.5);
-        const qx = sx2 * cy * cz + cx * sy2 * sz2;
-        const qy = cx * sy2 * cz - sx2 * cy * sz2;
-        const qz = cx * cy * sz2 + sx2 * sy2 * cz;
-        const qw = cx * cy * cz - sx2 * sy2 * sz2;
-        return mat4Compose(ppx, ppy, ppz, qx, qy, qz, qw, ssx, ssy, ssz);
+    if (!(mesh as unknown as Record<string, unknown>).children) {
+        (mesh as unknown as Record<string, unknown>).children = [];
     }
-
-    const wm = createWorldMatrixState(meshLocalMatrix);
-    const onDirty = () => wm.markLocalDirty();
-
-    mesh.position = new ObservableVec3(px, py, pz, onDirty);
-    mesh.rotation = new ObservableVec3(rx, ry, rz, onDirty);
-    mesh.scaling = new ObservableVec3(sx, sy, sz, onDirty);
 
     Object.defineProperty(mesh, "parent", {
         get() {
