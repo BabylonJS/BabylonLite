@@ -113,10 +113,10 @@ function createPickingPipelineInternal(device: GPUDevice, opts: PickingPipelineO
         fragment: {
             module,
             entryPoint: "fs",
-            targets: [{ format: "rgba8unorm" }],
+            targets: [{ format: "rgba8unorm" }, { format: "r32float" }],
         },
         depthStencil: {
-            format: "depth32float",
+            format: "depth24plus",
             depthCompare: "less",
             depthWriteEnabled: true,
         },

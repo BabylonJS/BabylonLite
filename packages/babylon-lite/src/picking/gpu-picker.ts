@@ -9,26 +9,37 @@ import { mat4Invert } from "../math/mat4.js";
 import { getPickingPipeline, getPickingTIPipeline, getPickingSceneBGL, getPickingMeshBGL, getPickingTIMeshBGL } from "./picking-pipeline.js";
 import { getViewProjectionMatrix, getCameraPosition } from "../camera/camera.js";
 
+// ─── Scratch arrays — allocated once, reused across all picks ──────
+const _pickVP = new Float32Array(16);
+const _uboScratch = new ArrayBuffer(80);
+const _uboF32 = new Float32Array(_uboScratch, 0, 16);
+const _uboU32 = new Uint32Array(_uboScratch, 64, 1);
+const _uboView = new Uint8Array(_uboScratch);
+const _tiUboScratch = new Uint32Array(4);
+
 /** GPU-based picker — pure state. Use pickAsync() and disposePicker() standalone functions. */
 export interface GpuPicker {
     /** Optional hook for detailed picking (Phase 2). */
     _detailedPick: ((info: PickingInfo, ray: { origin: [number, number, number]; direction: [number, number, number]; length: number }) => void) | null;
     /** @internal */
     _scene: SceneContext;
-    /** @internal */
-    _targets: PickRenderTargets | null;
+    /** @internal 1×1 render targets (lazily created). */
+    _rt: PickTargets1x1 | null;
+    /** @internal Reusable scene UBO (64 bytes). */
+    _sceneUbo: GPUBuffer | null;
+    /** @internal Reusable scene bind group. */
+    _sceneBG: GPUBindGroup | null;
 }
 
-interface PickRenderTargets {
-    colorTexture: GPUTexture;
+interface PickTargets1x1 {
+    colorTex: GPUTexture;
     colorView: GPUTextureView;
-    depthTexture: GPUTexture;
+    depthColorTex: GPUTexture;
+    depthColorView: GPUTextureView;
+    depthTex: GPUTexture;
     depthView: GPUTextureView;
     colorStaging: GPUBuffer;
     depthStaging: GPUBuffer;
-    depthBytesPerRow: number;
-    width: number;
-    height: number;
 }
 
 /** Create a GPU picker bound to the given scene. */
@@ -36,60 +47,60 @@ export function createGpuPicker(scene: SceneContext): GpuPicker {
     return {
         _detailedPick: null,
         _scene: scene,
-        _targets: null,
+        _rt: null,
+        _sceneUbo: null,
+        _sceneBG: null,
     };
 }
 
-function ensureTargets(device: GPUDevice, picker: GpuPicker, w: number, h: number): PickRenderTargets {
-    if (picker._targets && picker._targets.width === w && picker._targets.height === h) {
-        return picker._targets;
+function ensureTargets(device: GPUDevice, picker: GpuPicker): PickTargets1x1 {
+    if (picker._rt) {
+        return picker._rt;
     }
-    if (picker._targets) {
-        destroyTargets(picker._targets);
-    }
-    const colorTexture = device.createTexture({
-        label: "pick-color",
-        size: [w, h],
-        format: "rgba8unorm",
+    const colorTex = device.createTexture({ label: "pick-color", size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+    const depthColorTex = device.createTexture({
+        label: "pick-depth-color",
+        size: [1, 1],
+        format: "r32float",
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
     });
-    const depthTexture = device.createTexture({
-        label: "pick-depth",
-        size: [w, h],
-        format: "depth32float",
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-    });
-    const colorStaging = device.createBuffer({
-        label: "pick-color-staging",
-        size: 256,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-    // depth32float requires copying the entire subresource — allocate full-size staging
-    const depthBytesPerRow = Math.ceil((w * 4) / 256) * 256;
-    const depthStaging = device.createBuffer({
-        label: "pick-depth-staging",
-        size: depthBytesPerRow * h,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-    picker._targets = {
-        colorTexture,
-        colorView: colorTexture.createView(),
-        depthTexture,
-        depthView: depthTexture.createView(),
-        colorStaging,
-        depthStaging,
-        depthBytesPerRow,
-        width: w,
-        height: h,
+    const depthTex = device.createTexture({ label: "pick-depth", size: [1, 1], format: "depth24plus", usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    picker._rt = {
+        colorTex,
+        colorView: colorTex.createView(),
+        depthColorTex,
+        depthColorView: depthColorTex.createView(),
+        depthTex,
+        depthView: depthTex.createView(),
+        colorStaging: device.createBuffer({ label: "pick-color-staging", size: 256, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ }),
+        depthStaging: device.createBuffer({ label: "pick-depth-staging", size: 256, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ }),
     };
-    return picker._targets;
+    return picker._rt;
 }
 
-function destroyTargets(t: PickRenderTargets): void {
-    t.colorTexture.destroy();
-    t.depthTexture.destroy();
-    t.colorStaging.destroy();
-    t.depthStaging.destroy();
+function ensureSceneUbo(device: GPUDevice, picker: GpuPicker): GPUBuffer {
+    if (!picker._sceneUbo) {
+        picker._sceneUbo = device.createBuffer({ label: "pick-scene-ubo", size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+        const sceneBGL = getPickingSceneBGL(device);
+        picker._sceneBG = device.createBindGroup({ label: "pick-scene-bg", layout: sceneBGL, entries: [{ binding: 0, resource: { buffer: picker._sceneUbo } }] });
+    }
+    return picker._sceneUbo;
+}
+
+/** Compute a VP matrix zoomed to a single pixel at (px, py) on a W×H canvas.
+ *  Renders to a 1×1 target — only fragments at the picked pixel survive. */
+function computePickVP(out: Float32Array, vp: Float32Array, px: number, py: number, w: number, h: number): void {
+    const ndcX = (2 * (px + 0.5)) / w - 1;
+    const ndcY = 1 - (2 * (py + 0.5)) / h;
+    // pickVP = pickMatrix * VP (sparse multiply, see derivation in comments)
+    for (let c = 0; c < 4; c++) {
+        const base = c * 4;
+        const w3 = vp[base + 3]!;
+        out[base] = w * (vp[base]! - ndcX * w3);
+        out[base + 1] = h * (vp[base + 1]! - ndcY * w3);
+        out[base + 2] = vp[base + 2]!;
+        out[base + 3] = w3;
+    }
 }
 
 /** Pick the mesh at (x, y) canvas coordinates. Returns a PickingInfo. */
@@ -109,70 +120,31 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
         return createEmptyPickingInfo();
     }
 
-    // Clamp pick coordinates to canvas bounds
     const px = Math.max(0, Math.min(Math.floor(x), w - 1));
     const py = Math.max(0, Math.min(Math.floor(y), h - 1));
-
-    const rt = ensureTargets(device, picker, w, h);
     const aspect = w / h;
     const vp = getViewProjectionMatrix(camera, aspect);
 
-    // ── Assign pick IDs ──────────────────────────────────
-    type PickEntry = { mesh: Mesh; thinInstanceIndex: number };
-    const idMap = new Map<number, PickEntry>();
-    let nextId = 1; // 0 = background/miss
+    // ── Compute pick-zoomed VP (renders single pixel to 1×1 target) ──
+    computePickVP(_pickVP, vp as Float32Array, px, py, w, h);
 
-    const meshIds: { mesh: Mesh; baseId: number; isThin: boolean; instanceCount: number }[] = [];
+    const rt = ensureTargets(device, picker);
+    const sceneUbo = ensureSceneUbo(device, picker);
+    device.queue.writeBuffer(sceneUbo, 0, _pickVP);
 
-    for (const mesh of scene.meshes) {
-        const ti = mesh.thinInstances;
-        if (ti && ti.count > 0 && ti._gpuBuffer) {
-            const baseId = nextId;
-            for (let i = 0; i < ti.count; i++) {
-                idMap.set(nextId, { mesh, thinInstanceIndex: i });
-                nextId++;
-            }
-            meshIds.push({ mesh, baseId, isThin: true, instanceCount: ti.count });
-        } else {
-            idMap.set(nextId, { mesh, thinInstanceIndex: -1 });
-            meshIds.push({ mesh, baseId: nextId, isThin: false, instanceCount: 1 });
-            nextId++;
-        }
-    }
+    // ── Assign pick IDs (array-based, no Map for miss case) ──────────
+    const meshes = scene.meshes;
+    const meshCount = meshes.length;
+    let nextId = 1;
 
-    // ── Create scene UBO (viewProjection) ────────────────
-    const sceneUbo = device.createBuffer({
-        label: "pick-scene-ubo",
-        size: 64,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(sceneUbo, 0, new Float32Array(vp));
-
-    const sceneBGL = getPickingSceneBGL(device);
-    const sceneBG = device.createBindGroup({
-        label: "pick-scene-bg",
-        layout: sceneBGL,
-        entries: [{ binding: 0, resource: { buffer: sceneUbo } }],
-    });
-
-    // ── Render pick pass ─────────────────────────────────
-    const encoder = device.createCommandEncoder({ label: "pick-encoder" });
+    // ── Render pass (1×1 target) ─────────────────────────────────────
+    const encoder = device.createCommandEncoder({ label: "pick" });
     const pass = encoder.beginRenderPass({
-        label: "pick-pass",
         colorAttachments: [
-            {
-                view: rt.colorView,
-                clearValue: { r: 0, g: 0, b: 0, a: 0 },
-                loadOp: "clear",
-                storeOp: "store",
-            },
+            { view: rt.colorView, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: "clear", storeOp: "store" },
+            { view: rt.depthColorView, clearValue: { r: 1, g: 0, b: 0, a: 0 }, loadOp: "clear", storeOp: "store" },
         ],
-        depthStencilAttachment: {
-            view: rt.depthView,
-            depthClearValue: 1.0,
-            depthLoadOp: "clear",
-            depthStoreOp: "store",
-        },
+        depthStencilAttachment: { view: rt.depthView, depthClearValue: 1.0, depthLoadOp: "clear", depthStoreOp: "discard" },
     });
 
     const regularPipeline = getPickingPipeline(device);
@@ -182,109 +154,104 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
 
     const tempBuffers: GPUBuffer[] = [];
 
-    for (const entry of meshIds) {
-        const gpu = (entry.mesh as MeshInternal)._gpu;
+    for (let mi = 0; mi < meshCount; mi++) {
+        const mesh = meshes[mi]!;
+        const gpu = (mesh as MeshInternal)._gpu;
+        const ti = mesh.thinInstances;
 
-        if (entry.isThin) {
-            const ti = entry.mesh.thinInstances!;
-            const tiUbo = device.createBuffer({
-                label: "pick-ti-mesh-ubo",
-                size: 16,
-                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            });
-            const tiUboData = new Uint32Array(4);
-            tiUboData[0] = entry.baseId;
-            device.queue.writeBuffer(tiUbo, 0, tiUboData);
+        if (ti && ti.count > 0 && ti._gpuBuffer) {
+            _tiUboScratch[0] = nextId;
+            const tiUbo = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+            device.queue.writeBuffer(tiUbo, 0, _tiUboScratch);
             tempBuffers.push(tiUbo);
 
-            const bg = device.createBindGroup({
-                label: "pick-ti-mesh-bg",
-                layout: tiMeshBGL,
-                entries: [
-                    { binding: 0, resource: { buffer: tiUbo } },
-                    { binding: 1, resource: { buffer: ti._gpuBuffer! } },
-                ],
-            });
-
             pass.setPipeline(tiPipeline);
-            pass.setBindGroup(0, sceneBG);
-            pass.setBindGroup(1, bg);
+            pass.setBindGroup(0, picker._sceneBG!);
+            pass.setBindGroup(
+                1,
+                device.createBindGroup({
+                    layout: tiMeshBGL,
+                    entries: [
+                        { binding: 0, resource: { buffer: tiUbo } },
+                        { binding: 1, resource: { buffer: ti._gpuBuffer } },
+                    ],
+                })
+            );
             pass.setVertexBuffer(0, gpu.positionBuffer);
             pass.setIndexBuffer(gpu.indexBuffer, gpu.indexFormat);
             pass.drawIndexed(gpu.indexCount, ti.count);
+            nextId += ti.count;
         } else {
-            const meshUbo = device.createBuffer({
-                label: "pick-mesh-ubo",
-                size: 80,
-                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            });
-            const uboData = new ArrayBuffer(80);
-            new Float32Array(uboData, 0, 16).set(entry.mesh.worldMatrix);
-            new Uint32Array(uboData, 64, 1)[0] = entry.baseId;
-            device.queue.writeBuffer(meshUbo, 0, new Uint8Array(uboData));
+            _uboF32.set(mesh.worldMatrix);
+            _uboU32[0] = nextId;
+            const meshUbo = device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+            device.queue.writeBuffer(meshUbo, 0, _uboView);
             tempBuffers.push(meshUbo);
 
-            const bg = device.createBindGroup({
-                label: "pick-mesh-bg",
-                layout: meshBGL,
-                entries: [{ binding: 0, resource: { buffer: meshUbo } }],
-            });
-
             pass.setPipeline(regularPipeline);
-            pass.setBindGroup(0, sceneBG);
-            pass.setBindGroup(1, bg);
+            pass.setBindGroup(0, picker._sceneBG!);
+            pass.setBindGroup(1, device.createBindGroup({ layout: meshBGL, entries: [{ binding: 0, resource: { buffer: meshUbo } }] }));
             pass.setVertexBuffer(0, gpu.positionBuffer);
             pass.setIndexBuffer(gpu.indexBuffer, gpu.indexFormat);
             pass.drawIndexed(gpu.indexCount);
+            nextId++;
         }
     }
-
     pass.end();
 
-    // ── Readback ──────────────────────────────────────────
-    // Color: copy single pixel (rgba8unorm allows partial copies)
-    encoder.copyTextureToBuffer({ texture: rt.colorTexture, origin: { x: px, y: py } }, { buffer: rt.colorStaging, bytesPerRow: 256 }, { width: 1, height: 1 });
-    // Depth: depth32float requires full-subresource copy
-    encoder.copyTextureToBuffer({ texture: rt.depthTexture }, { buffer: rt.depthStaging, bytesPerRow: rt.depthBytesPerRow }, { width: rt.width, height: rt.height });
-
+    // ── Readback (both 1×1 — trivially small) ────────────────────────
+    encoder.copyTextureToBuffer({ texture: rt.colorTex }, { buffer: rt.colorStaging, bytesPerRow: 256 }, { width: 1, height: 1 });
+    encoder.copyTextureToBuffer({ texture: rt.depthColorTex }, { buffer: rt.depthStaging, bytesPerRow: 256 }, { width: 1, height: 1 });
     device.queue.submit([encoder.finish()]);
 
-    // ── Map and decode ───────────────────────────────────
-    await device.queue.onSubmittedWorkDone();
     await Promise.all([rt.colorStaging.mapAsync(GPUMapMode.READ), rt.depthStaging.mapAsync(GPUMapMode.READ)]);
 
     const colorData = new Uint8Array(rt.colorStaging.getMappedRange());
-    const r = colorData[0]!;
-    const g = colorData[1]!;
-    const b = colorData[2]!;
-    const pickId = (r << 16) | (g << 8) | b;
-
-    // Read depth at (px, py) from full-size staging buffer
-    const depthMapped = new Float32Array(rt.depthStaging.getMappedRange());
-    const depthIdx = py * (rt.depthBytesPerRow / 4) + px;
-    const depth = depthMapped[depthIdx]!;
-
+    const pickId = (colorData[0]! << 16) | (colorData[1]! << 8) | colorData[2]!;
+    const depth = new Float32Array(rt.depthStaging.getMappedRange())[0]!;
     rt.colorStaging.unmap();
     rt.depthStaging.unmap();
 
-    // Destroy temp UBOs
-    sceneUbo.destroy();
-    for (const buf of tempBuffers) {
-        buf.destroy();
+    // Destroy temp per-mesh UBOs
+    for (let i = 0; i < tempBuffers.length; i++) {
+        tempBuffers[i]!.destroy();
     }
 
-    // ── Build PickingInfo ────────────────────────────────
-    const hitEntry = idMap.get(pickId);
-    if (!hitEntry || pickId === 0) {
+    // ── Resolve pick ID to mesh ──────────────────────────────────────
+    if (pickId === 0) {
+        return createEmptyPickingInfo();
+    }
+    let hitMesh: Mesh | null = null;
+    let hitThinIdx = -1;
+    let scanId = 1;
+    for (let mi = 0; mi < meshCount; mi++) {
+        const mesh = meshes[mi]!;
+        const ti = mesh.thinInstances;
+        if (ti && ti.count > 0 && ti._gpuBuffer) {
+            if (pickId >= scanId && pickId < scanId + ti.count) {
+                hitMesh = mesh;
+                hitThinIdx = pickId - scanId;
+                break;
+            }
+            scanId += ti.count;
+        } else {
+            if (pickId === scanId) {
+                hitMesh = mesh;
+                break;
+            }
+            scanId++;
+        }
+    }
+    if (!hitMesh) {
         return createEmptyPickingInfo();
     }
 
     const info = createEmptyPickingInfo();
     info.hit = true;
-    info.pickedMesh = hitEntry.mesh;
-    info.thinInstanceIndex = hitEntry.thinInstanceIndex;
+    info.pickedMesh = hitMesh;
+    info.thinInstanceIndex = hitThinIdx;
 
-    // Reconstruct world position from depth
+    // Reconstruct world position from depth (using original full-res VP)
     const invVP = mat4Invert(vp);
     if (invVP) {
         const ndcX = (2 * px) / w - 1;
@@ -294,19 +261,15 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
         const wz = invVP[2]! * ndcX + invVP[6]! * ndcY + invVP[10]! * depth + invVP[14]!;
         const ww = invVP[3]! * ndcX + invVP[7]! * ndcY + invVP[11]! * depth + invVP[15]!;
         const invW = 1 / ww;
-        const worldX = wx * invW;
-        const worldY = wy * invW;
-        const worldZ = wz * invW;
-        info.pickedPoint = [worldX, worldY, worldZ];
+        info.pickedPoint = [wx * invW, wy * invW, wz * invW];
 
         const camPos = getCameraPosition(camera);
-        const dx = worldX - camPos.x;
-        const dy = worldY - camPos.y;
-        const dz = worldZ - camPos.z;
+        const dx = info.pickedPoint[0] - camPos.x;
+        const dy = info.pickedPoint[1] - camPos.y;
+        const dz = info.pickedPoint[2] - camPos.z;
         info.distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    // Phase 2 hook
     if (picker._detailedPick) {
         const ray = createPickingRay(px, py, vp, w, h);
         if (ray) {
@@ -319,8 +282,17 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
 
 /** Dispose GPU resources owned by this picker. */
 export function disposePicker(picker: GpuPicker): void {
-    if (picker._targets) {
-        destroyTargets(picker._targets);
-        picker._targets = null;
+    if (picker._rt) {
+        picker._rt.colorTex.destroy();
+        picker._rt.depthColorTex.destroy();
+        picker._rt.depthTex.destroy();
+        picker._rt.colorStaging.destroy();
+        picker._rt.depthStaging.destroy();
+        picker._rt = null;
+    }
+    if (picker._sceneUbo) {
+        picker._sceneUbo.destroy();
+        picker._sceneUbo = null;
+        picker._sceneBG = null;
     }
 }
