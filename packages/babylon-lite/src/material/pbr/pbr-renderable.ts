@@ -76,8 +76,6 @@ interface PbrDrawPacket {
     materialUBO: GPUBuffer;
     composed: ComposedShader;
     _lastWorldVersion: number;
-    /** Last-uploaded material UBO snapshot for dirty comparison. */
-    _lastMatData: Float32Array;
     positionBuffer: GPUBuffer;
     normalBuffer: GPUBuffer;
     tangentBuffer: GPUBuffer | null;
@@ -441,7 +439,7 @@ export async function buildPbrRenderables(
         const variant = getOrCreatePbrPipeline(device, engine.format, engine.msaaSamples, features, sceneBGL, composed);
         const worldMatrix = mesh.worldMatrix;
         const meshUBO = createMeshUBO(device, worldMatrix, composed);
-        const { buffer: materialUBO, snapshot: matSnapshot } = createMaterialUBO(device, mat, composed);
+        const materialUBO = createMaterialUBO(device, mat, composed);
         const boneView = mesh.skeleton?.boneTexture.createView();
         const morphView = mesh.morphTargets?.texture.createView();
         const materialBindGroup = createPbrMeshBindGroup(
@@ -484,7 +482,6 @@ export async function buildPbrRenderables(
             materialUBO,
             composed,
             _lastWorldVersion: mesh.worldMatrixVersion,
-            _lastMatData: matSnapshot,
             positionBuffer: gpu.positionBuffer,
             normalBuffer: gpu.normalBuffer,
             tangentBuffer: gpu.tangentBuffer ?? null,
@@ -575,6 +572,10 @@ export async function buildPbrRenderables(
         updateWorldMatrixUBOs(device, list);
         for (const dp of list) {
             const mat = dp.mesh.material as PbrMaterialProps;
+            if (!(mat as any)._uboDirty) {
+                continue;
+            }
+            (mat as any)._uboDirty = false;
             const spec = dp.composed.materialUboSpec!;
             let data = materialScratch.get(spec.totalBytes);
             if (!data) {
@@ -584,19 +585,7 @@ export async function buildPbrRenderables(
                 data.fill(0);
             }
             writeMaterialData(data, mat, spec);
-            // Compare against last-uploaded snapshot — skip writeBuffer if unchanged
-            const last = dp._lastMatData;
-            let dirty = false;
-            for (let i = 0; i < data.length; i++) {
-                if (data[i] !== last[i]) {
-                    dirty = true;
-                    break;
-                }
-            }
-            if (dirty) {
-                last.set(data);
-                device.queue.writeBuffer(dp.materialUBO, 0, data.buffer, 0, data.byteLength);
-            }
+            device.queue.writeBuffer(dp.materialUBO, 0, data.buffer, 0, data.byteLength);
         }
     }
 
@@ -788,13 +777,12 @@ function writeMaterialData(data: Float32Array, material: PbrMaterialProps, spec:
     }
 }
 
-/** Create a material UBO from the ComposedShader's materialUboSpec.
- *  Returns both the GPU buffer and a CPU-side snapshot for dirty tracking. */
-function createMaterialUBO(device: GPUDevice, material: PbrMaterialProps, composed: ComposedShader): { buffer: GPUBuffer; snapshot: Float32Array } {
+/** Create a material UBO from the ComposedShader's materialUboSpec. */
+function createMaterialUBO(device: GPUDevice, material: PbrMaterialProps, composed: ComposedShader): GPUBuffer {
     const spec = composed.materialUboSpec!;
     const data = new Float32Array(spec.totalBytes / 4);
     writeMaterialData(data, material, spec);
-    return { buffer: allocUBO(device, data), snapshot: new Float32Array(data) };
+    return allocUBO(device, data);
 }
 
 /** Exported for use by pbr-single-rebuild.ts */

@@ -1,7 +1,6 @@
 import type { SceneContext } from "../scene/scene.js";
 import type { SceneContextInternal } from "../scene/scene.js";
 import { buildScene, processMaterialSwaps } from "../scene/scene.js";
-import { getCameraPosition } from "../camera/camera.js";
 
 /** Handle to the WebGPU engine — pure state, no attached methods. */
 export interface EngineContext {
@@ -214,10 +213,10 @@ function renderFrame(engine: EngineContextInternal, targets: RenderTargets, scen
     // Per-frame transparent sort by camera distance (back-to-front)
     const cam = scene.camera;
     if (scene._transparentRenderables.length > 1 && cam) {
-        const camPos = getCameraPosition(cam);
-        const cx = camPos.x,
-            cy = camPos.y,
-            cz = camPos.z;
+        const w = cam.worldMatrix;
+        const cx = w[12]!,
+            cy = w[13]!,
+            cz = w[14]!;
         for (const r of scene._transparentRenderables) {
             if (r._worldCenter) {
                 const [wx, wy, wz] = r._worldCenter;

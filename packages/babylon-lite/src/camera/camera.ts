@@ -26,9 +26,12 @@ interface CameraCache {
     vpAspect: number;
 }
 
-const _caches = new WeakMap<Camera, CameraCache>();
+let _caches: WeakMap<Camera, CameraCache> | null = null;
 
 function getCache(cam: Camera): CameraCache {
+    if (!_caches) {
+        _caches = new WeakMap();
+    }
     let c = _caches.get(cam);
     if (!c) {
         c = {

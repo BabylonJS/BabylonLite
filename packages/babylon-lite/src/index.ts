@@ -28,6 +28,7 @@ export { createSolidTexture2D } from "./texture/solid-texture.js";
 // ─── Materials ───────────────────────────────────────────────────────
 export { createStandardMaterial } from "./material/standard/standard-material.js";
 export { createPbrMaterial } from "./material/pbr/pbr-material.js";
+export { markMaterialDirty } from "./material/material-dirty.js";
 
 // ─── Loaders ─────────────────────────────────────────────────────────
 export { loadGltf } from "./loader-gltf/load-gltf.js";

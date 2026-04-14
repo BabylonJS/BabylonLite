@@ -110,19 +110,10 @@ export function buildSingleStandardRenderable(scene: SceneContext, mesh: Mesh): 
                 device.queue.writeBuffer(gpu.meshUBO, 0, mesh.worldMatrix as unknown as Float32Array<ArrayBuffer>);
                 _lastWorldVersion = mesh.worldMatrixVersion;
             }
-            // Material UBO dirty check via data comparison
-            _singleStdScratch.fill(0);
-            writeStdMaterialData(_singleStdScratch, mat, gpu.textureLevel);
-            const last = gpu.matSnapshot;
-            let dirty = false;
-            for (let i = 0; i < 24; i++) {
-                if (_singleStdScratch[i] !== last[i]) {
-                    dirty = true;
-                    break;
-                }
-            }
-            if (dirty) {
-                last.set(_singleStdScratch);
+            if ((mat as any)._uboDirty) {
+                (mat as any)._uboDirty = false;
+                _singleStdScratch.fill(0);
+                writeStdMaterialData(_singleStdScratch, mat, gpu.textureLevel);
                 device.queue.writeBuffer(gpu.materialUBO, 0, _singleStdScratch.buffer, 0, 96);
             }
             // Refresh light UBO with current light state

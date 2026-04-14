@@ -10,6 +10,7 @@ import { addToScene, startEngine, onBeforeRender,
     createPbrMaterial,
     createSolidTexture2D,
     loadEnvironment,
+    markMaterialDirty,
 } from "babylon-lite";
 
 async function main(): Promise<void> {
@@ -71,6 +72,7 @@ async function main(): Promise<void> {
         onBeforeRender(scene, () => {
             a += 0.01;
             material.anisotropy!.intensity = Math.cos(a) * 0.5 + 0.5;
+            markMaterialDirty(material);
         });
     }
 

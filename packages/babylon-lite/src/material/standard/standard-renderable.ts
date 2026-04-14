@@ -251,22 +251,12 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
                         device.queue.writeBuffer(pkt.gpu.meshUBO, 0, pkt.mesh.worldMatrix as unknown as Float32Array<ArrayBuffer>);
                         pkt._lastWorldVersion = pkt.mesh.worldMatrixVersion;
                     }
-                    // Re-check material UBO via data comparison (catches in-place array mutations)
-                    const mat = pkt.mesh.material as StandardMaterialProps;
-                    const gpu = pkt.gpu;
-                    _stdMatScratch.fill(0);
-                    writeStdMaterialData(_stdMatScratch, mat, gpu.textureLevel);
-                    const last = gpu.matSnapshot;
-                    let dirty = false;
-                    for (let i = 0; i < 24; i++) {
-                        if (_stdMatScratch[i] !== last[i]) {
-                            dirty = true;
-                            break;
-                        }
-                    }
-                    if (dirty) {
-                        last.set(_stdMatScratch);
-                        device.queue.writeBuffer(gpu.materialUBO, 0, _stdMatScratch.buffer, 0, 96);
+                    const mat = pkt.mesh.material as any;
+                    if (mat._uboDirty) {
+                        mat._uboDirty = false;
+                        _stdMatScratch.fill(0);
+                        writeStdMaterialData(_stdMatScratch, mat, pkt.gpu.textureLevel);
+                        device.queue.writeBuffer(pkt.gpu.materialUBO, 0, _stdMatScratch.buffer, 0, 96);
                     }
                 }
             },

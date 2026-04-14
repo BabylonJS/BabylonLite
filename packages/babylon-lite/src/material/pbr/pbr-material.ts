@@ -75,6 +75,8 @@ export interface PbrMaterialProps {
 /** @internal Extended PbrMaterialProps with internal build group. */
 export interface PbrMaterialPropsInternal extends PbrMaterialProps {
     readonly _buildGroup: MeshGroupBuilder;
+    /** Set to true when a UBO-relevant property changes. Cleared by the renderer after upload. */
+    _uboDirty?: boolean;
 }
 
 /** Clearcoat layer properties. Maps to BJS PBRMaterial.clearCoat sub-object. */

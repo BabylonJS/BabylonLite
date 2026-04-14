@@ -5,7 +5,6 @@ import type { LightBase } from "../light/types.js";
 import type { Mesh } from "../mesh/mesh.js";
 import type { MeshInternal } from "../mesh/mesh.js";
 import type { AnimationGroup } from "../animation/animation-group.js";
-import { tickAnimation } from "../animation/animation-group.js";
 import type { ShadowGenerator } from "../shadow/shadow-generator.js";
 import type { FogConfig } from "../material/standard/standard-material.js";
 import type { Renderable, PrePassRenderable, SceneUniformUpdater, MeshGroupBuilder } from "../render/renderable.js";
@@ -177,7 +176,9 @@ export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camer
             ctx.animationGroups.push(...groups);
             ctx._beforeRender.push((deltaMs: number) => {
                 for (const g of groups) {
-                    tickAnimation(g, deltaMs, device);
+                    if (!g._stopped && g._ctrl) {
+                        g._ctrl.tick(deltaMs, device);
+                    }
                 }
             });
         }

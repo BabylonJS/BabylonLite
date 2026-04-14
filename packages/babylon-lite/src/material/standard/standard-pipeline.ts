@@ -202,8 +202,6 @@ export interface DynamicMeshGPU {
     shadowBG: GPUBindGroup | null; // only if RECEIVE_SHADOWS
     meshUBO: GPUBuffer;
     materialUBO: GPUBuffer;
-    /** CPU-side snapshot of last-uploaded material UBO data. */
-    matSnapshot: Float32Array;
     /** textureLevel used at build time (1 if UV-mapped, 0 otherwise). */
     textureLevel: number;
     /** Shadow generators referenced by this mesh. */
@@ -395,7 +393,6 @@ export function createDynamicMeshGPU(
     const matData = new Float32Array(24);
     writeStdMaterialData(matData, material, textureLevel);
     const materialUBO = createUBO(device, MATERIAL_UBO_SIZE, matData);
-    const matSnapshot = new Float32Array(matData);
 
     // Build mesh bind group entries — sequential numbering matching composer output
     let nextBinding = 0;
@@ -466,7 +463,7 @@ export function createDynamicMeshGPU(
         shadowBG = device.createBindGroup({ layout: variant.shadowBGL, entries });
     }
 
-    return { meshBG, shadowBG, meshUBO, materialUBO, matSnapshot, textureLevel, shadowGens: shadowGenerators };
+    return { meshBG, shadowBG, meshUBO, materialUBO, textureLevel, shadowGens: shadowGenerators };
 }
 
 // ─── Internal Helpers ───────────────────────────────────────────────
