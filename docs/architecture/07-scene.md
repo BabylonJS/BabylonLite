@@ -131,7 +131,7 @@ function addToScene(scene: SceneContext, entity: Mesh | LightBase | ShadowGenera
     for (const e of result.entities) addToScene(scene, e);  // recurse into individual entities
     if (result.clearColor) ctx.clearColor = result.clearColor;
     if (result.animationGroups?.length) {
-      const device = (ctx.engine as EngineInternal).device;
+      const device = (ctx.engine as EngineContextInternal).device;
       const groups = result.animationGroups;
       ctx.animationGroups.push(...groups);
       ctx._beforeRender.push((dt) => { for (const g of groups) g._tick(dt, device); });

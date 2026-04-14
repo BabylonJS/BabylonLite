@@ -94,7 +94,7 @@ The bitwise OR with 0 (`| 0`) truncates to integer.
 
 ```
 startEngine(engine, scene):
-  await scene._build()          // runs all deferred builders
+  await buildScene(scene)          // runs all deferred builders
   sort scene._renderables by order
   return new Promise(resolve => {
     renderFn = (now) => {

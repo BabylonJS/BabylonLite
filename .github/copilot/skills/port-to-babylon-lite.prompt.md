@@ -13,10 +13,10 @@ Given Babylon.js source code from the user, produce equivalent Babylon Lite code
 1. **No classes.** Babylon Lite uses plain data objects + pure factory functions.
 2. **One-way ownership.** Components never reference the scene. The scene owns everything.
    - A light/camera/mesh is plain data — it does NOT take a scene parameter.
-   - The caller adds the result to the scene via `scene.add()` or direct assignment.
+   - The caller adds the result to the scene via `addToScene()` or direct assignment.
 3. **WebGPU only.** No WebGL, no abstraction layers, no `engine.webGPUVersion` checks.
 4. **Tree-shakable imports.** Import only the exact functions you use from `'babylon-lite'`.
-5. **No mutation of engine internals.** Engine is opaque; you call `engine.start(scene)`.
+5. **No mutation of engine internals.** Engine is opaque; you call `startEngine(engine, scene)`.
 
 ---
 
@@ -45,8 +45,8 @@ const engine = new BABYLON.Engine(canvas);
 |---|---|
 | `new BABYLON.Engine(canvas, true)` | `await createEngine(canvas)` |
 | `new BABYLON.WebGPUEngine(canvas)` then `await engine.initAsync()` | `await createEngine(canvas)` |
-| `engine.runRenderLoop(() => scene.render())` | `engine.start(scene)` |
-| `engine.stopRenderLoop()` | `engine.stop()` |
+| `engine.runRenderLoop(() => scene.render())` | `startEngine(engine, scene)` |
+| `engine.stopRenderLoop()` | `stopEngine(engine)` |
 
 **Key difference**: `createEngine` is **async** (it acquires the GPU device). Always `await` it.
 
@@ -59,7 +59,7 @@ engine.runRenderLoop(() => scene.render());
 // Babylon Lite
 const engine = await createEngine(canvas);
 const scene = createSceneContext(engine);
-engine.start(scene);
+startEngine(engine, scene);
 ```
 
 ### Scene
@@ -138,7 +138,7 @@ attachControl(camera, canvas);
 - No `name` parameter. No `scene` parameter.
 - Directions and positions are `[x, y, z]` tuples, not `BABYLON.Vector3`.
 - Colors are `[r, g, b]` tuples, not `BABYLON.Color3`.
-- Must explicitly add to scene with `scene.add(light)`.
+- Must explicitly add to scene with `addToScene(scene, light)`.
 
 ```typescript
 // Babylon.js
@@ -146,7 +146,7 @@ const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0)
 light.intensity = 0.7;
 
 // Babylon Lite
-scene.add(createHemisphericLight([0, 1, 0], 0.7));
+addToScene(scene, createHemisphericLight([0, 1, 0], 0.7));
 ```
 
 ### Meshes
@@ -166,7 +166,7 @@ scene.add(createHemisphericLight([0, 1, 0], 0.7));
 - First parameter is `engine` (needed for GPU buffer creation), not `name`/`scene`.
 - `createGroundFromHeightMap` is **async** (loads the heightmap image).
 - Position/rotation/scaling are `[x, y, z]` tuples.
-- Must explicitly add to scene with `scene.add(mesh)`.
+- Must explicitly add to scene with `addToScene(scene, mesh)`.
 
 ```typescript
 // Babylon.js
@@ -176,7 +176,7 @@ sphere.position = new BABYLON.Vector3(0, 1, 0);
 // Babylon Lite
 const sphere = createSphere(engine, { segments: 32 });
 sphere.position = [0, 1, 0];
-scene.add(sphere);
+addToScene(scene, sphere);
 ```
 
 ### Materials
@@ -280,7 +280,7 @@ await loadEnvironment(scene, 'environmentSpecular.env');
 **Key differences**:
 - Shadow generator requires explicit caster bounds (AABB) and caster mesh GPU data.
 - There is only one shadow mode: blurred exponential shadow maps.
-- Shadow generator is added to scene via `scene.add(shadowGen)`.
+- Shadow generator is added to scene via `addToScene(scene, shadowGen)`.
 
 ```typescript
 // Babylon.js
@@ -299,7 +299,7 @@ const shadowGen = createShadowGenerator(engine.device, light, casterBounds, [
     worldMatrix: new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, ...torus.position, 1]),
   },
 ], { mapSize: 1024, bias: 0.00005, blurScale: 2 });
-scene.add(shadowGen);
+addToScene(scene, shadowGen);
 ground.receiveShadows = true;
 ```
 
@@ -356,15 +356,15 @@ async function main(): Promise<void> {
   attachControl(cam, canvas);
 
   // 5. Create and add lights
-  scene.add(createHemisphericLight([0, 1, 0], 0.7));
+  addToScene(scene, createHemisphericLight([0, 1, 0], 0.7));
 
   // 6. Create and add meshes (if procedural)
   const sphere = createSphere(engine);
   sphere.position = [0, 1, 0];
-  scene.add(sphere);
+  addToScene(scene, sphere);
 
   // 7. Start rendering
-  engine.start(scene);
+  startEngine(engine, scene);
 }
 
 main().catch(console.error);
@@ -389,8 +389,8 @@ await loadGltf(scene, 'model.glb');
 await loadEnvironment(scene, 'https://assets.babylonjs.com/core/environments/environmentSpecular.env');
 const cam = createDefaultCamera(scene);
 attachControl(cam, canvas);
-scene.add(createHemisphericLight([0, 1, 0], 1.0));
-engine.start(scene);
+addToScene(scene, createHemisphericLight([0, 1, 0], 1.0));
+startEngine(engine, scene);
 ```
 
 ### Pattern: Multiple Meshes with Materials
@@ -410,7 +410,7 @@ for (let i = 0; i < 10; i++) {
   const box = createBox(engine);
   box.position = [i * 2, 0, 0];
   box.material.diffuseColor = [1, 1, 0];
-  scene.add(box);
+  addToScene(scene, box);
 }
 ```
 
@@ -448,8 +448,8 @@ as unsupported and omit them (or suggest the closest alternative):
 | Particles | ❌ | Not available |
 | Post-processing pipeline | ❌ | Tone mapping built into PBR material |
 | `ActionManager` / `Observable` | ❌ | Use standard DOM events |
-| `scene.onBeforeRenderObservable` | ❌ | Use `scene._beforeRender.push(callback)` |
-| `AssetContainer` | ❌ | Use `loadGltf` directly |
+| `scene.onBeforeRenderObservable` | ❌ | Use `onBeforeRender(scene, callback)` |
+| `AssetContainer` | ✅ | Returned by `loadGltf` |
 | Multiple scenes | ❌ | One scene per engine |
 | Multiple cameras | ❌ | One active camera |
 | Spot lights | ❌ | Use directional or point lights |
