@@ -206,20 +206,20 @@ struct lightsUniforms { count: u32, _p0: u32, _p1: u32, _p2: u32, lights: array<
 
     const materialStruct = `
 struct matUniforms {
-vDiffuseColor: vec4<f32>,
-vSpecularColor: vec4<f32>,
-vEmissiveColor: vec3<f32>,
-bumpScale: f32,
-vAmbientColor: vec3<f32>,
-textureLevel: f32,
-ambientTexLevel: f32,
-lightmapLevel: f32,
-opacityLevel: f32,
-alphaCutOff: f32,
-reflectionLevel: f32,
-reflectionCoordMode: f32,
-_mp0: f32,
-_mp1: f32,
+dc: vec4<f32>,
+sc: vec4<f32>,
+ec: vec3<f32>,
+bs: f32,
+ac: vec3<f32>,
+tl: f32,
+ambTexLvl: f32,
+lmLvl: f32,
+opLvl: f32,
+aCut: f32,
+rLvl: f32,
+rCm: f32,
+_0: f32,
+_1: f32,
 };
 `;
 
@@ -246,24 +246,27 @@ _mp1: f32,
     }
 
     // Opacity — default from material alpha, fragment can modify via AT
-    const opacityCode = `var alpha = mat.vDiffuseColor.a;`;
+    const opacityCode = `var alpha = mat.dc.a;`;
 
-    // Base color (vec3 — compatible with PBR thin-instance fragment)
+    // Base color + alpha test. Texture alpha used for discard only (not blended into output alpha),
+    // matching BJS ALPHATEST without ALPHAFROMDIFFUSE.
     const baseColorCode = textures.diffuse
-        ? `var baseColor = textureSample(diffuseTexture, diffuseSampler, ${uvSelect(config.diffuseUsesUV2)}).rgb * mat.textureLevel;`
+        ? `let _ds = textureSample(diffuseTexture, diffuseSampler, ${uvSelect(config.diffuseUsesUV2)});
+if (_ds.a < mat.aCut) { discard; }
+var baseColor = _ds.rgb * mat.tl;`
         : `var baseColor = vec3<f32>(1.0, 1.0, 1.0);`;
 
     // Diffuse color + emissive + specular — defaults, fragments can override via AT
-    const diffuseColorCode = `let diffuseColor = mat.vDiffuseColor.rgb;`;
-    const emissiveCode = `var emissiveContrib = mat.vEmissiveColor;`;
-    const specularColorCode = !disableLighting ? `var specularColor = mat.vSpecularColor.rgb;` : "";
+    const diffuseColorCode = `let diffuseColor = mat.dc.rgb;`;
+    const emissiveCode = `var emissiveContrib = mat.ec;`;
+    const specularColorCode = !disableLighting ? `var specularColor = mat.sc.rgb;` : "";
 
     // Lighting block (only when lighting enabled)
     let lightingBlock: string;
     if (!disableLighting) {
         // Shadow — default to 1.0, fragment overrides via AD slot
         // shadowFactors array is populated by std-shadow-fragment (one per light index)
-        lightingBlock = `var glossiness = mat.vSpecularColor.a;
+        lightingBlock = `var glossiness = mat.sc.a;
 var diffuseBase = vec3<f32>(0.0);
 var specularBase = vec3<f32>(0.0);
 var shadowFactors = array<f32, 4>(1.0, 1.0, 1.0, 1.0);
@@ -277,7 +280,7 @@ let sf = shadowFactors[li];
 diffuseBase += r[0] * sf;
 specularBase += r[1] * sf;
 }
-let finalDiffuse = clamp(diffuseBase * diffuseColor + emissiveContrib + mat.vAmbientColor, vec3<f32>(0.0), vec3<f32>(1.0)) * baseColor;
+let finalDiffuse = clamp(diffuseBase * diffuseColor + emissiveContrib + mat.ac, vec3<f32>(0.0), vec3<f32>(1.0)) * baseColor;
 let finalSpecular = specularBase * specularColor;
 var color = vec4<f32>(finalDiffuse * baseAmbientColor + finalSpecular + reflectionColor, alpha);`;
     } else {

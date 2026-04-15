@@ -30,9 +30,9 @@ export function createStdReflectionFragment(): ShaderFragment {
         fragmentSlots: {
             AD: `{
 var reflCoords: vec2<f32>;
-if (mat.reflectionCoordMode < 1.5) { reflCoords = computeSphericalCoords(input.vPositionW, normalW); }
+if (mat.rCm < 1.5) { reflCoords = computeSphericalCoords(input.vPositionW, normalW); }
 else { reflCoords = computePlanarCoords(input.vPositionW, normalW); }
-reflectionColor = textureSample(reflectionTex, reflectionSampler, reflCoords).rgb * mat.reflectionLevel;
+reflectionColor = textureSample(reflectionTex, reflectionSampler, reflCoords).rgb * mat.rLvl;
 }`,
         },
     };

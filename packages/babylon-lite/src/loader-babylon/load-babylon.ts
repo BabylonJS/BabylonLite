@@ -53,6 +53,7 @@ interface BabylonTexture {
     name: string;
     hasAlpha?: boolean;
     getAlphaFromRGB?: boolean;
+    isCube?: boolean;
     level?: number;
     coordinatesIndex?: number;
     coordinatesMode?: number;
@@ -105,6 +106,7 @@ interface BabylonMesh {
     position?: number[];
     rotation?: number[];
     scaling?: number[];
+    localMatrix?: number[];
     positions?: number[];
     normals?: number[];
     uvs?: number[];
@@ -204,6 +206,9 @@ export async function loadBabylon(engine: EngineContext, url: string, opts: Load
                 if (md.diffuseTexture.coordinatesIndex === 1) {
                     mat.diffuseCoordIndex = 1;
                 }
+                if (md.diffuseTexture.hasAlpha) {
+                    mat.alphaCutOff = 0.4;
+                }
                 texturePromises.push(
                     loadTexture2D(engine, texUrl).then((tex) => {
                         mat.diffuseTexture = tex;
@@ -280,7 +285,7 @@ export async function loadBabylon(engine: EngineContext, url: string, opts: Load
                 );
             }
 
-            if (md.reflectionTexture && opts.loadTextures !== false) {
+            if (md.reflectionTexture && opts.loadTextures !== false && !md.reflectionTexture.isCube) {
                 const texUrl = baseUrl + md.reflectionTexture.name;
                 if (md.reflectionTexture.level != null) {
                     mat.reflectionLevel = md.reflectionTexture.level;
@@ -293,6 +298,20 @@ export async function loadBabylon(engine: EngineContext, url: string, opts: Load
                     loadTexture2D(engine, texUrl).then((tex) => {
                         mat.reflectionTexture = tex;
                     })
+                );
+            }
+
+            if (md.reflectionTexture && opts.loadTextures !== false && md.reflectionTexture.isCube) {
+                if (md.reflectionTexture.level != null) {
+                    mat.reflectionLevel = md.reflectionTexture.level;
+                }
+                const cubeName = md.reflectionTexture.name;
+                texturePromises.push(
+                    import("../texture/cube-texture.js").then(({ loadCubeTexture }) =>
+                        loadCubeTexture(device, baseUrl + cubeName).then((cube) => {
+                            mat.reflectionCubeTexture = cube;
+                        })
+                    )
                 );
             }
 
@@ -347,6 +366,10 @@ export async function loadBabylon(engine: EngineContext, url: string, opts: Load
         const maxMeshes = opts.maxMeshes ?? Infinity;
         let meshCount = 0;
 
+        // Dynamically load localMatrix baking only when the scene needs it
+        const hasAnyLocalMatrix = data.meshes.some((m) => m.localMatrix);
+        const bakeLocalMatrix = hasAnyLocalMatrix ? (await import("./bake-local-matrix.js")).bakeLocalMatrix : null;
+
         // First pass: create Mesh(es) for geometry nodes; TransformNode for pure containers.
         for (const md of data.meshes) {
             if (meshCount >= maxMeshes) {
@@ -362,6 +385,11 @@ export async function loadBabylon(engine: EngineContext, url: string, opts: Load
                 const allIndices = new Uint32Array(md.indices);
                 const uvs = md.uvs ? new Float32Array(md.uvs) : undefined;
                 const uvs2 = md.uvs2 ? new Float32Array(md.uvs2) : undefined;
+
+                // Bake localMatrix (pivot) into vertex data when present
+                if (md.localMatrix && bakeLocalMatrix) {
+                    bakeLocalMatrix(positions, normals, md.localMatrix);
+                }
 
                 let matIds: string[] | null = null;
                 if (md.materialId) {

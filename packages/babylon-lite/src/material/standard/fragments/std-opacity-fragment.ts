@@ -5,8 +5,8 @@ const STAGE_FRAGMENT = 0x2;
 
 export function createStdOpacityFragment(fromRGB: boolean): ShaderFragment {
     const opacityCalc = fromRGB
-        ? `{ let opSample = textureSample(opacityTex, opacitySampler, input.vUV); alpha *= dot(opSample.rgb, vec3<f32>(0.3, 0.59, 0.11)) * mat.opacityLevel; }`
-        : `alpha *= textureSample(opacityTex, opacitySampler, input.vUV).a * mat.opacityLevel;`;
+        ? `{ let opSample = textureSample(opacityTex, opacitySampler, input.vUV); alpha *= dot(opSample.rgb, vec3<f32>(0.3, 0.59, 0.11)) * mat.opLvl; }`
+        : `alpha *= textureSample(opacityTex, opacitySampler, input.vUV).a * mat.opLvl;`;
     return {
         id: "std-opacity",
         bindings: [

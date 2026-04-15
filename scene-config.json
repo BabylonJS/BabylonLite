@@ -2,245 +2,324 @@
     {
         "id": 1,
         "slug": "scene1-boombox",
-        "name": "Scene 1 \u2014 BoomBox PBR",
+        "name": "Scene 1 — BoomBox PBR",
         "maxMad": 0.19,
         "maxRegionMad": 0.03,
         "maxRawKB": 92,
         "maxGzipKB": 36,
         "description": "glTF PBR model, IBL environment, hemispheric light, arc-rotate camera.",
-        "tags": ["pbr", "gltf"]
+        "tags": [
+            "pbr",
+            "gltf"
+        ]
     },
     {
         "id": 2,
         "slug": "scene2-sphere",
-        "name": "Scene 2 \u2014 Sphere",
+        "name": "Scene 2 — Sphere",
         "maxMad": 0.01,
         "maxRegionMad": 0.01,
         "maxRawKB": 49,
         "maxGzipKB": 19,
         "description": "StandardMaterial sphere with Blinn-Phong, directional light, ground plane.",
-        "tags": ["std", "procedural"]
+        "tags": [
+            "std",
+            "procedural"
+        ]
     },
     {
         "id": 3,
         "slug": "scene3-fog",
-        "name": "Scene 3 \u2014 Fog + Skybox",
+        "name": "Scene 3 — Fog + Skybox",
         "maxMad": 0.01,
         "maxRawKB": 56,
         "maxGzipKB": 21,
-        "description": "Exponential\u00b2 fog, multiple colored boxes, skybox, ground plane.",
-        "tags": ["fog", "procedural", "std"]
+        "description": "Exponential² fog, multiple colored boxes, skybox, ground plane.",
+        "tags": [
+            "fog",
+            "procedural",
+            "std"
+        ]
     },
     {
         "id": 4,
         "slug": "scene4-shadows",
-        "name": "Scene 4 \u2014 Shadows",
+        "name": "Scene 4 — Shadows",
         "maxMad": 0.025,
         "maxRawKB": 74,
         "maxGzipKB": 27,
         "description": "DirectionalLight, ESM shadow map with blur, heightmap ground, torus caster.",
-        "tags": ["shadow", "procedural", "std"]
+        "tags": [
+            "shadow",
+            "procedural",
+            "std"
+        ]
     },
     {
         "id": 5,
         "slug": "scene5-alien",
-        "name": "Scene 5 \u2014 Alien Skeleton",
+        "name": "Scene 5 — Alien Skeleton",
         "maxMad": 0.01,
         "maxRegionMad": 0.08,
         "maxRawKB": 81,
         "maxGzipKB": 31,
         "description": "glTF Alien model with PBR, skeleton/bones, normal map, hemispheric light.",
-        "tags": ["pbr", "gltf"]
+        "tags": [
+            "pbr",
+            "gltf"
+        ]
     },
     {
         "id": 6,
         "slug": "scene6-pbr-sphere",
-        "name": "Scene 6 \u2014 PBR Gold Sphere",
+        "name": "Scene 6 — PBR Gold Sphere",
         "maxMad": 0.5,
         "maxRawKB": 76,
         "maxGzipKB": 29,
         "description": "Procedural sphere with PBR specular-glossiness, environment IBL, no direct light.",
-        "tags": ["pbr", "procedural"]
+        "tags": [
+            "pbr",
+            "procedural"
+        ]
     },
     {
         "id": 7,
         "slug": "scene7-chibirex",
-        "name": "Scene 7 \u2014 ChibiRex Animated",
+        "name": "Scene 7 — ChibiRex Animated",
         "maxMad": 0.55,
         "maxRegionMad": 0.64,
         "maxRawKB": 100,
         "maxGzipKB": 39,
         "description": "Animated dinosaur, PBR materials, IBL environment, skeletal animation.",
-        "tags": ["pbr", "gltf", "anim"]
+        "tags": [
+            "pbr",
+            "gltf",
+            "anim"
+        ]
     },
     {
         "id": 8,
         "slug": "scene8-glass-sphere",
-        "name": "Scene 8 \u2014 HDR Glass Sphere",
+        "name": "Scene 8 — HDR Glass Sphere",
         "maxMad": 0.027,
         "maxRawKB": 76,
         "maxGzipKB": 28,
         "description": "Glass sphere with HDR environment, alpha transparency, and custom exposure.",
-        "tags": ["pbr", "procedural", "env"]
+        "tags": [
+            "pbr",
+            "procedural",
+            "env"
+        ]
     },
     {
         "id": 9,
         "slug": "scene9-sponza",
-        "name": "Scene 9 \u2014 Sponza (.babylon)",
+        "name": "Scene 9 — Sponza (.babylon)",
         "maxMad": 0.01,
         "maxRawKB": 59,
         "maxGzipKB": 23,
         "description": "Sponza palace loaded from .babylon format. Standard materials with diffuse textures, point lights.",
-        "tags": ["std", "babylon"]
+        "tags": [
+            "std",
+            "babylon"
+        ]
     },
     {
         "id": 10,
         "slug": "scene10-pbr-rough",
-        "name": "Scene 10 \u2014 PBR Rough Sphere",
+        "name": "Scene 10 — PBR Rough Sphere",
         "maxMad": 0.011,
         "maxRawKB": 54,
         "maxGzipKB": 20,
         "description": "PBR metallic-roughness sphere: golden base, metallic=0, roughness=1, hemispheric light only.",
-        "tags": ["pbr", "procedural"]
+        "tags": [
+            "pbr",
+            "procedural"
+        ]
     },
     {
         "id": 11,
         "slug": "scene11-shark",
-        "name": "Scene 11 \u2014 Shark GLB",
+        "name": "Scene 11 — Shark GLB",
         "maxMad": 0.01,
         "maxRawKB": 79,
         "maxGzipKB": 30,
         "description": "Shark glTF model with PBR material, hemispheric light, auto-framing camera.",
-        "tags": ["pbr", "gltf"]
+        "tags": [
+            "pbr",
+            "gltf"
+        ]
     },
     {
         "id": 12,
         "slug": "scene12-shader-balls",
-        "name": "Scene 12 \u2014 PBR Shader Balls",
+        "name": "Scene 12 — PBR Shader Balls",
         "maxMad": 0.025,
         "maxRawKB": 99,
         "maxGzipKB": 37,
         "description": "3 shader balls with metallic reflectance textures, directional light, env rotation.",
-        "tags": ["pbr", "gltf"]
+        "tags": [
+            "pbr",
+            "gltf"
+        ]
     },
     {
         "id": 13,
         "slug": "scene13-pbr-spheres",
-        "name": "Scene 13 \u2014 PBR Spheres Grid",
+        "name": "Scene 13 — PBR Spheres Grid",
         "maxMad": 0.008,
         "maxRawKB": 89,
         "maxGzipKB": 34,
         "description": "12 spheres with varying metallic/roughness baseColorFactor, default environment.",
-        "tags": ["pbr", "gltf"]
+        "tags": [
+            "pbr",
+            "gltf"
+        ]
     },
     {
         "id": 14,
         "slug": "scene14-flight-helmet",
-        "name": "Scene 14 \u2014 Flight Helmet",
+        "name": "Scene 14 — Flight Helmet",
         "maxMad": 0.42,
         "maxRawKB": 95,
         "maxGzipKB": 36,
         "description": "glTF Flight Helmet with PBR materials, DDS cube skybox, default environment.",
-        "tags": ["pbr", "gltf"]
+        "tags": [
+            "pbr",
+            "gltf"
+        ]
     },
     {
         "id": 15,
         "slug": "scene15-spotlights",
-        "name": "Scene 15 \u2014 SpotLights + Ground",
+        "name": "Scene 15 — SpotLights + Ground",
         "maxMad": 0.01,
         "maxRawKB": 49,
         "maxGzipKB": 19,
         "description": "Two SpotLights (red + green) with different exponents on a ground plane. Multi-light support.",
-        "tags": ["std", "procedural"]
+        "tags": [
+            "std",
+            "procedural"
+        ]
     },
     {
         "id": 16,
         "slug": "scene16-thin-instances",
-        "name": "Scene 16 \u2014 Thin Instances",
+        "name": "Scene 16 — Thin Instances",
         "maxMad": 0.01,
         "maxRawKB": 50,
         "maxGzipKB": 19,
         "description": "64,000 colored cubes via thin instances. Per-instance color, disableLighting, emissive-only rendering.",
-        "tags": ["std", "procedural"]
+        "tags": [
+            "std",
+            "procedural"
+        ]
     },
     {
         "id": 17,
         "slug": "scene17-pbr-std-thin-instances",
-        "name": "Scene 17 \u2014 PBR + Std TI",
+        "name": "Scene 17 — PBR + Std TI",
         "maxMad": 0.021,
         "maxRawKB": 90,
         "maxGzipKB": 34,
         "description": "Mixed PBR + Standard materials with thin instances and per-instance color. Env IBL, negative scale.",
-        "tags": ["pbr", "procedural"]
+        "tags": [
+            "pbr",
+            "procedural"
+        ]
     },
     {
         "id": 18,
         "slug": "scene18-spotlight-shadows",
-        "name": "Scene 18 \u2014 PCF Shadows",
+        "name": "Scene 18 — PCF Shadows",
         "maxMad": 0.011,
         "maxRawKB": 60,
         "maxGzipKB": 23,
         "description": "FreeCamera + SpotLight PCF shadow generator. Ground receives hard shadows from box.",
-        "tags": ["std", "procedural", "shadow"]
+        "tags": [
+            "std",
+            "procedural",
+            "shadow"
+        ]
     },
     {
         "id": 19,
         "slug": "scene19-clearcoat",
-        "name": "Scene 19 \u2014 PBR Clearcoat",
+        "name": "Scene 19 — PBR Clearcoat",
         "maxMad": 0.031,
         "maxRawKB": 65,
         "maxGzipKB": 25,
         "description": "Sphere with PBR clearcoat layer (IOR=2.0). DDS environment for glossy reflections.",
-        "tags": ["pbr", "env"]
+        "tags": [
+            "pbr",
+            "env"
+        ]
     },
     {
         "id": 20,
         "slug": "scene20-emissive-grid",
-        "name": "Scene 20 \u2014 PBR Emissive Grid",
+        "name": "Scene 20 — PBR Emissive Grid",
         "maxMad": 0.49,
         "maxRawKB": 83,
         "maxGzipKB": 32,
         "description": "2500 PBR spheres with random emissive colors, parent hierarchy, per-frame rotation.",
-        "tags": ["pbr", "env"]
+        "tags": [
+            "pbr",
+            "env"
+        ]
     },
     {
         "id": 21,
         "slug": "scene21-sheen-cloth",
-        "name": "Scene 21 \u2014 PBR Sheen Cloth",
+        "name": "Scene 21 — PBR Sheen Cloth",
         "maxMad": 0.01,
         "maxRawKB": 87,
         "maxGzipKB": 33,
         "description": "Cloth mesh with PBR sheen layer, blue albedo + fire texture. Country environment.",
-        "tags": ["pbr", "env"]
+        "tags": [
+            "pbr",
+            "env"
+        ]
     },
     {
         "id": 22,
         "slug": "scene22-pbr-shadows",
-        "name": "Scene 22 \u2014 PBR Shadows",
+        "name": "Scene 22 — PBR Shadows",
         "maxMad": 0.07,
         "maxRawKB": 102,
         "maxGzipKB": 37,
         "description": "Scene 4 variant with PBR ground material. Tests PBR multi-light shadow receiving (ESM + PCF).",
-        "tags": ["pbr", "shadow", "procedural", "multilight"]
+        "tags": [
+            "pbr",
+            "shadow",
+            "procedural",
+            "multilight"
+        ]
     },
     {
         "id": 23,
         "slug": "scene23-anisotropy",
-        "name": "Scene 23 \u2014 PBR Anisotropy",
+        "name": "Scene 23 — PBR Anisotropy",
         "maxMad": 0.02,
         "maxRawKB": 80,
         "maxGzipKB": 30,
         "description": "PBR metallic sphere with anisotropic reflections. DDS environment, no direct light.",
-        "tags": ["pbr", "env"]
+        "tags": [
+            "pbr",
+            "env"
+        ]
     },
     {
         "id": 24,
         "slug": "scene24-hillvalley",
-        "name": "Scene 24 \u2014 Hill Valley",
-        "maxMad": 0.01,
+        "name": "Scene 24 — Hill Valley",
+        "maxMad": 0.08,
         "maxRawKB": 59,
         "maxGzipKB": 23,
         "description": "Hill Valley town loaded from .babylon format. Pre-baked lighting, standard materials, free camera.",
-        "tags": ["std", "babylon"]
+        "tags": [
+            "std",
+            "babylon"
+        ]
     }
 ]

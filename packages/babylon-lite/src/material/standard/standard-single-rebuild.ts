@@ -68,7 +68,7 @@ export function buildSingleStandardRenderable(scene: SceneContext, mesh: Mesh): 
     const needsUV = (features & NEEDS_UV) !== 0;
     const needsUV2 = (features & NEEDS_UV2) !== 0;
     const hasShadow = (features & RECEIVE_SHADOWS) !== 0;
-    const isTransparent = (features & HAS_OPACITY_TEXTURE) !== 0;
+    const isTransparent = (features & HAS_OPACITY_TEXTURE) !== 0 || mat.alpha < 1;
 
     const boundTextures = collectStdBoundTextures(mat);
     for (const t of boundTextures) {

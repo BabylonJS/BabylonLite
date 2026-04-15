@@ -12,7 +12,7 @@ export function createStdAmbientFragment(usesUV2: boolean): ShaderFragment {
             { name: "ambientSampler", type: { kind: "sampler", samplerType: "sampler" }, visibility: STAGE_FRAGMENT },
         ],
         fragmentSlots: {
-            AD: `baseAmbientColor = textureSample(ambientTex, ambientSampler, ${uv}).rgb * mat.ambientTexLevel;`,
+            AD: `baseAmbientColor = textureSample(ambientTex, ambientSampler, ${uv}).rgb * mat.ambTexLvl;`,
         },
     };
 }

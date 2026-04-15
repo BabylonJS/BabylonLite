@@ -116,9 +116,15 @@ async function main(): Promise<void> {
 - Reverting unstaged changes is **destructive and irreversible**. There is no undo.
 - Only revert files that you can confirm were modified by your own edits or sub-agents in the current session.
 
+### 0b. Clean Up Before Commit (Mandatory)
+
+- **Before committing, delete ALL temporary/debug files** created during the session: isolated test scenes, debug screenshots, amplified diff images, pixel comparison scripts, Spector JSON captures, and any other artifacts not part of the final deliverable.
+- **Remove debug code**: `console.warn`/`console.log` diagnostics, `(window as any).__bjsScene` exposures, and shader debug overrides (e.g. `color = vec4(reflectionColor * 10, 1)`) must be reverted before commit.
+- **Run `git status --short`** and verify every untracked file (`??`) belongs in the commit. If it's a temp file, delete it.
+
 ### 1. Live Inspection Tooling (Zero Guesswork)
 
-- Use the **Spector.GPU** skill to capture reference frames from Babylon.js (WebGPU mode).
+- Use the **Spector.GPU** MCP tools (`spector-gpu-navigate`, `spector-gpu-capture`, `spector-gpu-get_resource`, etc.) to capture reference frames from Babylon.js (WebGPU mode).
 - Extract: buffer data, pipeline states, matrix math, shader outputs.
 - The parity harness runs Babylon.js (iframe oracle) side-by-side with Babylon Lite.
 - **Zero guesswork** — every rendering decision is validated against captured GPU state.
@@ -126,7 +132,17 @@ async function main(): Promise<void> {
     - Capture BOTH the reference scene AND our scene.
     - Compare: shaders, pipeline configs, uniform buffer contents, texture formats/sizes, draw call order.
     - Never guess pixel values, color formulas, or material parameters. Extract them from the captures.
-    - Spector CLI: `node C:\Repos\Spector.gpu\skills\spector-gpu-capture\capture-cli.js <URL> --headed --summary --textures`
+
+### 1b. Debugging Pixel Diffs — Isolate Before Analyzing (Mandatory)
+
+When a parity diff exists on specific meshes:
+
+1. **Identify the mesh** — use BJS picking (`scene.pick(x, y)`) on the hotspot pixel to get the mesh name and material.
+2. **Create a minimal isolated scene** — render ONLY the offending mesh(es) in both BJS and Lite with a black background. This eliminates occlusion, blending, and sorting noise.
+3. **Capture both with Spector** — with only 1-2 draw calls, you can directly compare UBO data, shader source, and texture bindings without searching through hundreds of commands.
+4. **Compare buffer values** — use `spector-gpu-get_resource` to read the exact float values in each UBO (world matrix, material uniforms, light data) and diff them between engines.
+5. **Compare shaders** — extract the fragment shader from both captures and diff the key statements (lighting equation, reflection computation, alpha handling).
+6. **Fix and verify** — make the fix, re-run the isolated scene to confirm the specific mesh now matches, then run the full parity test.
 
 ### 2. Iterative Scene-Based Evolution
 

@@ -11,7 +11,7 @@ export function createStdEmissiveFragment(): ShaderFragment {
             { name: "emissiveSampler", type: { kind: "sampler", samplerType: "sampler" }, visibility: STAGE_FRAGMENT },
         ],
         fragmentSlots: {
-            AT: `emissiveContrib = mat.vEmissiveColor * textureSample(emissiveTex, emissiveSampler, input.vUV).rgb * mat.textureLevel;`,
+            AT: `emissiveContrib = mat.ec * textureSample(emissiveTex, emissiveSampler, input.vUV).rgb * mat.tl;`,
         },
     };
 }

@@ -36,6 +36,7 @@ import {
     HAS_AMBIENT_TEXTURE,
     HAS_LIGHTMAP_TEXTURE,
     HAS_REFLECTION_TEXTURE,
+    HAS_CUBE_REFLECTION,
     LIGHTMAP_USES_UV2,
     AMBIENT_USES_UV2,
     SPECULAR_USES_UV2,
@@ -77,6 +78,7 @@ export interface StdFragmentFactories {
     lightmapFragment?: (usesUV2: boolean) => ShaderFragment;
     opacityFragment?: (fromRGB: boolean) => ShaderFragment;
     reflectionFragment?: () => ShaderFragment;
+    cubeReflectionFragment?: () => ShaderFragment;
 }
 
 /** Build Renderable(s) + a SceneUniformUpdater for a set of standard meshes.
@@ -129,6 +131,7 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
         lightmapFragment: lightmapFragmentFactory,
         opacityFragment: opacityFragmentFactory,
         reflectionFragment: reflectionFragmentFactory,
+        cubeReflectionFragment: cubeReflectionFragmentFactory,
     } = factories;
 
     // Group meshes by feature bitmask
@@ -171,6 +174,9 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
             }
             if (features & HAS_REFLECTION_TEXTURE && reflectionFragmentFactory) {
                 frags.push(reflectionFragmentFactory());
+            }
+            if (features & HAS_CUBE_REFLECTION && cubeReflectionFragmentFactory) {
+                frags.push(cubeReflectionFragmentFactory());
             }
             if (features & THIN_INSTANCES && tiFragmentFactory) {
                 const hasColor = !!(features & THIN_INSTANCE_COLOR);
@@ -236,7 +242,7 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
             sharedSceneUBO = variant.sceneUBO;
         }
 
-        const isTransparent = (variant.features & HAS_OPACITY_TEXTURE) !== 0;
+        const isTransparent = (variant.features & HAS_OPACITY_TEXTURE) !== 0 || (packets.length > 0 && (packets[0]!.mesh.material as StandardMaterialProps).alpha < 1);
         const hasThinInstances = (variant.features & THIN_INSTANCES) !== 0;
         const hasInstanceColor = (variant.features & THIN_INSTANCE_COLOR) !== 0;
 

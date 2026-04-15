@@ -27,7 +27,7 @@ export function createNormalMapFragment(): ShaderFragment {
         helperFunctions: WGSL_PERTURB_NORMAL,
 
         fragmentSlots: {
-            AC: `normalW = perturbNormal(input.vNormalW, input.vPositionW, input.vUV, mat.bumpScale);`,
+            AC: `normalW = perturbNormal(input.vNormalW, input.vPositionW, input.vUV, mat.bs);`,
         },
     };
 }

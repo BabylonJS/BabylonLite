@@ -12,7 +12,7 @@ export function createStdLightmapFragment(usesUV2: boolean): ShaderFragment {
             { name: "lightmapSampler", type: { kind: "sampler", samplerType: "sampler" }, visibility: STAGE_FRAGMENT },
         ],
         fragmentSlots: {
-            BC: `color = vec4<f32>(color.rgb + textureSample(lightmapTex, lightmapSampler, ${uv}).rgb * mat.lightmapLevel, color.a);`,
+            BC: `color = vec4<f32>(color.rgb + textureSample(lightmapTex, lightmapSampler, ${uv}).rgb * mat.lmLvl, color.a);`,
         },
     };
 }

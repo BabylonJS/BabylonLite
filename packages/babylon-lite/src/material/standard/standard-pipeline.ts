@@ -62,6 +62,8 @@ export const THIN_INSTANCES = 1 << 15;
 export const THIN_INSTANCE_COLOR = 1 << 16;
 export const DISABLE_LIGHTING = 1 << 17;
 export const PCF_SHADOWS = 1 << 18;
+const MATERIAL_ALPHA_BLEND = 1 << 19;
+export const HAS_CUBE_REFLECTION = 1 << 20;
 
 // ─── Pluggable Shadow Pipeline Extensions (tree-shakable) ──────────
 // PCF bind group layout config is registered at runtime by createPcfShadowGenerator().
@@ -89,54 +91,61 @@ export const NEEDS_UV2 = LIGHTMAP_USES_UV2 | AMBIENT_USES_UV2 | DIFFUSE_USES_UV2
 
 /** Compute feature bitmask from a mesh's material + receiveShadows flag. */
 export function computeFeatures(material: StandardMaterialProps, receiveShadows: boolean): number {
+    const m = material;
     let f = 0;
-    if (material.diffuseTexture) {
+    if (m.diffuseTexture) {
         f |= HAS_DIFFUSE_TEXTURE;
+        if (m.diffuseCoordIndex === 1) {
+            f |= DIFFUSE_USES_UV2;
+        }
     }
-    if (material.emissiveTexture) {
+    if (m.emissiveTexture) {
         f |= HAS_EMISSIVE_TEXTURE;
     }
     if (receiveShadows) {
         f |= RECEIVE_SHADOWS;
     }
-    if (material.bumpTexture) {
+    if (m.bumpTexture) {
         f |= HAS_BUMP_TEXTURE;
     }
-    if (material.specularTexture) {
+    if (m.specularTexture) {
         f |= HAS_SPECULAR_TEXTURE;
+        if (m.specularCoordIndex === 1) {
+            f |= SPECULAR_USES_UV2;
+        }
     }
-    if (material.ambientTexture) {
+    if (m.ambientTexture) {
         f |= HAS_AMBIENT_TEXTURE;
+        if (m.ambientCoordIndex === 1) {
+            f |= AMBIENT_USES_UV2;
+        }
     }
-    if (material.lightmapTexture) {
+    if (m.lightmapTexture) {
         f |= HAS_LIGHTMAP_TEXTURE;
+        if (m.lightmapCoordIndex === 1) {
+            f |= LIGHTMAP_USES_UV2;
+        }
     }
-    if (material.opacityTexture) {
+    if (m.opacityTexture) {
         f |= HAS_OPACITY_TEXTURE;
+        if (m.opacityFromRGB) {
+            f |= OPACITY_FROM_RGB;
+        }
     }
-    if (material.lightmapTexture && material.lightmapCoordIndex === 1) {
-        f |= LIGHTMAP_USES_UV2;
-    }
-    if (material.ambientTexture && material.ambientCoordIndex === 1) {
-        f |= AMBIENT_USES_UV2;
-    }
-    if (material.diffuseTexture && material.diffuseCoordIndex === 1) {
-        f |= DIFFUSE_USES_UV2;
-    }
-    if (material.specularTexture && material.specularCoordIndex === 1) {
-        f |= SPECULAR_USES_UV2;
-    }
-    if (material.opacityTexture && material.opacityFromRGB) {
-        f |= OPACITY_FROM_RGB;
-    }
-    if (!material.backFaceCulling) {
+    if (!m.backFaceCulling) {
         f |= DOUBLE_SIDED;
     }
-    if (material.reflectionTexture) {
+    if (m.reflectionTexture) {
         f |= HAS_REFLECTION_TEXTURE;
     }
-    if (material.disableLighting) {
+    if ((m as any).reflectionCubeTexture) {
+        f |= HAS_CUBE_REFLECTION;
+    }
+    if (m.disableLighting) {
         f |= DISABLE_LIGHTING;
+    }
+    if (m.alpha < 1) {
+        f |= MATERIAL_ALPHA_BLEND;
     }
     return f;
 }
@@ -315,8 +324,8 @@ export function getOrCreatePipeline(device: GPUDevice, format: GPUTextureFormat,
     const vertModule = device.createShaderModule({ code: vertSrc, label: `std-vert-f${features}` });
     const fragModule = device.createShaderModule({ code: fragSrc, label: `std-frag-f${features}` });
 
-    // Alpha blending for opacity-textured materials (matches BJS transparent group)
-    const needsBlend = (features & HAS_OPACITY_TEXTURE) !== 0;
+    // Alpha blending for opacity-textured or material-level alpha < 1 (matches BJS transparent group)
+    const needsBlend = (features & HAS_OPACITY_TEXTURE) !== 0 || (features & MATERIAL_ALPHA_BLEND) !== 0;
     const colorTarget: GPUColorTargetState = needsBlend
         ? {
               format,
@@ -400,6 +409,7 @@ export function createDynamicMeshGPU(
     const hasLightmapTex = (features & HAS_LIGHTMAP_TEXTURE) !== 0;
     const hasOpacityTex = (features & HAS_OPACITY_TEXTURE) !== 0;
     const hasReflectionTex = (features & HAS_REFLECTION_TEXTURE) !== 0;
+    const hasCubeReflection = (features & HAS_CUBE_REFLECTION) !== 0;
 
     // Mesh UBO — size from pipeline variant's composed shader spec
     const meshUBO = createUBO(device, variant.meshUboTotalBytes || 64, worldMatrix);
@@ -441,6 +451,10 @@ export function createDynamicMeshGPU(
     if (hasAmbientTex) {
         const tex = material.ambientTexture!;
         meshEntries.push({ binding: nextBinding++, resource: tex.texture.createView() }, { binding: nextBinding++, resource: tex.sampler });
+    }
+    if (hasCubeReflection) {
+        const cube = material.reflectionCubeTexture!;
+        meshEntries.push({ binding: nextBinding++, resource: cube.view }, { binding: nextBinding++, resource: cube.sampler });
     }
     if (hasEmissiveTex) {
         const tex = material.emissiveTexture!;
@@ -492,21 +506,22 @@ function createUBO(device: GPUDevice, size: number, data: Float32Array): GPUBuff
 
 /** Write standard material properties into a pre-allocated Float32Array (24 floats). */
 export function writeStdMaterialData(data: Float32Array, mat: StandardMaterialProps, textureLevel: number): void {
-    data[0] = mat.diffuseColor[0];
-    data[1] = mat.diffuseColor[1];
-    data[2] = mat.diffuseColor[2];
+    const { diffuseColor: dc, specularColor: sc, emissiveColor: ec, ambientColor: ac } = mat;
+    data[0] = dc[0];
+    data[1] = dc[1];
+    data[2] = dc[2];
     data[3] = mat.alpha;
-    data[4] = mat.specularColor[0];
-    data[5] = mat.specularColor[1];
-    data[6] = mat.specularColor[2];
+    data[4] = sc[0];
+    data[5] = sc[1];
+    data[6] = sc[2];
     data[7] = mat.specularPower;
-    data[8] = mat.emissiveColor[0];
-    data[9] = mat.emissiveColor[1];
-    data[10] = mat.emissiveColor[2];
+    data[8] = ec[0];
+    data[9] = ec[1];
+    data[10] = ec[2];
     data[11] = 1.0 / mat.bumpLevel;
-    data[12] = mat.ambientColor[0];
-    data[13] = mat.ambientColor[1];
-    data[14] = mat.ambientColor[2];
+    data[12] = ac[0];
+    data[13] = ac[1];
+    data[14] = ac[2];
     data[15] = textureLevel;
     data[16] = mat.ambientTexLevel;
     data[17] = mat.lightmapLevel;

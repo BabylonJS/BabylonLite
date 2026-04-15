@@ -41,6 +41,7 @@ export const standardGroupBuilder: MeshGroupBuilder & { _loadRebuildSingle?: () 
     const hasLightmap = meshes.some((m) => !!(m.material as any).lightmapTexture);
     const hasOpacity = meshes.some((m) => !!(m.material as any).opacityTexture);
     const hasReflection = meshes.some((m) => !!(m.material as any).reflectionTexture);
+    const hasCubeReflection = meshes.some((m) => !!(m.material as any).reflectionCubeTexture);
 
     let tiSync: ((device: GPUDevice, ti: any, pass: GPURenderPassEncoder | GPURenderBundleEncoder, slot: number, hasColor: boolean) => number) | undefined;
     let tiFragment: any;
@@ -52,6 +53,7 @@ export const standardGroupBuilder: MeshGroupBuilder & { _loadRebuildSingle?: () 
     let lightmapFragment: any;
     let opacityFragment: any;
     let reflectionFragment: any;
+    let cubeReflectionFragment: any;
 
     const imports: Promise<any>[] = [];
     if (hasTI) {
@@ -120,6 +122,13 @@ export const standardGroupBuilder: MeshGroupBuilder & { _loadRebuildSingle?: () 
             })
         );
     }
+    if (hasCubeReflection) {
+        imports.push(
+            import("./fragments/std-cube-reflection-fragment.js").then((m) => {
+                cubeReflectionFragment = m.createStdCubeReflectionFragment;
+            })
+        );
+    }
     if (imports.length > 0) {
         await Promise.all(imports);
     }
@@ -136,6 +145,7 @@ export const standardGroupBuilder: MeshGroupBuilder & { _loadRebuildSingle?: () 
         lightmapFragment,
         opacityFragment,
         reflectionFragment,
+        cubeReflectionFragment,
     });
 };
 // Lazy loader for the single-mesh rebuild function — loaded only when a material swap happens
@@ -183,10 +193,12 @@ export interface StandardMaterialProps {
     opacityLevel: number;
     /** When true, derive opacity from RGB luminance instead of .a channel. Default false. */
     opacityFromRGB: boolean;
-    /** Alpha test cutoff. Fragments with alpha < alphaCutOff are discarded. Default 0.4 (BJS convention). */
+    /** Alpha test cutoff. Fragments with alpha < alphaCutOff are discarded. Default 0 (no alpha test). */
     alphaCutOff: number;
     /** Optional reflection texture (2D spherical map). Null = no reflection. */
     reflectionTexture: Texture2D | null;
+    /** Optional cube reflection texture. Null = no cube reflection. */
+    reflectionCubeTexture: { texture: GPUTexture; view: GPUTextureView; sampler: GPUSampler } | null;
     /** Reflection intensity. Default 1.0. */
     reflectionLevel: number;
     /** Reflection coordinate mode. 1=spherical, 2=planar. Default 1. */
@@ -233,8 +245,9 @@ export function createStandardMaterial(): StandardMaterialProps {
         opacityTexture: null,
         opacityLevel: 1,
         opacityFromRGB: false,
-        alphaCutOff: 0.4,
+        alphaCutOff: 0,
         reflectionTexture: null,
+        reflectionCubeTexture: null,
         reflectionLevel: 1,
         reflectionCoordMode: 1,
         uvScale: [1, 1],

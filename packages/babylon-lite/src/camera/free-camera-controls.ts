@@ -112,9 +112,12 @@ export function attachFreeControl(camera: FreeCamera, canvas: HTMLCanvasElement,
             // Transform local direction → world space using camera orientation
             const cosY = Math.cos(fc._yaw);
             const sinY = Math.sin(fc._yaw);
-            camera.position.x += sinY * cdZ + cosY * cdX;
-            camera.position.y += cdY;
-            camera.position.z += cosY * cdZ - sinY * cdX;
+            const cosP = Math.cos(fc._pitch);
+            const sinP = Math.sin(fc._pitch);
+            // Forward/back moves in the camera's look direction (includes pitch)
+            camera.position.x += sinY * cosP * cdZ + cosY * cdX;
+            camera.position.y += sinP * cdZ + cdY;
+            camera.position.z += cosY * cosP * cdZ - sinY * cdX;
         }
 
         // Update target from yaw/pitch only when camera moved or rotated
