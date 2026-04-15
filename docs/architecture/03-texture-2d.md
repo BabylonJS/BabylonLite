@@ -1,9 +1,17 @@
-# Module: Texture2D
-> Package path: `packages/babylon-lite/src/texture/texture-2d.ts`
+# Module: Texture2D + KTX Loader
+> Package paths:
+> - `packages/babylon-lite/src/texture/texture-2d.ts` — Image-based texture loading
+> - `packages/babylon-lite/src/texture/ktx-loader.ts` — KTX1 compressed texture loading
+> - `packages/babylon-lite/src/texture/compressed-formats.ts` — GL→WebGPU format mapping
 
 ## Purpose
 
-Loads an image from a URL into a WebGPU texture with optional mipmap generation. Returns a ready-to-bind `Texture2D` object containing the GPU texture and a configured sampler. This is the standard texture loading path for all materials in Babylon Lite.
+Loads textures into WebGPU from two sources:
+
+1. **Image textures** (`loadTexture2D`) — Loads PNG/JPG from URL via `ImageBitmap` → `rgba8unorm` GPU texture with optional mipmap generation.
+2. **KTX1 compressed textures** (`loadKtxTexture2D`) — Loads GPU-compressed textures (ASTC, BC/DXT, ETC2) from KTX1 files with automatic format selection and PNG fallback. Fully tree-shakable: zero bytes if unused.
+
+Both return the same `Texture2D` interface — callers can't tell whether they got compressed or uncompressed.
 
 ---
 
@@ -45,6 +53,21 @@ export interface Texture2DOptions {
 export async function loadTexture2D(
   engine: Engine,
   url: string,
+  opts?: Texture2DOptions,
+): Promise<Texture2D>;
+
+/**
+ * Load a texture with KTX compressed format auto-selection and fallback.
+ * Tries each suffix in priority order, picks the first whose compressed format
+ * the GPU supports, fetches and parses the KTX1 file, and uploads compressed
+ * mip data. Falls back to loadTexture2D(engine, baseUrl) if none work.
+ *
+ * Fully tree-shakable: only bundled when explicitly imported.
+ */
+export async function loadKtxTexture2D(
+  engine: Engine,
+  baseUrl: string,
+  suffixes: string[],
   opts?: Texture2DOptions,
 ): Promise<Texture2D>;
 ```
@@ -229,9 +252,60 @@ loadTexture2D(device, url, opts)
 
 ## Dependencies
 
-- None (self-contained module)
+- `texture/compressed-formats.ts` — GL internal format → WebGPU format map (imported only by ktx-loader)
+- `resource/gpu-pool.ts` — `acquireTexture`, `getOrCreateSampler`
 - WebGPU API types (GPUDevice, GPUTexture, GPUSampler, etc.)
 - Browser APIs: `fetch`, `createImageBitmap`
+
+---
+
+## KTX1 Compressed Texture Loading
+
+### Supported Formats
+
+| Format Family | GL Hex Range | WebGPU Format | Device Feature |
+|--------------|-------------|---------------|----------------|
+| BC / S3TC / DXT | 0x83F0–0x8E8D | bc1..bc7 | `texture-compression-bc` |
+| ETC2 / EAC | 0x9270–0x9279 | etc2/eac | `texture-compression-etc2` |
+| ASTC 4×4–12×12 | 0x93B0–0x93DD | astc-NxM | `texture-compression-astc` |
+| PVRTC | — | *(not in WebGPU)* | — |
+
+### KTX1 Binary Format (64-byte header)
+
+```
+Offset  Size  Field
+ 0      12    Magic: «KTX 11»\r\n\x1A\n
+12       4    endianness (0x04030201 = little-endian)
+16       4    glType (0 = compressed)
+24       4    glFormat (0 = compressed)
+28       4    glInternalFormat → lookup in compressed-formats.ts
+36       4    pixelWidth
+40       4    pixelHeight
+56       4    numberOfMipmapLevels
+60       4    bytesOfKeyValueData
+```
+
+After header + key/value metadata, mip levels are stored largest-first:
+- `uint32 imageSize` + `imageData[imageSize]` + padding to 4-byte alignment
+
+### `loadKtxTexture2D` Flow
+
+```
+loadKtxTexture2D(engine, "grid.png", ["-astc.ktx", "-dxt.ktx", "-etc2.ktx"])
+  ├─ For each suffix: check device.features.has(requiredFeature)
+  ├─ For each supported suffix (try all, not just first):
+  │   ├─ Rewrite URL: "grid.png" → "grid-dxt.ktx"
+  │   ├─ fetch → ArrayBuffer → parseKtx1 → uploadCompressed
+  │   └─ On success: return Texture2D
+  │   └─ On failure: warn, try next suffix
+  └─ Fallback: loadTexture2D(engine, "grid.png")
+```
+
+### Tree-Shaking
+
+`loadKtxTexture2D` lives in `ktx-loader.ts` which statically imports `compressed-formats.ts`.
+If a scene never imports `loadKtxTexture2D`, both modules are fully tree-shaken to 0 bytes.
+`loadTexture2D` is NOT modified — zero bleed into non-KTX scenes.
 
 ---
 
@@ -253,3 +327,7 @@ loadTexture2D(device, url, opts)
 | File | Role |
 |------|------|
 | `src/texture/texture-2d.ts` | Image loading, GPU texture creation, mipmap generation, sampler creation |
+| `src/texture/ktx-loader.ts` | KTX1 parser, compressed texture upload, suffix selection, fallback to loadTexture2D |
+| `src/texture/compressed-formats.ts` | GL `glInternalFormat` → `{ gpuFormat, feature, blockW, blockH, blockBytes }` lookup table (lazy-init) |
+| `src/texture/solid-texture.ts` | Procedural 1×1 solid color texture |
+| `src/texture/generate-mipmaps.ts` | GPU mipmap generation via render passes |

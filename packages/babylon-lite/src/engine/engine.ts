@@ -44,6 +44,11 @@ export async function createEngine(canvas: HTMLCanvasElement): Promise<EngineCon
     if (adapter.features.has("float32-filterable")) {
         features.push("float32-filterable");
     }
+    for (const f of ["texture-compression-astc", "texture-compression-bc", "texture-compression-etc2"] as GPUFeatureName[]) {
+        if (adapter.features.has(f)) {
+            features.push(f);
+        }
+    }
     const device = await adapter.requestDevice({ requiredFeatures: features });
     const context = canvas.getContext("webgpu");
     if (!context) {
