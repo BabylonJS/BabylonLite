@@ -173,6 +173,9 @@ export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camer
         if (result.clearColor) {
             ctx.clearColor = result.clearColor;
         }
+        if (result.camera && !ctx.camera) {
+            ctx.camera = result.camera;
+        }
         if (result.animationGroups?.length) {
             const device = (ctx.engine as EngineContextInternal).device;
             const groups = result.animationGroups;

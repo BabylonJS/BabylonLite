@@ -46,8 +46,8 @@
         "slug": "scene4-shadows",
         "name": "Scene 4 — Shadows",
         "maxMad": 0.025,
-        "maxRawKB": 74,
-        "maxGzipKB": 27,
+        "maxRawKB": 75,
+        "maxGzipKB": 28,
         "description": "DirectionalLight, ESM shadow map with blur, heightmap ground, torus caster.",
         "tags": [
             "shadow",
@@ -116,7 +116,7 @@
         "slug": "scene9-sponza",
         "name": "Scene 9 — Sponza (.babylon)",
         "maxMad": 0.01,
-        "maxRawKB": 59,
+        "maxRawKB": 61,
         "maxGzipKB": 23,
         "description": "Sponza palace loaded from .babylon format. Standard materials with diffuse textures, point lights.",
         "tags": [
@@ -220,8 +220,8 @@
         "slug": "scene17-pbr-std-thin-instances",
         "name": "Scene 17 — PBR + Std TI",
         "maxMad": 0.021,
-        "maxRawKB": 90,
-        "maxGzipKB": 34,
+        "maxRawKB": 91,
+        "maxGzipKB": 35,
         "description": "Mixed PBR + Standard materials with thin instances and per-instance color. Env IBL, negative scale.",
         "tags": [
             "pbr",
@@ -233,8 +233,8 @@
         "slug": "scene18-spotlight-shadows",
         "name": "Scene 18 — PCF Shadows",
         "maxMad": 0.011,
-        "maxRawKB": 60,
-        "maxGzipKB": 23,
+        "maxRawKB": 61,
+        "maxGzipKB": 24,
         "description": "FreeCamera + SpotLight PCF shadow generator. Ground receives hard shadows from box.",
         "tags": [
             "std",
@@ -287,7 +287,7 @@
         "name": "Scene 22 — PBR Shadows",
         "maxMad": 0.07,
         "maxRawKB": 102,
-        "maxGzipKB": 37,
+        "maxGzipKB": 38,
         "description": "Scene 4 variant with PBR ground material. Tests PBR multi-light shadow receiving (ESM + PCF).",
         "tags": [
             "pbr",
@@ -301,8 +301,8 @@
         "slug": "scene23-anisotropy",
         "name": "Scene 23 — PBR Anisotropy",
         "maxMad": 0.02,
-        "maxRawKB": 80,
-        "maxGzipKB": 30,
+        "maxRawKB": 81,
+        "maxGzipKB": 31,
         "description": "PBR metallic sphere with anisotropic reflections. DDS environment, no direct light.",
         "tags": [
             "pbr",
@@ -320,6 +320,19 @@
         "tags": [
             "std",
             "babylon"
+        ]
+    },
+    {
+        "id": 25,
+        "slug": "scene25-ktx-texture",
+        "name": "Scene 25 — KTX Texture",
+        "maxMad": 0.5,
+        "maxRawKB": 58,
+        "maxGzipKB": 22,
+        "description": "Ground plane with KTX compressed texture (auto-format selection), UV tiling, FreeCamera, hemispheric light.",
+        "tags": [
+            "std",
+            "procedural"
         ]
     }
 ]

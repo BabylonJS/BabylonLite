@@ -16,4 +16,6 @@ export interface AssetContainer {
     animationGroups?: AnimationGroup[];
     /** Scene background color declared in the file. addToScene() applies it to scene.clearColor. */
     clearColor?: GPUColorDict;
+    /** Camera parsed from the file. addToScene() sets it as scene.camera when present. */
+    camera?: import("./camera/camera.js").Camera;
 }

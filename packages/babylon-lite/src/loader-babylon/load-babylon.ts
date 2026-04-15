@@ -137,6 +137,8 @@ export interface LoadBabylonOptions {
     maxMeshes?: number;
     /** Whether to load textures. Default: true. */
     loadTextures?: boolean;
+    /** Whether to parse the camera from the file. Default: true. */
+    loadCamera?: boolean;
 }
 
 /**
@@ -526,6 +528,11 @@ export async function loadBabylon(engine: EngineContext, url: string, opts: Load
         }
     }
 
+    // Parse camera (dynamically imported — zero cost when loadCamera=false or no cameras in file)
+    const camData =
+        opts.loadCamera !== false && data.cameras?.length ? ((data.activeCameraID ? data.cameras.find((c) => c.id === data.activeCameraID) : null) ?? data.cameras[0]!) : null;
+    const camera = camData ? (await import("./parse-camera.js")).parseBabylonCamera(camData) : undefined;
+
     // Return AssetContainer — addToScene() handles entity registration, clearColor, and cleanup.
     // Only root entities (not children of any other node) are included; addToScene() recurses.
     const rootMeshes = allMeshes.filter((m) => !childNodeIds.has(m.id!));
@@ -535,5 +542,5 @@ export async function loadBabylon(engine: EngineContext, url: string, opts: Load
             rootTransformNodes.push(node as TransformNode);
         }
     }
-    return { entities: [...lights, ...rootMeshes, ...rootTransformNodes], clearColor };
+    return { entities: [...lights, ...rootMeshes, ...rootTransformNodes], clearColor, camera };
 }
