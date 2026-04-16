@@ -68,8 +68,10 @@ export interface PbrTemplateConfig {
     readonly hasDoubleSided?: boolean;
     /** Has tonemap */
     readonly hasTonemap?: boolean;
-    /** Tonemap flavor when hasTonemap is true ("standard" = BJS default, "aces" = BJS ACES). */
-    readonly tonemapType?: "standard" | "aces";
+    /** ACES WGSL: tonemap helper functions (dynamically imported). Empty string = standard exponential tonemap. */
+    readonly acesHelpers?: string;
+    /** ACES WGSL: tonemap call block replacing the default exponential one. */
+    readonly acesTonemapCall?: string;
     /** Has alpha blending */
     readonly hasAlphaBlend?: boolean;
     /** Has specular AA */
@@ -117,7 +119,8 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
         hasSpecGloss = false,
         hasDoubleSided = false,
         hasTonemap = false,
-        tonemapType = "standard",
+        acesHelpers = "",
+        acesTonemapCall = "",
         hasAlphaBlend = false,
         hasSpecularAA = false,
         hasGammaAlbedo = false,
@@ -410,20 +413,13 @@ var directSpecular = vec3<f32>(0.0);
 /*BL*/`;
     }
 
-    // Tonemap: BJS TONEMAPPING_STANDARD (exponential) by default; ACES Fitted when requested.
-    const useAces = hasTonemap && tonemapType === "aces";
-    const acesBlock = useAces
-        ? `
-const ACESInputMat = mat3x3<f32>(vec3<f32>(0.59719,0.07600,0.02840),vec3<f32>(0.35458,0.90834,0.13383),vec3<f32>(0.04823,0.01566,0.83777));
-const ACESOutputMat = mat3x3<f32>(vec3<f32>(1.60475,-0.10208,-0.00327),vec3<f32>(-0.53108,1.10813,-0.07276),vec3<f32>(-0.07367,-0.00605,1.07602));
-fn RRTAndODTFit(v: vec3<f32>) -> vec3<f32> { let a = v*(v+0.0245786)-0.000090537; let b = v*(0.983729*v+0.4329510)+0.238081; return a/b; }
-fn ACESFitted(color: vec3<f32>) -> vec3<f32> { var c = ACESInputMat*color; c = RRTAndODTFit(c); c = ACESOutputMat*c; return saturate(c); }
-`
-        : "";
+    // Tonemap: BJS TONEMAPPING_STANDARD (exponential) by default; caller-supplied
+    // ACES WGSL (from pbr-aces-wgsl.ts) is used when provided.
+    const useAces = hasTonemap && acesTonemapCall !== "";
+    const acesBlock = useAces ? acesHelpers : "";
     const tonemapBlock = hasTonemap
         ? useAces
-            ? `color *= scene.exposureLinear;
-color = ACESFitted(color);`
+            ? acesTonemapCall
             : `color *= scene.exposureLinear;
 color = 1.0 - exp2(-1.590579 * color);`
         : `color *= scene.exposureLinear;`;

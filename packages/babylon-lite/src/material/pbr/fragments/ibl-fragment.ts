@@ -29,30 +29,11 @@ return vec3<f32>(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
 }
 `;
 
-function makeIblCalculation(hasNormalMap: boolean, anisoBentNormalCode: string = "", skyboxMode: boolean = false): string {
-    // Skybox mode: use -V as cubemap direction (camera→fragment), zero SH irradiance,
-    // but keep full BRDF/energy conservation to match BJS PBR skybox math.
-    if (skyboxMode) {
-        return `let R_raw = -V;
-let R = R_raw;
-let N_env = N;
-let brdf = textureSample(brdfLUT, brdfSampler_, vec2<f32>(NdotV, roughness));
-let environmentBrdf = brdf.rgb;
-let specularEnvironmentReflectance = (colorF90 - colorF0) * environmentBrdf.x + colorF0 * environmentBrdf.y;
-let seo = clamp((NdotVUnclamped + occlusion) * (NdotVUnclamped + occlusion) - 1.0 + occlusion, 0.0, 1.0);
-let eho = 1.0;
-let colorSpecularEnvReflectance = specularEnvironmentReflectance * seo * eho;
-let energyConservation = getEnergyConservationFactor(colorF0, max(environmentBrdf.y, 0.001));
-let environmentIrradiance = vec3<f32>(0.0);
-let maxLod = f32(textureNumLevels(iblTexture) - 1);
-let cubemapDim = f32(textureDimensions(iblTexture).x);
-var specLod = log2(cubemapDim * alphaG) * scene.lodGenerationScale;
-var environmentRadiance = textureSampleLevel(iblTexture, iblSampler, R, clamp(specLod, 0.0, maxLod)).rgb * material.environmentIntensity;
-environmentRadiance = mix(environmentRadiance, environmentIrradiance, alphaG);
-let finalIrradiance = environmentIrradiance * surfaceAlbedo * occlusion;
-let finalSpecularScaled = directSpecular * energyConservation;
-let finalRadianceScaled = environmentRadiance * colorSpecularEnvReflectance * energyConservation;
-color = finalIrradiance + finalRadianceScaled + finalSpecularScaled + directDiffuse + emissive;`;
+function makeIblCalculation(hasNormalMap: boolean, anisoBentNormalCode: string = "", skyboxCalculation: string = ""): string {
+    // Skybox mode: caller passes pre-baked WGSL (from ibl-skybox-wgsl.ts) to avoid
+    // bundling that ~1 KB string into scenes that don't use skyboxMode.
+    if (skyboxCalculation) {
+        return skyboxCalculation;
     }
 
     const ehoLine = hasNormalMap ? `let eho = environmentHorizonOcclusion(-V, N, N_geom);` : `let eho = 1.0;`;
@@ -92,9 +73,9 @@ color = finalIrradiance + finalRadianceScaled + finalSpecularScaled + directDiff
  * Create an IBL/environment fragment.
  * @param hasNormalMap Whether the material uses a normal map (enables horizon occlusion).
  * @param anisoBentNormalCode WGSL code for anisotropic bent normal (empty string = standard reflection).
- * @param skyboxMode When true, samples cubemap using -V (camera→fragment) and zeroes SH irradiance.
+ * @param skyboxCalculation Pre-baked skybox-mode WGSL from ibl-skybox-wgsl.ts (empty string = normal PBR).
  */
-export function createIblFragment(hasNormalMap: boolean, anisoBentNormalCode: string = "", skyboxMode: boolean = false): ShaderFragment {
+export function createIblFragment(hasNormalMap: boolean, anisoBentNormalCode: string = "", skyboxCalculation: string = ""): ShaderFragment {
     return {
         id: "ibl",
 
@@ -111,7 +92,7 @@ export function createIblFragment(hasNormalMap: boolean, anisoBentNormalCode: st
         helperFunctions: IBL_HELPERS,
 
         fragmentSlots: {
-            AI: makeIblCalculation(hasNormalMap, anisoBentNormalCode, skyboxMode),
+            AI: makeIblCalculation(hasNormalMap, anisoBentNormalCode, skyboxCalculation),
             BA: `luminanceOverAlpha += dot(finalRadianceScaled, vec3<f32>(0.2126, 0.7152, 0.0722));`,
         },
     };
