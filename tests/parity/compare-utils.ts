@@ -179,12 +179,21 @@ export interface CaptureGoldenOptions {
  * Opens babylon-ref-sceneN.html in a new page, waits for ready + animation freeze,
  * screenshots the canvas, and saves as babylon-ref-golden.png.
  *
+ * Skips capture if the golden file already exists on disk (committed references).
+ * Set RECAPTURE_GOLDEN=true to force recapture.
+ *
  * Must be called with the Page's browser (page.context().browser()).
  */
 export async function captureGolden(browser: Browser, opts: CaptureGoldenOptions): Promise<string> {
     const config = getSceneConfig(opts.sceneId);
     const refDir = path.resolve(__dirname, `../../reference/${config.slug}`);
     const goldenPath = path.join(refDir, "babylon-ref-golden.png");
+
+    // Skip capture if golden already exists (unless RECAPTURE_GOLDEN is set)
+    if (fs.existsSync(goldenPath) && !process.env.RECAPTURE_GOLDEN) {
+        return goldenPath;
+    }
+
     const timeout = opts.timeout ?? 60_000;
     const settleMs = opts.settleMs ?? 1500;
 

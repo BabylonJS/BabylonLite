@@ -153,6 +153,28 @@ export function stopEngine(engine: EngineContext): void {
     eng._renderFn = null;
 }
 
+/**
+ * Render a single frame synchronously (CPU-side command encoding + submit).
+ * The caller is responsible for calling this outside the RAF loop — use
+ * `stopEngine()` first if the loop is running.
+ *
+ * Returns a promise that resolves after the GPU has finished executing
+ * the submitted commands (`device.queue.onSubmittedWorkDone`).
+ */
+export async function renderOneFrame(engine: EngineContext, scene: SceneContext): Promise<void> {
+    const eng = engine as EngineContextInternal;
+    const sc = scene as SceneContextInternal;
+    resizeEngine(engine);
+    for (const cb of sc._beforeRender) {
+        cb(0);
+    }
+    if (sc._materialSwapQueue.length > 0) {
+        processMaterialSwaps(scene);
+    }
+    renderFrame(eng, eng._targets, sc);
+    await eng.device.queue.onSubmittedWorkDone();
+}
+
 /** Release all engine-owned GPU resources (render targets, device). */
 export function disposeEngine(engine: EngineContext): void {
     const eng = engine as EngineContextInternal;

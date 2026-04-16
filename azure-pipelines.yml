@@ -1,0 +1,252 @@
+# Azure Pipelines — Babylon Lite CI
+#
+# Runs on every PR targeting master. Five parallel jobs:
+#   1. Unit Tests       — vitest + plumbing (Playwright)
+#   2. Bundle Size      — ceiling checks + delta vs baseline
+#   3. Perf Regression  — Lite vs BJS on same agent (no baseline needed)
+#   4. Parity (Cloud)   — pixel-diff via cloud browser with real WebGPU
+#   5. Lint             — ESLint + TypeScript type-check
+#
+# Bundle-size baseline:
+#   baselines/bundle-size.json is committed to git and updated on each
+#   release via: pnpm build:bundle-scenes && pnpm snapshot:bundle-baseline
+
+trigger: none
+
+pr:
+    branches:
+        include:
+            - master
+
+variables:
+    NODE_VERSION: "22"
+    PNPM_VERSION: "9.15.4"
+    CI: "true"
+    HEADLESS: "true"
+
+stages:
+    - stage: CI
+      displayName: "PR Validation"
+      jobs:
+          # ──────────────────────────────────────────────────────────────
+          # Job 1: Unit Tests
+          # ──────────────────────────────────────────────────────────────
+          - job: UnitTests
+            displayName: "Unit Tests"
+            pool:
+                vmImage: "ubuntu-latest"
+            steps:
+                - checkout: self
+
+                - task: UseNode@1
+                  inputs:
+                      version: $(NODE_VERSION)
+
+                - script: |
+                      corepack enable
+                      corepack prepare pnpm@$(PNPM_VERSION) --activate
+                  displayName: "Enable pnpm via corepack"
+
+                - script: pnpm install --frozen-lockfile
+                  displayName: "Install dependencies"
+
+                - script: pnpm exec playwright install chromium
+                  displayName: "Install Playwright browsers"
+
+                - script: npx vitest run
+                  displayName: "Run vitest unit tests"
+
+                - script: |
+                      npx playwright test tests/plumbing/dispose.spec.ts
+                      npx playwright test tests/plumbing/material-swap.spec.ts
+                      npx playwright test tests/plumbing/memory-leak.spec.ts
+                      npx playwright test tests/plumbing/picking.spec.ts
+                  displayName: "Run plumbing tests"
+                  env:
+                      HEADLESS: "true"
+
+                - task: PublishTestResults@2
+                  condition: always()
+                  inputs:
+                      testResultsFormat: "JUnit"
+                      testResultsFiles: "**/test-results/**/*.xml"
+                      mergeTestResults: true
+                      testRunTitle: "Unit Tests"
+                  continueOnError: true
+
+                - publish: $(System.DefaultWorkingDirectory)/test-results
+                  artifact: unit-test-results
+                  condition: failed()
+                  displayName: "Upload test artifacts on failure"
+
+          # ──────────────────────────────────────────────────────────────
+          # Job 2: Bundle Size
+          # ──────────────────────────────────────────────────────────────
+          - job: BundleSize
+            displayName: "Bundle Size"
+            pool:
+                vmImage: "ubuntu-latest"
+            steps:
+                - checkout: self
+
+                - task: UseNode@1
+                  inputs:
+                      version: $(NODE_VERSION)
+
+                - script: |
+                      corepack enable
+                      corepack prepare pnpm@$(PNPM_VERSION) --activate
+                  displayName: "Enable pnpm via corepack"
+
+                - script: pnpm install --frozen-lockfile
+                  displayName: "Install dependencies"
+
+                - script: pnpm exec playwright install chromium
+                  displayName: "Install Playwright browsers"
+
+                - script: pnpm build:bundle-scenes
+                  displayName: "Build bundle scenes"
+                  env:
+                      SKIP_BJS: "true"
+
+                # Absolute ceiling checks (scene-config.json maxRawKB/maxGzipKB)
+                - script: npx playwright test tests/parity/bundle-size.spec.ts
+                  displayName: "Bundle size ceiling checks"
+                  env:
+                      HEADLESS: "true"
+
+                # Delta comparison vs committed baseline
+                - script: npx playwright test tests/parity/bundle-size-delta.spec.ts
+                  displayName: "Bundle size delta vs baseline"
+                  env:
+                      HEADLESS: "true"
+                      BUNDLE_DELTA_PCT: "$(BUNDLE_DELTA_PCT)"
+
+                - publish: $(System.DefaultWorkingDirectory)/test-results
+                  artifact: bundle-size-results
+                  condition: failed()
+                  displayName: "Upload test artifacts on failure"
+
+          # ──────────────────────────────────────────────────────────────
+          # Job 3: Performance Regression
+          # ──────────────────────────────────────────────────────────────
+          - job: PerfRegression
+            displayName: "Performance: Lite vs BJS"
+            pool:
+                vmImage: "ubuntu-latest"
+            steps:
+                - checkout: self
+
+                - task: UseNode@1
+                  inputs:
+                      version: $(NODE_VERSION)
+
+                - script: |
+                      corepack enable
+                      corepack prepare pnpm@$(PNPM_VERSION) --activate
+                  displayName: "Enable pnpm via corepack"
+
+                - script: pnpm install --frozen-lockfile
+                  displayName: "Install dependencies"
+
+                - script: pnpm exec playwright install chromium
+                  displayName: "Install Playwright browsers"
+
+                # Build current bundle scenes
+                - script: pnpm build:bundle-scenes
+                  displayName: "Build current bundle scenes"
+
+                # Build baseline bundle scenes from last release tag (or master)
+                - script: pnpm build:perf-baseline
+                  displayName: "Build baseline bundle scenes"
+
+                # Runs current vs baseline on same BrowserStack macOS Chrome instance
+                - script: pnpm test:perf-cloud
+                  displayName: "Run perf regression tests (current vs baseline)"
+                  env:
+                      HEADLESS: "true"
+                      PERF_REGRESSION_PCT: "$(PERF_REGRESSION_PCT)"
+                      PERF_FRAMES: "$(PERF_FRAMES)"
+                      PERF_RUNS: "$(PERF_RUNS)"
+                      PERF_WARMUP: "$(PERF_WARMUP)"
+                      BROWSERSTACK_USERNAME: "$(BROWSERSTACK_USERNAME)"
+                      BROWSERSTACK_ACCESS_KEY: "$(BROWSERSTACK_ACCESS_KEY)"
+
+                - publish: $(System.DefaultWorkingDirectory)/test-results
+                  artifact: perf-test-results
+                  condition: failed()
+                  displayName: "Upload test artifacts on failure"
+
+          # ──────────────────────────────────────────────────────────────
+          # Job 4: Parity (Cloud Browser)
+          # ──────────────────────────────────────────────────────────────
+          - job: ParityCloud
+            displayName: "Parity Tests (Cloud Browser)"
+            pool:
+                vmImage: "ubuntu-latest"
+            steps:
+                - checkout: self
+
+                - task: UseNode@1
+                  inputs:
+                      version: $(NODE_VERSION)
+
+                - script: |
+                      corepack enable
+                      corepack prepare pnpm@$(PNPM_VERSION) --activate
+                  displayName: "Enable pnpm via corepack"
+
+                - script: pnpm install --frozen-lockfile
+                  displayName: "Install dependencies"
+
+                - script: pnpm exec playwright install chromium
+                  displayName: "Install Playwright browsers"
+
+                - script: pnpm build:bundle-scenes
+                  displayName: "Build bundle scenes"
+
+                # Run parity tests via BrowserStack (macOS Chrome with real WebGPU)
+                # browserstack-node-sdk handles connection & local tunnel
+                # Requires BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY
+                # set as pipeline variables (secret)
+                - script: pnpm test:parity-cloud
+                  displayName: "Run parity tests (BrowserStack)"
+                  env:
+                      HEADLESS: "true"
+                      BROWSERSTACK_USERNAME: "$(BROWSERSTACK_USERNAME)"
+                      BROWSERSTACK_ACCESS_KEY: "$(BROWSERSTACK_ACCESS_KEY)"
+
+                - publish: $(System.DefaultWorkingDirectory)/test-results
+                  artifact: parity-cloud-results
+                  condition: failed()
+                  displayName: "Upload test artifacts on failure"
+
+                - publish: $(System.DefaultWorkingDirectory)/reference
+                  artifact: parity-reference-diffs
+                  condition: failed()
+                  displayName: "Upload reference diffs on failure"
+
+          # ──────────────────────────────────────────────────────────────
+          # Job 5: Lint
+          # ──────────────────────────────────────────────────────────────
+          - job: Lint
+            displayName: "Lint & Type Check"
+            pool:
+                vmImage: "ubuntu-latest"
+            steps:
+                - checkout: self
+
+                - task: UseNode@1
+                  inputs:
+                      version: $(NODE_VERSION)
+
+                - script: |
+                      corepack enable
+                      corepack prepare pnpm@$(PNPM_VERSION) --activate
+                  displayName: "Enable pnpm via corepack"
+
+                - script: pnpm install --frozen-lockfile
+                  displayName: "Install dependencies"
+
+                - script: pnpm run lint
+                  displayName: "ESLint + TypeScript type-check"
