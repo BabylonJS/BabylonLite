@@ -21,7 +21,18 @@ import type { Mesh } from "../mesh/mesh.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { EngineContextInternal } from "../engine/engine.js";
 import { getOrCreateSampler } from "../resource/gpu-pool.js";
-import { buildCasters, syncCasterMatrices, drawCasters, shadowMatrixChanged, writeShadowUboFields, buildLightViewMatrix, multiply4x4, createDepthSceneBGL, createShadowParamsUBO, createSharedShadowUBO } from "./shadow-base.js";
+import {
+    buildCasters,
+    syncCasterMatrices,
+    drawCasters,
+    shadowMatrixChanged,
+    writeShadowUboFields,
+    buildLightViewMatrix,
+    multiply4x4,
+    createDepthSceneBGL,
+    createShadowParamsUBO,
+    createSharedShadowUBO,
+} from "./shadow-base.js";
 import depthVertSrc from "../../shaders/shadow-depth.vertex.wgsl?raw";
 import depthFragSrc from "../../shaders/shadow-depth.fragment.wgsl?raw";
 import blurVertSrc from "../../shaders/shadow-blur.vertex.wgsl?raw";
@@ -339,7 +350,7 @@ export function createShadowGenerator(engine: EngineContext, light: DirectionalL
                 sg._version++;
                 device.queue.writeBuffer(depthSceneUBO, 0, lightMatrix as Float32Array<ArrayBuffer>);
                 writeShadowUboFields(shadowUboData, sg);
-                device.queue.writeBuffer(sharedShadowUBO, 0, shadowUboData);
+                device.queue.writeBuffer(sharedShadowUBO, 0, shadowUboData as Float32Array<ArrayBuffer>);
             }
         }
         _lastLightVer = lv;

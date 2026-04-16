@@ -17,7 +17,7 @@ async function main(): Promise<void> {
     addToScene(scene, container);
 
     const cam = createArcRotateCamera(2.372, 1, 5, { x: 0, y: 1, z: 0 });
-    cam.minZ = 0.01;
+    cam.nearPlane = 0.01;
     scene.camera = cam;
     attachControl(cam, canvas, scene);
 

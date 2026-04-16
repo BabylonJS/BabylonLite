@@ -20,7 +20,18 @@ import type { Mesh } from "../mesh/mesh.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { EngineContextInternal } from "../engine/engine.js";
 import type { ShadowGenerator } from "./shadow-generator.js";
-import { buildCasters, syncCasterMatrices, drawCasters, shadowMatrixChanged, writeShadowUboFields, buildLightViewMatrix, multiply4x4, createDepthSceneBGL, createSharedShadowUBO, createShadowParamsUBO } from "./shadow-base.js";
+import {
+    buildCasters,
+    syncCasterMatrices,
+    drawCasters,
+    shadowMatrixChanged,
+    writeShadowUboFields,
+    buildLightViewMatrix,
+    multiply4x4,
+    createDepthSceneBGL,
+    createSharedShadowUBO,
+    createShadowParamsUBO,
+} from "./shadow-base.js";
 import depthVertSrc from "../../shaders/shadow-pcf-depth.vertex.wgsl?raw";
 import { registerPcfShadowShader } from "../material/standard/standard-pipeline.js";
 import { registerPcfShadowBgl } from "../material/standard/standard-pipeline.js";
@@ -224,7 +235,7 @@ export function createPcfShadowGenerator(engine: EngineContext, light: SpotLight
                     device.queue.writeBuffer(depthSceneUBO, 0, lightMatrix as Float32Array<ArrayBuffer>);
                     // Update shared shadow UBO for all receivers
                     writeShadowUboFields(shadowUboData, sg);
-                    device.queue.writeBuffer(sharedShadowUBO, 0, shadowUboData);
+                    device.queue.writeBuffer(sharedShadowUBO, 0, shadowUboData as Float32Array<ArrayBuffer>);
                 }
             }
             _lastPcfCasterVerSum = casterVerSum;

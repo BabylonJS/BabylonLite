@@ -119,15 +119,7 @@ export function buildLightViewMatrix(dirX: number, dirY: number, dirZ: number, p
     const uz = fx * ry - fy * rx;
 
     // Column-major view matrix (stores basis as rows of rotation, plus translation column)
-    return new Float32Array([
-        rx, ux, fx, 0,
-        ry, uy, fy, 0,
-        rz, uz, fz, 0,
-        -(rx * px + ry * py + rz * pz),
-        -(ux * px + uy * py + uz * pz),
-        -(fx * px + fy * py + fz * pz),
-        1,
-    ]);
+    return new Float32Array([rx, ux, fx, 0, ry, uy, fy, 0, rz, uz, fz, 0, -(rx * px + ry * py + rz * pz), -(ux * px + uy * py + uz * pz), -(fx * px + fy * py + fz * pz), 1]);
 }
 
 /** Multiply two column-major 4x4 matrices: out = a * b. */
