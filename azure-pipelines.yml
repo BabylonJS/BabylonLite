@@ -74,21 +74,10 @@ stages:
                       testRunTitle: "Unit Tests"
                   continueOnError: true
 
-                - publish: $(System.DefaultWorkingDirectory)/test-results
-                  artifact: unit-test-results
-                  condition: failed()
-                  displayName: "Upload test artifacts on failure"
-
-                - script: npx tsx scripts/post-test-summary.ts
+                - script: npx tsx scripts/report-test-results.ts test-results/unit-junit.xml
                   condition: always()
                   continueOnError: true
-                  displayName: "Post test summary to PR"
-                  env:
-                      GITHUB_TOKEN: "$(GITHUB_TOKEN)"
-                      GITHUB_REPOSITORY: "$(Build.Repository.Name)"
-                      PR_NUMBER: "$(System.PullRequest.PullRequestNumber)"
-                      JUNIT_FILES: "test-results/unit-junit.xml"
-                      COMMENT_TAG: "unit-test-summary"
+                  displayName: "Report test results"
 
           # ──────────────────────────────────────────────────────────────
           # Job 2: Bundle Size
@@ -194,21 +183,10 @@ stages:
                       testRunTitle: "Perf Regression"
                   continueOnError: true
 
-                - publish: $(System.DefaultWorkingDirectory)/test-results
-                  artifact: perf-test-results
-                  condition: always()
-                  displayName: "Upload perf test artifacts"
-
-                - script: npx tsx scripts/post-test-summary.ts
+                - script: npx tsx scripts/report-test-results.ts test-results/perf-junit.xml
                   condition: always()
                   continueOnError: true
-                  displayName: "Post test summary to PR"
-                  env:
-                      GITHUB_TOKEN: "$(GITHUB_TOKEN)"
-                      GITHUB_REPOSITORY: "$(Build.Repository.Name)"
-                      PR_NUMBER: "$(System.PullRequest.PullRequestNumber)"
-                      JUNIT_FILES: "test-results/perf-junit.xml"
-                      COMMENT_TAG: "perf-test-summary"
+                  displayName: "Report test results"
 
           # ──────────────────────────────────────────────────────────────
           # Job 4: Parity (Cloud Browser)
@@ -258,26 +236,10 @@ stages:
                       testRunTitle: "Parity (Cloud)"
                   continueOnError: true
 
-                - publish: $(System.DefaultWorkingDirectory)/test-results
-                  artifact: parity-cloud-results
-                  condition: always()
-                  displayName: "Upload parity test artifacts"
-
-                - publish: $(System.DefaultWorkingDirectory)/reference
-                  artifact: parity-reference-diffs
-                  condition: failed()
-                  displayName: "Upload reference diffs on failure"
-
-                - script: npx tsx scripts/post-test-summary.ts
+                - script: npx tsx scripts/report-test-results.ts test-results/parity-junit.xml
                   condition: always()
                   continueOnError: true
-                  displayName: "Post test summary to PR"
-                  env:
-                      GITHUB_TOKEN: "$(GITHUB_TOKEN)"
-                      GITHUB_REPOSITORY: "$(Build.Repository.Name)"
-                      PR_NUMBER: "$(System.PullRequest.PullRequestNumber)"
-                      JUNIT_FILES: "test-results/parity-junit.xml"
-                      COMMENT_TAG: "parity-test-summary"
+                  displayName: "Report test results"
 
           # ──────────────────────────────────────────────────────────────
           # Job 5: Lint
