@@ -20,6 +20,8 @@ export interface ImageProcessingConfig {
     exposure: number;
     contrast: number;
     toneMappingEnabled: boolean;
+    /** "standard" (BJS TONEMAPPING_STANDARD, default) or "aces" (BJS TONEMAPPING_ACES). */
+    toneMappingType?: "standard" | "aces";
 }
 
 /** Top-level scene context — pure state, no attached methods. */

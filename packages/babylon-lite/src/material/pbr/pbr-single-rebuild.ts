@@ -25,7 +25,7 @@ import {
     PBR_HAS_RECEIVE_SHADOWS,
     PBR_HAS_GAMMA_ALBEDO,
 } from "./pbr-pipeline.js";
-import { getLightTypeFeatureBits, PBR_HAS_OCCLUSION, PBR_HAS_CLEARCOAT, PBR_HAS_SHEEN, PBR_HAS_USE_ALPHA_ONLY_MR } from "./pbr-flags.js";
+import { getLightTypeFeatureBits, PBR_HAS_OCCLUSION, PBR_HAS_CLEARCOAT, PBR_HAS_SHEEN, PBR_HAS_USE_ALPHA_ONLY_MR, _getSubsurfaceExt } from "./pbr-flags.js";
 import { _createPbrMeshUBO, _createPbrMaterialUBO } from "./pbr-renderable.js";
 
 /** Build a single Renderable for one mesh after a PBR material swap.
@@ -89,6 +89,10 @@ export function buildSinglePbrRenderable(scene: SceneContext, mesh: Mesh): Rende
     }
     if (mat.gammaAlbedo) {
         features |= PBR_HAS_GAMMA_ALBEDO;
+    }
+    const ssE = _getSubsurfaceExt();
+    if (ssE) {
+        features |= ssE.detect(mat);
     }
 
     const composed = composePbr!(features);

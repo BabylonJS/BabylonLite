@@ -6,6 +6,7 @@
 import type { Texture2D } from "../../texture/texture-2d.js";
 import type { MeshGroupBuilder } from "../../render/renderable.js";
 import type { SceneContextInternal } from "../../scene/scene.js";
+import { _getSubsurfaceExt } from "./pbr-flags.js";
 
 /** Lazy-imports the PBR renderable builder and builds the pipeline.
  *  Thin instances are handled by the fragment composer automatically. */
@@ -70,6 +71,14 @@ export interface PbrMaterialProps {
     /** Anisotropy layer configuration. When set with isEnabled=true, stretches specular
      *  highlights along a preferred direction. Tree-shakable — only bundled when used. */
     anisotropy?: AnisotropyProps;
+    /** Subsurface configuration. Presence of nested sub-features (translucency, scattering)
+     *  enables them — no isEnabled booleans needed. Tree-shakable — only bundled when used. */
+    subsurface?: SubSurfaceProps;
+    /** When true, the material samples the environment cubemap using the view direction
+     *  (camera→fragment) instead of the reflected view direction. Used for PBR skybox boxes
+     *  where the mesh surrounds the camera and should display the environment directly.
+     *  Also zeroes SH irradiance — skybox is pure cubemap + BRDF only. */
+    skyboxMode?: boolean;
 }
 
 /** @internal Extended PbrMaterialProps with internal build group. */
@@ -116,6 +125,56 @@ export interface AnisotropyProps {
     direction?: [number, number];
 }
 
+/** Translucency sub-feature. Presence enables translucency (no isEnabled boolean). */
+export interface TranslucencyProps {
+    /** Translucency intensity (0=off, 1=full). Default 1.0. */
+    intensity?: number;
+    /** Translucency color (linear RGB). Tints the transmitted light. Default [1,1,1]. */
+    color?: [number, number, number];
+    /** Diffusion distance for the Burley transmittance BRDF. Controls how far
+     *  light travels through the material per RGB channel. Default [1,1,1]. */
+    diffusionDistance?: [number, number, number];
+}
+
+/** Scattering sub-feature. Presence enables screen-space subsurface scattering.
+ *  NOTE: PrePass/SSS pipeline is not yet implemented — this type is reserved. */
+export interface ScatteringProps {
+    /** Per-channel scattering diffusion distance. */
+    diffusionDistance?: [number, number, number];
+    /** World-space scale factor for the diffusion kernel. Default 1.0. */
+    metersPerUnit?: number;
+}
+
+/** Thickness sub-feature. Controls how thick the material is at each point. */
+export interface ThicknessProps {
+    /** Thickness map texture. G channel is sampled (BJS default / glTF-style). */
+    texture?: Texture2D;
+    /** Minimum thickness. Default 0. */
+    min?: number;
+    /** Maximum thickness. Default 1.0. */
+    max?: number;
+}
+
+/** Tint sub-feature. Controls absorption tint color for transmittance. */
+export interface TintProps {
+    /** Tint color (linear RGB). Default [1,1,1]. */
+    color?: [number, number, number];
+    /** Distance at which the tint color is reached. Default 1.0. */
+    atDistance?: number;
+}
+
+/** Subsurface configuration. Nested sub-features — presence = enabled. */
+export interface SubSurfaceProps {
+    /** Translucency: light passing through thin surfaces. */
+    translucency?: TranslucencyProps;
+    /** Scattering: screen-space subsurface scattering (PrePass). Reserved — not yet implemented. */
+    scattering?: ScatteringProps;
+    /** Thickness: per-texel thickness for transmittance. */
+    thickness?: ThicknessProps;
+    /** Tint: absorption tint color for transmittance. */
+    tint?: TintProps;
+}
+
 /** Create a PbrMaterialProps with optional overrides. */
 export function createPbrMaterial(props?: Partial<PbrMaterialProps>): PbrMaterialProps {
     return {
@@ -151,5 +210,6 @@ export function collectPbrBoundTextures(mat: PbrMaterialProps): Texture2D[] {
     if (mat.sheen?.texture) {
         t.push(mat.sheen.texture);
     }
+    _getSubsurfaceExt()?.textures(mat, t);
     return t;
 }

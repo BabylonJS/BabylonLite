@@ -36,6 +36,7 @@ import {
     PBR_HAS_SHEEN,
     PBR_HAS_USE_ALPHA_ONLY_MR,
     PBR_HAS_ANISOTROPY,
+    _getSubsurfaceExt,
     _setPbrLightExtension,
     _getPbrLightExtension,
     getLightTypeFeatureBits,
@@ -300,6 +301,8 @@ export function createPbrMeshBindGroup(
             addTex(material.reflectanceTexture);
         }
     }
+    // Fragment bindings: subsurface thickness map (after reflectance, "subsurface" sorts last)
+    _getSubsurfaceExt()?.bind(features, material, entries, b);
 
     return device.createBindGroup({ layout: variant.meshBGL, entries });
 }

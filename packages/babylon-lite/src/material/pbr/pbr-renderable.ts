@@ -46,6 +46,7 @@ import {
 import { PBR_HAS_THIN_INSTANCES, PBR_HAS_INSTANCE_COLOR } from "./pbr-pipeline.js";
 import {
     _getPbrLightExtension,
+    _getSubsurfaceExt,
     getLightTypeFeatureBits,
     PBR_HAS_EMISSIVE,
     PBR_HAS_ENV,
@@ -60,6 +61,7 @@ import {
     PBR_HAS_SHEEN,
     PBR_HAS_USE_ALPHA_ONLY_MR,
     PBR_HAS_ANISOTROPY,
+    PBR_HAS_SKYBOX,
 } from "./pbr-flags.js";
 import type { PbrPipelineVariant } from "./pbr-pipeline.js";
 import type { ShadowGenerator } from "../../shadow/shadow-generator.js";
@@ -136,7 +138,7 @@ export async function buildPbrRenderables(
     // ── Dynamically import fragment creators based on scene capabilities ──
 
     // IBL fragment
-    let _createIblFragment: ((hasNormalMap: boolean, anisoBentNormalCode?: string) => ShaderFragment) | null = null;
+    let _createIblFragment: ((hasNormalMap: boolean, anisoBentNormalCode?: string, skyboxMode?: boolean) => ShaderFragment) | null = null;
     if (hasEnv) {
         const mod = await import("./fragments/ibl-fragment.js");
         _createIblFragment = mod.createIblFragment;
@@ -165,6 +167,10 @@ export async function buildPbrRenderables(
         _LIGHTS_UBO_SIZE = lightsUboMod.LIGHTS_UBO_SIZE;
         _multiLightWGSL = wgslMod.MULTI_LIGHT_STRUCTS + wgslMod.COMPUTE_PBR_LIGHT;
         _multiLightLoop = wgslMod.MULTI_LIGHT_LOOP;
+    } else if (scene.lights.length > 0) {
+        // Single-light PBR path: still need version tracking so scene UBO refreshes when the light moves.
+        const lightsUboMod = await import("../../render/lights-ubo.js");
+        _computeLightsVersion = lightsUboMod.computeLightsVersion;
     }
 
     // Per-mesh fragment creators (imported if any mesh needs them)
@@ -197,6 +203,12 @@ export async function buildPbrRenderables(
     if (hasAnyAnisotropy) {
         _anisoExt = await import("./fragments/anisotropy-fragment.js");
     }
+
+    const hasAnySubsurface = meshes.some((m) => !!(m.material as PbrMaterialProps).subsurface?.translucency);
+    if (hasAnySubsurface && !_getSubsurfaceExt()) {
+        await import("./install-subsurface.js");
+    }
+    const _ssExt = _getSubsurfaceExt();
 
     const needsEmissiveColor = meshes.some((m) => !!(m.material as PbrMaterialProps).emissiveColor);
     let _createEmissiveColorFragment: ((hasTex: boolean) => ShaderFragment) | null = null;
@@ -272,6 +284,7 @@ export async function buildPbrRenderables(
             hasSpecGloss: has(PBR_HAS_SPEC_GLOSS),
             hasDoubleSided: has(PBR_HAS_DOUBLE_SIDED),
             hasTonemap: has(PBR_HAS_TONEMAP),
+            tonemapType: scene.imageProcessing.toneMappingType ?? "standard",
             hasAlphaBlend: has(PBR_HAS_ALPHA_BLEND),
             hasSpecularAA: has(PBR_HAS_SPECULAR_AA),
             hasGammaAlbedo: has(PBR_HAS_GAMMA_ALBEDO),
@@ -310,7 +323,13 @@ export async function buildPbrRenderables(
         }
         if (hasIbl && _createIblFragment) {
             const anisoBentCode = hasAniso && _anisoExt ? _anisoExt.ANISO_BENT_NORMAL : "";
-            frags.push(_createIblFragment(hasNormal || hasCotangent, anisoBentCode));
+            frags.push(_createIblFragment(hasNormal || hasCotangent, anisoBentCode, has(PBR_HAS_SKYBOX)));
+        }
+        if (_ssExt) {
+            const ssFrag = _ssExt.frag(f, hasIbl);
+            if (ssFrag) {
+                frags.push(ssFrag as ShaderFragment);
+            }
         }
         if (hasShadow && _createPbrShadowFragment) {
             const slots = shadowLights.map((sl) => ({ lightIndex: sl.lightIndex, shadowType: sl.shadowType }));
@@ -431,6 +450,12 @@ export async function buildPbrRenderables(
         }
         if (mat.anisotropy?.isEnabled) {
             features |= PBR_HAS_ANISOTROPY;
+        }
+        if (mat.skyboxMode) {
+            features |= PBR_HAS_SKYBOX;
+        }
+        if (_ssExt) {
+            features |= _ssExt.detect(mat);
         }
         if (mesh.thinInstances) {
             features |= PBR_HAS_THIN_INSTANCES;
@@ -785,6 +810,8 @@ function writeMaterialData(data: Float32Array, material: PbrMaterialProps, spec:
         data[off + 1] = dir[0]!;
         data[off + 2] = dir[1]!;
     }
+
+    _getSubsurfaceExt()?.ubo(data, material, spec.offsets);
 }
 
 /** Create a material UBO from the ComposedShader's materialUboSpec. */

@@ -4,6 +4,12 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import "@babylonjs/core/Materials/standardMaterial";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+// Force KTX1 texture loader registration before scene.whenReadyAsync() —
+// without this, the loader is registered via dynamic import on first use and
+// scene.whenReadyAsync() may resolve before the compressed upload completes,
+// leaving the diffuse sampler bound to a black fallback (observed on
+// BrowserStack macOS Sonoma WebGPU).
+import "@babylonjs/core/Materials/Textures/Loaders/ktxTextureLoader";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
