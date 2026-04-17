@@ -22,14 +22,6 @@ const pointPbrExtension: PbrLightExtension = {
         { name: "_pointPad", type: "vec3<f32>" },
     ],
 
-    emitSceneUboFields(): string {
-        return `lightPosition: vec3<f32>,
-lightIntensity: f32,
-lightDiffuseColor: vec3<f32>,
-lightRange: f32,
-_pointPad: vec3<f32>,\n`;
-    },
-
     emitLightVector(): string {
         return `let lightToFrag = scene.lightPosition - input.worldPos;
 let lightDist2 = dot(lightToFrag, lightToFrag);

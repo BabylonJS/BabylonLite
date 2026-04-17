@@ -21,15 +21,6 @@ const directionalPbrExtension: PbrLightExtension = {
         { name: "lightGroundColor", type: "vec3<f32>" },
     ],
 
-    emitSceneUboFields(): string {
-        // Same UBO layout as hemispheric — groundColor present but zeroed
-        return `lightDirection: vec3<f32>,
-lightIntensity: f32,
-lightDiffuseColor: vec3<f32>,
-_pad1: f32,
-lightGroundColor: vec3<f32>,\n`;
-    },
-
     emitLightVector(): string {
         return `let L = normalize(-scene.lightDirection);
 let NdotL = max(dot(N, L), 0.0);
