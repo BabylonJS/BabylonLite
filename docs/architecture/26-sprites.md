@@ -270,6 +270,7 @@ export function stopSprite2DClip(layer: Sprite2DLayer, index: number): void;
 - **Per-sprite opacity is `color.a`.** There is no separate `opacity` field on a sprite. Final pixel alpha is `textureSampleAlpha × color.a × layer.opacity`. Callers that animate “tint” and “opacity” as logically separate values (e.g. a Lottie player) pre-multiply them on the CPU into `color`. The per-layer `opacity` UBO field stays free for whole-layer fades.
 - **`visible: false` keeps the slot but emits a degenerate quad.** When a sprite is invisible, `pack` writes `sizePx = [0, 0]` (or `sizeWorld = [0, 0]`) into its slot, so the vertex shader collapses all six vertices to a single point and the GPU rasterizes nothing. The slot is not removed, indices are stable, no resort is triggered. Cost: same upload bandwidth as a visible sprite, no fragment work. For dense visibility churn, split into two layers (one always-visible, one never-visible) instead.
 - **Transforms are flat world-space.** Sprites have no parent/child relationship. Hierarchy (character rigs, UI panel trees, Lottie parented layers) is the responsibility of the caller — a future skeleton, GUI, or Lottie module computes flattened world transforms and feeds them to `update*({ position, rotation, sizePx, … })`. This matches how thin-instances work in Lite.
+- **`*Init.clip` is a convenience.** Passing a `SpriteClipState` to `add*` is equivalent to `add*({ …, clip: undefined })` followed by `play*Clip(layer, idx, state.clipName)`. The clip state is stored in a side `Map<index, SpriteClipState>` on the layer (sparse — only sprites with active clips have entries), not in the packed instance buffer. `setSprite*Frame` and `play*Clip` mutate this map; the per-frame render loop iterates only the map's entries.
 
 ### Family 2 — Anchored Sprite Layer (3D scene, fixed pixel size)
 
@@ -436,24 +437,39 @@ All families use **64-byte aligned strides**. Layouts differ slightly because th
 
 #### Sprite2DLayer (80 B = 20 floats)
 
-| Offset (floats) | Field         | Notes                                        |
-| --------------- | ------------- | -------------------------------------------- |
-| 0..1            | `positionPx`  | layer-space pixels                           |
-| 2..3            | `sizePx`      | width/height in pixels                       |
-| 4..5            | `pivot`       | normalized [0,1]                             |
-| 6..7            | `sinCos`      | precomputed sin/cos of rotation              |
-| 8..11           | `uvRect`      | uvMin.xy, uvMax.xy                           |
-| 12..15          | `color`       | RGBA tint                                    |
-| 16              | `layerZ`      | ordering scalar (front-to-back inside layer) |
-| 17..19          | `flagsAndPad` | invertU, invertV, reserved                   |
+| Offset (floats) | Field         | Notes                                                                                                                                                                                                                                                           |
+| --------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0..1            | `positionPx`  | layer-space pixels                                                                                                                                                                                                                                              |
+| 2..3            | `sizePx`      | width/height in pixels                                                                                                                                                                                                                                          |
+| 4..5            | `pivot`       | normalized [0,1]                                                                                                                                                                                                                                                |
+| 6..7            | `sinCos`      | precomputed sin/cos of rotation                                                                                                                                                                                                                                 |
+| 8..11           | `uvRect`      | uvMin.xy, uvMax.xy                                                                                                                                                                                                                                              |
+| 12..15          | `color`       | RGBA tint                                                                                                                                                                                                                                                       |
+| 16              | `layerZ`      | ordering scalar (front-to-back inside layer)                                                                                                                                                                                                                    |
+| 17..19          | `flagsAndPad` | float‑encoded flags: `[0]=flipX (0.0/1.0)`, `[1]=flipY (0.0/1.0)`, `[2]=reserved`. Stored as floats (not packed bits) so the WGSL reads `in.flipX = flagsAndPad.x > 0.5;` with no bit-twiddling. The CPU pack helper writes `1.0` for true and `0.0` for false. |
 
 #### AnchoredSpriteLayer (96 B = 24 floats)
 
-Adds world position (3 floats), depthBias (1), and pixel offset (2) before the screen-space size/rotation/UV/color block.
+| Offset (floats) | Field         | Notes                                                                                         |
+| --------------- | ------------- | --------------------------------------------------------------------------------------------- |
+| 0..2            | `worldPos`    | world-space anchor                                                                            |
+| 3               | `depthBias`   | NDC-z bias added after projection (positive = pushed toward camera)                           |
+| 4..5            | `offsetPx`    | pixel offset added to the rotated quad before pixel-snap                                      |
+| 6..7            | `sizePx`      | width/height in pixels                                                                        |
+| 8..9            | `pivot`       | normalized [0,1]                                                                              |
+| 10..11          | `sinCos`      | precomputed sin/cos of rotation                                                               |
+| 12..15          | `uvRect`      | uvMin.xy, uvMax.xy                                                                            |
+| 16..19          | `color`       | RGBA tint                                                                                     |
+| 20..23          | `flagsAndPad` | `[0]=flipX`, `[1]=flipY`, `[2..3]=reserved` — same float-encoding convention as Sprite2DLayer |
 
 #### BillboardSpriteSystem (96 B = 24 floats)
 
-Same 24-float stride as anchored, but `sizePx` is replaced by `sizeWorld`. The lock axis (axis-locked variant only) lives in the **system UBO**, not per-sprite.
+Identical layout to AnchoredSpriteLayer, with two semantic differences:
+
+- Floats 6..7 carry `sizeWorld` (world units) instead of `sizePx`.
+- Floats 3 (`depthBias`) and 4..5 (`offsetPx`) are **reserved / unused** in the billboard vertex shaders (kept in the layout to share the pack helper signature with AnchoredSpriteLayer; the CPU pack helper writes 0.0).
+
+The lock axis (axis-locked variant only) lives in the **system UBO**, not per-sprite.
 
 ### Vertexless Quad
 
@@ -477,7 +493,7 @@ Each layer/system owns a single `Float32Array` packed buffer sized at `capacity 
 3. Single `device.queue.writeBuffer(_gpuBuffer, dirtyMin*stride, _data.buffer, dirtyMin*stride, (dirtyMax - dirtyMin + 1) * stride)`.
 4. `_gpuVersion = _version`.
 
-Capacity grows 2× on overflow (fresh allocation + copy). Removal is **swap-remove** (last slot moves into the gap; that slot's `_dirty` is bumped). This is the same pattern as `mesh/thin-instance.ts`.
+Capacity grows 2× on overflow (fresh allocation + copy). The renderable's GPU buffer reference is rebuilt internally on grow and the new buffer is rebound at the next frame's `draw()` — callers hold no GPU buffer handles, so no caller action is required. Sprite indices remain stable across grows. Removal is **swap-remove** (last slot moves into the gap; that slot's `_dirty` is bumped). This is the same pattern as `mesh/thin-instance.ts`.
 
 This module is **dynamically imported** by every family renderable, so a 2D-only scene does not bundle billboard or anchored code.
 
@@ -532,15 +548,15 @@ Per-batch only. Per-sprite blend mode would require splitting a layer into multi
 
 ### Per-Family Differences
 
-| Setting          | Sprite2DLayer                             | AnchoredSpriteLayer                                                    | Billboard (any variant)                                                |
-| ---------------- | ----------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Depth attachment | **none**                                  | yes                                                                    | yes                                                                    |
-| Depth compare    | n/a                                       | `less-equal` (or `always` if `depthTest=false`)                        | `less-equal`                                                           |
-| Depth write      | n/a                                       | `false`                                                                | `false` for blended, `true` for `cutout` (or per `depthWrite`)         |
-| Bind group 0     | `Sprite2DSceneUBO`                        | `SceneUBO` (existing 3D, unchanged)                                    | `SceneUBO` (existing 3D, unchanged)                                    |
-| Bind group 1     | atlas + sampler + layer UBO               | atlas + sampler + layer UBO + `Sprite3DSceneUBO`                       | atlas + sampler + system UBO + `Sprite3DSceneUBO`                      |
-| Sort key         | `(layer.order, sprite.layerZ, insertion)` | `(layer.order, anchor view-Z back-to-front)`                           | back-to-front view-Z when blended; front-to-back view-Z when `cutout`  |
-| Render queue     | dedicated overlay pass (final)            | transparent (210 + order) for blended, opaque (110 + order) for cutout | transparent (210 + order) for blended, opaque (110 + order) for cutout |
+| Setting          | Sprite2DLayer                             | AnchoredSpriteLayer                                                    | Billboard (any variant)                                                                                                                          |
+| ---------------- | ----------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Depth attachment | **none**                                  | yes                                                                    | yes                                                                                                                                              |
+| Depth compare    | n/a                                       | `less-equal` (or `always` if `depthTest=false`)                        | `less-equal`                                                                                                                                     |
+| Depth write      | n/a                                       | `false`                                                                | `false` for blended, `true` for `cutout` (or per `depthWrite`)                                                                                   |
+| Bind group 0     | `Sprite2DSceneUBO` @binding(0)            | `SceneUBO` @binding(0) (existing 3D, unchanged)                        | `SceneUBO` @binding(0) (existing 3D, unchanged)                                                                                                  |
+| Bind group 1     | tex@0, samp@1, `SpriteLayerUBO`@2         | tex@0, samp@1, `SpriteLayerUBO`@2, `Sprite3DSceneUBO`@3                | tex@0, samp@1, **`SpriteLayerUBO`@2 (facing/yaw) _or_ `AxisLockedBillboardSystemUBO`@2 (axis-locked, replaces layer UBO)**, `Sprite3DSceneUBO`@3 |
+| Sort key         | `(layer.order, sprite.layerZ, insertion)` | `(layer.order, anchor view-Z back-to-front)`                           | back-to-front view-Z when blended; front-to-back view-Z when `cutout`                                                                            |
+| Render queue     | dedicated overlay pass (final)            | transparent (210 + order) for blended, opaque (110 + order) for cutout | transparent (210 + order) for blended, opaque (110 + order) for cutout                                                                           |
 
 ### Bind Group Layouts
 
@@ -574,26 +590,37 @@ struct Sprite3DSceneUBO {
 
 The `Sprite3DSceneUBO` updater is registered into `scene._uniformUpdaters` exactly once, the first time any anchored or billboard family is added to the scene. Subsequent layers/systems reuse the same UBO. If the user later removes the last sprite renderable, the updater stays registered for the remainder of the scene's lifetime (no per-frame `if` to check whether sprites still exist) — but the UBO and its updater were never created in the first place for sprite-free scenes, which is what the no-pay-if-unused rule requires.
 
-This costs one extra bind group on sprite renderables (group 0 = main `SceneUBO`, group 1 = `Sprite3DSceneUBO` + atlas + sampler, group 2 = system UBO for axis-locked). The cost lands only on draws that need it.
+This costs one extra binding on sprite renderables (group 0 = main `SceneUBO`; group 1 holds atlas tex/sampler, the per-layer or system UBO, and `Sprite3DSceneUBO`). The cost lands only on draws that need it.
 
-**System UBO (axis-locked billboards only):**
+**Per-layer UBO (`SpriteLayerUBO`, 16 B)** — bound at `@group(1) @binding(2)` for Sprite2DLayer, AnchoredSpriteLayer, and the facing/yaw billboard variants. Holds animation-friendly per-layer scalars; not in the pipeline cache key.
 
 ```wgsl
-struct AxisLockedBillboardSystemUBO {
-    lockAxis: vec3<f32>,
-    alphaCutoff: f32,
+struct SpriteLayerUBO {
     opacity: f32,
     _pad: vec3<f32>,
 };
 ```
 
+**System UBO (axis-locked billboards only)** — bound at `@group(1) @binding(2)`, **replacing** `SpriteLayerUBO` for this variant. The shared fragment shader reads `opacity` from `@binding(2)` regardless of which struct sits there; the field is at the same offset in both, so the same fragment WGSL works for every family. The composer adjusts only the struct declaration line.
+
+```wgsl
+struct AxisLockedBillboardSystemUBO {
+    opacity: f32,         // offset 0 — must match SpriteLayerUBO.opacity for the shared fragment shader
+    alphaCutoff: f32,     // baked into the cutout WGSL literal at composition time; this UBO field is reserved for a future runtime-tunable cutoff
+    lockAxis: vec3<f32>,
+    _pad: f32,
+};
+```
+
+> **Implementer note.** The shared fragment shader declares `@group(1) @binding(2) var<uniform> layer: SpriteLayerUBO;` for non-axis-locked families and `@group(1) @binding(2) var<uniform> layer: AxisLockedBillboardSystemUBO;` for the axis-locked variant. Both structs expose `.opacity` at offset 0, so `c.a = c.a * layer.opacity;` is identical in both shaders. The axis-locked vertex shader additionally reads `layer.lockAxis`.
+
 ### Pipeline Cache
 
 Per-device, lazily initialized (no module-level `Map` allocation). Key tuple:
 
-`(family, blendMode, depthTest, depthWrite, swapChainFormat, msaaSamples, alphaCutoff*)`
+`(family, blendMode, depthTest, depthWrite, swapChainFormat, msaaSamples, pixelSnap, alphaCutoff*)`
 
-(`alphaCutoff` enters the key only for `cutout` because it is baked as a WGSL literal — see Shader Logic below. `opacity` is **not** in the key — it lives in the per-layer UBO and can be animated per frame at zero pipeline cost, matching how mesh `alpha` works in `material/tracking/std-tracking.ts`.)
+`pixelSnap` enters the key because the composer bakes it as branchless WGSL (the snap line is rewritten, not selected at runtime). `alphaCutoff` enters only for `cutout` — baked as a WGSL float literal. `opacity` is **not** in the key — it lives in the per-layer UBO and can be animated per frame at zero pipeline cost, matching how mesh `alpha` works in `material/tracking/std-tracking.ts`. `flipX`/`flipY` are **not** in the key either — they are per-sprite bits packed into the instance layout's `flagsAndPad` slot (so a single layer can mix flipped and unflipped sprites), and `cornerUV` reads them at runtime.
 
 ---
 
@@ -620,13 +647,15 @@ fn cornerUV(corner: vec2<f32>, rect: vec4<f32>, flipX: bool, flipY: bool) -> vec
 }
 ```
 
-(`flipX`/`flipY` are baked-in shader constants if a layer disables them — no runtime branch in the hot path. The two-line `if` above is removed by the composer when both flags are off.)
+(`flipX`/`flipY` are per-sprite bits unpacked from the instance layout's `flagsAndPad` slot and passed into `cornerUV`. The two-line `if`s are cheap branches on uniform-across-quad bools — modern WebGPU drivers handle them with predication, not divergence. The vertex shaders below show the calls passing `false, false` for brevity; each composer actually emits `cornerUV(corner, in.uvRect, in.flipX, in.flipY)` where `in.flipX`/`in.flipY` are the unpacked bits.)
 
 ### Family 1 — Sprite2DLayer Vertex Shader
 
 ```wgsl
 @group(0) @binding(0) var<uniform> scene: Sprite2DSceneUBO;
-// instance attributes from 80-byte stride
+@group(1) @binding(2) var<uniform> layer: SpriteLayerUBO;
+// instance attributes from 80-byte stride. `pixelSnap` is NOT an instance attribute —
+// it is a per-layer flag baked into the WGSL by the composer (see PIXEL_SNAP block).
 
 @vertex fn vs(in: VSIn) -> VSOut {
     let corner = cornerOf(in.vid);
@@ -636,7 +665,10 @@ fn cornerUV(corner: vec2<f32>, rect: vec4<f32>, flipX: bool, flipY: bool) -> vec
     // Apply layer view: pan, zoom, rotation
     let viewed = rotate2(layerPx - scene.viewPositionPx, vec2<f32>(sin(scene.viewRotation), cos(scene.viewRotation))) * scene.zoom;
     // Map to NDC. Y-down convention (canvas-friendly).
-    let snapped = select(viewed, floor(viewed + vec2<f32>(0.5)), in.pixelSnap);
+    // PIXEL_SNAP block: composer emits `let snapped = floor(viewed + vec2<f32>(0.5));`
+    //                  when layer.pixelSnap === true, else `let snapped = viewed;`.
+    //                  pixelSnap enters the pipeline cache key.
+    let snapped = viewed;  // shown in non-snap form; composer rewrites this line
     let ndc = vec2<f32>(
          snapped.x * scene.invViewportPx.x * 2.0 - 1.0,
         1.0 - snapped.y * scene.invViewportPx.y * 2.0,
@@ -656,8 +688,9 @@ No view matrix. No perspective divide. ~12 multiplications per vertex.
 ### Family 2 — AnchoredSpriteLayer Vertex Shader
 
 ```wgsl
-@group(0) @binding(0) var<uniform> scene:       SceneUBO;        // existing 3D UBO, unchanged
-@group(1) @binding(2) var<uniform> spriteScene: Sprite3DSceneUBO; // sprite-only, pay-per-use
+@group(0) @binding(0) var<uniform> scene:       SceneUBO;            // existing 3D UBO, unchanged
+@group(1) @binding(2) var<uniform> layer:       SpriteLayerUBO;      // per-layer scalars (opacity)
+@group(1) @binding(3) var<uniform> spriteScene: Sprite3DSceneUBO;    // sprite-only, pay-per-use
 
 @vertex fn vs(in: VSIn) -> VSOut {
     // 1. Project the world anchor through the 3D viewProjection.
@@ -667,7 +700,9 @@ No view matrix. No perspective divide. ~12 multiplications per vertex.
     let corner = cornerOf(in.vid);
     let localPx = (corner - in.pivot) * in.sizePx + in.offsetPx;
     let rotated = rotate2(localPx, in.sinCos);
-    let snapped = select(rotated, floor(rotated + vec2<f32>(0.5)), in.pixelSnap);
+    // PIXEL_SNAP: composer emits `let snapped = floor(rotated + vec2<f32>(0.5));`
+    //             when layer.pixelSnap === true, else `let snapped = rotated;`.
+    let snapped = rotated;  // shown in non-snap form; composer rewrites this line
 
     // 3. Convert pixel offset to NDC offset, scaled by clip.w to survive perspective divide.
     //    Viewport lives in the sprite-only UBO so the main SceneUBO stays untouched.
@@ -696,8 +731,9 @@ The sprite's screen size is invariant to camera distance — the multiplication 
 #### Facing (spherical)
 
 ```wgsl
-@group(0) @binding(0) var<uniform> scene:       SceneUBO;        // existing 3D UBO, unchanged
-@group(1) @binding(2) var<uniform> spriteScene: Sprite3DSceneUBO; // sprite-only, pay-per-use
+@group(0) @binding(0) var<uniform> scene:       SceneUBO;            // existing 3D UBO, unchanged
+@group(1) @binding(2) var<uniform> layer:       SpriteLayerUBO;      // per-layer scalars (opacity)
+@group(1) @binding(3) var<uniform> spriteScene: Sprite3DSceneUBO;    // sprite-only, pay-per-use
 
 @vertex fn vs(in: VSIn) -> VSOut {
     let corner = cornerOf(in.vid);
@@ -718,6 +754,10 @@ The sprite's screen size is invariant to camera distance — the multiplication 
 #### Yaw-Locked (cylindrical, world-Y axis)
 
 ```wgsl
+@group(0) @binding(0) var<uniform> scene:       SceneUBO;
+@group(1) @binding(2) var<uniform> layer:       SpriteLayerUBO;
+@group(1) @binding(3) var<uniform> spriteScene: Sprite3DSceneUBO;
+
 @vertex fn vs(in: VSIn) -> VSOut {
     let corner = cornerOf(in.vid);
     let local = (corner - in.pivot) * in.sizeWorld;
@@ -737,13 +777,17 @@ The sprite's screen size is invariant to camera distance — the multiplication 
 #### Axis-Locked (arbitrary axis)
 
 ```wgsl
-@group(1) @binding(2) var<uniform> sys: AxisLockedBillboardSystemUBO;
+@group(0) @binding(0) var<uniform> scene:       SceneUBO;
+// Axis-locked replaces SpriteLayerUBO@2 with the system UBO. Both expose `.opacity`
+// at offset 0 so the shared fragment shader still binds `layer` at @binding(2).
+@group(1) @binding(2) var<uniform> layer:       AxisLockedBillboardSystemUBO;
+@group(1) @binding(3) var<uniform> spriteScene: Sprite3DSceneUBO;
 
 @vertex fn vs(in: VSIn) -> VSOut {
     let corner = cornerOf(in.vid);
     let local = (corner - in.pivot) * in.sizeWorld;
     let rotated = rotate2(local, in.sinCos);
-    let a = normalize(sys.lockAxis);
+    let a = normalize(layer.lockAxis);
     let toCam = normalize(scene.cameraPosition - in.worldPos);
     // Project camera direction onto the plane perpendicular to the axis.
     let f = normalize(toCam - a * dot(toCam, a));
@@ -764,13 +808,19 @@ Three vertex shaders, three pipelines, three dynamic-import chunks. No runtime m
 ```wgsl
 @group(1) @binding(0) var atlasTex: texture_2d<f32>;
 @group(1) @binding(1) var atlasSamp: sampler;
+// `layer` is declared by each family's vertex shader at @group(1) @binding(2).
+// Its concrete struct type is SpriteLayerUBO for Sprite2D / Anchored / Facing / Yaw,
+// and AxisLockedBillboardSystemUBO for the axis-locked billboard. Both expose
+// `.opacity` at offset 0, so the line below is identical in every emitted shader.
 
 @fragment fn fs(in: VSOut) -> @location(0) vec4<f32> {
     var c = textureSample(atlasTex, atlasSamp, in.uv) * in.color;
     c.a = c.a * layer.opacity;      // per-layer UBO field — animation-friendly, no pipeline impact
-    // CUTOFF block (cutout variant only — composer omits this for non-cutout):
-    // if (c.a < 0.5) { discard; }
-    // PREMULTIPLY block (alpha/multiply/additive variants only):
+    // CUTOFF block (cutout variant only — composer emits `if (c.a < <ALPHA_CUTOFF>) { discard; }`
+    //               where <ALPHA_CUTOFF> is the layer's `alphaCutoff` baked as a WGSL float literal
+    //               at composition time and entered into the pipeline cache key).
+    // RETURN block: composer emits `return vec4<f32>(c.rgb * c.a, c.a);` for `alpha` and `multiply`
+    //               (premultiply at output), and `return c;` for `additive`, `cutout`, and `premultiplied`.
     return vec4<f32>(c.rgb * c.a, c.a);
 }
 ```
@@ -795,15 +845,19 @@ The composer emits exactly the right fragment shader for the family + blend mode
 
 **Pure 2D scene rendering:** A single render pass with no depth attachment. All visible layers are drawn in `order` ascending; sprites within a layer are drawn in `(layerZ, insertion)` ascending.
 
+**Render-queue priorities (110 / 210):** these match the engine-wide priority scheme established by the existing 3D pipeline — opaque renderables register at priority 100–199, transparent at 200–299, with `+ order` providing intra-bucket fan-out. Sprite layers reuse the same queue API meshes use; no new queue infrastructure is introduced.
+
 ---
 
 ## Picking
 
-| Family              | Strategy                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sprite2DLayer       | CPU. Walk layers in reverse `order`, then walk sprites in reverse `(layerZ, insertion)`, transform the screen point into sprite-local space (inverse pan/zoom/rotation, then inverse sprite rotation around pivot), and test against the pivot-aware local rectangle `[-pivot.x · sizePx.x, (1 - pivot.x) · sizePx.x] × [-pivot.y · sizePx.y, (1 - pivot.y) · sizePx.y]` (the same `(corner - pivot) * sizePx` convention used in the WGSL). |
-| AnchoredSpriteLayer | CPU. For each visible sprite, project anchor through `viewProjection`, NDC → pixels, apply `offsetPx`, then transform the screen point into sprite-local space (inverse rotation around the projected pivot) and test against the same pivot-aware rectangle as Sprite2D — exact, rotation-aware. Walk reverse-order.                                                                                                                        |
-| Billboard           | **GPU ID pass.** Reuses the existing `picking-pipeline.ts` infrastructure. Each billboard system contributes a per-instance ID via the same WGSL composer that powers the main pass (so the picked silhouette matches the rendered silhouette, including alpha-cutout discard). The picker resolves IDs to `(system, spriteIndex)` via a per-renderable side table.                                                                          |
+All three pickers honor the per-sprite `pickable` flag (default `true`). Sprites with `pickable === false` are skipped during the CPU walk (Sprite2D / Anchored) and have their per-instance ID written as 0 in the GPU ID pass (Billboard), causing them never to be returned by the picker even when they cover the cursor. `visible: false` sprites are also skipped (degenerate quad already returns 0 in the GPU ID pass; CPU pickers explicitly check the visible flag before the rectangle test).
+
+| Family              | Strategy                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sprite2DLayer       | CPU. Walk layers in reverse `order`, then walk sprites in reverse `(layerZ, insertion)` skipping `!visible` and `!pickable`, transform the screen point into sprite-local space (inverse pan/zoom/rotation, then inverse sprite rotation around pivot), and test against the pivot-aware local rectangle `[-pivot.x · sizePx.x, (1 - pivot.x) · sizePx.x] × [-pivot.y · sizePx.y, (1 - pivot.y) · sizePx.y]` (the same `(corner - pivot) * sizePx` convention used in the WGSL). |
+| AnchoredSpriteLayer | CPU. For each `visible` and `pickable` sprite, project anchor through `viewProjection`, NDC → pixels, apply `offsetPx`, then transform the screen point into sprite-local space (inverse rotation around the projected pivot) and test against the same pivot-aware rectangle as Sprite2D — exact, rotation-aware. Walk reverse-order.                                                                                                                                           |
+| Billboard           | **GPU ID pass.** Reuses the existing `picking-pipeline.ts` infrastructure. Each billboard system contributes a per-instance ID via the same WGSL composer that powers the main pass (so the picked silhouette matches the rendered silhouette, including alpha-cutout discard). Sprites with `pickable === false` write ID 0 (no-hit sentinel). The picker resolves non-zero IDs to `(system, spriteIndex)` via a per-renderable side table.                                     |
 
 Each picker lives in its own file (`pick-2d.ts`, `pick-anchored.ts`, `pick-billboard.ts`) and is imported only when the corresponding `pick*` function is called. Apps that never pick a sprite pay zero bytes.
 
@@ -844,10 +898,9 @@ addToScene(scene, billboardSystem)  // routes by _entityType to family-specific 
 ```
 _deferredBuild(scene):
   ├─> dynamic import('./sprite-<family>-renderable.js')
-  ├─> create pipeline (cache lookup by family/blend/format/msaa/cutoff)
+  ├─> create pipeline (cache lookup by family/blend/format/msaa/pixelSnap/cutoff*)
   ├─> create scene UBO bind group (group 0)
-  ├─> create atlas + sampler + per-layer UBO bind group (group 1; also includes Sprite3DSceneUBO for 3D families)
-  ├─> create system UBO bind group (group 2; axis-locked billboard variant only)
+  ├─> create group 1: tex@0, sampler@1, layer-or-system UBO@2, Sprite3DSceneUBO@3 (3D families only)
   ├─> allocate instance GPU buffer (capacity × stride, VERTEX | COPY_DST)
   └─> push Renderable + SceneUniformUpdater into scene
 ```
@@ -872,7 +925,7 @@ Two independent version counters drive the two independent costs:
 
 ### Disposal
 
-`disposeScene2D` / `removeFromScene` releases the layer's GPU buffers via the scene's generalized entity-disposable map. Atlas textures follow regular `Texture2D` lifetime — they may be shared across scenes/layers and are released only when no layer holds them.
+`disposeScene2D` / `removeFromScene` releases the layer's GPU buffers via the scene's existing per-renderable `dispose` callback (the same hook meshes use to release thin-instance buffers — no new disposal infrastructure is introduced). Atlas textures follow regular `Texture2D` lifetime — they may be shared across scenes/layers and are released only when no layer holds them.
 
 ---
 
