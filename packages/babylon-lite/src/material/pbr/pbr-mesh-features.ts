@@ -7,7 +7,7 @@
 
 import type { Mesh } from "../../mesh/mesh.js";
 import type { SceneContext } from "../../scene/scene.js";
-import type { PbrMaterialProps, SheenProps, ClearCoatProps } from "./pbr-material.js";
+import type { PbrMaterialProps, SheenProps } from "./pbr-material.js";
 import {
     computePbrFeatures,
     PBR_HAS_SKELETON_8,
@@ -18,21 +18,8 @@ import {
     PBR_HAS_GAMMA_ALBEDO,
     PBR_HAS_THIN_INSTANCES,
     PBR_HAS_INSTANCE_COLOR,
-    PBR2_CC_INT_MAP,
-    PBR2_CC_ROUGH_MAP,
-    PBR2_CC_NORMAL_MAP,
-    PBR2_CC_F0_REMAP_OFF,
 } from "./pbr-pipeline.js";
-import {
-    getLightTypeFeatureBits,
-    _getSubsurfaceExt,
-    PBR_HAS_OCCLUSION,
-    PBR_HAS_CLEARCOAT,
-    PBR_HAS_SHEEN,
-    PBR_HAS_USE_ALPHA_ONLY_MR,
-    PBR_HAS_ANISOTROPY,
-    PBR_HAS_SKYBOX,
-} from "./pbr-flags.js";
+import { getLightTypeFeatureBits, _getSubsurfaceExt, _getPbrExts, PBR_HAS_OCCLUSION, PBR_HAS_SHEEN, PBR_HAS_ANISOTROPY, PBR_HAS_SKYBOX } from "./pbr-flags.js";
 
 /** Scene-level context cached once by the caller (all constant across meshes). */
 export interface PbrFeatureCtx {
@@ -61,13 +48,10 @@ export function computeMeshPbrFeatures(mesh: Mesh, scene: SceneContext, ctx: Pbr
         !!mat.specGlossTexture,
         !!mat.doubleSided,
         !!mat.normalTexture,
-        !!mat.metallicReflectanceTexture,
-        !!mat.reflectanceTexture,
+        false,
+        false,
         !!mat.emissiveColor
     );
-    if (mat.useOnlyMetallicFromMetallicReflectanceTexture) {
-        features |= PBR_HAS_USE_ALPHA_ONLY_MR;
-    }
     features |= getLightTypeFeatureBits();
     if ((mat.occlusionStrength ?? 1.0) > 0) {
         features |= PBR_HAS_OCCLUSION;
@@ -80,22 +64,6 @@ export function computeMeshPbrFeatures(mesh: Mesh, scene: SceneContext, ctx: Pbr
     }
 
     let features2 = 0;
-    const cc = mat.clearCoat as ClearCoatProps | undefined;
-    if (cc?.isEnabled) {
-        features |= PBR_HAS_CLEARCOAT;
-        if (cc.texture) {
-            features2 |= PBR2_CC_INT_MAP;
-        }
-        if (cc.roughnessTexture) {
-            features2 |= PBR2_CC_ROUGH_MAP;
-        }
-        if (cc.bumpTexture) {
-            features2 |= PBR2_CC_NORMAL_MAP;
-        }
-        if (cc.useF0Remap === false) {
-            features2 |= PBR2_CC_F0_REMAP_OFF;
-        }
-    }
 
     const sh = mat.sheen as SheenProps | undefined;
     if (sh?.isEnabled) {
@@ -123,6 +91,14 @@ export function computeMeshPbrFeatures(mesh: Mesh, scene: SceneContext, ctx: Pbr
     const ssE = _getSubsurfaceExt();
     if (ssE) {
         features |= ssE.detect(mat);
+    }
+    // Unified PBR extensions contribute their own feature bits.
+    for (const ext of _getPbrExts().values()) {
+        if (ext.detect) {
+            const d = ext.detect(mat);
+            features |= d.f;
+            features2 |= d.f2;
+        }
     }
     if (mesh.thinInstances) {
         features |= PBR_HAS_THIN_INSTANCES;

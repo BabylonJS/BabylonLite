@@ -2,6 +2,8 @@
  *  Tiny shared module imported by both pbr-pipeline and light extensions. */
 
 import type { PbrLightExtension } from "../../light/types.js";
+import type { ShaderFragment } from "../../shader/fragment-types.js";
+import type { Texture2D } from "../../texture/texture-2d.js";
 
 export const PBR_HAS_NORMAL_MAP = 1 << 0;
 export const PBR_HAS_EMISSIVE = 1 << 1;
@@ -87,4 +89,40 @@ export function _registerPbrMaterialUboWriter(id: string, fn: PbrMaterialUboWrit
 /** @internal Iterate the registered writers. */
 export function _getPbrMaterialUboWriters(): ReadonlyMap<string, PbrMaterialUboWriter> {
     return _matUboWriters;
+}
+
+// ─── Unified PBR Extension Registry ─────────────────────────────────
+/** @internal Bind-group phase, matching composer slot layout:
+ *  - "base-tex": material-phase bindings (between base textures and lightsUBO)
+ *  - "fragment": fragment-phase bindings (after IBL, before subsurface)
+ *  Vertex-phase exts (morph, skeleton) not yet unified. */
+export type PbrExtPhase = "base-tex" | "fragment";
+
+/** @internal Unified PBR extension. All hooks optional.
+ *  An ext is registered once (at its dynamic-import site in pbr-renderable)
+ *  and invoked by the pipeline/material/renderable hot paths. Zero side
+ *  effects at module load — registration is explicit. */
+export interface PbrExt {
+    readonly id: string;
+    readonly phase: PbrExtPhase;
+    /** Contribute feature bits for a given material. Returns {f,f2} to OR in. */
+    detect?(mat: unknown): { f: number; f2: number };
+    /** Contribute a ShaderFragment (null if gated off for this variant). */
+    frag?(features: number, features2: number, hasIbl: boolean, hasAnyNormal: boolean, hasSpecularAA: boolean): ShaderFragment | null;
+    /** Write this ext's slice of the material UBO. */
+    writeUbo?(data: Float32Array, mat: unknown, offsets: ReadonlyMap<string, number>): void;
+    /** Push group-1 bind entries starting at binding `b`; return new b. */
+    bind?(features: number, features2: number, mat: unknown, entries: GPUBindGroupEntry[], b: number): number;
+    /** Enumerate textures for acquire/release. */
+    textures?(mat: unknown, out: Texture2D[]): void;
+}
+
+const _pbrExts = new Map<string, PbrExt>();
+/** @internal Register a PBR extension. Idempotent (keyed by id). */
+export function _registerPbrExt(ext: PbrExt): void {
+    _pbrExts.set(ext.id, ext);
+}
+/** @internal Iterate the registered extensions. */
+export function _getPbrExts(): ReadonlyMap<string, PbrExt> {
+    return _pbrExts;
 }

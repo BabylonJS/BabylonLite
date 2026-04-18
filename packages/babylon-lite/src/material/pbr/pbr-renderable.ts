@@ -45,13 +45,14 @@ import {
     PBR2_CC_INT_MAP,
     PBR2_CC_ROUGH_MAP,
     PBR2_CC_NORMAL_MAP,
-    PBR2_CC_F0_REMAP_OFF,
 } from "./pbr-pipeline.js";
 import { PBR_HAS_THIN_INSTANCES, PBR_HAS_INSTANCE_COLOR } from "./pbr-pipeline.js";
 import {
     _getPbrLightExtension,
     _getSubsurfaceExt,
     _getPbrMaterialUboWriters,
+    _registerPbrExt,
+    _getPbrExts,
     _registerPbrMaterialUboWriter,
     PBR_HAS_EMISSIVE,
     PBR_HAS_ENV,
@@ -64,7 +65,6 @@ import {
     PBR_HAS_OCCLUSION,
     PBR_HAS_CLEARCOAT,
     PBR_HAS_SHEEN,
-    PBR_HAS_USE_ALPHA_ONLY_MR,
     PBR_HAS_ANISOTROPY,
     PBR_HAS_SKYBOX,
 } from "./pbr-flags.js";
@@ -185,30 +185,15 @@ export async function buildPbrRenderables(
         const mat = m.material as PbrMaterialProps;
         return !!mat.metallicReflectanceTexture || !!mat.reflectanceTexture;
     });
-    let _createReflectanceFragment: ((hasMR: boolean, hasR: boolean, useAlpha: boolean) => ShaderFragment) | null = null;
     if (hasMetallicReflectance) {
         const mod = await import("./fragments/reflectance-fragment.js");
-        _createReflectanceFragment = mod.createReflectanceFragment;
-        _registerPbrMaterialUboWriter("reflectance", (d, m, o) => mod.writeReflectanceUBO(d, m as PbrMaterialProps, o));
+        _registerPbrExt(mod.reflectanceExt);
     }
 
     const hasClearcoat = meshes.some((m) => !!(m.material as PbrMaterialProps).clearCoat?.isEnabled);
-    let _createClearcoatFragment:
-        | ((
-              hasIbl: boolean,
-              hasReflectance?: boolean,
-              hasIntensityMap?: boolean,
-              hasRoughnessMap?: boolean,
-              hasNormalMap?: boolean,
-              disableF0Remap?: boolean,
-              hasSpecularAA?: boolean,
-              hasBaseNormalMap?: boolean
-          ) => ShaderFragment)
-        | null = null;
     if (hasClearcoat) {
         const mod = await import("./fragments/clearcoat-fragment.js");
-        _createClearcoatFragment = mod.createClearcoatFragment;
-        _registerPbrMaterialUboWriter("clearcoat", (d, m, o) => mod.writeClearcoatUBO(d, m as PbrMaterialProps, o));
+        _registerPbrExt(mod.clearcoatExt);
     }
 
     const hasSheen = meshes.some((m) => !!(m.material as PbrMaterialProps).sheen?.isEnabled);
@@ -300,7 +285,6 @@ export async function buildPbrRenderables(
         const ccIntMap = (features2 & PBR2_CC_INT_MAP) !== 0;
         const ccRoughMap = (features2 & PBR2_CC_ROUGH_MAP) !== 0;
         const ccNormalMap = (features2 & PBR2_CC_NORMAL_MAP) !== 0;
-        const ccF0RemapOff = (features2 & PBR2_CC_F0_REMAP_OFF) !== 0;
 
         const template = createPbrTemplate({
             light: hasMultiLight ? null : lightConfig,
@@ -341,14 +325,8 @@ export async function buildPbrRenderables(
         if (hasMorph && _createMorphFragment) {
             frags.push(_createMorphFragment());
         }
-        if (hasReflExt && _createReflectanceFragment) {
-            frags.push(_createReflectanceFragment(has(PBR_HAS_METALLIC_REFLECTANCE_MAP), has(PBR_HAS_REFLECTANCE_MAP), has(PBR_HAS_USE_ALPHA_ONLY_MR)));
-        }
         if (hasEmCol && _createEmissiveColorFragment) {
             frags.push(_createEmissiveColorFragment(hasEmTex));
-        }
-        if (hasCC && _createClearcoatFragment) {
-            frags.push(_createClearcoatFragment(hasIbl, hasReflExt, ccIntMap, ccRoughMap, ccNormalMap, ccF0RemapOff, has(PBR_HAS_SPECULAR_AA), hasNormal || hasCotangent));
         }
         if (hasSh && _createSheenFragment) {
             frags.push(_createSheenFragment(has(PBR_HAS_SHEEN_TEXTURE), hasIbl, has(PBR_HAS_SHEEN_ALBEDO_SCALING)));
@@ -356,6 +334,17 @@ export async function buildPbrRenderables(
         if (hasIbl && _createIblFragment) {
             const anisoBentCode = hasAniso && _anisoExt ? _anisoExt.ANISO_BENT_NORMAL : "";
             frags.push(_createIblFragment(hasNormal || hasCotangent, anisoBentCode, has(PBR_HAS_SKYBOX) ? _iblSkyboxCalc : ""));
+        }
+        // Unified PBR extensions (reflectance, clearcoat, ...): contribute fragments via ext.frag().
+        const hasAnyNormal = hasNormal || hasCotangent;
+        const hasSpecularAAbit = has(PBR_HAS_SPECULAR_AA);
+        for (const ext of _getPbrExts().values()) {
+            if (ext.frag) {
+                const fr = ext.frag(features, features2, hasIbl, hasAnyNormal, hasSpecularAAbit);
+                if (fr) {
+                    frags.push(fr);
+                }
+            }
         }
         if (_ssExt) {
             const ssFrag = _ssExt.frag(f, hasIbl);
@@ -655,6 +644,13 @@ function writeMaterialData(data: Float32Array, material: PbrMaterialProps, spec:
 
     for (const write of _getPbrMaterialUboWriters().values()) {
         write(data, material, spec.offsets);
+    }
+
+    // Unified PBR extensions contribute their material-UBO slice.
+    for (const ext of _getPbrExts().values()) {
+        if (ext.writeUbo) {
+            ext.writeUbo(data, material, spec.offsets);
+        }
     }
 
     // Subsurface still uses its own dedicated extension slot (detect/frag/bind/textures + ubo).

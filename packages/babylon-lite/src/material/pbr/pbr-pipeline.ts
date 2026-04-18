@@ -10,7 +10,7 @@ import type { ComposedShader } from "../../shader/fragment-types.js";
 import type { EngineContextInternal } from "../../engine/engine.js";
 import { createPipelineCache, releaseVariant } from "../pipeline-cache.js";
 import type { PipelineCache } from "../pipeline-cache.js";
-import { _getSubsurfaceExt, _getPbrLightExtension } from "./pbr-flags.js";
+import { _getSubsurfaceExt, _getPbrLightExtension, _getPbrExts } from "./pbr-flags.js";
 import {
     PBR_HAS_NORMAL_MAP,
     PBR_HAS_EMISSIVE,
@@ -26,9 +26,6 @@ import {
     PBR_HAS_METALLIC_REFLECTANCE_MAP,
     PBR_HAS_REFLECTANCE_MAP,
     PBR_HAS_SHEEN_TEXTURE,
-    PBR2_CC_INT_MAP,
-    PBR2_CC_ROUGH_MAP,
-    PBR2_CC_NORMAL_MAP,
 } from "./pbr-flags.js";
 export * from "./pbr-flags.js";
 
@@ -217,18 +214,13 @@ export function createPbrMeshBindGroup(
     if ((features & PBR_HAS_SHEEN_TEXTURE) !== 0) {
         addTex((material.sheen as SheenProps).texture!);
     }
-    // Clearcoat textures (after sheenTexture; matches template baseBindings order)
+    // Unified PBR extensions (clearcoat, reflectance, ...). Registration
+    // order is alphabetical-by-id via ext.id (composer's tie-break), so
+    // iteration matches composer phase layout without an explicit sort.
     const features2 = variant.features2;
-    const cc = material.clearCoat as import("./pbr-material.js").ClearCoatProps | undefined;
-    if (cc) {
-        if ((features2 & PBR2_CC_INT_MAP) !== 0 && cc.texture) {
-            addTex(cc.texture);
-        }
-        if ((features2 & PBR2_CC_ROUGH_MAP) !== 0 && cc.roughnessTexture) {
-            addTex(cc.roughnessTexture);
-        }
-        if ((features2 & PBR2_CC_NORMAL_MAP) !== 0 && cc.bumpTexture) {
-            addTex(cc.bumpTexture);
+    for (const ext of _getPbrExts().values()) {
+        if (ext.phase === "base-tex" && ext.bind) {
+            b = ext.bind(features, features2, material, entries, b);
         }
     }
     // Lights UBO (after base texture bindings, before fragment bindings — matches composer order)
@@ -242,13 +234,9 @@ export function createPbrMeshBindGroup(
         entries.push({ binding: b++, resource: env.specularCubeView });
         entries.push({ binding: b++, resource: env.cubeSampler });
     }
-    // Fragment bindings: reflectance maps (after IBL in alphabetical order)
-    if ((features & (PBR_HAS_METALLIC_REFLECTANCE_MAP | PBR_HAS_REFLECTANCE_MAP)) !== 0) {
-        if (material.metallicReflectanceTexture) {
-            addTex(material.metallicReflectanceTexture);
-        }
-        if (material.reflectanceTexture) {
-            addTex(material.reflectanceTexture);
+    for (const ext of _getPbrExts().values()) {
+        if (ext.phase === "fragment" && ext.bind) {
+            b = ext.bind(features, features2, material, entries, b);
         }
     }
     // Fragment bindings: subsurface thickness map (after reflectance, "subsurface" sorts last)
