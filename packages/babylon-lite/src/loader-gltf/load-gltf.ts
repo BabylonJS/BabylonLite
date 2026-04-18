@@ -13,8 +13,9 @@ import { getOrCreateSampler } from "../resource/gpu-pool.js";
 import { createMappedBuffer } from "../resource/gpu-buffers.js";
 import { parseGlbContainer, resolveAccessor, buildParentMap, computeNodeWorldMatrix } from "./gltf-parser.js";
 import type { GltfMaterialData } from "./gltf-material.js";
-import { assembleMaterial } from "./gltf-material.js";
+import { assembleMaterial, makeImageFetcher } from "./gltf-material.js";
 import type { MaterialVariantData } from "./material-variants.js";
+import type { GltfMatExt } from "./gltf-mat-ext.js";
 import { mipLevelCount } from "../texture/mip-count.js";
 import { linearToSrgbByte } from "../color/color.js";
 
@@ -107,7 +108,20 @@ export async function loadGltf(engine: EngineContext, url: string): Promise<Asse
     const animModulePromise = hasAnimations ? Promise.all([import("./gltf-animation.js"), import("../animation/animation-group.js")]) : null;
     const variantModulePromise = hasVariants ? import("./gltf-variants.js") : null;
 
+    // Discover material extensions by inspecting `extensionsUsed`. For every
+    // ext that has a registered loader module, dynamic-import it concurrently
+    // with mesh extraction. The core loader has zero hardcoded ext names.
+    const extsModulePromise = loadGltfMatExts(json);
+
     const meshDatas = await extractAllMeshes(json, binChunk, baseUrl, parentMap, worldMatrixCache);
+
+    // Parse + fetch ext images per material BEFORE upload (textures need engine).
+    const matExts = await extsModulePromise;
+    if (matExts.length > 0) {
+        const fetchImg = makeImageFetcher(json, binChunk, baseUrl, new Map<number, Promise<ImageBitmap>>());
+        await populateMatExtData(meshDatas, json, matExts, fetchImg);
+    }
+
     const meshes = await uploadMeshes(engine as EngineContextInternal, meshDatas);
 
     // Build TransformNode hierarchy from glTF nodes.
@@ -129,11 +143,107 @@ export async function loadGltf(engine: EngineContext, url: string): Promise<Asse
     let materialVariants: MaterialVariantData | undefined;
     if (hasVariants) {
         const { loadVariantMaterials } = (await variantModulePromise)!;
-        materialVariants = await loadVariantMaterials(json, binChunk, baseUrl, variantNames!, meshes, engine as EngineContextInternal);
+        materialVariants = await loadVariantMaterials(json, binChunk, baseUrl, variantNames!, meshes, engine as EngineContextInternal, matExts);
     }
 
     // Return AssetContainer — addToScene() handles hierarchy, animation ticks, and clearColor.
     return { entities: [root], animationGroups, materialVariants };
+}
+
+// --- glTF Material Extension Driver ---
+
+/** Map of KHR ext id → dynamic-import function returning the ext module. The
+ *  registry lives here (not at module load) so unknown exts contribute zero
+ *  bytes to the eager bundle. Adding a new material extension is a 2-line
+ *  change: add an entry here + create a `gltf-ext-<name>.ts` module. */
+const _matExtLoaders: Record<string, () => Promise<{ default?: GltfMatExt } & Record<string, GltfMatExt>>> = {
+    KHR_materials_clearcoat: () => import("./gltf-ext-clearcoat.js") as Promise<any>,
+    KHR_materials_sheen: () => import("./gltf-ext-sheen.js") as Promise<any>,
+    KHR_materials_anisotropy: () => import("./gltf-ext-anisotropy.js") as Promise<any>,
+    KHR_materials_pbrSpecularGlossiness: () => import("./gltf-ext-spec-gloss.js") as Promise<any>,
+};
+
+/** Dynamic-import every material ext referenced in the asset's `extensionsUsed`. */
+async function loadGltfMatExts(json: any): Promise<GltfMatExt[]> {
+    const used: string[] = json.extensionsUsed ?? [];
+    if (used.length === 0) {
+        return [];
+    }
+    const mods = await Promise.all(
+        used.flatMap((id) => {
+            const loader = _matExtLoaders[id];
+            return loader ? [loader()] : [];
+        })
+    );
+    // Each module exports its ext as a named const (e.g. `clearcoatExt`).
+    // The module's first named export is the GltfMatExt by convention.
+    const exts: GltfMatExt[] = [];
+    for (const mod of mods) {
+        for (const value of Object.values(mod)) {
+            if (value && typeof (value as any).id === "string" && typeof (value as any).parse === "function") {
+                exts.push(value as GltfMatExt);
+                break;
+            }
+        }
+    }
+    return exts;
+}
+
+/** For each material that carries one or more registered exts, parse the
+ *  raw extension data and fetch any referenced images. Stores the result on
+ *  `mat._extData` so buildPbrFromGltfMat can compose layer fragments later. */
+async function populateMatExtData(meshDatas: GltfMeshData[], json: any, exts: GltfMatExt[], fetchImg: (texInfo: any) => Promise<ImageBitmap | null>): Promise<void> {
+    // Materials are deduplicated by reference in extractAllMeshes (matCache).
+    // Use a Set to avoid double-parsing the same shared material.
+    const seen = new Set<GltfMaterialData>();
+    const work: Promise<void>[] = [];
+    for (const md of meshDatas) {
+        const mat = md.material;
+        if (seen.has(mat)) {
+            continue;
+        }
+        seen.add(mat);
+        const rawMatIdx = findRawMatIdx(json, mat);
+        if (rawMatIdx === undefined) {
+            continue;
+        }
+        const rawMat = json.materials[rawMatIdx];
+        if (!rawMat?.extensions) {
+            continue;
+        }
+        for (const ext of exts) {
+            const parsed = ext.parse(rawMat);
+            if (!parsed) {
+                continue;
+            }
+            work.push(
+                (async () => {
+                    const images: Record<string, ImageBitmap | null> = {};
+                    const sRGB: Record<string, boolean> = {};
+                    await Promise.all(
+                        parsed.imageRefs.map(async (ref) => {
+                            sRGB[ref.key] = ref.sRGB;
+                            images[ref.key] = await fetchImg(ref.texInfo);
+                        })
+                    );
+                    if (!mat._extData) {
+                        mat._extData = new Map();
+                    }
+                    // Stash the parsed ext data + raw images. Texture upload
+                    // happens later in buildPbrFromGltfMat (engine-bound stage).
+                    (mat._extData as any).set(ext.id, { ext, data: parsed.data, images, sRGB });
+                })()
+            );
+        }
+    }
+    await Promise.all(work);
+}
+
+/** Find the glTF material index for a parsed GltfMaterialData. We tag mats
+ *  with a hidden `_matIdx` in extractAllMeshes so this lookup is O(1). */
+function findRawMatIdx(json: any, mat: GltfMaterialData): number | undefined {
+    const idx = (mat as { _matIdx?: number })._matIdx;
+    return idx !== undefined && json.materials?.[idx] ? idx : undefined;
 }
 
 // --- Hierarchy Reconstruction ---
@@ -197,7 +307,11 @@ async function extractAllMeshes(json: any, binChunk: DataView, baseUrl: string, 
         const key = matIdx ?? -1;
         let p = matCache.get(key);
         if (!p) {
-            p = assembleMaterial(json, binChunk, matIdx, baseUrl, imageCache);
+            p = assembleMaterial(json, binChunk, matIdx, baseUrl, imageCache).then((m) => {
+                // Tag with raw glTF material index for ext driver lookup.
+                (m as { _matIdx?: number })._matIdx = matIdx;
+                return m;
+            });
             matCache.set(key, p);
         }
         return p;
@@ -410,27 +524,27 @@ async function uploadMeshes(engine: EngineContextInternal, meshDatas: GltfMeshDa
                   })();
             const normalTexture = mat.normalImage ? getCachedTexture(mat.normalImage, false) : undefined;
             const emissiveTexture = mat.emissiveImage ? getCachedTexture(mat.emissiveImage, true) : undefined;
-            const specGlossTexture = mat.specGlossImage ? getCachedTexture(mat.specGlossImage, true) : undefined;
             const ormTexture = await getOrmTexture(mat);
-            let layers: Partial<import("../material/pbr/pbr-material.js").PbrMaterialProps> | undefined;
-            let uvTransformST: [number, number, number, number] | undefined;
-            const hasLayer = !!(mat.clearcoat || mat.sheen || mat.anisotropy);
-            if (hasLayer) {
-                const mod = await import("./gltf-material-layers.js");
-                const ccTextures = mat.clearcoat
-                    ? {
-                          ccTexture: mat.clearcoatImage ? getCachedTexture(mat.clearcoatImage, false) : undefined,
-                          ccRoughnessTexture: mat.clearcoatRoughnessImage ? getCachedTexture(mat.clearcoatRoughnessImage, false) : undefined,
-                          ccNormalTexture: mat.clearcoatNormalImage ? getCachedTexture(mat.clearcoatNormalImage, false) : undefined,
-                      }
-                    : undefined;
-                // Sheen color texture (sRGB — RGB carries color, A carries roughness when
-                // color/roughness share the same image per KHR_materials_sheen). Images
-                // are fetched lazily here so the fetch code lives in the dynamic chunk.
-                const sheenImages = await mod.loadSheenImages(mat);
-                const sheenTexture = sheenImages?.sheenColorImage ? getCachedTexture(sheenImages.sheenColorImage, true) : undefined;
-                layers = mod.buildPbrLayers(mat, ccTextures, { sheenTexture });
+
+            // Run all registered material exts: upload their referenced
+            // images via the shared texture cache, then merge each ext's
+            // PbrMaterialProps fragment onto the base material.
+            let extLayers: Partial<import("../material/pbr/pbr-material.js").PbrMaterialProps> | undefined;
+            if (mat._extData && mat._extData.size > 0) {
+                extLayers = {};
+                for (const { ext, data, images, sRGB } of mat._extData.values()) {
+                    const textures: Record<string, Texture2D | undefined> = {};
+                    for (const key of Object.keys(images)) {
+                        const img = images[key];
+                        if (img) {
+                            textures[key] = getCachedTexture(img, !!sRGB[key]);
+                        }
+                    }
+                    Object.assign(extLayers, ext.build(data, textures));
+                }
             }
+
+            let uvTransformST: [number, number, number, number] | undefined;
             if (mat._usesUvTransform) {
                 const uvMod = await import("./gltf-uv-transform.js");
                 uvTransformST = uvMod.resolveMaterialUvTransform(mat._rawMatDef);
@@ -441,7 +555,6 @@ async function uploadMeshes(engine: EngineContextInternal, meshDatas: GltfMeshDa
                 normalTexture,
                 ormTexture,
                 emissiveTexture,
-                specGlossTexture,
                 doubleSided: mat.doubleSided,
                 occlusionStrength: mat.occlusionImage ? 1.0 : 0,
                 // Apply glTF metallicFactor/roughnessFactor only when a real MR texture is present.
@@ -450,7 +563,7 @@ async function uploadMeshes(engine: EngineContextInternal, meshDatas: GltfMeshDa
                 enableSpecularAA: true,
                 ...(mat.alphaMode === "BLEND" ? { alphaBlend: true, alpha: mat.baseColorFactor[3] } : undefined),
                 ...(uvTransformST ? { uvTransformST } : undefined),
-                ...layers,
+                ...extLayers,
                 _buildGroup: pbrGroupBuilder,
             } satisfies PbrMaterialPropsInternal;
         })();
