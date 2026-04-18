@@ -35,7 +35,7 @@ export default defineConfig({
     retries: 2,
     workers: 2,
     use: {
-        channel: "chrome",
+        channel: process.env.PW_CHANNEL ?? "chrome",
         headless,
         viewport: { width: 1280, height: 720 },
         launchOptions: {

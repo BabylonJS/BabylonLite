@@ -661,7 +661,8 @@ async function measureLiveSizes(): Promise<Record<string, { rawKB: number; gzipK
     try {
         const tBrowser = performance.now();
         console.log("Launching measurement browser...");
-        const browser = await chromium.launch({ channel: "chrome", headless: true });
+        const channel = process.env.PW_CHANNEL ?? "chrome";
+        const browser = await chromium.launch({ channel: channel || undefined, headless: true });
         console.log(`Browser launched in ${elapsed(tBrowser)}`);
 
         // Measure Lite scenes (write after each)

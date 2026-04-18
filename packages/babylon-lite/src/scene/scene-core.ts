@@ -97,6 +97,14 @@ export interface SceneContextInternal extends SceneContext {
     _standardSceneUBO?: GPUBuffer;
     _pbrLightsUBO?: GPUBuffer;
     _pbrLightsUBOScratch?: Float32Array;
+
+    // ─── Sprite (anchored / future billboard) shared per-scene UBOs ────
+    /** Per-scene anchored-sprite scene UBO (viewProjection matrix). Created lazily by the
+     *  first anchored renderable; reused by subsequent layers. */
+    _anchoredSceneUBO?: GPUBuffer;
+    /** Per-scene Sprite3DSceneUBO (camera basis + viewport). Created lazily and reused
+     *  across all anchored / billboard sprite renderables. */
+    _sprite3dSceneUBO?: GPUBuffer;
 }
 
 /** Install a property setter on mesh.material that sets _materialDirty
@@ -164,7 +172,10 @@ export function onBeforeRender(scene: SceneContext, cb: (deltaMs: number) => voi
 }
 
 /** Add an entity (mesh, light, camera, transform node, shadow generator, or asset container) to the scene. */
-export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camera | ShadowGenerator | TransformNode | AssetContainer): void {
+export function addToScene(
+    scene: SceneContext,
+    entity: Mesh | LightBase | Camera | ShadowGenerator | TransformNode | AssetContainer | { readonly _entityType: "anchored-sprite-layer" }
+): void {
     const ctx = scene as SceneContextInternal;
     // AssetContainer from loadGltf / loadBabylon — process each field present
     if ("entities" in entity) {
@@ -212,6 +223,18 @@ export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camer
         }
     } else if ("lightType" in entity) {
         ctx.lights.push(entity as LightBase);
+    } else if ((entity as { _entityType?: string })._entityType === "anchored-sprite-layer") {
+        // Sprite layers route through their own `_deferredBuild` hook, set lazily by
+        // the layer factory. Each layer dynamic-imports its renderable module so
+        // sprite-free scenes pay zero bytes.
+        const layer = entity as unknown as { _deferredBuild?: (scene: SceneContext) => void | Promise<void> };
+        const reg = (ctx as unknown as { _anchoredLayers?: unknown[] })._anchoredLayers ?? [];
+        reg.push(entity);
+        (ctx as unknown as { _anchoredLayers: unknown[] })._anchoredLayers = reg;
+        if (layer._deferredBuild) {
+            ctx._deferredBuilders.push(() => layer._deferredBuild!(scene));
+        }
+        return;
     }
     // Recurse into children of meshes, lights, cameras — set parent links
     const kids = (entity as unknown as SceneNode).children;

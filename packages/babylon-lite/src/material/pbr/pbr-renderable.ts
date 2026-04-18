@@ -190,7 +190,16 @@ export async function buildPbrRenderables(
 
     const hasClearcoat = meshes.some((m) => !!(m.material as PbrMaterialProps).clearCoat?.isEnabled);
     let _createClearcoatFragment:
-        | ((hasIbl: boolean, hasReflectance: boolean, hasIntensityMap?: boolean, hasRoughnessMap?: boolean, hasNormalMap?: boolean, disableF0Remap?: boolean) => ShaderFragment)
+        | ((
+              hasIbl: boolean,
+              hasReflectance: boolean,
+              hasIntensityMap?: boolean,
+              hasRoughnessMap?: boolean,
+              hasNormalMap?: boolean,
+              disableF0Remap?: boolean,
+              hasSpecularAA?: boolean,
+              hasBaseNormalMap?: boolean
+          ) => ShaderFragment)
         | null = null;
     if (hasClearcoat) {
         const mod = await import("./fragments/clearcoat-fragment.js");

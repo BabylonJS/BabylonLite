@@ -592,7 +592,7 @@ The `Sprite3DSceneUBO` updater is registered into `scene._uniformUpdaters` exact
 
 This costs one extra binding on sprite renderables (group 0 = main `SceneUBO`; group 1 holds atlas tex/sampler, the per-layer or system UBO, and `Sprite3DSceneUBO`). The cost lands only on draws that need it.
 
-**Per-layer UBO (`SpriteLayerUBO`, 16 B)** — bound at `@group(1) @binding(2)` for Sprite2DLayer, AnchoredSpriteLayer, and the facing/yaw billboard variants. Holds animation-friendly per-layer scalars; not in the pipeline cache key.
+**Per-layer UBO (`SpriteLayerUBO`, 32 B)** — bound at `@group(1) @binding(2)` for Sprite2DLayer, AnchoredSpriteLayer, and the facing/yaw billboard variants. Holds animation-friendly per-layer scalars; not in the pipeline cache key.
 
 ```wgsl
 struct SpriteLayerUBO {
@@ -600,6 +600,8 @@ struct SpriteLayerUBO {
     _pad: vec3<f32>,
 };
 ```
+
+> **WGSL alignment.** `vec3<f32>` has a 16-byte alignment, so the struct is padded to **32 bytes** total (opacity at offset 0; `_pad` at offset 16; trailing pad rounds the struct up to a multiple of 16). Allocate the GPU buffer at 32 B — a 16 B allocation will cause the WebGPU validator to reject the bind group with `"buffer binding ... is too small"`.
 
 **System UBO (axis-locked billboards only)** — bound at `@group(1) @binding(2)`, **replacing** `SpriteLayerUBO` for this variant. The shared fragment shader reads `opacity` from `@binding(2)` regardless of which struct sits there; the field is at the same offset in both, so the same fragment WGSL works for every family. The composer adjusts only the struct declaration line.
 
@@ -819,9 +821,13 @@ Three vertex shaders, three pipelines, three dynamic-import chunks. No runtime m
     // CUTOFF block (cutout variant only — composer emits `if (c.a < <ALPHA_CUTOFF>) { discard; }`
     //               where <ALPHA_CUTOFF> is the layer's `alphaCutoff` baked as a WGSL float literal
     //               at composition time and entered into the pipeline cache key).
-    // RETURN block: composer emits `return vec4<f32>(c.rgb * c.a, c.a);` for `alpha` and `multiply`
-    //               (premultiply at output), and `return c;` for `additive`, `cutout`, and `premultiplied`.
-    return vec4<f32>(c.rgb * c.a, c.a);
+    // RETURN block: composer emits `return vec4<f32>(c.rgb * c.a, c.a);` for `multiply` only
+    //               (its `dst-color` srcFactor does not apply alpha, so the shader must do it);
+    //               every other mode emits `return c;`. In particular, `alpha` mode must NOT
+    //               premultiply here because its blend factors are `(src-alpha, 1-src-alpha)` —
+    //               the alpha multiplication is performed by the blend stage. Premultiplying in
+    //               the shader on top would yield `src.rgb * src.a^2`.
+    return c;
 }
 ```
 

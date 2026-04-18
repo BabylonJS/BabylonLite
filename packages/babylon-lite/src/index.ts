@@ -96,6 +96,44 @@ export type { PickingInfo } from "./picking/picking-info.js";
 export { enableDetailedPicking } from "./picking/detailed-picking.js";
 export { getPickedNormal, getPickedUV } from "./picking/picking-helpers.js";
 
+// ─── 2D Scene ────────────────────────────────────────────────────────
+export { createScene2DContext, addToScene2D, removeFromScene2D, disposeScene2D, onBeforeRender2D } from "./scene2d/scene2d.js";
+export type { Scene2DContext, Scene2DOptions } from "./scene2d/scene2d.js";
+export { startEngine2D, renderSprite2DFrame } from "./scene2d/scene2d-render-loop.js";
+
+// ─── Sprites — Family 1 (Pure 2D) ───────────────────────────────────
+export { loadSpriteAtlas, createGridSpriteAtlas, createNamedSpriteAtlas, resolveSpriteFrame } from "./sprite/shared/sprite-atlas.js";
+export type {
+    SpriteAtlas,
+    SpriteFrame,
+    SpriteClip,
+    SpriteSampling,
+    SpriteBlendMode,
+    SpriteFrameRef,
+    GridAtlasOptions,
+    NamedAtlasOptions,
+    LoadAtlasOptions,
+} from "./sprite/shared/sprite-atlas.js";
+export { createSpriteClipState, evaluateSpriteClip, advanceSpriteClip } from "./sprite/shared/sprite-animation.js";
+export type { SpriteClipState } from "./sprite/shared/sprite-animation.js";
+export { createSprite2DLayer, addSprite2D, updateSprite2D, removeSprite2D, setSprite2DFrame, playSprite2DClip, stopSprite2DClip } from "./sprite/sprite-2d.js";
+export type { Sprite2DLayer, Sprite2DLayerOptions, Sprite2DInit, Sprite2DView } from "./sprite/sprite-2d.js";
+export { pickSprite2D } from "./sprite/picking/pick-2d.js";
+export type { SpritePickInfo } from "./sprite/picking/pick-2d.js";
+
+// ─── Sprites — Family 2 (Anchored, 3D scene with fixed pixel size) ──
+export {
+    createAnchoredSpriteLayer,
+    addAnchoredSprite,
+    updateAnchoredSprite,
+    removeAnchoredSprite,
+    setAnchoredSpriteFrame,
+    playAnchoredSpriteClip,
+    stopAnchoredSpriteClip,
+} from "./sprite/sprite-anchored.js";
+export type { AnchoredSpriteLayer, AnchoredSpriteLayerOptions, AnchoredSpriteInit } from "./sprite/sprite-anchored.js";
+export { pickAnchoredSprite } from "./sprite/picking/pick-anchored.js";
+
 // ─── Low-level (for advanced/custom rendering) ──────────────────────
 export type { EnvironmentTextures } from "./loader-env/load-env.js";
 export type { Renderable, PrePassRenderable, SceneUniformUpdater } from "./render/renderable.js";
