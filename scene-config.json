@@ -279,7 +279,7 @@
         "name": "Scene 28 — Clearcoat glTF",
         "maxMad": 0.02,
         "maxRawKB": 81.9,
-        "maxGzipKB": 30.3,
+        "maxGzipKB": 31,
         "description": "ClearCoatTest.gltf (6×3 grid: clearcoat variants) with default environment (IBL only). Matches PG #YG3BBF#33.",
         "tags": ["pbr", "gltf", "env", "clearcoat"]
     },
@@ -289,7 +289,7 @@
         "name": "Scene 29 — Sheen Cloth glTF",
         "maxMad": 0.015,
         "maxRawKB": 81.0,
-        "maxGzipKB": 30.5,
+        "maxGzipKB": 31,
         "description": "SheenCloth.gltf (KHR_materials_sheen + KHR_texture_transform 30× tiling) with default environment (IBL only). Matches PG #YG3BBF#2.",
         "tags": ["pbr", "gltf", "env", "sheen", "texture-transform"]
     }

@@ -413,7 +413,9 @@ async function uploadMeshes(engine: EngineContextInternal, meshDatas: GltfMeshDa
             const specGlossTexture = mat.specGlossImage ? getCachedTexture(mat.specGlossImage, true) : undefined;
             const ormTexture = await getOrmTexture(mat);
             let layers: Partial<import("../material/pbr/pbr-material.js").PbrMaterialProps> | undefined;
-            if (mat.clearcoat || mat.sheen || mat.anisotropy) {
+            let uvTransformST: [number, number, number, number] | undefined;
+            const hasLayer = !!(mat.clearcoat || mat.sheen || mat.anisotropy);
+            if (hasLayer) {
                 const mod = await import("./gltf-material-layers.js");
                 const ccTextures = mat.clearcoat
                     ? {
@@ -422,10 +424,16 @@ async function uploadMeshes(engine: EngineContextInternal, meshDatas: GltfMeshDa
                           ccNormalTexture: mat.clearcoatNormalImage ? getCachedTexture(mat.clearcoatNormalImage, false) : undefined,
                       }
                     : undefined;
-                // Upload sheen color texture (sRGB — RGB carries color, A carries roughness
-                // when color/roughness share the same image per KHR_materials_sheen).
-                const sheenTexture = mat.sheenColorImage ? getCachedTexture(mat.sheenColorImage, true) : undefined;
+                // Sheen color texture (sRGB — RGB carries color, A carries roughness when
+                // color/roughness share the same image per KHR_materials_sheen). Images
+                // are fetched lazily here so the fetch code lives in the dynamic chunk.
+                const sheenImages = await mod.loadSheenImages(mat);
+                const sheenTexture = sheenImages?.sheenColorImage ? getCachedTexture(sheenImages.sheenColorImage, true) : undefined;
                 layers = mod.buildPbrLayers(mat, ccTextures, { sheenTexture });
+            }
+            if (mat._usesUvTransform) {
+                const uvMod = await import("./gltf-uv-transform.js");
+                uvTransformST = uvMod.resolveMaterialUvTransform(mat._rawMatDef);
             }
 
             return {
@@ -441,7 +449,7 @@ async function uploadMeshes(engine: EngineContextInternal, meshDatas: GltfMeshDa
                 ...(mat.metallicRoughnessImage ? { metallicFactor: mat.metallicFactor, roughnessFactor: mat.roughnessFactor } : undefined),
                 enableSpecularAA: true,
                 ...(mat.alphaMode === "BLEND" ? { alphaBlend: true, alpha: mat.baseColorFactor[3] } : undefined),
-                ...(mat.uvTransformST ? { uvTransformST: mat.uvTransformST } : undefined),
+                ...(uvTransformST ? { uvTransformST } : undefined),
                 ...layers,
                 _buildGroup: pbrGroupBuilder,
             } satisfies PbrMaterialPropsInternal;
