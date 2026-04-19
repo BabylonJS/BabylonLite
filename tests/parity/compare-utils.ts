@@ -14,6 +14,8 @@ export interface SceneConfig {
     maxMad: number;
     maxRegionMad?: number;
     maxRawKB?: number;
+    /** Optional human-readable caveat rendered on lab cards (e.g. temporarily relaxed ceilings). */
+    note?: string;
 }
 
 let _sceneConfigCache: SceneConfig[] | null = null;

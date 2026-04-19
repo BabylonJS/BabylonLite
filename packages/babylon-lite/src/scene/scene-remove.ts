@@ -17,7 +17,7 @@ export function removeFromScene(scene: SceneContext, mesh: Mesh): void {
     if (mi2 >= 0) {
         scene.meshes.splice(mi2, 1);
     }
-    for (const arr of [sc._opaqueRenderables, sc._transparentRenderables, sc._renderables]) {
+    for (const arr of [sc._opaqueRenderables, sc._transmissiveRenderables, sc._transparentRenderables, sc._renderables]) {
         const i = arr.findIndex((r) => r.mesh === mesh);
         if (i >= 0) {
             arr.splice(i, 1);

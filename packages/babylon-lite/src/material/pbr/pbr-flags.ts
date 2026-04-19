@@ -43,6 +43,14 @@ export const PBR2_CC_INT_MAP = 1 << 0;
 export const PBR2_CC_ROUGH_MAP = 1 << 1;
 export const PBR2_CC_NORMAL_MAP = 1 << 2;
 export const PBR2_CC_F0_REMAP_OFF = 1 << 3;
+/** Material has KHR_materials_transmission (refraction through surface). */
+export const PBR2_HAS_REFRACTION = 1 << 4;
+/** Material has KHR_materials_volume (thickness-based Beer-Lambert absorption). */
+export const PBR2_HAS_VOLUME = 1 << 5;
+/** Material has a transmission texture (R channel). */
+export const PBR2_HAS_REFRACTION_MAP = 1 << 6;
+/** Thickness texture samples the G channel (KHR_materials_volume). */
+export const PBR2_HAS_THICKNESS_GLTF_CHANNEL = 1 << 7;
 
 let _lightExt: PbrLightExtension | null = null;
 /** @internal */ export function _setPbrLightExtension(ext: PbrLightExtension): void {

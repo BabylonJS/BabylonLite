@@ -14,7 +14,7 @@ import { createMappedBuffer } from "../resource/gpu-buffers.js";
 import { parseGlbContainer, resolveAccessor, buildParentMap, computeNodeWorldMatrix } from "./gltf-parser.js";
 import type { GltfMaterialData, GltfMatExtCtx } from "./gltf-material.js";
 import { assembleMaterial, makeImageFetcher } from "./gltf-material.js";
-import type { GltfFeature, GltfLoadCtx } from "./gltf-feature.js";
+import type { DecodedPrimitive, GltfFeature, GltfLoadCtx } from "./gltf-feature.js";
 import { assemblePbrProps, buildDefaultPbrTextures, runMatExts, uploadTex } from "./gltf-pbr-builder.js";
 
 /** Parsed mesh data ready for GPU upload. */
@@ -78,11 +78,18 @@ export async function loadGltf(engine: EngineContext, url: string): Promise<Asse
     // Discover every triggered feature (material exts, skeleton, morph,
     // animations, variants, …) and dynamic-import them concurrently with
     // mesh extraction. Core loader knows zero feature names.
-    const featuresPromise = loadGltfFeatures(json);
-
-    const meshDatas = await extractAllMeshes(json, binChunk, baseUrl, parentMap, worldMatrixCache);
-    const features = await featuresPromise;
+    const features = await loadGltfFeatures(json);
     const matExts: GltfFeature[] = features.filter((f) => f.applyMaterial);
+
+    // Run every feature's pre-mesh hook (e.g. Draco decompression) and merge
+    // their primitive-keyed decode caches. Features without `preMesh` contribute
+    // nothing; the map stays empty when no primitive-level feature triggered.
+    const decodedPrimitives = new Map<unknown, DecodedPrimitive>();
+    for (const frag of await Promise.all(features.flatMap((f) => (f.preMesh ? [f.preMesh(json, binChunk)] : [])))) {
+        for (const [k, v] of frag) decodedPrimitives.set(k, v);
+    }
+
+    const meshDatas = await extractAllMeshes(json, binChunk, baseUrl, parentMap, worldMatrixCache, decodedPrimitives);
 
     const ctx: GltfLoadCtx = {
         engine: engine as EngineContextInternal,
@@ -112,11 +119,9 @@ export async function loadGltf(engine: EngineContext, url: string): Promise<Asse
 // --- glTF Feature Driver ---
 
 /** A glTF feature: per-asset gating + dynamic-import of a `GltfFeature` module.
- *  Unknown features contribute zero bytes when their `needs(json)` returns false. */
-interface GltfFeatureLoader {
-    needs(json: any): boolean;
-    load(): Promise<{ default: GltfFeature }>;
-}
+ *  Unknown features contribute zero bytes when their `needs(json)` returns false.
+ *  Stored as a tuple [needs, load] for bundle-size reasons. */
+type GltfFeatureLoader = [(json: any) => boolean, () => Promise<{ default: GltfFeature }>];
 
 /** Fetch + parse a .glb or .gltf asset. Returns the JSON, binary chunk, and base URL. */
 async function fetchGltfAsset(url: string): Promise<{ json: any; binChunk: DataView; baseUrl: string }> {
@@ -151,10 +156,11 @@ function anyPrimitive(json: any, pred: (p: any) => boolean): boolean {
     return false;
 }
 
-const hasExt =
-    (id: string) =>
+const _MAT_EXT = "KHR_materials_";
+const hasMatExt =
+    (suffix: string) =>
     (json: any): boolean =>
-        json.extensionsUsed?.includes(id) === true;
+        json.extensionsUsed?.includes(_MAT_EXT + suffix);
 
 /** Asset has at least one material that needs ORM compositing
  *  (separate metallicRoughnessTexture + occlusionTexture pointing at different images). */
@@ -172,30 +178,29 @@ function needsOrmComposite(json: any): boolean {
 }
 
 const _features: GltfFeatureLoader[] = [
+    // Pre-mesh features (geometry decompression)
+    [(j) => j.extensionsUsed?.includes("KHR_draco_mesh_compression"), () => import("./gltf-feature-draco.js")],
     // Material extensions
-    { needs: hasExt("KHR_materials_clearcoat"), load: () => import("./gltf-ext-clearcoat.js") },
-    { needs: hasExt("KHR_materials_sheen"), load: () => import("./gltf-ext-sheen.js") },
-    { needs: hasExt("KHR_materials_anisotropy"), load: () => import("./gltf-ext-anisotropy.js") },
-    { needs: hasExt("KHR_materials_pbrSpecularGlossiness"), load: () => import("./gltf-ext-spec-gloss.js") },
-    { needs: hasExt("KHR_texture_transform"), load: () => import("./gltf-ext-uv-transform.js") },
-    { needs: needsOrmComposite, load: () => import("./gltf-ext-orm.js") },
+    [hasMatExt("clearcoat"), () => import("./gltf-ext-clearcoat.js")],
+    [hasMatExt("sheen"), () => import("./gltf-ext-sheen.js")],
+    [hasMatExt("anisotropy"), () => import("./gltf-ext-anisotropy.js")],
+    [hasMatExt("pbrSpecularGlossiness"), () => import("./gltf-ext-spec-gloss.js")],
+    // Dielectric cluster (ior/specular/transmission/volume) — any of the four triggers the loader;
+    // refraction render path is wired via fragments/refraction-fragment.ts (env-only V1).
+    [(j) => ["transmission", "volume", "ior", "specular"].some((e) => hasMatExt(e)(j)), () => import("./gltf-ext-dielectric.js")],
+    [(j) => j.extensionsUsed?.includes("KHR_texture_transform"), () => import("./gltf-ext-uv-transform.js")],
+    [needsOrmComposite, () => import("./gltf-ext-orm.js")],
     // Per-mesh features (predicates inlined to avoid eager imports)
-    {
-        needs: (json) => !!json.skins?.length && anyPrimitive(json, (p) => p.attributes?.JOINTS_0 !== undefined),
-        load: () => import("./gltf-feature-skeleton.js"),
-    },
-    {
-        needs: (json) => anyPrimitive(json, (p) => !!p.targets?.length),
-        load: () => import("./gltf-feature-morph.js"),
-    },
+    [(json) => !!json.skins?.length && anyPrimitive(json, (p) => p.attributes?.JOINTS_0 !== undefined), () => import("./gltf-feature-skeleton.js")],
+    [(json) => anyPrimitive(json, (p) => !!p.targets?.length), () => import("./gltf-feature-morph.js")],
     // Per-asset features
-    { needs: (json) => !!json.animations?.length, load: () => import("./gltf-feature-animations.js") },
-    { needs: hasExt("KHR_materials_variants"), load: () => import("./gltf-feature-variants.js") },
+    [(json) => !!json.animations?.length, () => import("./gltf-feature-animations.js")],
+    [hasMatExt("variants"), () => import("./gltf-feature-variants.js")],
 ];
 
 /** Dynamic-import every feature the asset triggers. */
 async function loadGltfFeatures(json: any): Promise<GltfFeature[]> {
-    const mods = await Promise.all(_features.flatMap((f) => (f.needs(json) ? [f.load()] : [])));
+    const mods = await Promise.all(_features.flatMap(([needs, load]) => (needs(json) ? [load()] : [])));
     return mods.map((m) => m.default);
 }
 
@@ -246,7 +251,14 @@ function buildNodeHierarchy(json: any, meshes: Mesh[], meshDatas: GltfMeshData[]
 
 // --- Mesh Extraction ---
 
-async function extractAllMeshes(json: any, binChunk: DataView, baseUrl: string, parentMap: Map<number, number>, worldMatrixCache: Map<number, Mat4>): Promise<GltfMeshData[]> {
+async function extractAllMeshes(
+    json: any,
+    binChunk: DataView,
+    baseUrl: string,
+    parentMap: Map<number, number>,
+    worldMatrixCache: Map<number, Mat4>,
+    decodedPrimitives: Map<unknown, DecodedPrimitive>,
+): Promise<GltfMeshData[]> {
     // Pre-load skin extraction once if any node uses a skin (avoids per-primitive dynamic import)
     const needsSkin = json.nodes.some((n: any) => n.skin !== undefined) && !!json.skins;
     const extractSkinFn = needsSkin ? (await import("./gltf-animation.js")).extractSkin : null;
@@ -281,13 +293,25 @@ async function extractAllMeshes(json: any, binChunk: DataView, baseUrl: string, 
 
         for (const primitive of mesh.primitives) {
             const attrs = primitive.attributes;
-            const resolve = (idx: number | undefined) => (idx !== undefined ? resolveAccessor(json, binChunk, idx) : null);
-
-            const posData = resolveAccessor(json, binChunk, attrs.POSITION);
-            const normData = resolveAccessor(json, binChunk, attrs.NORMAL);
-            const uvData = resolve(attrs.TEXCOORD_0);
-            const tanData = resolve(attrs.TANGENT);
-            const idxData = resolve(primitive.indices);
+            const decoded = decodedPrimitives.get(primitive);
+            const resolveAttr = (name: string): { data: ArrayBufferView; count: number; componentCount: number } | null => {
+                if (decoded && decoded.attributes.has(name)) {
+                    const data = decoded.attributes.get(name)!;
+                    const componentCount = data.length / decoded.vertexCount;
+                    return { data, count: decoded.vertexCount, componentCount };
+                }
+                const idx = attrs[name];
+                return idx !== undefined ? resolveAccessor(json, binChunk, idx) : null;
+            };
+            const posData = resolveAttr("POSITION")!;
+            const normData = resolveAttr("NORMAL")!;
+            const uvData = resolveAttr("TEXCOORD_0");
+            const tanData = resolveAttr("TANGENT");
+            const idxData = decoded
+                ? { data: decoded.indices, count: decoded.indexCount, componentCount: 1 }
+                : primitive.indices !== undefined
+                  ? resolveAccessor(json, binChunk, primitive.indices)
+                  : null;
 
             // Keep vertex data as-is from glTF — RH→LH conversion handled by root world matrix
             const indices = idxData
@@ -297,10 +321,10 @@ async function extractAllMeshes(json: any, binChunk: DataView, baseUrl: string, 
                 : new Uint16Array(0);
 
             // Joints + weights for skeletal animation (4-bone + optional 8-bone)
-            const jointsData = resolve(attrs.JOINTS_0);
-            const weightsData = resolve(attrs.WEIGHTS_0);
-            const joints1Data = resolve(attrs.JOINTS_1);
-            const weights1Data = resolve(attrs.WEIGHTS_1);
+            const jointsData = resolveAttr("JOINTS_0");
+            const weightsData = resolveAttr("WEIGHTS_0");
+            const joints1Data = resolveAttr("JOINTS_1");
+            const weights1Data = resolveAttr("WEIGHTS_1");
 
             // Skin extraction is synchronous once the module is loaded
             let skin: GltfSkinData | null = null;

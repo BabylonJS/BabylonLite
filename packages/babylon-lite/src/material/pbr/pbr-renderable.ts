@@ -33,6 +33,7 @@ import {
     clearPbrPipelineCache,
     PBR_HAS_NORMAL_MAP,
     PBR_HAS_ALPHA_BLEND,
+    PBR2_HAS_REFRACTION,
     PBR_HAS_METALLIC_REFLECTANCE_MAP,
     PBR_HAS_REFLECTANCE_MAP,
     PBR_HAS_SPECULAR_AA,
@@ -209,6 +210,11 @@ export async function buildPbrRenderables(
     if (hasAnySubsurface) {
         const mod = await import("./fragments/subsurface-fragment.js");
         _registerPbrExt(mod.subsurfaceExt);
+    }
+
+    if (meshes.some((m) => ((m.material as PbrMaterialProps).subsurface?.refraction?.intensity ?? 0) > 0)) {
+        const mod = await import("./fragments/refraction-fragment.js");
+        _registerPbrExt(mod.refractionExt);
     }
 
     const needsEmissiveColor = meshes.some((m) => !!(m.material as PbrMaterialProps).emissiveColor);
@@ -457,13 +463,15 @@ export async function buildPbrRenderables(
         ]);
     }
 
-    // Split packets into opaque and transparent for correct draw order
-    const opaquePackets = packets.filter((p) => (p.variant.features & PBR_HAS_ALPHA_BLEND) === 0);
-    const transparentPackets = packets.filter((p) => (p.variant.features & PBR_HAS_ALPHA_BLEND) !== 0);
-
-    // Sort each list by pipeline variant so consecutive draws can skip redundant setPipeline
-    opaquePackets.sort((a, b) => a.variant.features - b.variant.features);
-    transparentPackets.sort((a, b) => a.variant.features - b.variant.features);
+    // Three-way partition: 0=opaque, 1=transmissive (refraction), 2=transparent (alpha-blend).
+    const buckets: PbrDrawPacket[][] = [[], [], []];
+    for (const p of packets) {
+        const b = p.variant.features & PBR_HAS_ALPHA_BLEND ? 2 : p.variant.features2 & PBR2_HAS_REFRACTION ? 1 : 0;
+        buckets[b]!.push(p);
+    }
+    for (const b of buckets) {
+        b.sort((a, b) => a.variant.features - b.variant.features);
+    }
     const renderables: Renderable[] = [];
 
     function drawPackets(pass: GPURenderPassEncoder | GPURenderBundleEncoder, list: PbrDrawPacket[]): number {
@@ -533,26 +541,21 @@ export async function buildPbrRenderables(
         }
     }
 
-    if (opaquePackets.length > 0) {
+    const ORDERS = [100, 140, 150];
+    for (let i = 0; i < 3; i++) {
+        const list = buckets[i]!;
+        if (list.length === 0) {
+            continue;
+        }
         renderables.push({
-            order: 100,
-            isTransparent: false,
+            order: ORDERS[i]!,
+            isTransparent: i === 2,
+            isTransmissive: i === 1,
             _sceneBG: sceneBindGroup,
             updateUBOs() {
-                updatePacketUBOs(opaquePackets);
+                updatePacketUBOs(list);
             },
-            draw: (pass) => drawPackets(pass, opaquePackets),
-        });
-    }
-    if (transparentPackets.length > 0) {
-        renderables.push({
-            order: 150,
-            isTransparent: true,
-            _sceneBG: sceneBindGroup,
-            updateUBOs() {
-                updatePacketUBOs(transparentPackets);
-            },
-            draw: (pass) => drawPackets(pass, transparentPackets),
+            draw: (pass) => drawPackets(pass, list),
         });
     }
 

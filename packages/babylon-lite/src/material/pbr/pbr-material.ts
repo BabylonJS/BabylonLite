@@ -176,12 +176,33 @@ export interface ScatteringProps {
 
 /** Thickness sub-feature. Controls how thick the material is at each point. */
 export interface ThicknessProps {
-    /** Thickness map texture. G channel is sampled (BJS default / glTF-style). */
+    /** Thickness map texture. R channel is sampled by default (matches
+     *  existing BJS non-glTF path). Set `useGlTFChannel=true` for G-channel
+     *  sampling as specified by KHR_materials_volume. */
     texture?: Texture2D;
+    /** When true, sample the thickness texture's G channel (KHR_materials_volume).
+     *  Default false — samples R channel (BJS default). Set by the glTF loader. */
+    useGlTFChannel?: boolean;
     /** Minimum thickness. Default 0. */
     min?: number;
     /** Maximum thickness. Default 1.0. */
     max?: number;
+}
+
+/** Refraction sub-feature (KHR_materials_transmission + _volume + _ior).
+ *  Presence enables transmission. Requires an opaque-scene RTT at render time. */
+export interface RefractionProps {
+    /** Transmission factor (0=off, 1=fully transmissive). Default 0.
+     *  Maps to KHR_materials_transmission.transmissionFactor. */
+    intensity?: number;
+    /** Optional transmission texture (R channel). Multiplies `intensity`. */
+    texture?: Texture2D;
+    /** Index of refraction (KHR_materials_ior.ior). Default 1.5 (glass). */
+    indexOfRefraction?: number;
+    /** When true, the thickness value is also used as the refracted
+     *  sample offset depth (KHR_materials_volume — matches BJS
+     *  `useThicknessAsDepth`). Default true when volume is present. */
+    useThicknessAsDepth?: boolean;
 }
 
 /** Tint sub-feature. Controls absorption tint color for transmittance. */
@@ -202,6 +223,10 @@ export interface SubSurfaceProps {
     thickness?: ThicknessProps;
     /** Tint: absorption tint color for transmittance. */
     tint?: TintProps;
+    /** Refraction: physical light transmission through the surface
+     *  (KHR_materials_transmission + _volume + _ior). Presence enables it.
+     *  Requires the engine to produce an opaque-scene render target. */
+    refraction?: RefractionProps;
 }
 
 /** Create a PbrMaterialProps with optional overrides. */

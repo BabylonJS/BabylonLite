@@ -61,6 +61,10 @@ export interface SceneContextInternal extends SceneContext {
     _renderables: Renderable[];
     /** Opaque renderables — sorted by order at build time. */
     _opaqueRenderables: Renderable[];
+    /** Transmissive renderables — opaque (write-depth) but need the opaque-scene RTT as input.
+     *  Rendered after _opaqueRenderables and before _transparentRenderables in the main pass;
+     *  when non-empty the engine also runs the opaque-scene pre-pass. */
+    _transmissiveRenderables: Renderable[];
     /** Transparent renderables — sorted per-frame by camera distance (back-to-front). */
     _transparentRenderables: Renderable[];
     /** Pre-pass work (shadow maps, compute, etc.). */
@@ -98,6 +102,12 @@ export interface SceneContextInternal extends SceneContext {
     _standardSceneUBO?: GPUBuffer;
     _pbrLightsUBO?: GPUBuffer;
     _pbrLightsUBOScratch?: Float32Array;
+
+    /** Lazy render-hook inserted between pre-passes and the main render pass. The hook may
+     *  finish & submit `enc`, do extra GPU work (e.g., opaque-scene RTT + mipmap), and must
+     *  return the encoder that the main pass should record into. Installed by the lazy
+     *  refraction module only; core renderFrame is hook-free for non-transmissive scenes. */
+    _beforeMain?: (engine: EngineContext, scene: SceneContextInternal, enc: GPUCommandEncoder) => GPUCommandEncoder;
 }
 
 /** Install a property setter on mesh.material that sets _materialDirty
@@ -137,6 +147,7 @@ export function createSceneContext(engine: EngineContext): SceneContext {
         imageProcessing: { exposure: 1.0, contrast: 1.0, toneMappingEnabled: false },
         _renderables: [],
         _opaqueRenderables: [],
+        _transmissiveRenderables: [],
         _transparentRenderables: [],
         _prePasses: [],
         _uniformUpdaters: [],
@@ -246,6 +257,7 @@ export function disposeScene(scene: SceneContext): void {
     ctx.meshes.length = 0;
     ctx._renderables.length = 0;
     ctx._opaqueRenderables.length = 0;
+    ctx._transmissiveRenderables.length = 0;
     ctx._transparentRenderables.length = 0;
     ctx._prePasses.length = 0;
     ctx._uniformUpdaters.length = 0;
@@ -299,7 +311,7 @@ export function processMaterialSwaps(scene: SceneContext): void {
             if (renderable.isTransparent) {
                 ctx._transparentRenderables.push(renderable);
             } else {
-                const arr = ctx._opaqueRenderables;
+                const arr = renderable.isTransmissive ? ctx._transmissiveRenderables : ctx._opaqueRenderables;
                 let i = arr.length;
                 while (i > 0 && arr[i - 1]!.order > renderable.order) {
                     i--;

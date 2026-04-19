@@ -33,10 +33,23 @@ export interface GltfLoadCtx {
     matExts: GltfFeature[];
 }
 
-/** A glTF feature module. Each module implements one or more of the three hooks. */
+/** Pre-decoded primitive data keyed by the primitive object. Features like
+ *  KHR_draco_mesh_compression populate this in their `preMesh` hook so that
+ *  the core mesh-extraction loop stays feature-agnostic. */
+export interface DecodedPrimitive {
+    attributes: Map<string, Float32Array | Uint32Array | Int32Array>;
+    indices: Uint32Array;
+    vertexCount: number;
+    indexCount: number;
+}
+
+/** A glTF feature module. Each module implements one or more of the four hooks. */
 export interface GltfFeature {
     /** Diagnostic id, e.g. "KHR_materials_clearcoat" or "_skeleton". */
     id: string;
+    /** Pre-extract hook: runs before mesh extraction. Returns a map of glTF
+     *  primitive objects to pre-decoded attribute/index data. Used by e.g. Draco. */
+    preMesh?(json: unknown, binChunk: DataView): Promise<Map<unknown, DecodedPrimitive>>;
     /** Material-layer hook: contributes a partial PbrMaterialProps per material. */
     applyMaterial?(mat: GltfMaterialData, ctx: GltfMatExtCtx): Promise<Partial<PbrMaterialProps> | null>;
     /** Per-mesh hook: mutates a freshly-uploaded `MeshInternal`
