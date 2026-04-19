@@ -1,20 +1,19 @@
-// Scene 36 — Billboard Facing (Family 3, spherical billboard).
+// Scene 38 — Billboard Axis-Locked to world-X (Family 3).
 //
-// Five sprites at varying world Y rendered through `createFacingBillboardSystem`.
-// Quad basis comes from the camera's right + up vectors (extracted on the CPU
-// each frame), so sprites face the camera fully — top edges tilt toward the
-// camera as it tilts down.
+// Five sprites rendered through `createAxisLockedBillboardSystem` with lock
+// axis = [1, 0, 0]. Quad up-axis is locked to world-X; right is built from
+// the camera-projected forward perpendicular to that axis. Sprites stand
+// "sideways" — their up vector points along world-X.
 //
-// Reference path: Babylon.js `SpriteManager` (see `bjs/scene36.ts`). BJS
-// SpriteManager uses the same spherical-billboard math, so the parity diff is
-// driven only by float rounding in the shaders + texture sampling — which is
-// expected to land well under MAD 0.01.
+// Reference path: BJS has no axis-locked SpriteManager, so the BJS reference
+// builds its quads via textured planes with the same basis math (see
+// `bjs/scene38.ts`).
 
 import {
     addBillboardSprite,
     addToScene,
     createArcRotateCamera,
-    createFacingBillboardSystem,
+    createAxisLockedBillboardSystem,
     createGround,
     createHemisphericLight,
     createSceneContext,
@@ -61,12 +60,12 @@ async function main(): Promise<void> {
         sampling: "linear",
     });
 
-    const layer = createFacingBillboardSystem(atlas, { capacity: 8, blendMode: "alpha" });
+    const layer = createAxisLockedBillboardSystem(atlas, [1, 0, 0], { capacity: 8, blendMode: "alpha" });
     for (const s of BILLBOARD_SCENE_LAYOUT.sprites) {
         addBillboardSprite(layer, {
             position: s.position,
             sizeWorld: s.sizeWorld,
-            frame: BILLBOARD_ATLAS_INFO.frames.glow,
+            frame: BILLBOARD_ATLAS_INFO.frames.flag,
         });
     }
     addToScene(scene, layer);

@@ -1,25 +1,28 @@
-// Scene 36 — Billboard Facing (Family 3, spherical billboard).
+// Scene 37 — Billboard Yaw-Locked / Cylindrical (Family 3).
 //
-// Five sprites at varying world Y rendered through `createFacingBillboardSystem`.
-// Quad basis comes from the camera's right + up vectors (extracted on the CPU
-// each frame), so sprites face the camera fully — top edges tilt toward the
-// camera as it tilts down.
+// Five sprites rendered through `createYawLockedBillboardSystem`. Quad up-axis
+// is locked to world-Y, so trees stay vertical regardless of camera tilt.
+// Comparing this scene's golden against scene 36's exposes the difference:
+// here the top edges remain world-vertical, while in scene 36 they tilt with
+// the camera.
 //
-// Reference path: Babylon.js `SpriteManager` (see `bjs/scene36.ts`). BJS
-// SpriteManager uses the same spherical-billboard math, so the parity diff is
-// driven only by float rounding in the shaders + texture sampling — which is
-// expected to land well under MAD 0.01.
+// Reference path: BJS has no native yaw-locked SpriteManager, so the BJS
+// reference (`bjs/scene37.ts`) builds its own quads via textured planes with
+// the same yaw-lock basis (up = worldY, right = normalize(cross(worldY,
+// toCam))). This produces tight parity (MAD ≪ 0.01) — the alternative of
+// using BJS's spherical SpriteManager would produce a structural diff that
+// has nothing to do with the math we're validating.
 
 import {
     addBillboardSprite,
     addToScene,
     createArcRotateCamera,
-    createFacingBillboardSystem,
     createGround,
     createHemisphericLight,
     createSceneContext,
     createStandardMaterial,
     createEngine,
+    createYawLockedBillboardSystem,
     loadSpriteAtlas,
     onBeforeRender,
     startEngine,
@@ -61,12 +64,12 @@ async function main(): Promise<void> {
         sampling: "linear",
     });
 
-    const layer = createFacingBillboardSystem(atlas, { capacity: 8, blendMode: "alpha" });
+    const layer = createYawLockedBillboardSystem(atlas, { capacity: 8, blendMode: "alpha" });
     for (const s of BILLBOARD_SCENE_LAYOUT.sprites) {
         addBillboardSprite(layer, {
             position: s.position,
             sizeWorld: s.sizeWorld,
-            frame: BILLBOARD_ATLAS_INFO.frames.glow,
+            frame: BILLBOARD_ATLAS_INFO.frames.tree,
         });
     }
     addToScene(scene, layer);

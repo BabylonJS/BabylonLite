@@ -1,38 +1,36 @@
 /**
- * Scene 33 — Sprites Anchored Animated + Cutout Parity Test (Family 2)
+ * Scene 34 — Sprites Anchored Labels Parity Test (Family 2)
  *
- * Two anchored layers in a 3D scene with a static camera:
- *   - Alpha-blend layer: animated `spin` clip frozen at seekTime.
- *   - Cutout layer: depth-writing silhouettes with alphaCutoff=0.5.
+ * 4 boxes with anchored labels (A/B/C/D); labels stay fixed pixel size
+ * regardless of camera distance. One label is non-pickable.
  *
  * Reference is Lite-fallback (per docs/architecture/26-sprites.md): no
- * tractable canvas2D analogue exists for the cutout depth-write contract
- * in a 3D scene, so the captured golden serves as a regression snapshot.
+ * tractable canvas2D analogue exists for projected anchored sprites in a
+ * 3D scene, so the captured golden serves as a regression snapshot.
  *
- * Picking smoke-test asserts pickable vs non-pickable cutout sprites.
+ * Picking smoke-test asserts that pickAnchoredSprite hits the projected
+ * anchor center for pickable sprites and misses the non-pickable one.
  */
 import { test, expect } from "@playwright/test";
 import * as path from "path";
 import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
 
-const SEEK_TIME = 0.5;
-const sceneConfig = getSceneConfig(33);
-const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene33-sprites-anchored-animated-cutout");
+const sceneConfig = getSceneConfig(34);
+const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene34-sprites-anchored-labels");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
 interface PickResult {
-    label: string;
-    expectedHit: boolean;
+    i: number;
+    pickable: boolean;
     hit: boolean;
 }
 
-test("Scene 33 — Sprites Anchored Animated Cutout matches Lite-fallback golden at seekTime=0.5s", async ({ page }, testInfo) => {
+test("Scene 34 — Sprites Anchored Labels match Lite-fallback golden", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
-    await captureGolden(browser, { sceneId: 33, seekTime: SEEK_TIME });
+    await captureGolden(browser, { sceneId: 34 });
 
-    await page.goto(`/scene33.html?seekTime=${SEEK_TIME}`);
+    await page.goto("/scene34.html");
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 20_000 });
-    await page.waitForFunction(() => document.querySelector("canvas")?.dataset.animationFrozen === "true", { timeout: 20_000 });
     await page.waitForTimeout(500);
 
     const screenshotPath = path.join(REFERENCE_DIR, "test-actual.png");
@@ -43,9 +41,14 @@ test("Scene 33 — Sprites Anchored Animated Cutout matches Lite-fallback golden
     console.log(`Full image (${full.totalPixels} px): MAD=${full.mad.toFixed(3)}`);
     expect(full.mad, `Full image MAD should be ≤ ${sceneConfig.maxMad}`).toBeLessThanOrEqual(sceneConfig.maxMad);
 
+    // Picking smoke-test: 4 sprites; index 2 is pickable=false.
     const pickResults: PickResult[] = JSON.parse((await page.locator("canvas").getAttribute("data-pick-results")) ?? "[]");
-    expect(pickResults).toHaveLength(2);
+    expect(pickResults).toHaveLength(4);
     for (const r of pickResults) {
-        expect(r.hit, `${r.label}: expected hit=${r.expectedHit}`).toBe(r.expectedHit);
+        if (r.pickable) {
+            expect(r.hit, `sprite ${r.i} should be pickable and hit`).toBe(true);
+        } else {
+            expect(r.hit, `sprite ${r.i} should not be hit (pickable=false)`).toBe(false);
+        }
     }
 });

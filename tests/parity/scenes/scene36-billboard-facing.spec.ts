@@ -1,9 +1,13 @@
 /**
- * Scene 36 — Billboard Axis-Locked [1,0,0] parity test (Family 3).
+ * Scene 36 — Billboard Facing parity test (Family 3, spherical billboard).
  *
- * Reference is BJS textured planes oriented with the same axis-lock basis as
- * Lite's WGSL (up = lockAxis, right = normalize(cross(lockAxis, projected_toCam))).
- * BJS has no SpriteManager equivalent for axis-locked billboards.
+ * Reference is a BJS textured plane (`MeshBuilder.CreatePlane`) oriented
+ * each frame with the SAME basis as Lite's `composeFacingBillboard` WGSL:
+ *   right = camera.worldMatrix column 0
+ *   up    = camera.worldMatrix column 1
+ *
+ * This matches the recipe scenes 35 (yaw) and 36 (axis) use and reaches
+ * MAD = 0.0000.
  */
 import { test, expect } from "@playwright/test";
 import * as path from "path";
@@ -11,10 +15,10 @@ import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } 
 
 const SEEK_TIME = 1.0;
 const sceneConfig = getSceneConfig(36);
-const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene36-billboard-axis");
+const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene36-billboard-facing");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test("Scene 36 — Billboard Axis-Locked matches BJS textured-plane golden at seekTime=1.0s", async ({ page }, testInfo) => {
+test("Scene 36 — Billboard Facing matches BJS textured-plane golden at seekTime=1.0s", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
     await captureGolden(browser, { sceneId: 36, seekTime: SEEK_TIME });
 

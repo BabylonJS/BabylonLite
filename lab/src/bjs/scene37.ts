@@ -1,21 +1,19 @@
-// Reference scene 36 — Babylon.js textured-plane rendering of facing
-// (spherical) billboards.
+// Reference scene 37 — Babylon.js textured-plane rendering of yaw-locked
+// (cylindrical) billboards.
 //
-// `SpriteManager` performs an off-by-axis projection that does not match
-// Lite's `composeFacingBillboard` WGSL (which expands each quad along
-// `cameraRight`/`cameraUp` extracted from the camera world matrix). To
-// remove the spurious sub-pixel diff that SpriteManager introduces under
-// camera tilt, we instead build per-sprite quads with `MeshBuilder.CreatePlane`
-// and orient them with the SAME basis as Lite's vertex shader:
+// BJS's `SpriteManager` is spherical-only — it can't lock the up-axis to
+// world-Y. Using it would produce a structural diff vs. Lite under camera
+// tilt that has nothing to do with the math we're validating. Instead, we
+// build per-sprite quads with `MeshBuilder.CreatePlane` and orient them
+// with the SAME yaw-lock basis as Lite's WGSL:
 //
-//   right = camera.worldMatrix column 0
-//   up    = camera.worldMatrix column 1
-//   fwd   = cross(right, up)               // plane normal toward camera
+//   up    = worldY = (0,1,0)
+//   right = normalize(cross(up, toCam))     // matches sprite-billboard-yaw-shader.ts
+//   fwd   = cross(right, up)
 //
-// This is the same recipe scenes 35 (yaw-locked) and 36 (axis-locked) use
-// to achieve MAD = 0.0000.
-//
-// Pivot is the plane center (matches Lite's `(0.5, 0.5)` convention).
+// The basis is recomputed every frame in `onBeforeRenderObservable` from the
+// camera's current world position — same per-vertex math as Lite's shader,
+// just hoisted to the CPU.
 
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Constants } from "@babylonjs/core/Engines/constants";
@@ -46,14 +44,7 @@ import { BILLBOARD_SCENE_LAYOUT } from "../_shared/billboard-scene-layout";
     scene.clearColor = new Color4(cc.r, cc.g, cc.b, cc.a);
 
     const camCfg = BILLBOARD_SCENE_LAYOUT.camera;
-    const cam = new ArcRotateCamera(
-        "cam",
-        camCfg.alpha,
-        camCfg.beta,
-        camCfg.radius,
-        new Vector3(camCfg.target.x, camCfg.target.y, camCfg.target.z),
-        scene,
-    );
+    const cam = new ArcRotateCamera("cam", camCfg.alpha, camCfg.beta, camCfg.radius, new Vector3(camCfg.target.x, camCfg.target.y, camCfg.target.z), scene);
     cam.fov = camCfg.fov;
     cam.minZ = camCfg.near;
     cam.maxZ = camCfg.far;
@@ -68,13 +59,15 @@ import { BILLBOARD_SCENE_LAYOUT } from "../_shared/billboard-scene-layout";
 
     // Atlas texture — invertY=false to match Lite's `loadSpriteAtlas`
     // (which forces invertY=false). Both engines must consume the atlas
-    // row order the same way.
+    // row order the same way, otherwise the tree appears upside-down on
+    // one side relative to the other.
     const atlasTex = await new Promise<Texture>((resolve) => {
         const t = new Texture(BILLBOARD_ATLAS_URL, scene, true, false, Texture.LINEAR_LINEAR);
         t.wrapU = Texture.CLAMP_ADDRESSMODE;
         t.wrapV = Texture.CLAMP_ADDRESSMODE;
         t.hasAlpha = true;
-        const f = BILLBOARD_ATLAS_INFO.frames.glow;
+        // Sub-region: column f, single row. uScale = cellW / atlasW = 1/3.
+        const f = BILLBOARD_ATLAS_INFO.frames.tree;
         t.uScale = BILLBOARD_ATLAS_INFO.cellWidthPx / BILLBOARD_ATLAS_INFO.widthPx;
         t.uOffset = (f * BILLBOARD_ATLAS_INFO.cellWidthPx) / BILLBOARD_ATLAS_INFO.widthPx;
         t.vScale = 1;
@@ -106,23 +99,31 @@ import { BILLBOARD_SCENE_LAYOUT } from "../_shared/billboard-scene-layout";
         planes.push({ mesh: plane, pos: plane.position.clone() });
     }
 
-    // Facing basis: right/up extracted directly from the camera's world
-    // matrix columns — identical to `Sprite3DSceneUBO`'s updater, which is
-    // the source of `scene.cameraRight` / `scene.cameraUp` consumed by
-    // Lite's facing-billboard vertex shader.
+    // Yaw-lock basis: up = worldY, right = normalize(cross(up, toCam)).
+    // Recomputed each frame from the camera's current world position so that
+    // any future camera motion would be tracked. Camera is static in this
+    // scene, so the math is constant after frame 0.
+    const tmpToCam = new Vector3();
     const tmpRight = new Vector3();
-    const tmpUp = new Vector3();
     const tmpFwd = new Vector3();
+    const worldUp = new Vector3(0, 1, 0);
     const basisMat = new Matrix();
     function updateBillboards(): void {
-        const wm = cam.getWorldMatrix().m;
-        tmpRight.set(wm[0]!, wm[1]!, wm[2]!);
-        tmpUp.set(wm[4]!, wm[5]!, wm[6]!);
-        // fwd = cross(right, up) — guarantees right-handed orthonormal basis
-        // with the plane normal pointing toward the camera.
-        Vector3.CrossToRef(tmpRight, tmpUp, tmpFwd);
-        Matrix.FromXYZAxesToRef(tmpRight, tmpUp, tmpFwd, basisMat);
-        for (const { mesh } of planes) {
+        const camPos = cam.globalPosition;
+        for (const { mesh, pos } of planes) {
+            tmpToCam.copyFrom(camPos).subtractInPlace(pos).normalize();
+            // right = cross(up, toCam); fall back to world-X if camera is directly overhead.
+            Vector3.CrossToRef(worldUp, tmpToCam, tmpRight);
+            const len = tmpRight.length();
+            if (len < 1e-4) {
+                tmpRight.set(1, 0, 0);
+            } else {
+                tmpRight.scaleInPlace(1 / len);
+            }
+            // fwd = cross(right, up) — guarantees right-handed orthonormal basis.
+            Vector3.CrossToRef(tmpRight, worldUp, tmpFwd);
+            // Build rotation matrix with columns = (right, up, fwd) and convert to quaternion.
+            Matrix.FromXYZAxesToRef(tmpRight, worldUp, tmpFwd, basisMat);
             Quaternion.FromRotationMatrixToRef(basisMat, mesh.rotationQuaternion!);
         }
     }
