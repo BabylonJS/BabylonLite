@@ -125,6 +125,7 @@
                 text-decoration: none;
                 color: inherit;
                 display: block;
+                position: relative;
             }
             .card:hover {
                 border-color: #58a6ff;
@@ -181,17 +182,24 @@
                 line-height: 1.4;
             }
             .card-note {
+                position: absolute;
+                left: 0.5rem;
+                right: 0.5rem;
+                bottom: 0.5rem;
                 display: flex;
                 gap: 0.4rem;
                 align-items: flex-start;
-                margin-top: 0.5rem;
                 padding: 0.45rem 0.55rem;
-                background: #3d2e00;
+                background: rgba(61, 46, 0, 0.92);
                 border: 1px solid #7a5a00;
                 border-radius: 4px;
                 font-size: 0.72rem;
                 line-height: 1.35;
-                color: #e3b341;
+                color: #f5c849;
+                backdrop-filter: blur(4px);
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+                z-index: 2;
+                pointer-events: auto;
             }
             .card-note::before {
                 content: "\26A0";
@@ -199,6 +207,14 @@
                 font-size: 0.85rem;
                 line-height: 1;
                 margin-top: 0.1rem;
+            }
+            .card-image {
+                position: relative;
+            }
+            /* Source (parity) cards wrap the <img> directly in .card; anchor the note absolutely to the card instead. */
+            .card > .card-note {
+                top: 0.5rem;
+                bottom: auto;
             }
             .badge {
                 display: inline-block;
@@ -2945,12 +2961,13 @@
                         '<div class="card-overlay">' +
                         '<span class="pg-link" onclick="event.preventDefault();event.stopPropagation();showBundleFiles(\'scene' + s.id + '\');" title="Show .ts files contributing to this bundle">\ud83d\udcc4 Files</span>' +
                         '<span class="pg-link" onclick="event.preventDefault();event.stopPropagation();window.open(\'/bundle-bjs-scene' + s.id + '.html\',\'_blank\');" title="Open Babylon.js reference">\u25b6 BJS Ref</span>' +
-                        '</div></div>' +
+                        '</div>' +
+                        renderNote(s) +
+                        '</div>' +
                         '<div class="card-body">' +
                         '<h2>' + s.name + '</h2>' +
                         '<p>' + s.description + '</p>' +
                         renderBadges(s.tags) +
-                        renderNote(s) +
                         '<div class="size-info"></div>' +
                         '</div></a>';
                 }).join("");
