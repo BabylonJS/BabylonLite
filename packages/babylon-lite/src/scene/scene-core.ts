@@ -103,12 +103,9 @@ export interface SceneContextInternal extends SceneContext {
     _pbrLightsUBO?: GPUBuffer;
     _pbrLightsUBOScratch?: Float32Array;
 
-    // ─── Sprite (anchored / future billboard) shared per-scene UBOs ────
-    /** Per-scene anchored-sprite scene UBO (viewProjection matrix). Created lazily by the
-     *  first anchored renderable; reused by subsequent layers. */
-    _anchoredSceneUBO?: GPUBuffer;
-    /** Per-scene Sprite3DSceneUBO (camera basis + viewport). Created lazily and reused
-     *  across all anchored / billboard sprite renderables. */
+    /** Per-scene Sprite3DSceneUBO (viewProjection + camera basis + viewport). Created
+     *  lazily by the first anchored or billboard sprite renderable and reused across
+     *  all 3D sprite families. See `sprite/shared/sprite-3d-scene-ubo.ts`. */
     _sprite3dSceneUBO?: GPUBuffer;
 
     /** Lazy render-hook inserted between pre-passes and the main render pass. The hook may
