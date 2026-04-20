@@ -25,4 +25,3 @@ function cascade(node: SceneNode, v: boolean): void {
         cascade(kids[i]!, v);
     }
 }
-

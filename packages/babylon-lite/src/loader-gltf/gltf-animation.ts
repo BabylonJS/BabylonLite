@@ -33,7 +33,9 @@ export function _installPointerHandlers(parser: PointerChannelParser, converter:
  *  aligned Float32 data). KHR_animation_pointer installs a converter that
  *  additionally handles non-Float32 / normalized accessors. */
 function toSamplerFloat32(src: ArrayBufferView, length: number, normalized: boolean): Float32Array {
-    if (_convertSampler) return _convertSampler(src, length, normalized);
+    if (_convertSampler) {
+        return _convertSampler(src, length, normalized);
+    }
     return new Float32Array(src.buffer, src.byteOffset, length);
 }
 
@@ -170,7 +172,9 @@ export function parseAnimationData(
             // (installed by gltf-feature-animation-pointer on side-effect import).
             const ptr = c.target?.extensions?.KHR_animation_pointer?.pointer;
             if (ptr) {
-                if (!_parsePointerChannel) continue;
+                if (!_parsePointerChannel) {
+                    continue;
+                }
                 const ch = _parsePointerChannel(ptr, c, nodeMap);
                 if (ch) {
                     channels.push(ch);

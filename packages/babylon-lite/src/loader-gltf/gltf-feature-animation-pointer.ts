@@ -19,9 +19,13 @@ import { _installPointerHandlers } from "./gltf-animation.js";
 
 _installPointerHandlers(
     (ptr, c, nodeMap) => {
-        if (!nodeMap) return null;
+        if (!nodeMap) {
+            return null;
+        }
         const resolved = resolveAnimationPointer(ptr, { nodes: nodeMap });
-        if (!resolved) return null;
+        if (!resolved) {
+            return null;
+        }
         const ch: AnimationChannel = {
             samplerIdx: c.sampler,
             nodeIdx: -1,
@@ -36,17 +40,27 @@ _installPointerHandlers(
         // Handles the cases the aligned-Float32 fast path can't express.
         const out = new Float32Array(length);
         if (src instanceof Float32Array) {
-            for (let i = 0; i < length; i++) out[i] = src[i]!;
+            for (let i = 0; i < length; i++) {
+                out[i] = src[i]!;
+            }
         } else if (src instanceof Uint8Array) {
             const k = normalized ? 1 / 255 : 1;
-            for (let i = 0; i < length; i++) out[i] = src[i]! * k;
+            for (let i = 0; i < length; i++) {
+                out[i] = src[i]! * k;
+            }
         } else if (src instanceof Uint16Array) {
             const k = normalized ? 1 / 65535 : 1;
-            for (let i = 0; i < length; i++) out[i] = src[i]! * k;
+            for (let i = 0; i < length; i++) {
+                out[i] = src[i]! * k;
+            }
         } else if (src instanceof Int8Array) {
-            for (let i = 0; i < length; i++) out[i] = normalized ? Math.max(src[i]! / 127, -1) : src[i]!;
+            for (let i = 0; i < length; i++) {
+                out[i] = normalized ? Math.max(src[i]! / 127, -1) : src[i]!;
+            }
         } else if (src instanceof Int16Array) {
-            for (let i = 0; i < length; i++) out[i] = normalized ? Math.max(src[i]! / 32767, -1) : src[i]!;
+            for (let i = 0; i < length; i++) {
+                out[i] = normalized ? Math.max(src[i]! / 32767, -1) : src[i]!;
+            }
         }
         return out;
     }

@@ -24,7 +24,9 @@ const _registry: [RegExp, PointerFactory][] = [
         /^\/nodes\/(\d+)\/extensions\/KHR_node_visibility\/visible$/,
         (m, ctx) => {
             const n = ctx.nodes[+m[1]!];
-            if (!n) return null;
+            if (!n) {
+                return null;
+            }
             return {
                 arity: 1,
                 writer: (out, off) => {
@@ -40,11 +42,13 @@ const _warned = new Set<string>();
 export function resolveAnimationPointer(pointer: string, ctx: PointerContext): ResolvedPointer | null {
     for (const [rx, make] of _registry) {
         const m = rx.exec(pointer);
-        if (m) return make(m, ctx);
+        if (m) {
+            return make(m, ctx);
+        }
     }
     if (!_warned.has(pointer)) {
         _warned.add(pointer);
-        // eslint-disable-next-line no-console
+
         console.warn(`[babylon-lite] KHR_animation_pointer: no handler for "${pointer}"`);
     }
     return null;
