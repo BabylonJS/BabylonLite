@@ -29,11 +29,23 @@ return vec3<f32>(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
 }
 `;
 
-function makeIblCalculation(hasNormalMap: boolean, anisoBentNormalCode: string = ""): string {
+function makeIblCalculation(hasNormalMap: boolean, anisoBentNormalCode: string = "", skyboxCalculation: string = ""): string {
+    // Skybox mode: caller passes pre-baked WGSL (from ibl-skybox-wgsl.ts) to avoid
+    // bundling that ~1 KB string into scenes that don't use skyboxMode.
+    if (skyboxCalculation) {
+        return skyboxCalculation;
+    }
+
     const ehoLine = hasNormalMap ? `let eho = environmentHorizonOcclusion(-V, N, N_geom);` : `let eho = 1.0;`;
 
-    // When anisotropy bent normal code is provided, use it; otherwise standard reflection
+    // Normal PBR: use reflected view or anisotropy bent normal.
     const reflectionDir = anisoBentNormalCode ? anisoBentNormalCode : `let R_raw = reflect(-V, N);`;
+
+    const irradianceCode = `let environmentIrradiance = (scene.vSphericalL00
+  + scene.vSphericalL1_1 * N_env.y + scene.vSphericalL10 * N_env.z + scene.vSphericalL11 * N_env.x
+  + scene.vSphericalL2_2 * (N_env.y * N_env.x) + scene.vSphericalL2_1 * (N_env.y * N_env.z)
+  + scene.vSphericalL20 * (3.0 * N_env.z * N_env.z - 1.0) + scene.vSphericalL21 * (N_env.z * N_env.x)
+  + scene.vSphericalL22 * (N_env.x * N_env.x - N_env.y * N_env.y)) * material.environmentIntensity;`;
 
     return `${reflectionDir}
 let R = rotateY(R_raw, scene.envRotationY);
@@ -45,11 +57,7 @@ let seo = clamp((NdotVUnclamped + occlusion) * (NdotVUnclamped + occlusion) - 1.
 ${ehoLine}
 let colorSpecularEnvReflectance = specularEnvironmentReflectance * seo * eho;
 let energyConservation = getEnergyConservationFactor(colorF0, max(environmentBrdf.y, 0.001));
-let environmentIrradiance = (scene.vSphericalL00
-  + scene.vSphericalL1_1 * N_env.y + scene.vSphericalL10 * N_env.z + scene.vSphericalL11 * N_env.x
-  + scene.vSphericalL2_2 * (N_env.y * N_env.x) + scene.vSphericalL2_1 * (N_env.y * N_env.z)
-  + scene.vSphericalL20 * (3.0 * N_env.z * N_env.z - 1.0) + scene.vSphericalL21 * (N_env.z * N_env.x)
-  + scene.vSphericalL22 * (N_env.x * N_env.x - N_env.y * N_env.y)) * material.environmentIntensity;
+${irradianceCode}
 let maxLod = f32(textureNumLevels(iblTexture) - 1);
 let cubemapDim = f32(textureDimensions(iblTexture).x);
 var specLod = log2(cubemapDim * alphaG) * scene.lodGenerationScale;
@@ -65,8 +73,9 @@ color = finalIrradiance + finalRadianceScaled + finalSpecularScaled + directDiff
  * Create an IBL/environment fragment.
  * @param hasNormalMap Whether the material uses a normal map (enables horizon occlusion).
  * @param anisoBentNormalCode WGSL code for anisotropic bent normal (empty string = standard reflection).
+ * @param skyboxCalculation Pre-baked skybox-mode WGSL from ibl-skybox-wgsl.ts (empty string = normal PBR).
  */
-export function createIblFragment(hasNormalMap: boolean, anisoBentNormalCode: string = ""): ShaderFragment {
+export function createIblFragment(hasNormalMap: boolean, anisoBentNormalCode: string = "", skyboxCalculation: string = ""): ShaderFragment {
     return {
         id: "ibl",
 
@@ -83,8 +92,32 @@ export function createIblFragment(hasNormalMap: boolean, anisoBentNormalCode: st
         helperFunctions: IBL_HELPERS,
 
         fragmentSlots: {
-            AI: makeIblCalculation(hasNormalMap, anisoBentNormalCode),
+            AI: makeIblCalculation(hasNormalMap, anisoBentNormalCode, skyboxCalculation),
             BA: `luminanceOverAlpha += dot(finalRadianceScaled, vec3<f32>(0.2126, 0.7152, 0.0722));`,
         },
     };
 }
+
+import type { PbrExt } from "../pbr-flags.js";
+import { PBR_HAS_ENV } from "../pbr-flags.js";
+
+export const iblExt: PbrExt = {
+    id: "ibl",
+    phase: "ibl",
+    frag(ctx) {
+        if (!(ctx.features & PBR_HAS_ENV)) {
+            return null;
+        }
+        return createIblFragment(ctx.hasAnyNormal, ctx.anisoBentNormalCode ?? "", ctx.iblSkyboxCalc ?? "");
+    },
+    bind(ctx, entries, b) {
+        if (!(ctx.features & PBR_HAS_ENV) || !ctx.env) {
+            return b;
+        }
+        entries.push({ binding: b++, resource: ctx.env.brdfLutView });
+        entries.push({ binding: b++, resource: ctx.env.brdfSampler });
+        entries.push({ binding: b++, resource: ctx.env.specularCubeView });
+        entries.push({ binding: b++, resource: ctx.env.cubeSampler });
+        return b;
+    },
+};

@@ -2,6 +2,7 @@ import type { SceneContext, SceneContextInternal } from "../scene/scene.js";
 import type { EngineContextInternal } from "../engine/engine.js";
 import { acquireGPUTexture, releaseGPUTexture } from "../resource/gpu-pool.js";
 import { assembleEnvironmentTextures } from "./env-helpers.js";
+import { mipLevelCount } from "../texture/mip-count.js";
 
 /** GPU-resident environment textures. */
 export interface EnvironmentTextures {
@@ -68,13 +69,13 @@ export async function loadEnvironment(
     // Decode all face images in parallel (raw RGBD bytes — no color space conversion)
     const faceImages = await Promise.all(faceBlobs.map((blob) => createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" })));
 
+    const { uploadCubemapRGBD, decodeBrdfPng } = await import("./rgbd-decode.js");
     const specularCube = uploadCubemapRGBD(engine, faceImages, width, mipCount);
     for (const img of faceImages) {
         img.close();
     }
 
     const brdfImage = await brdfPromise;
-    const { decodeBrdfPng } = await import("./brdf-rgbd-decode.js");
     const brdfLut = decodeBrdfPng(engine, brdfImage);
     brdfImage.close();
 
@@ -111,13 +112,19 @@ export async function loadEnvironment(
         skipSkybox: skyboxIsDds || skyboxIsEnv || options?.skipSkybox,
         skipGround: options?.skipGround,
     };
+    // Only pull in the background-renderable chunk if solid skybox or ground is
+    // actually required. Scenes passing skipSkybox+skipGround (with no DDS/HDR
+    // skybox) skip the import and chunk fetch entirely.
+    const needsBgRenderables = !bgOptions.skipSkybox || !bgOptions.skipGround;
     const envBgBuilder = async (): Promise<void> => {
         const bgl = (scene as SceneContextInternal)._pbrSceneBGL;
         const bg = (scene as SceneContextInternal)._pbrSceneBG;
         if (bgl && bg) {
-            const { buildBackgroundRenderables } = await import("../material/pbr/background-renderable.js");
-            const bgRenderables = await buildBackgroundRenderables(scene, textures, bgl, bg, groundUrl, bgOptions, groundTexPromise);
-            (scene as SceneContextInternal)._renderables.push(...bgRenderables);
+            if (needsBgRenderables) {
+                const { buildBackgroundRenderables } = await import("../material/pbr/background-renderable.js");
+                const bgRenderables = await buildBackgroundRenderables(scene, textures, bgl, bg, groundUrl, bgOptions, groundTexPromise);
+                (scene as SceneContextInternal)._renderables.push(...bgRenderables);
+            }
 
             if (skyboxIsDds) {
                 const { buildDdsSkyboxRenderable } = await import("../material/pbr/background-dds-skybox.js");
@@ -165,7 +172,7 @@ function parseEnvFile(buffer: ArrayBuffer): ParsedEnv {
 
     const manifest = JSON.parse(jsonStr);
     const width: number = manifest.width;
-    const mipCount = Math.floor(Math.log2(width)) + 1;
+    const mipCount = mipLevelCount(width, width);
 
     // Irradiance spherical harmonics (9 vec3 coefficients = 27 floats)
     const irr = manifest.irradiance;
@@ -192,111 +199,10 @@ function parseEnvFile(buffer: ArrayBuffer): ParsedEnv {
     return { faceBlobs, irradianceSH, width, mipCount };
 }
 
-// ─── GPU Compute: RGBD → linear HDR float16 ─────────────────────────────────
-
-const RGBD_DECODE_WGSL = /* wgsl */ `
-@group(0) @binding(0) var inputTex: texture_2d<f32>;
-@group(0) @binding(1) var outputTex: texture_storage_2d<rgba16float, write>;
-
-@compute @workgroup_size(8, 8)
-fn main(@builtin(global_invocation_id) gid: vec3u) {
-    let dims = textureDimensions(inputTex);
-    if (gid.x >= dims.x || gid.y >= dims.y) { return; }
-
-    // Y-flip: Babylon uploads cubemap faces with invertY=true
-    let srcY = dims.y - 1u - gid.y;
-    let rgba = textureLoad(inputTex, vec2u(gid.x, srcY), 0);
-
-    // RGBD decode: pow(sRGB, 2.2) / alpha  (matches Babylon's fromRGBD shader)
-    let a = max(rgba.a, 1.0 / 255.0);
-    let linear = vec3f(
-        pow(rgba.r, 2.2) / a,
-        pow(rgba.g, 2.2) / a,
-        pow(rgba.b, 2.2) / a
-    );
-
-    textureStore(outputTex, vec2u(gid.x, gid.y), vec4f(linear, 1.0));
-}
-`;
-
-let _rgbdPipeline: GPUComputePipeline | null = null;
-let _rgbdPipelineDevice: GPUDevice | null = null;
-
-function uploadCubemapRGBD(engine: EngineContextInternal, images: ImageBitmap[], width: number, mipCount: number): GPUTexture {
-    const device = engine.device;
-    if (device !== _rgbdPipelineDevice) {
-        _rgbdPipeline = null;
-        _rgbdPipelineDevice = device;
-    }
-    if (!_rgbdPipeline) {
-        _rgbdPipeline = device.createComputePipeline({
-            layout: "auto",
-            compute: { module: device.createShaderModule({ code: RGBD_DECODE_WGSL }), entryPoint: "main" },
-        });
-    }
-    const pipeline = _rgbdPipeline;
-
-    const texture = device.createTexture({
-        size: { width, height: width, depthOrArrayLayers: 6 },
-        format: "rgba16float",
-        mipLevelCount: mipCount,
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
-        dimension: "2d",
-    });
-
-    for (let mip = 0; mip < mipCount; mip++) {
-        const mipSize = Math.max(1, width >> mip);
-
-        const inputTex = device.createTexture({
-            size: { width: mipSize, height: mipSize },
-            format: "rgba8unorm",
-            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-        });
-
-        const outputTex = device.createTexture({
-            size: { width: mipSize, height: mipSize },
-            format: "rgba16float",
-            usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
-        });
-
-        const bindGroup = device.createBindGroup({
-            layout: pipeline.getBindGroupLayout(0),
-            entries: [
-                { binding: 0, resource: inputTex.createView() },
-                { binding: 1, resource: outputTex.createView() },
-            ],
-        });
-
-        for (let face = 0; face < 6; face++) {
-            const idx = mip * 6 + face;
-            if (idx >= images.length) {
-                break;
-            }
-
-            device.queue.copyExternalImageToTexture({ source: images[idx]!, flipY: false }, { texture: inputTex, premultipliedAlpha: false }, { width: mipSize, height: mipSize });
-
-            const encoder = device.createCommandEncoder();
-            const pass = encoder.beginComputePass();
-            pass.setPipeline(pipeline);
-            pass.setBindGroup(0, bindGroup);
-            pass.dispatchWorkgroups(Math.ceil(mipSize / 8), Math.ceil(mipSize / 8));
-            pass.end();
-
-            encoder.copyTextureToTexture({ texture: outputTex }, { texture, origin: { x: 0, y: 0, z: face }, mipLevel: mip }, { width: mipSize, height: mipSize });
-
-            device.queue.submit([encoder.finish()]);
-        }
-
-        inputTex.destroy();
-        outputTex.destroy();
-    }
-
-    return texture;
-}
-
 // ─── SH Polynomial → Pre-scaled Harmonics Conversion ────────────────────────
 // Matches Babylon.js: SphericalHarmonics.FromPolynomial() + preScaleForRendering()
 
+/** @internal — exported only for env-helpers.ts; not part of the public API. */
 export function polynomialToPreScaledHarmonics(poly: Float32Array): EnvironmentTextures["sphericalHarmonics"] {
     // poly layout: [x0,x1,x2, y0,y1,y2, z0,z1,z2, xx0..., yy..., zz..., yz..., zx..., xy...]
     const x = poly.subarray(0, 3);

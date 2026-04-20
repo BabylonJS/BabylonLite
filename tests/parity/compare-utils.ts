@@ -5,7 +5,7 @@
 import { PNG } from "pngjs";
 import * as fs from "fs";
 import * as path from "path";
-import type { Browser } from "@playwright/test";
+import type { Browser, TestInfo } from "@playwright/test";
 
 export interface SceneConfig {
     id: number;
@@ -14,7 +14,8 @@ export interface SceneConfig {
     maxMad: number;
     maxRegionMad?: number;
     maxRawKB?: number;
-    maxGzipKB?: number;
+    /** Optional human-readable caveat rendered on lab cards (e.g. temporarily relaxed ceilings). */
+    note?: string;
 }
 
 let _sceneConfigCache: SceneConfig[] | null = null;
@@ -161,6 +162,66 @@ export function compareRegion(actualPath: string, referencePath: string, bgColor
     };
 }
 
+// ── Diff map generation ───────────────────────────────────────────
+
+/**
+ * Generate a visual diff map PNG highlighting per-pixel differences.
+ * - Green channel = per-channel max diff (amplified 4×)
+ * - Red channel = pixels exceeding threshold 5
+ * - Blue channel = pixels exceeding threshold 1
+ * Identical pixels are transparent black.
+ */
+export function generateDiffMap(actualPath: string, referencePath: string, outputPath: string): void {
+    const actual = loadPng(actualPath);
+    const ref = loadPng(referencePath);
+    const w = Math.min(actual.width, ref.width);
+    const h = Math.min(actual.height, ref.height);
+
+    const diff = new PNG({ width: w, height: h });
+
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const ai = (y * actual.width + x) * 4;
+            const ri = (y * ref.width + x) * 4;
+            const di = (y * w + x) * 4;
+
+            let pixMax = 0;
+            for (let c = 0; c < 3; c++) {
+                const d = Math.abs(actual.data[ai + c] - ref.data[ri + c]);
+                if (d > pixMax) pixMax = d;
+            }
+
+            // Amplify differences for visibility
+            const green = Math.min(255, pixMax * 4);
+            const red = pixMax > 5 ? 255 : 0;
+            const blue = pixMax > 1 ? 180 : 0;
+            const alpha = pixMax > 0 ? 255 : 0;
+
+            diff.data[di] = red;
+            diff.data[di + 1] = green;
+            diff.data[di + 2] = blue;
+            diff.data[di + 3] = alpha;
+        }
+    }
+
+    fs.writeFileSync(outputPath, PNG.sync.write(diff));
+}
+
+// ── Playwright report attachments ─────────────────────────────────
+
+/**
+ * Attach actual screenshot, golden reference, and diff map to the
+ * Playwright HTML report. Call this after compareImages/compareRegion.
+ */
+export async function attachCompareArtifacts(testInfo: TestInfo, actualPath: string, goldenPath: string, refDir: string): Promise<void> {
+    const diffPath = path.join(refDir, "diff-map.png");
+    generateDiffMap(actualPath, goldenPath, diffPath);
+
+    await testInfo.attach("actual", { path: actualPath, contentType: "image/png" });
+    await testInfo.attach("reference", { path: goldenPath, contentType: "image/png" });
+    await testInfo.attach("diff-map", { path: diffPath, contentType: "image/png" });
+}
+
 // ── Golden reference capture ──────────────────────────────────────
 
 export interface CaptureGoldenOptions {
@@ -179,12 +240,21 @@ export interface CaptureGoldenOptions {
  * Opens babylon-ref-sceneN.html in a new page, waits for ready + animation freeze,
  * screenshots the canvas, and saves as babylon-ref-golden.png.
  *
+ * Skips capture if the golden file already exists on disk (committed references).
+ * Set RECAPTURE_GOLDEN=true to force recapture.
+ *
  * Must be called with the Page's browser (page.context().browser()).
  */
 export async function captureGolden(browser: Browser, opts: CaptureGoldenOptions): Promise<string> {
     const config = getSceneConfig(opts.sceneId);
     const refDir = path.resolve(__dirname, `../../reference/${config.slug}`);
     const goldenPath = path.join(refDir, "babylon-ref-golden.png");
+
+    // Skip capture if golden already exists (unless RECAPTURE_GOLDEN is set)
+    if (fs.existsSync(goldenPath) && !process.env.RECAPTURE_GOLDEN) {
+        return goldenPath;
+    }
+
     const timeout = opts.timeout ?? 60_000;
     const settleMs = opts.settleMs ?? 1500;
 
@@ -211,6 +281,9 @@ export async function captureGolden(browser: Browser, opts: CaptureGoldenOptions
 
     // GPU queue flush — extra time for heavy scenes with many textures
     await bjsPage.waitForTimeout(settleMs);
+
+    // Hide any interactive UI buttons so they don't leak into the canvas screenshot.
+    await bjsPage.addStyleTag({ content: "button { display: none !important; }" });
 
     // Screenshot canvas and save as golden
     fs.mkdirSync(refDir, { recursive: true });

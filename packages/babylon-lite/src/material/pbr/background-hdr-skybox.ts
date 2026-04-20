@@ -7,11 +7,12 @@ import type { SceneContext } from "../../scene/scene.js";
 import type { EngineContextInternal } from "../../engine/engine.js";
 import type { EnvironmentTextures } from "../../loader-env/load-env.js";
 import type { Renderable } from "../../render/renderable.js";
-import { createSkyboxBuffers, buildSkyboxWorldMatrix, createCubemapSkyboxMaterial } from "./background-material.js";
-import { computeSkyboxGeometry } from "./background-renderable.js";
+import { createSkyboxBuffers, buildSkyboxWorldMatrix, computeSceneSize } from "./skybox-geometry.js";
+import { createCubemapSkyboxMaterial } from "./cubemap-skybox-material.js";
 import skyboxVertSrc from "../../../shaders/skybox.vertex.wgsl?raw";
 import skyboxHdrFragSrc from "../../../shaders/skybox-hdr.fragment.wgsl?raw";
 import { WGSL_SCENE_UNIFORMS_PBR } from "../../shader/wgsl-helpers.js";
+import { createUniformBuffer } from "../../resource/gpu-buffers.js";
 
 const SKY_HDR_UNIFORM_SIZE = 112; // mat4x4 + primaryColor vec3 + pad + skyOutputColor vec3 + pad + exposure + contrast + pad2
 
@@ -25,7 +26,8 @@ export function buildHdrSkyboxRenderable(
 ): Renderable {
     const engine = scene.engine as EngineContextInternal;
 
-    const { skyHalfSize, rootPosition } = computeSkyboxGeometry(scene, skyboxSize);
+    const { skyboxSize: autoSkyboxSize, rootPosition } = computeSceneSize(scene, skyboxSize);
+    const skyHalfSize = autoSkyboxSize / 2;
     const skyboxWorld = buildSkyboxWorldMatrix(rootPosition);
 
     const cc = scene.clearColor;
@@ -63,7 +65,6 @@ function createSkyHdrMeshUBO(
     exposure: number,
     contrast: number
 ): GPUBuffer {
-    const device = engine.device;
     const data = new Float32Array(SKY_HDR_UNIFORM_SIZE / 4);
     data.set(world, 0);
     data[16] = primaryColor[0];
@@ -74,10 +75,5 @@ function createSkyHdrMeshUBO(
     data[22] = skyOutputColor[2];
     data[24] = exposure; // exposureLinear
     data[25] = contrast; // contrast
-    const buf = device.createBuffer({
-        size: SKY_HDR_UNIFORM_SIZE,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(buf, 0, data);
-    return buf;
+    return createUniformBuffer(engine, data);
 }

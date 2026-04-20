@@ -21,7 +21,19 @@ import type { Mesh } from "../mesh/mesh.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { EngineContextInternal } from "../engine/engine.js";
 import { getOrCreateSampler } from "../resource/gpu-pool.js";
-import { buildCasters, syncCasterMatrices, drawCasters, shadowMatrixChanged, writeShadowUboFields } from "./shadow-base.js";
+import { createUniformBuffer } from "../resource/gpu-buffers.js";
+import {
+    buildCasters,
+    syncCasterMatrices,
+    drawCasters,
+    shadowMatrixChanged,
+    writeShadowUboFields,
+    buildLightViewMatrix,
+    multiply4x4,
+    createDepthSceneBGL,
+    createShadowParamsUBO,
+    createSharedShadowUBO,
+} from "./shadow-base.js";
 import depthVertSrc from "../../shaders/shadow-depth.vertex.wgsl?raw";
 import depthFragSrc from "../../shaders/shadow-depth.fragment.wgsl?raw";
 import blurVertSrc from "../../shaders/shadow-blur.vertex.wgsl?raw";
@@ -73,60 +85,7 @@ export interface ShadowGenerator {
  *   - Z bounds from camera near/far (orthoMinZ, orthoMaxZ)
  */
 function computeDirectionalLightMatrix(light: DirectionalLight, casterMeshes: Mesh[], orthoMinZ: number, orthoMaxZ: number): { viewProj: Float32Array; near: number; far: number } {
-    const dx = light.direction.x;
-    const dy = light.direction.y;
-    const dz = light.direction.z;
-    const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const dirX = dx / len;
-    const dirY = dy / len;
-    const dirZ = dz / len;
-
-    const px = light.position.x;
-    const py = light.position.y;
-    const pz = light.position.z;
-
-    // Build light view matrix (lookAt along direction)
-    let upX = 0,
-        upY = 1,
-        upZ = 0;
-    if (Math.abs(dirY) > 0.99) {
-        upX = 0;
-        upY = 0;
-        upZ = 1;
-    }
-    // right = cross(up, forward)
-    let rx = upY * dirZ - upZ * dirY;
-    let ry = upZ * dirX - upX * dirZ;
-    let rz = upX * dirY - upY * dirX;
-    const rLen = Math.sqrt(rx * rx + ry * ry + rz * rz);
-    rx /= rLen;
-    ry /= rLen;
-    rz /= rLen;
-
-    // up = cross(forward, right)
-    const ux = dirY * rz - dirZ * ry;
-    const uy = dirZ * rx - dirX * rz;
-    const uz = dirX * ry - dirY * rx;
-
-    // View matrix (column-major)
-    const view = new Float32Array([
-        rx,
-        ux,
-        dirX,
-        0,
-        ry,
-        uy,
-        dirY,
-        0,
-        rz,
-        uz,
-        dirZ,
-        0,
-        -(rx * px + ry * py + rz * pz),
-        -(ux * px + uy * py + uz * pz),
-        -(dirX * px + dirY * py + dirZ * pz),
-        1,
-    ]);
+    const view = buildLightViewMatrix(light.direction.x, light.direction.y, light.direction.z, light.position.x, light.position.y, light.position.z);
 
     // Transform each caster's world AABB corners to light space for X/Y bounds
     // Matches BJS: iterates boundingBox.vectorsWorld through viewMatrix
@@ -184,19 +143,7 @@ function computeDirectionalLightMatrix(light: DirectionalLight, casterMeshes: Me
     proj[14] = -near / (far - near);
     proj[15] = 1;
 
-    // viewProj = proj * view
-    const viewProj = new Float32Array(16);
-    for (let row = 0; row < 4; row++) {
-        for (let col = 0; col < 4; col++) {
-            let sum = 0;
-            for (let k = 0; k < 4; k++) {
-                sum += proj[row + k * 4]! * view[k + col * 4]!;
-            }
-            viewProj[row + col * 4] = sum;
-        }
-    }
-
-    return { viewProj, near, far };
+    return { viewProj: multiply4x4(proj, view), near, far };
 }
 
 export function createShadowGenerator(engine: EngineContext, light: DirectionalLight, casterMeshes: Mesh[], cfg: ShadowGeneratorConfig = {}): ShadowGenerator {
@@ -234,18 +181,8 @@ export function createShadowGenerator(engine: EngineContext, light: DirectionalL
         ],
     });
 
-    // Shadow params UBO — depthValues = (0, 1) matching Babylon's DirectionalLight
-    // getDepthMinZ()=0, getDepthMinZ()+getDepthMaxZ()=1 for WebGPU (isNDCHalfZRange=true)
-    const shadowParamsData = new Float32Array(8);
-    shadowParamsData[0] = bias;
-    shadowParamsData[2] = depthScale;
-    shadowParamsData[4] = 0; // depthMinZ = 0 for WebGPU directional light
-    shadowParamsData[5] = 1; // depthMinZ + depthMaxZ = 0 + 1 = 1
-    const shadowParamsUBO = device.createBuffer({
-        size: 32,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(shadowParamsUBO, 0, shadowParamsData);
+    // Shadow params UBO — depthValues = (0, 1) for WebGPU DirectionalLight (isNDCHalfZRange)
+    const shadowParamsUBO = createShadowParamsUBO(eng, bias, depthScale);
 
     // Build caster data + per-caster bind groups
     const casters = buildCasters(eng, casterMeshes, depthMeshBGL, [{ binding: 1, resource: { buffer: shadowParamsUBO } }]);
@@ -277,16 +214,9 @@ export function createShadowGenerator(engine: EngineContext, light: DirectionalL
     });
 
     // --- Shadow depth pipeline ---
-    const depthSceneUBO = device.createBuffer({
-        size: 64,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(depthSceneUBO, 0, viewProj as Float32Array<ArrayBuffer>);
+    const depthSceneUBO = createUniformBuffer(eng, viewProj as Float32Array<ArrayBuffer>);
 
-    const depthSceneBGL = device.createBindGroupLayout({
-        label: "shadow-depth-scene",
-        entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } }],
-    });
+    const depthSceneBGL = createDepthSceneBGL(eng, "shadow-depth-scene");
 
     const depthVert = device.createShaderModule({ code: WGSL_SCENE_UNIFORMS_SHADOW + depthVertSrc, label: "shadow-depth-vert" });
     const depthFrag = device.createShaderModule({ code: depthFragSrc, label: "shadow-depth-frag" });
@@ -346,8 +276,7 @@ export function createShadowGenerator(engine: EngineContext, light: DirectionalL
 
     // Blur H params — delta in output (blurSize) texel space, matching BJS PostProcess
     const blurHData = new Float32Array([1.0 / blurSize, 0, 0, 0]);
-    const blurHUBO = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    device.queue.writeBuffer(blurHUBO, 0, blurHData);
+    const blurHUBO = createUniformBuffer(eng, blurHData);
     const blurHBG = device.createBindGroup({
         layout: blurBGL,
         entries: [
@@ -359,8 +288,7 @@ export function createShadowGenerator(engine: EngineContext, light: DirectionalL
 
     // Blur V params
     const blurVData = new Float32Array([0, 1.0 / blurSize, 0, 0]);
-    const blurVUBO = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    device.queue.writeBuffer(blurVUBO, 0, blurVData);
+    const blurVUBO = createUniformBuffer(eng, blurVData);
     const blurVBG = device.createBindGroup({
         layout: blurBGL,
         entries: [
@@ -378,10 +306,7 @@ export function createShadowGenerator(engine: EngineContext, light: DirectionalL
     const depthValuesArr = new Float32Array([0, 1]);
 
     // Shared shadow UBO for all receiver meshes (96 bytes)
-    const shadowUboData = new Float32Array(24);
-    writeShadowUboFields(shadowUboData, { lightMatrix, depthValues: depthValuesArr, shadowsInfo });
-    const sharedShadowUBO = device.createBuffer({ size: 96, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    device.queue.writeBuffer(sharedShadowUBO, 0, shadowUboData);
+    const { ubo: sharedShadowUBO, data: shadowUboData } = createSharedShadowUBO(eng, lightMatrix, depthValuesArr, shadowsInfo);
 
     // Shadow matrix early-out tracking (init to -1 to force first-frame render)
     let _lastLightVer = -1;
@@ -420,7 +345,7 @@ export function createShadowGenerator(engine: EngineContext, light: DirectionalL
                 sg._version++;
                 device.queue.writeBuffer(depthSceneUBO, 0, lightMatrix as Float32Array<ArrayBuffer>);
                 writeShadowUboFields(shadowUboData, sg);
-                device.queue.writeBuffer(sharedShadowUBO, 0, shadowUboData);
+                device.queue.writeBuffer(sharedShadowUBO, 0, shadowUboData as Float32Array<ArrayBuffer>);
             }
         }
         _lastLightVer = lv;

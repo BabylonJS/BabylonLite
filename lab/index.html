@@ -19,7 +19,6 @@
             }
             header {
                 padding: 2rem 2rem 1rem;
-                border-bottom: 1px solid #21262d;
             }
             header h1 {
                 font-size: 1.5rem;
@@ -38,7 +37,13 @@
                 gap: 0;
                 padding: 0 2rem;
                 margin-top: 1.5rem;
+                position: sticky;
+                top: 0;
+                background: #0d1117;
+                z-index: 30;
+                height: 2.5rem;
                 border-bottom: 1px solid #21262d;
+                box-shadow: 0 2px 6px -2px rgba(0, 0, 0, 0.6);
             }
             .tab {
                 padding: 0.6rem 1.2rem;
@@ -90,6 +95,9 @@
                 border-radius: 6px;
                 font-size: 0.85rem;
                 color: #8b949e;
+                position: sticky;
+                top: 40px;
+                z-index: 20;
             }
             .tab-hint code {
                 color: #e6edf3;
@@ -117,6 +125,7 @@
                 text-decoration: none;
                 color: inherit;
                 display: block;
+                position: relative;
             }
             .card:hover {
                 border-color: #58a6ff;
@@ -129,6 +138,28 @@
                 border-bottom: 1px solid #21262d;
                 display: block;
                 background: #0d1117;
+            }
+            .card-image {
+                position: relative;
+            }
+            .card-overlay {
+                position: absolute;
+                top: 0.5rem;
+                right: 0.5rem;
+                display: flex;
+                gap: 0.3rem;
+                z-index: 1;
+            }
+            .card-overlay .pg-link {
+                margin: 0;
+                background: rgba(13, 17, 23, 0.82);
+                backdrop-filter: blur(4px);
+                border: 1px solid rgba(48, 54, 61, 0.8);
+                color: #e6edf3;
+            }
+            .card-overlay .pg-link:hover {
+                background: rgba(48, 54, 61, 0.95);
+                color: #fff;
             }
             .card-body {
                 padding: 1rem;
@@ -149,6 +180,36 @@
                 font-size: 0.8rem;
                 color: #8b949e;
                 line-height: 1.4;
+            }
+            .card-note {
+                position: absolute;
+                left: 0.5rem;
+                right: 0.5rem;
+                bottom: 0.5rem;
+                display: flex;
+                gap: 0.4rem;
+                align-items: flex-start;
+                padding: 0.45rem 0.55rem;
+                background: rgba(61, 46, 0, 0.92);
+                border: 1px solid #7a5a00;
+                border-radius: 4px;
+                font-size: 0.72rem;
+                line-height: 1.35;
+                color: #f5c849;
+                backdrop-filter: blur(4px);
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+                z-index: 2;
+                pointer-events: auto;
+            }
+            .card-note::before {
+                content: "\26A0";
+                flex-shrink: 0;
+                font-size: 0.85rem;
+                line-height: 1;
+                margin-top: 0.1rem;
+            }
+            .card-image {
+                position: relative;
             }
             .badge {
                 display: inline-block;
@@ -231,7 +292,11 @@
                 display: flex;
                 align-items: center;
                 gap: 1rem;
-                padding: 1.5rem 2rem 0.5rem;
+                padding: 1rem 2rem 0.75rem;
+                position: sticky;
+                top: 2.5rem;
+                background: #0d1117;
+                z-index: 10;
             }
             .parity-toolbar p {
                 color: #8b949e;
@@ -458,14 +523,29 @@
                 color: #d29922;
                 font-weight: 600;
             }
+            .size-info .size-label-ceil {
+                color: #d29922;
+            }
+            .size-info .size-headroom {
+                color: #6e7681;
+                font-size: 0.7rem;
+            }
+            .size-info .size-headroom.low {
+                color: #f85149;
+                font-weight: 600;
+            }
 
             /* ── Perf Dashboard ─────────────────────────────────── */
             .perf-toolbar {
                 display: flex;
                 align-items: center;
                 gap: 0.5rem;
-                padding: 1.5rem 2rem 0.5rem;
+                padding: 1rem 2rem 0.75rem;
                 flex-wrap: wrap;
+                position: sticky;
+                top: 2.5rem;
+                background: #0d1117;
+                z-index: 10;
             }
             .perf-toolbar p {
                 color: #8b949e;
@@ -1043,6 +1123,319 @@
                 opacity: 0.85;
                 color: #58a6ff;
             }
+
+            /* ── Bundle Files Modal ─────────────────────────────── */
+            .bf-overlay {
+                display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.75);
+                z-index: 1000;
+                align-items: center;
+                justify-content: center;
+            }
+            .bf-overlay.active {
+                display: flex;
+            }
+            .bf-modal {
+                background: #0d1117;
+                border: 1px solid #30363d;
+                border-radius: 10px;
+                width: min(960px, 95vw);
+                max-height: 90vh;
+                display: flex;
+                flex-direction: column;
+                box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+            }
+            .bf-header {
+                padding: 0.9rem 1.2rem;
+                border-bottom: 1px solid #21262d;
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+            }
+            .bf-header h2 {
+                font-size: 1rem;
+                font-weight: 600;
+                color: #f0f6fc;
+                flex: 1;
+            }
+            .bf-header .bf-sub {
+                font-size: 0.75rem;
+                color: #8b949e;
+                font-weight: 400;
+                margin-left: 0.5rem;
+            }
+            .bf-close {
+                background: #21262d;
+                border: 1px solid #30363d;
+                color: #c9d1d9;
+                padding: 0.25rem 0.6rem;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 0.85rem;
+            }
+            .bf-close:hover {
+                background: #30363d;
+            }
+            .bf-body {
+                padding: 0.75rem 1.2rem 1.2rem;
+                overflow: auto;
+                font-size: 0.82rem;
+                color: #c9d1d9;
+            }
+            .bf-body .bf-note {
+                color: #8b949e;
+                font-size: 0.75rem;
+                margin-bottom: 0.6rem;
+            }
+            .bf-toolbar {
+                position: sticky;
+                top: 0;
+                z-index: 2;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+                align-items: center;
+                padding: 0.5rem 0 0.6rem;
+                background: #0d1117;
+                border-bottom: 1px solid #21262d;
+                margin-bottom: 0.6rem;
+            }
+            .bf-toolbar-group {
+                display: inline-flex;
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                overflow: hidden;
+                background: #161b22;
+            }
+            .bf-toolbar-group button {
+                background: transparent;
+                color: #8b949e;
+                border: none;
+                padding: 0.35rem 0.7rem;
+                font-size: 0.75rem;
+                font-family: inherit;
+                cursor: pointer;
+                border-right: 1px solid #30363d;
+            }
+            .bf-toolbar-group button:last-child {
+                border-right: none;
+            }
+            .bf-toolbar-group button:hover {
+                background: #1c232d;
+                color: #c9d1d9;
+            }
+            .bf-toolbar-group button.active {
+                background: #1f3a5f;
+                color: #58a6ff;
+            }
+            .bf-toolbar-check {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.35rem;
+                color: #8b949e;
+                font-size: 0.75rem;
+                cursor: pointer;
+                user-select: none;
+                padding: 0.3rem 0.5rem;
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                background: #161b22;
+            }
+            .bf-toolbar-check input {
+                accent-color: #58a6ff;
+                margin: 0;
+            }
+            .bf-filter {
+                flex: 1;
+                min-width: 180px;
+                background: #161b22;
+                color: #c9d1d9;
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                padding: 0.35rem 0.6rem;
+                font-size: 0.8rem;
+                font-family: inherit;
+                outline: none;
+            }
+            .bf-filter:focus {
+                border-color: #58a6ff;
+            }
+            .bf-flat-list {
+                list-style: none;
+                margin: 0;
+                padding: 0;
+            }
+            .bf-flat-list li {
+                padding: 0.5rem 0.75rem;
+                border: 1px solid #21262d;
+                border-radius: 6px;
+                margin-bottom: 0.4rem;
+                background: #0d1117;
+            }
+            .bf-flat-list li.stripped {
+                opacity: 0.55;
+            }
+            .bf-flat-chunk-ref {
+                display: block;
+                font-size: 0.65rem;
+                color: #6e7681;
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                margin-top: 0.2rem;
+            }
+            .bf-chunk {
+                border: 1px solid #21262d;
+                border-radius: 6px;
+                margin-bottom: 0.7rem;
+                background: #0d1117;
+            }
+            .bf-chunk.stripped {
+                opacity: 0.55;
+            }
+            .bf-chunk-head {
+                padding: 0.5rem 0.75rem;
+                background: #161b22;
+                border-bottom: 1px solid #21262d;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                cursor: pointer;
+                user-select: none;
+            }
+            .bf-chunk-head:hover {
+                background: #1c232d;
+            }
+            .bf-chunk-name {
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                color: #58a6ff;
+                font-size: 0.82rem;
+                flex: 1;
+                word-break: break-all;
+            }
+            .bf-chunk-size {
+                color: #8b949e;
+                font-size: 0.75rem;
+                white-space: nowrap;
+            }
+            .bf-chunk-badge {
+                font-size: 0.65rem;
+                padding: 0.1rem 0.45rem;
+                border-radius: 8px;
+                font-weight: 600;
+            }
+            .bf-badge-runtime {
+                background: #1a3a1a;
+                color: #3fb950;
+            }
+            .bf-badge-stripped {
+                background: #3a1a1a;
+                color: #f85149;
+            }
+            .bf-badge-entry {
+                background: #1f3a5f;
+                color: #58a6ff;
+            }
+            .bf-modules {
+                list-style: none;
+                margin: 0;
+                padding: 0.3rem 0;
+            }
+            .bf-modules.collapsed {
+                display: none;
+            }
+            .bf-modules li {
+                padding: 0.35rem 0.75rem 0.35rem 1.5rem;
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                font-size: 0.75rem;
+                color: #c9d1d9;
+                border-bottom: 1px solid #161b22;
+            }
+            .bf-modules li:last-child {
+                border-bottom: none;
+            }
+            .bf-mod-row {
+                display: flex;
+                gap: 0.5rem;
+                align-items: baseline;
+            }
+            .bf-mod-path {
+                flex: 1;
+                word-break: break-all;
+            }
+            .bf-mod-bytes {
+                color: #8b949e;
+                white-space: nowrap;
+            }
+            .bf-mod-exports {
+                display: flex;
+                flex-direction: column;
+                gap: 0.2rem;
+                margin: 0.3rem 0 0.1rem 0.75rem;
+            }
+            .bf-chip {
+                background: #1f2a3a;
+                color: #79c0ff;
+                border: 1px solid #30363d;
+                border-radius: 10px;
+                padding: 0.05rem 0.5rem;
+                font-size: 0.7rem;
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                white-space: nowrap;
+            }
+            .bf-chip.bf-chip-fn {
+                background: #0f2a1a;
+                color: #3fb950;
+                border-color: #1a3a1a;
+            }
+            .bf-chip.bf-chip-const {
+                background: #2a2118;
+                color: #d29922;
+                border-color: #3a2d1a;
+            }
+            .bf-chip.bf-chip-class {
+                background: #2a1a2a;
+                color: #d2a8ff;
+                border-color: #3a2a3a;
+            }
+            .bf-chip.bf-chip-enum {
+                background: #1a2838;
+                color: #79c0ff;
+                border-color: #243a55;
+            }
+            .bf-chip.bf-chip-whole {
+                background: #2a2118;
+                color: #d29922;
+                border-color: #3a2d1a;
+            }
+            .bf-chip-group {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 0.25rem;
+            }
+            .bf-chip-group-label {
+                font-size: 0.65rem;
+                color: #6e7681;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                margin-right: 0.15rem;
+            }
+            .bf-mod-exports-empty {
+                color: #6e7681;
+                font-size: 0.7rem;
+                font-style: italic;
+                margin: 0.2rem 0 0.1rem 0.75rem;
+            }
+            .bf-empty {
+                padding: 1rem;
+                color: #8b949e;
+                text-align: center;
+            }
+            .bf-error {
+                padding: 1rem;
+                color: #f85149;
+            }
         </style>
     </head>
     <body>
@@ -1084,7 +1477,7 @@
                     <div class="arch-modules">
                         <div class="arch-mod arch-mod-mat">
                             <div class="arch-mod-name">Materials</div>
-                            <div class="arch-mod-sub">PBR metallic-roughness · spec-gloss · Standard Blinn-Phong · background/ground</div>
+                            <div class="arch-mod-sub">PBR metallic-roughness · spec-gloss · clearcoat · sheen · anisotropy · subsurface · Standard Blinn-Phong · background/ground</div>
                         </div>
                         <div class="arch-mod arch-mod-mesh">
                             <div class="arch-mod-name">Meshes</div>
@@ -1092,7 +1485,7 @@
                         </div>
                         <div class="arch-mod arch-mod-loader">
                             <div class="arch-mod-name">Loaders</div>
-                            <div class="arch-mod-sub">glTF / GLB · .babylon · .env · .hdr panorama · cube skybox</div>
+                            <div class="arch-mod-sub">glTF / GLB · .babylon · .env · .hdr panorama · cube skybox · KTX1 · KHR_materials_variants · _clearcoat · _sheen · _anisotropy · _texture_transform</div>
                         </div>
                         <div class="arch-mod arch-mod-anim">
                             <div class="arch-mod-name">Animation</div>
@@ -1106,7 +1499,7 @@
                         </div>
                         <div class="arch-mod arch-mod-tex">
                             <div class="arch-mod-name">Textures</div>
-                            <div class="arch-mod-sub">2D · cube · solid color · GPU mipmap gen · sRGB · sampler config</div>
+                            <div class="arch-mod-sub">2D · cube · solid color · KTX1 compressed · GPU mipmap gen · sRGB · sampler config</div>
                         </div>
                         <div class="arch-mod arch-mod-math">
                             <div class="arch-mod-name">Math</div>
@@ -1414,9 +1807,15 @@
                         </tr>
                         <tr>
                             <td>PBR Subsurface / Translucency</td>
-                            <td>—</td>
                             <td>✅</td>
-                            <td></td>
+                            <td>✅</td>
+                            <td>Scene 26 — thickness map, translucency, tint</td>
+                        </tr>
+                        <tr>
+                            <td>Material Variants (KHR_materials_variants)</td>
+                            <td>✅</td>
+                            <td>✅</td>
+                            <td>Scene 27 — runtime variant selection</td>
                         </tr>
                         <tr>
                             <td>PBR Iridescence</td>
@@ -1492,8 +1891,7 @@
                             <td>Free Camera</td>
                             <td>✅</td>
                             <td>✅</td>
-                            <td>Scene 18</td>
-                            <td></td>
+                            <td>Scene 18, 24, 25 — WASD/arrow controls</td>
                         </tr>
                         <tr>
                             <td>Follow Camera</td>
@@ -1893,22 +2291,201 @@
                             <td></td>
                         </tr>
                         <tr>
-                            <td>glTF Extensions (KHR_*)</td>
-                            <td>⚡</td>
+                            <td>KTX1 Compressed Textures</td>
                             <td>✅</td>
-                            <td>Spec-gloss supported; others pending</td>
-                        </tr>
-                        <tr>
-                            <td>Draco Compression</td>
-                            <td>—</td>
                             <td>✅</td>
-                            <td></td>
+                            <td>Scene 25 — ASTC / BC / ETC2 auto-format + PNG fallback</td>
                         </tr>
                         <tr>
                             <td>KTX2 Textures</td>
                             <td>—</td>
                             <td>✅</td>
                             <td></td>
+                        </tr>
+
+                        <!-- glTF 2.0 Extensions -->
+                        <tr class="feat-cat">
+                            <td colspan="4">glTF 2.0 Extensions (Khronos + vendor)</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_materials_pbrSpecularGlossiness</td>
+                            <td>✅</td>
+                            <td>✅</td>
+                            <td>Archived ext — mapped to metallic-roughness (Scene 6)</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_materials_variants</td>
+                            <td>✅</td>
+                            <td>✅</td>
+                            <td>Scene 27 — runtime variant selection</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_materials_unlit</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>disableLighting on standard material planned</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_materials_clearcoat</td>
+                            <td>✅</td>
+                            <td>✅</td>
+                            <td>Scene 28 — glTF loader auto-wires clearcoat + roughness + normal textures</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_materials_sheen</td>
+                            <td>✅</td>
+                            <td>✅</td>
+                            <td>Scene 29 — glTF loader with BJS-spec albedo scaling</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_materials_anisotropy</td>
+                            <td>✅</td>
+                            <td>✅</td>
+                            <td>glTF loader auto-wires strength + rotation (manual API: Scene 23)</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_materials_volume</td>
+                            <td>⚡</td>
+                            <td>✅</td>
+                            <td>Subsurface translucency + thickness via manual API (Scene 26); glTF loader wiring pending</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_materials_transmission</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>Refraction through thin surfaces</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_materials_ior</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>Index of refraction override</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_materials_specular</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>Dielectric specular intensity/color</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_materials_iridescence</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>Thin-film interference</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_materials_emissive_strength</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>HDR emissive multiplier</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_materials_dispersion</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>Wavelength-dependent refraction</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_lights_punctual</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>Point / spot / directional lights from glTF</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_texture_transform</td>
+                            <td>✅</td>
+                            <td>✅</td>
+                            <td>Material-wide UV offset / scale / rotate resolved at load (Scene 29)</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_texture_basisu</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>KTX2 + Basis Universal supercompression</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_draco_mesh_compression</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>Draco-compressed mesh geometry</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_mesh_quantization</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>8/16-bit quantized vertex attributes</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_animation_pointer</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>Animate arbitrary JSON pointers</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_audio / KHR_audio_emitter</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>Positional / ambient audio</td>
+                        </tr>
+                        <tr>
+                            <td>KHR_xmp_json_ld</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>XMP metadata</td>
+                        </tr>
+                        <tr>
+                            <td>EXT_mesh_gpu_instancing</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>Per-node instance transforms</td>
+                        </tr>
+                        <tr>
+                            <td>EXT_meshopt_compression</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>meshoptimizer bitstream compression</td>
+                        </tr>
+                        <tr>
+                            <td>EXT_texture_webp</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>WebP texture source</td>
+                        </tr>
+                        <tr>
+                            <td>EXT_texture_avif</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>AVIF texture source</td>
+                        </tr>
+                        <tr>
+                            <td>EXT_lights_image_based</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>IBL specified in glTF asset</td>
+                        </tr>
+                        <tr>
+                            <td>MSFT_lod</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>Discrete level-of-detail</td>
+                        </tr>
+                        <tr>
+                            <td>MSFT_minecraftMesh</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>Minecraft-style voxel meshes</td>
+                        </tr>
+                        <tr>
+                            <td>MSFT_audio_emitter</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>Legacy positional audio</td>
+                        </tr>
+                        <tr>
+                            <td>ExtrasAsMetadata</td>
+                            <td>—</td>
+                            <td>✅</td>
+                            <td>Promote glTF `extras` to runtime metadata</td>
                         </tr>
 
                         <!-- Textures -->
@@ -2144,8 +2721,7 @@
                             <td>Ray Casting / Picking</td>
                             <td>✅</td>
                             <td>✅</td>
-                            <td>GPU-based picking</td>
-                            <td></td>
+                            <td>GPU ID pass + CPU ray/triangle, thin-instance aware</td>
                         </tr>
                         <tr>
                             <td>WebXR / VR / AR</td>
@@ -2273,7 +2849,6 @@
         </div>
 
         <div id="panel-source" class="tab-panel active">
-            <div class="tab-hint">💡 Live scenes served from Vite dev server. Start with: <code>pnpm dev</code></div>
             <div class="perf-toolbar">
                 <div class="perf-filter-pills" id="source-filter-pills"></div>
             </div>
@@ -2281,9 +2856,6 @@
         </div>
 
         <div id="panel-parity" class="tab-panel">
-            <div class="tab-hint">
-                💡 Compares golden reference (Babylon.js) vs Lite render from last <code>pnpm test:parity</code> run. MAD thresholds from <code>scene-config.json</code>; exceeding shown in <span style="color: #f85149">red</span>.
-            </div>
             <div class="parity-toolbar">
                 <div style="flex: 1"></div>
                 <button class="btn parity-sort-btn active" onclick="sortParityGrid('num')" data-sort="num" title="Sort by scene number">Scene #</button>
@@ -2295,19 +2867,18 @@
         </div>
 
         <div id="panel-bundle" class="tab-panel">
-            <div class="tab-hint">💡 Bundle sizes shown below come from <code>manifest.json</code>. To regenerate: <code>pnpm build:bundle-scenes</code></div>
             <div class="perf-toolbar">
                 <div class="perf-filter-pills" id="bundle-filter-pills"></div>
                 <div style="flex: 1"></div>
                 <button class="btn bundle-sort-btn active" onclick="sortBundleGrid('num')" data-sort="num" title="Sort by scene number">Scene #</button>
-                <button class="btn bundle-sort-btn" onclick="sortBundleGrid('asc')" data-sort="asc" title="Sort by Lite gzip size ascending">Size ↑</button>
-                <button class="btn bundle-sort-btn" onclick="sortBundleGrid('desc')" data-sort="desc" title="Sort by Lite gzip size descending">Size ↓</button>
+                <button class="btn bundle-sort-btn" onclick="sortBundleGrid('asc')" data-sort="asc" title="Sort by Lite min size ascending">Size ↑</button>
+                <button class="btn bundle-sort-btn" onclick="sortBundleGrid('desc')" data-sort="desc" title="Sort by Lite min size descending">Size ↓</button>
+                <button class="btn" id="bundle-filter-btn" onclick="toggleBundleOverFilter()" title="Show only scenes over their size ceiling">🔴 Over Only</button>
             </div>
             <div class="grid" id="bundle-grid"></div>
         </div>
 
         <div id="panel-perf" class="tab-panel">
-            <div class="tab-hint">💡 RAF callback CPU time per scene, measured via Playwright. <span id="perf-manifest-status" style="color: #3fb950"></span></div>
             <div class="perf-toolbar">
                 <div class="perf-filter-pills" id="perf-filter-pills"></div>
                 <div style="flex: 1"></div>
@@ -2358,7 +2929,10 @@
                 var grid = document.getElementById("source-grid");
                 grid.innerHTML = config.map(function(s) {
                     return '<a class="card" href="/scene' + s.id + '.html" data-tags="' + s.tags.join(" ") + '">' +
+                        '<div class="card-image">' +
                         '<img src="/reference/' + s.slug + '/test-actual.png" alt="' + s.name + '" />' +
+                        renderNote(s) +
+                        '</div>' +
                         '<div class="card-body">' +
                         '<h2>' + s.name +
                         ' <span class="pg-link" onclick="event.preventDefault();event.stopPropagation();window.open(\'/babylon-ref-scene' + s.id + '.html\',\'_blank\');">\u25b6 BJS Ref</span>' +
@@ -2370,15 +2944,25 @@
                 renderFilterPills("source-filter-pills", "toggleSourceTag");
             }
 
+            function renderNote(s) {
+                if (!s.note) return "";
+                return '<div class="card-note" title="' + s.note.replace(/"/g, "&quot;") + '">' + s.note + '</div>';
+            }
+
             function initBundleGrid(config) {
                 var grid = document.getElementById("bundle-grid");
                 grid.innerHTML = config.map(function(s) {
                     return '<a class="card" href="/bundle-scene' + s.id + '.html" data-scene="scene' + s.id + '" data-tags="' + s.tags.join(" ") + '">' +
+                        '<div class="card-image">' +
                         '<img src="/reference/' + s.slug + '/test-actual.png" alt="' + s.name + '" />' +
+                        '<div class="card-overlay">' +
+                        '<span class="pg-link" onclick="event.preventDefault();event.stopPropagation();showBundleFiles(\'scene' + s.id + '\');" title="Show .ts files contributing to this bundle">\ud83d\udcc4 Files</span>' +
+                        '<span class="pg-link" onclick="event.preventDefault();event.stopPropagation();window.open(\'/bundle-bjs-scene' + s.id + '.html\',\'_blank\');" title="Open Babylon.js reference">\u25b6 BJS Ref</span>' +
+                        '</div>' +
+                        renderNote(s) +
+                        '</div>' +
                         '<div class="card-body">' +
-                        '<h2>' + s.name +
-                        ' <span class="pg-link" onclick="event.preventDefault();event.stopPropagation();window.open(\'/bundle-bjs-scene' + s.id + '.html\',\'_blank\');">\u25b6 BJS Ref</span>' +
-                        '</h2>' +
+                        '<h2>' + s.name + '</h2>' +
                         '<p>' + s.description + '</p>' +
                         renderBadges(s.tags) +
                         '<div class="size-info"></div>' +
@@ -2605,6 +3189,16 @@
                                 '<div class="size-row"><span class="size-label">Lite</span>' +
                                 '<span><span class="size-value">' + sizes.rawKB + '</span> KB min</span>' +
                                 '<span class="size-gzip">' + sizes.gzipKB + ' KB gzip</span></div>';
+                            var cfg = (window.SCENE_CONFIG || []).find(function(c) { return "scene" + c.id === scene; });
+                            if (cfg && cfg.maxRawKB != null) {
+                                var rawHead = cfg.maxRawKB - sizes.rawKB;
+                                var lowCls = (rawHead < 0) ? " low" : "";
+                                html +=
+                                    '<div class="size-row"><span class="size-label size-label-ceil">Ceil</span>' +
+                                    '<span><span class="size-value">' + cfg.maxRawKB + '</span> KB max</span>' +
+                                    '<span class="size-headroom' + lowCls + '" title="Headroom before ceiling">+' +
+                                    rawHead.toFixed(1) + ' KB</span></div>';
+                            }
                             if (sizes.bjsRawKB != null) {
                                 bjsCount++;
                                 var ratio = (sizes.bjsGzipKB / sizes.gzipKB).toFixed(1);
@@ -2615,7 +3209,11 @@
                                     '<span class="size-ratio">' + ratio + '\u00d7</span></div>';
                             }
                             card.innerHTML = html;
+                            card.closest('.card').dataset.rawKb = sizes.rawKB;
                             card.closest('.card').dataset.gzipKb = sizes.gzipKB;
+                            if (cfg && cfg.maxRawKB != null) {
+                                card.closest('.card').dataset.maxRawKb = cfg.maxRawKB;
+                            }
                         }
                         // Re-apply stored sort now that size data is available
                         var activeBtn = document.querySelector(".bundle-sort-btn.active");
@@ -2762,6 +3360,29 @@
             }
 
             var parityFilterActive = false;
+            var bundleOverFilterActive = false;
+            function toggleBundleOverFilter() {
+                bundleOverFilterActive = !bundleOverFilterActive;
+                var btn = document.getElementById("bundle-filter-btn");
+                var cards = document.querySelectorAll("#bundle-grid > .card");
+                if (bundleOverFilterActive) {
+                    btn.style.background = "#3d1117";
+                    btn.style.borderColor = "#f85149";
+                    cards.forEach(function (c) {
+                        var raw = parseFloat(c.dataset.rawKb || "0");
+                        var gz = parseFloat(c.dataset.gzipKb || "0");
+                        var maxRaw = parseFloat(c.dataset.maxRawKb || "Infinity");
+                        var maxGz = parseFloat(c.dataset.maxGzipKb || "Infinity");
+                        c.style.display = (raw > maxRaw || gz > maxGz) ? "" : "none";
+                    });
+                } else {
+                    btn.style.background = "";
+                    btn.style.borderColor = "";
+                    // Re-apply tag filters (handles the non-over-filter hidden state correctly)
+                    applyBundleFilters();
+                }
+            }
+
             function toggleParityFilter() {
                 parityFilterActive = !parityFilterActive;
                 var btn = document.getElementById("parity-filter-btn");
@@ -3016,8 +3637,8 @@
                     if (dir === "num") {
                         return parseInt((a.dataset.scene || "").replace("scene", "") || "0") - parseInt((b.dataset.scene || "").replace("scene", "") || "0");
                     }
-                    var aSize = parseFloat(a.dataset.gzipKb || "999");
-                    var bSize = parseFloat(b.dataset.gzipKb || "999");
+                    var aSize = parseFloat(a.dataset.rawKb || "999999");
+                    var bSize = parseFloat(b.dataset.rawKb || "999999");
                     return dir === "asc" ? aSize - bSize : bSize - aSize;
                 });
                 for (var i = 0; i < cards.length; i++) grid.appendChild(cards[i]);
@@ -3268,6 +3889,321 @@
             </div>
             <div class="lightbox-hint">← → to navigate · S to save · Esc to close</div>
         </div>
+
+        <!-- Bundle Files modal -->
+        <div class="bf-overlay" id="bf-overlay" onclick="if(event.target===this)closeBundleFiles()">
+            <div class="bf-modal">
+                <div class="bf-header">
+                    <h2 id="bf-title">Bundle Files</h2>
+                    <span class="bf-sub" id="bf-subtitle"></span>
+                    <button class="bf-close" onclick="closeBundleFiles()" title="Close (Esc)">✕ Close</button>
+                </div>
+                <div class="bf-body" id="bf-body"></div>
+            </div>
+        </div>
+
+        <script>
+            // ── Bundle Files modal ──
+            (function() {
+                var state = {
+                    info: null, manifest: null, runtimeSet: {}, hasRuntime: false,
+                    filter: "",
+                    groupByBundle: true,  // group by bundle vs flat list
+                    sortBy: "size",       // "size" | "path"
+                    sortDir: "desc",      // "asc" | "desc"
+                    hideUnloaded: true,
+                };
+
+                function fmtBytes(n) {
+                    if (n < 1024) return n + " B";
+                    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+                    return (n / (1024 * 1024)).toFixed(2) + " MB";
+                }
+                function modulePrefix(id) {
+                    if (id.indexOf("packages/babylon-lite/") === 0) return "lite";
+                    if (id.indexOf("lab/") === 0) return "lab";
+                    if (id.indexOf("node_modules/") === 0) return "npm";
+                    if (id.charCodeAt(0) === 0) return "virt";
+                    return "—";
+                }
+                function escapeHtml(s) {
+                    return String(s).replace(/[&<>"]/g, function(c) {
+                        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+                    });
+                }
+                function normalizeExports(list) {
+                    return (Array.isArray(list) ? list : []).map(function(e) {
+                        return typeof e === "string" ? { name: e, kind: "unknown" } : e;
+                    });
+                }
+                function matchesFilter(m, q) {
+                    if (!q) return true;
+                    if (m.id.toLowerCase().indexOf(q) !== -1) return true;
+                    var exports = normalizeExports(m.exports);
+                    for (var i = 0; i < exports.length; i++) {
+                        if (exports[i].name.toLowerCase().indexOf(q) !== -1) return true;
+                    }
+                    return false;
+                }
+                function renderChipsHtml(m) {
+                    var exports = normalizeExports(m.exports);
+                    var isNonTs = /\.(wgsl|css|json|png|jpg|svg)(\?|$)/.test(m.id);
+                    var isVirtual = m.id.charCodeAt(0) === 0;
+                    if (exports.length > 0) {
+                        var groups = { function: [], class: [], enum: [], const: [], unknown: [] };
+                        exports.forEach(function(e) {
+                            (groups[e.kind] || groups.unknown).push(e.name);
+                        });
+                        var groupDefs = [
+                            { key: "function", label: "fn",    cls: "bf-chip-fn" },
+                            { key: "class",    label: "class", cls: "bf-chip-class" },
+                            { key: "enum",     label: "enum",  cls: "bf-chip-enum" },
+                            { key: "const",    label: "const", cls: "bf-chip-const" },
+                            { key: "unknown",  label: "other", cls: "" }
+                        ];
+                        var groupHtml = groupDefs.filter(function(g) {
+                            return groups[g.key].length > 0;
+                        }).map(function(g) {
+                            var chips = groups[g.key].map(function(name) {
+                                return '<span class="bf-chip ' + g.cls + '">' + escapeHtml(name) + '</span>';
+                            }).join("");
+                            return '<div class="bf-chip-group">' +
+                                   '<span class="bf-chip-group-label">' + g.label + '</span>' +
+                                   chips + '</div>';
+                        }).join("");
+                        return '<div class="bf-mod-exports">' + groupHtml + '</div>';
+                    }
+                    if (isNonTs || isVirtual) {
+                        return '<div class="bf-mod-exports"><div class="bf-chip-group"><span class="bf-chip bf-chip-whole">whole module</span></div></div>';
+                    }
+                    return '<div class="bf-mod-exports-empty">no named exports (side-effect only)</div>';
+                }
+                function renderModuleLi(m) {
+                    return '<div class="bf-mod-row">' +
+                           '<span class="bf-mod-path" title="' + modulePrefix(m.id) + '">' + escapeHtml(m.id) + '</span>' +
+                           '<span class="bf-mod-bytes">' + fmtBytes(m.bytes) + '</span>' +
+                           '</div>' +
+                           renderChipsHtml(m);
+                }
+
+                function renderBundleGrouped(chunks, filter) {
+                    var html = "";
+                    var anyShown = false;
+                    // Optionally filter out chunks that didn't load at runtime.
+                    var visibleChunks = chunks.filter(function(c) {
+                        var loaded = !state.hasRuntime || state.runtimeSet[c.file];
+                        return !(state.hideUnloaded && state.hasRuntime && !loaded);
+                    });
+                    // Sort chunks by current sort key.
+                    var cmpChunk = makeChunkComparator();
+                    visibleChunks = visibleChunks.slice().sort(cmpChunk);
+                    visibleChunks.forEach(function(c, idx) {
+                        var loaded = !state.hasRuntime || state.runtimeSet[c.file];
+                        var visibleMods = (c.modules || []).filter(function(m) { return matchesFilter(m, filter); });
+                        if (filter && visibleMods.length === 0) return;
+                        // Sort modules within the chunk by current sort key.
+                        visibleMods = visibleMods.slice().sort(makeModuleComparator());
+                        anyShown = true;
+                        var badges = "";
+                        if (c.isEntry) badges += '<span class="bf-chunk-badge bf-badge-entry">entry</span> ';
+                        if (state.hasRuntime) {
+                            badges += loaded
+                                ? '<span class="bf-chunk-badge bf-badge-runtime">loaded</span> '
+                                : '<span class="bf-chunk-badge bf-badge-stripped">not loaded</span> ';
+                        }
+                        var modsHtml = visibleMods.length
+                            ? visibleMods.map(function(m) { return '<li>' + renderModuleLi(m) + '</li>'; }).join("")
+                            : '<li class="bf-empty">(no module contributions recorded)</li>';
+                        // Collapse chunks by default except the first visible one, unless filtering (then expand all).
+                        var collapsed = !filter && idx > 0;
+                        html += '<div class="bf-chunk' + (loaded ? '' : ' stripped') + '">' +
+                                '<div class="bf-chunk-head" onclick="this.nextElementSibling.classList.toggle(\'collapsed\')">' +
+                                '<span class="bf-chunk-name">' + escapeHtml(c.file) + '</span>' +
+                                badges +
+                                '<span class="bf-chunk-size">' + fmtBytes(c.bytes) + ' · ' + c.modules.length + ' module' + (c.modules.length===1?'':'s') + '</span>' +
+                                '</div>' +
+                                '<ul class="bf-modules' + (collapsed ? ' collapsed' : '') + '">' + modsHtml + '</ul>' +
+                                '</div>';
+                    });
+                    if (!anyShown) return '<div class="bf-empty">No modules match the current filters.</div>';
+                    return html;
+                }
+
+                function makeChunkComparator() {
+                    var dir = state.sortDir === "asc" ? 1 : -1;
+                    if (state.sortBy === "path") {
+                        return function(a, b) { return a.file.localeCompare(b.file) * dir; };
+                    }
+                    return function(a, b) { return (a.bytes - b.bytes) * dir; };
+                }
+                function makeModuleComparator() {
+                    var dir = state.sortDir === "asc" ? 1 : -1;
+                    if (state.sortBy === "path") {
+                        return function(a, b) { return a.id.localeCompare(b.id) * dir; };
+                    }
+                    return function(a, b) { return (a.bytes - b.bytes) * dir; };
+                }
+
+                function renderFlat(chunks, filter) {
+                    var items = [];
+                    chunks.forEach(function(c) {
+                        var loaded = !state.hasRuntime || state.runtimeSet[c.file];
+                        if (state.hideUnloaded && state.hasRuntime && !loaded) return;
+                        (c.modules || []).forEach(function(m) {
+                            if (!matchesFilter(m, filter)) return;
+                            items.push({ m: m, chunk: c, loaded: loaded });
+                        });
+                    });
+                    var cmp = makeModuleComparator();
+                    items.sort(function(a, b) { return cmp(a.m, b.m); });
+                    if (items.length === 0) return '<div class="bf-empty">No modules match the current filters.</div>';
+                    var html = '<ul class="bf-flat-list">';
+                    items.forEach(function(it) {
+                        html += '<li' + (it.loaded ? '' : ' class="stripped"') + '>' +
+                                renderModuleLi(it.m) +
+                                '<span class="bf-flat-chunk-ref">in ' + escapeHtml(it.chunk.file) + (it.loaded ? '' : ' (not loaded)') + '</span>' +
+                                '</li>';
+                    });
+                    html += '</ul>';
+                    return html;
+                }
+
+                function render() {
+                    var list = document.getElementById("bf-list");
+                    if (!state.info) return;
+                    var chunks = state.info.chunks || [];
+                    var filter = (state.filter || "").trim().toLowerCase();
+                    if (state.groupByBundle) {
+                        list.innerHTML = renderBundleGrouped(chunks, filter);
+                    } else {
+                        list.innerHTML = renderFlat(chunks, filter);
+                    }
+                }
+
+                function wireToolbarButtons() {
+                    function wireGroup(groupId, key, onChange) {
+                        var group = document.getElementById(groupId);
+                        Array.prototype.forEach.call(group.querySelectorAll("button"), function(btn) {
+                            btn.addEventListener("click", function() {
+                                var val = btn.getAttribute("data-value");
+                                state[key] = val === "true" ? true : val === "false" ? false : val;
+                                Array.prototype.forEach.call(group.querySelectorAll("button"), function(b) { b.classList.remove("active"); });
+                                btn.classList.add("active");
+                                if (onChange) onChange();
+                                render();
+                            });
+                        });
+                    }
+                    wireGroup("bf-tg-group",  "groupByBundle");
+                    wireGroup("bf-tg-sortby", "sortBy");
+                    wireGroup("bf-tg-sortdir","sortDir");
+                }
+
+                window.closeBundleFiles = function() {
+                    document.getElementById("bf-overlay").classList.remove("active");
+                };
+
+                window.showBundleFiles = function(scene) {
+                    var cfg = (window.SCENE_CONFIG || []).filter(function(c){return "scene"+c.id===scene;})[0];
+                    var title = cfg ? cfg.name : scene;
+                    document.getElementById("bf-title").textContent = title;
+                    document.getElementById("bf-subtitle").textContent = "loading…";
+                    var body = document.getElementById("bf-body");
+                    body.innerHTML = '<div class="bf-empty">Loading…</div>';
+                    document.getElementById("bf-overlay").classList.add("active");
+
+                    Promise.all([
+                        fetch("/bundle/bundle-info/" + scene + ".json?t=" + Date.now()).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+                        fetch("/bundle/manifest.json?t=" + Date.now()).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+                    ]).then(function(results) {
+                        var info = results[0];
+                        var manifest = results[1] || {};
+                        if (!info) {
+                            body.innerHTML = '<div class="bf-error">No bundle info available. Run <code>pnpm build:bundle-scenes</code> to generate it.</div>';
+                            document.getElementById("bf-subtitle").textContent = "";
+                            return;
+                        }
+                        var sceneManifest = manifest[scene] || {};
+                        var runtimeSet = {};
+                        (sceneManifest.runtimeChunks || []).forEach(function(f){ runtimeSet[f] = true; });
+                        var hasRuntime = Object.keys(runtimeSet).length > 0;
+
+                        var chunks = info.chunks || [];
+                        // Sort: entry first, runtime-loaded next, stripped last; within group by size desc.
+                        chunks.sort(function(a,b) {
+                            var ar = !hasRuntime || runtimeSet[a.file] ? 1 : 0;
+                            var br = !hasRuntime || runtimeSet[b.file] ? 1 : 0;
+                            if (a.isEntry !== b.isEntry) return a.isEntry ? -1 : 1;
+                            if (ar !== br) return br - ar;
+                            return b.bytes - a.bytes;
+                        });
+
+                        var totalRuntimeBytes = 0, runtimeChunkCount = 0, strippedChunkCount = 0;
+                        chunks.forEach(function(c) {
+                            var loaded = !hasRuntime || runtimeSet[c.file];
+                            if (loaded) { totalRuntimeBytes += c.bytes; runtimeChunkCount++; }
+                            else { strippedChunkCount++; }
+                        });
+
+                        var sub = runtimeChunkCount + " chunk" + (runtimeChunkCount===1?"":"s") + " loaded at runtime · " + fmtBytes(totalRuntimeBytes) + " raw";
+                        if (strippedChunkCount) sub += " · " + strippedChunkCount + " chunk" + (strippedChunkCount===1?"":"s") + " built but not fetched";
+                        if (!hasRuntime) sub = "runtime info unavailable — all built chunks shown";
+                        document.getElementById("bf-subtitle").textContent = sub;
+
+                        state.info = info;
+                        state.manifest = manifest;
+                        state.runtimeSet = runtimeSet;
+                        state.hasRuntime = hasRuntime;
+                        state.filter = "";
+                        state.groupByBundle = true;
+                        state.sortBy = "size";
+                        state.sortDir = "desc";
+                        state.hideUnloaded = true;
+
+                        function btn(group, value, label, active) {
+                            return '<button data-value="' + value + '"' + (active ? ' class="active"' : '') + '>' + label + '</button>';
+                        }
+                        body.innerHTML =
+                            '<div class="bf-toolbar">' +
+                              '<input id="bf-filter" class="bf-filter" type="text" placeholder="Filter by file path or export name…" />' +
+                              '<div id="bf-tg-group" class="bf-toolbar-group" title="Grouping">' +
+                                btn("group","true","Group by bundle",true) +
+                                btn("group","false","Flat list",false) +
+                              '</div>' +
+                              '<div id="bf-tg-sortby" class="bf-toolbar-group" title="Sort by">' +
+                                btn("sortby","size","Size",true) +
+                                btn("sortby","path","Path",false) +
+                              '</div>' +
+                              '<div id="bf-tg-sortdir" class="bf-toolbar-group" title="Direction">' +
+                                btn("sortdir","desc","↓ Desc",true) +
+                                btn("sortdir","asc","↑ Asc",false) +
+                              '</div>' +
+                              (hasRuntime
+                                ? '<label class="bf-toolbar-check" title="Hide chunks that were not actually fetched at runtime">' +
+                                    '<input type="checkbox" id="bf-hide-unloaded" checked /> Hide unloaded' +
+                                  '</label>'
+                                : '') +
+                            '</div>' +
+                            '<div class="bf-note">Chunk sizes are post-minification bytes. Module sizes are the rendered contribution of each <code>.ts</code> / <code>.wgsl</code> file. Chips show the exported symbols that survived tree-shaking.</div>' +
+                            '<div id="bf-list"></div>';
+
+                        var filterEl = document.getElementById("bf-filter");
+                        filterEl.addEventListener("input", function() { state.filter = filterEl.value; render(); });
+                        wireToolbarButtons();
+                        var hideEl = document.getElementById("bf-hide-unloaded");
+                        if (hideEl) hideEl.addEventListener("change", function() { state.hideUnloaded = hideEl.checked; render(); });
+                        render();
+                    });
+                };
+                document.addEventListener("keydown", function(e) {
+                    if (e.key === "Escape") {
+                        var ov = document.getElementById("bf-overlay");
+                        if (ov && ov.classList.contains("active")) closeBundleFiles();
+                    }
+                });
+            })();
+        </script>
+
 
         <script>
             // ── Lightbox for parity diff images ──

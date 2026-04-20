@@ -4,6 +4,12 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import "@babylonjs/core/Materials/standardMaterial";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+// Force KTX1 texture loader registration before scene.whenReadyAsync() —
+// without this, the loader is registered via dynamic import on first use and
+// scene.whenReadyAsync() may resolve before the compressed upload completes,
+// leaving the diffuse sampler bound to a black fallback (observed on
+// BrowserStack macOS Sonoma WebGPU).
+import "@babylonjs/core/Materials/Textures/Loaders/ktxTextureLoader";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
@@ -11,7 +17,7 @@ import { Scene } from "@babylonjs/core/scene";
 (async function () {
     const __initStart = performance.now();
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
-    const engine = new WebGPUEngine(canvas, { antialias: true, enableAllFeatures: true });
+    const engine = new WebGPUEngine(canvas, { antialias: true, enableAllFeatures: true, adaptToDeviceRatio: true });
     await engine.initAsync();
 
     const scene = new Scene(engine);
@@ -55,6 +61,7 @@ import { Scene } from "@babylonjs/core/scene";
     });
     await scene.whenReadyAsync();
     engine.runRenderLoop(() => scene.render());
+    window.addEventListener("resize", () => engine.resize());
     await new Promise<void>((resolve) => scene.onAfterRenderObservable.addOnce(resolve));
     canvas.dataset.initMs = String(performance.now() - __initStart);
     canvas.dataset.ready = "true";

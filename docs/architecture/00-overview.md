@@ -4,11 +4,12 @@
 > It must be so complete that if all source code were deleted, an LLM could perfectly
 > regenerate the entire engine from this document alone. Treat this as the ground truth.
 >
-> **Revision scope**: Scenes 1–22 (BoomBox PBR, Sphere+DirectionalLight, Fog+Boxes+Skybox, Shadows+ESM,
+> **Revision scope**: Scenes 1–27 (BoomBox PBR, Sphere+DirectionalLight, Fog+Boxes+Skybox, Shadows+ESM,
 > Alien PBR+Skeleton, PBR Gold Sphere, ChibiRex Animated, HDR Glass Sphere, Sponza, PBR Rough Sphere,
 > Shark GLB, PBR Shader Balls, PBR Spheres Grid, Flight Helmet, SpotLights+Ground, Thin Instances,
 > PBR+Standard Thin Instances, Spotlight Hard Shadows (PCF), PBR Clearcoat, PBR Emissive Spheres Grid,
-> PBR Sheen Cloth, PBR Shadows).
+> PBR Sheen Cloth, PBR Shadows, PBR Anisotropy, Hill Valley (.babylon), KTX Texture, PBR Subsurface,
+> Material Variants (KHR_materials_variants)).
 > Detailed per-module specs are in the companion docs listed below.
 
 ## Architecture Document Index

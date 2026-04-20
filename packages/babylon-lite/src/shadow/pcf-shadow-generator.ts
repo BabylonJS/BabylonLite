@@ -20,11 +20,24 @@ import type { Mesh } from "../mesh/mesh.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { EngineContextInternal } from "../engine/engine.js";
 import type { ShadowGenerator } from "./shadow-generator.js";
-import { buildCasters, syncCasterMatrices, drawCasters, shadowMatrixChanged, writeShadowUboFields } from "./shadow-base.js";
+import { createUniformBuffer } from "../resource/gpu-buffers.js";
+import {
+    buildCasters,
+    syncCasterMatrices,
+    drawCasters,
+    shadowMatrixChanged,
+    writeShadowUboFields,
+    buildLightViewMatrix,
+    multiply4x4,
+    createDepthSceneBGL,
+    createSharedShadowUBO,
+    createShadowParamsUBO,
+} from "./shadow-base.js";
 import depthVertSrc from "../../shaders/shadow-pcf-depth.vertex.wgsl?raw";
 import { registerPcfShadowShader } from "../material/standard/standard-pipeline.js";
 import { registerPcfShadowBgl } from "../material/standard/standard-pipeline.js";
 import { WGSL_SCENE_UNIFORMS_SHADOW } from "../shader/wgsl-helpers.js";
+import { createSingleUniformBGL } from "../shader/bgl-helpers.js";
 
 // ─── PCF Shader Fragments (bundled only when PCF is used) ──────────
 
@@ -90,61 +103,7 @@ export interface PcfShadowGeneratorConfig {
  * FOV = spot angle, aspect = 1:1 (square shadow map).
  */
 function computeSpotLightMatrix(light: SpotLight, near: number, far: number): { viewProj: Float32Array; near: number; far: number } {
-    const px = light.position.x;
-    const py = light.position.y;
-    const pz = light.position.z;
-
-    const dx = light.direction.x;
-    const dy = light.direction.y;
-    const dz = light.direction.z;
-    const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-    const dirX = dx / len;
-    const dirY = dy / len;
-    const dirZ = dz / len;
-
-    // Build view matrix (lookAt along direction)
-    let upX = 0,
-        upY = 1,
-        upZ = 0;
-    if (Math.abs(dirY) > 0.99) {
-        upX = 0;
-        upY = 0;
-        upZ = 1;
-    }
-
-    // right = cross(up, forward) [LH convention: forward = direction]
-    let rx = upY * dirZ - upZ * dirY;
-    let ry = upZ * dirX - upX * dirZ;
-    let rz = upX * dirY - upY * dirX;
-    const rLen = Math.sqrt(rx * rx + ry * ry + rz * rz);
-    rx /= rLen;
-    ry /= rLen;
-    rz /= rLen;
-
-    // up = cross(forward, right)
-    const ux = dirY * rz - dirZ * ry;
-    const uy = dirZ * rx - dirX * rz;
-    const uz = dirX * ry - dirY * rx;
-
-    // View matrix (column-major)
-    const view = new Float32Array([
-        rx,
-        ux,
-        dirX,
-        0,
-        ry,
-        uy,
-        dirY,
-        0,
-        rz,
-        uz,
-        dirZ,
-        0,
-        -(rx * px + ry * py + rz * pz),
-        -(ux * px + uy * py + uz * pz),
-        -(dirX * px + dirY * py + dirZ * pz),
-        1,
-    ]);
+    const view = buildLightViewMatrix(light.direction.x, light.direction.y, light.direction.z, light.position.x, light.position.y, light.position.z);
 
     // Perspective projection (column-major, WebGPU NDC z=[0,1])
     // FOV = spot angle, aspect = 1:1
@@ -159,19 +118,7 @@ function computeSpotLightMatrix(light: SpotLight, near: number, far: number): { 
     proj[14] = -(far * near) / (far - near);
     // proj[15] = 0 (perspective divide)
 
-    // viewProj = proj * view
-    const viewProj = new Float32Array(16);
-    for (let row = 0; row < 4; row++) {
-        for (let col = 0; col < 4; col++) {
-            let sum = 0;
-            for (let k = 0; k < 4; k++) {
-                sum += proj[row + k * 4]! * view[k + col * 4]!;
-            }
-            viewProj[row + col * 4] = sum;
-        }
-    }
-
-    return { viewProj, near, far };
+    return { viewProj: multiply4x4(proj, view), near, far };
 }
 
 export function createPcfShadowGenerator(engine: EngineContext, light: SpotLight, casterMeshes: Mesh[], cfg: PcfShadowGeneratorConfig = {}): ShadowGenerator {
@@ -190,10 +137,7 @@ export function createPcfShadowGenerator(engine: EngineContext, light: SpotLight
     const { viewProj } = computeSpotLightMatrix(light, near, far);
 
     // --- Depth pipeline BGL (needed before buildCasters) ---
-    const depthMeshBGL = device.createBindGroupLayout({
-        label: "pcf-depth-mesh",
-        entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } }],
-    });
+    const depthMeshBGL = createSingleUniformBGL(eng, "pcf-depth-mesh", GPUShaderStage.VERTEX);
 
     // Build caster data + per-caster bind groups
     const casters = buildCasters(eng, casterMeshes, depthMeshBGL);
@@ -207,16 +151,9 @@ export function createPcfShadowGenerator(engine: EngineContext, light: SpotLight
     });
 
     // --- Depth pipeline (vertex-only, no fragment) ---
-    const depthSceneUBO = device.createBuffer({
-        size: 64,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(depthSceneUBO, 0, viewProj as Float32Array<ArrayBuffer>);
+    const depthSceneUBO = createUniformBuffer(eng, viewProj as Float32Array<ArrayBuffer>);
 
-    const depthSceneBGL = device.createBindGroupLayout({
-        label: "pcf-depth-scene",
-        entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } }],
-    });
+    const depthSceneBGL = createDepthSceneBGL(eng, "pcf-depth-scene");
 
     const depthVert = device.createShaderModule({ code: WGSL_SCENE_UNIFORMS_SHADOW + depthVertSrc, label: "pcf-depth-vert" });
 
@@ -251,27 +188,15 @@ export function createPcfShadowGenerator(engine: EngineContext, light: SpotLight
         minFilter: "linear",
     });
 
-    // Shadow params UBO (reuse existing interface — bias, depthScale fields)
-    const shadowParamsData = new Float32Array(8);
-    shadowParamsData[0] = bias;
-    shadowParamsData[2] = 1.0 / mapSize; // texel size for PCF offsets (reuse depthScale slot)
-    shadowParamsData[4] = 0; // depthMinZ
-    shadowParamsData[5] = 1; // depthMinZ + depthMaxZ
-    const shadowParamsUBO = device.createBuffer({
-        size: 32,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    device.queue.writeBuffer(shadowParamsUBO, 0, shadowParamsData);
+    // Shadow params UBO (depthScale slot reused as texel size for PCF offsets)
+    const shadowParamsUBO = createShadowParamsUBO(eng, bias, 1.0 / mapSize);
 
     const lightMatrix = viewProj;
     const shadowsInfo = new Float32Array([darkness, mapSize, 1.0 / mapSize, 0]);
     const depthValuesArr = new Float32Array([0, 1]);
 
     // Shared shadow UBO for all receiver meshes (96 bytes)
-    const shadowUboData = new Float32Array(24);
-    writeShadowUboFields(shadowUboData, { lightMatrix, depthValues: depthValuesArr, shadowsInfo });
-    const sharedShadowUBO = device.createBuffer({ size: 96, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    device.queue.writeBuffer(sharedShadowUBO, 0, shadowUboData);
+    const { ubo: sharedShadowUBO, data: shadowUboData } = createSharedShadowUBO(eng, lightMatrix, depthValuesArr, shadowsInfo);
 
     // Shadow matrix early-out tracking (init to -1 to force first-frame render)
     let _lastSpotLightVer = -1;
@@ -305,7 +230,7 @@ export function createPcfShadowGenerator(engine: EngineContext, light: SpotLight
                     device.queue.writeBuffer(depthSceneUBO, 0, lightMatrix as Float32Array<ArrayBuffer>);
                     // Update shared shadow UBO for all receivers
                     writeShadowUboFields(shadowUboData, sg);
-                    device.queue.writeBuffer(sharedShadowUBO, 0, shadowUboData);
+                    device.queue.writeBuffer(sharedShadowUBO, 0, shadowUboData as Float32Array<ArrayBuffer>);
                 }
             }
             _lastPcfCasterVerSum = casterVerSum;

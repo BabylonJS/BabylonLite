@@ -8,13 +8,13 @@
  */
 import { test, expect } from "@playwright/test";
 import * as path from "path";
-import { captureGolden, compareImages, compareRegion, getSceneConfig } from "../compare-utils";
+import { attachCompareArtifacts, captureGolden, compareImages, compareRegion, getSceneConfig } from "../compare-utils";
 
 const sceneConfig = getSceneConfig(7);
 const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene7-chibirex");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test("Scene 7 — ChibiRex Animated matches Babylon.js reference", async ({ page }) => {
+test("Scene 7 — ChibiRex Animated matches Babylon.js reference", async ({ page }, testInfo) => {
     test.setTimeout(120_000);
 
     const browser = page.context().browser()!;
@@ -36,6 +36,7 @@ test("Scene 7 — ChibiRex Animated matches Babylon.js reference", async ({ page
     console.log(`  ≤5: ${((100 * region.within5) / region.regionPixels).toFixed(1)}%`);
 
     const full = compareImages(screenshotPath, GOLDEN_REF);
+    await attachCompareArtifacts(testInfo, screenshotPath, GOLDEN_REF, REFERENCE_DIR);
     console.log(`Full image (${full.totalPixels} px): MAD=${full.mad.toFixed(2)}`);
 
     expect(region.mad, `ChibiRex MAD should be ≤ ${sceneConfig.maxRegionMad}`).toBeLessThanOrEqual(sceneConfig.maxRegionMad!);

@@ -3,6 +3,9 @@ import type { SceneContextInternal } from "../scene/scene.js";
 import { buildScene, processMaterialSwaps } from "../scene/scene.js";
 import type { Renderable } from "../render/renderable.js";
 
+/** Babylon Lite version string. */
+export const VERSION = "0.1.0";
+
 /** Handle to the WebGPU engine — pure state, no attached methods. */
 export interface EngineContext {
     readonly canvas: HTMLCanvasElement;
@@ -58,6 +61,13 @@ export async function createEngine(canvas: HTMLCanvasElement): Promise<EngineCon
     const format = navigator.gpu.getPreferredCanvasFormat();
     context.configure({ device, format, alphaMode: "opaque" });
 
+    const versionToLog = `Babylon Lite v${VERSION}`;
+    // eslint-disable-next-line no-console
+    console.log(`${versionToLog} - WebGPU engine`);
+    if (canvas.setAttribute) {
+        canvas.setAttribute("data-engine", versionToLog);
+    }
+
     const msaaSamples = 4;
 
     const targets = createRenderTargets(device, canvas.width, canvas.height, format, msaaSamples);
@@ -103,16 +113,14 @@ export function startEngine(engine: EngineContext, scene: SceneContext): Promise
         const boot = async () => {
             // Run deferred builders (entities register these at add/load time)
             await buildScene(scene);
-            // Split renderables into opaque and transparent
+            // Split renderables: transparent → back-to-front each frame, transmissive → opaque but sampled,
+            // everything else → opaque-opaque.
             for (const r of sc._renderables) {
-                if (r.isTransparent) {
-                    sc._transparentRenderables.push(r);
-                } else {
-                    sc._opaqueRenderables.push(r);
-                }
+                const bucket = r.isTransparent ? sc._transparentRenderables : r.isTransmissive ? sc._transmissiveRenderables : sc._opaqueRenderables;
+                bucket.push(r);
             }
-            // Sort opaque by render order (stable sort)
             sc._opaqueRenderables.sort((a, b) => a.order - b.order);
+            sc._transmissiveRenderables.sort((a, b) => a.order - b.order);
             // Also keep _renderables sorted for pre-passes and legacy consumers
             sc._renderables.sort((a, b) => a.order - b.order);
 
@@ -151,6 +159,28 @@ export function stopEngine(engine: EngineContext): void {
     }
     eng._animFrameId = 0;
     eng._renderFn = null;
+}
+
+/**
+ * Render a single frame synchronously (CPU-side command encoding + submit).
+ * The caller is responsible for calling this outside the RAF loop — use
+ * `stopEngine()` first if the loop is running.
+ *
+ * Returns a promise that resolves after the GPU has finished executing
+ * the submitted commands (`device.queue.onSubmittedWorkDone`).
+ */
+export async function renderOneFrame(engine: EngineContext, scene: SceneContext): Promise<void> {
+    const eng = engine as EngineContextInternal;
+    const sc = scene as SceneContextInternal;
+    resizeEngine(engine);
+    for (const cb of sc._beforeRender) {
+        cb(0);
+    }
+    if (sc._materialSwapQueue.length > 0) {
+        processMaterialSwaps(scene);
+    }
+    renderFrame(eng, eng._targets, sc);
+    await eng.device.queue.onSubmittedWorkDone();
 }
 
 /** Release all engine-owned GPU resources (render targets, device). */
@@ -206,8 +236,7 @@ function drawList(enc: GPURenderPassEncoder | GPURenderBundleEncoder, list: read
 }
 
 function renderFrame(engine: EngineContextInternal, targets: RenderTargets, scene: SceneContextInternal): void {
-    const swapChainView = engine.context.getCurrentTexture().createView();
-    const encoder = engine.device.createCommandEncoder();
+    let encoder = engine.device.createCommandEncoder();
 
     // Pre-passes: shadow maps from lights that have shadow generators
     let drawCalls = 0;
@@ -227,13 +256,9 @@ function renderFrame(engine: EngineContextInternal, targets: RenderTargets, scen
         u.update(engine);
     }
 
-    // Update per-mesh UBOs (world matrices) for dynamic transforms
-    for (const r of scene._opaqueRenderables) {
-        if (r.updateUBOs) {
-            r.updateUBOs();
-        }
-    }
-    for (const r of scene._transparentRenderables) {
+    // Update per-mesh UBOs (world matrices) for dynamic transforms — iterates the
+    // pre-built renderables union so we pay one loop regardless of opaque/transmissive/transparent split.
+    for (const r of scene._renderables) {
         if (r.updateUBOs) {
             r.updateUBOs();
         }
@@ -254,6 +279,14 @@ function renderFrame(engine: EngineContextInternal, targets: RenderTargets, scen
         }
         scene._transparentRenderables.sort((a, b) => (b._sortDistance ?? 0) - (a._sortDistance ?? 0) || a.order - b.order);
     }
+
+    // Lazy hook: refraction/transmission module inserts the opaque-scene RTT + mipmap submit here,
+    // then hands back a fresh encoder that the main pass uses. Also lets the hook decide when to
+    // acquire the swap-chain view (late, after mid-frame submit).
+    if (scene._beforeMain) {
+        encoder = scene._beforeMain(engine, scene, encoder);
+    }
+    const swapChainView = engine.context.getCurrentTexture().createView();
 
     const pass = encoder.beginRenderPass({
         colorAttachments: [
@@ -291,6 +324,9 @@ function renderFrame(engine: EngineContextInternal, targets: RenderTargets, scen
     }
     drawCalls += scene._opaqueRenderables.length;
     pass.executeBundles([engine._opaqueBundle]);
+
+    // ─── Transmissive pass: direct-encoded after opaque, before transparent ───
+    drawCalls += drawList(pass, scene._transmissiveRenderables, engine);
 
     // ─── Transparent pass: direct-encoded (re-sorted every frame) ───
     drawCalls += drawList(pass, scene._transparentRenderables, engine);

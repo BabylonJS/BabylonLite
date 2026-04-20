@@ -10,13 +10,13 @@
  */
 import { test, expect } from "@playwright/test";
 import * as path from "path";
-import { captureGolden, compareImages, compareRegion, getSceneConfig } from "../compare-utils";
+import { attachCompareArtifacts, captureGolden, compareImages, compareRegion, getSceneConfig } from "../compare-utils";
 
 const sceneConfig = getSceneConfig(2);
 const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene2-sphere");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test("Scene 2 — Sphere + DirectionalLight matches Babylon.js reference", async ({ page }) => {
+test("Scene 2 — Sphere + DirectionalLight matches Babylon.js reference", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
     await captureGolden(browser, { sceneId: 2 });
 
@@ -36,6 +36,7 @@ test("Scene 2 — Sphere + DirectionalLight matches Babylon.js reference", async
     console.log(`  ≤1: ${((100 * region.within1) / region.regionPixels).toFixed(1)}%`);
 
     const full = compareImages(screenshotPath, GOLDEN_REF);
+    await attachCompareArtifacts(testInfo, screenshotPath, GOLDEN_REF, REFERENCE_DIR);
     console.log(`Full image (${full.totalPixels} px): MAD=${full.mad.toFixed(3)}`);
 
     // Assertions — scene 2 is near pixel-perfect

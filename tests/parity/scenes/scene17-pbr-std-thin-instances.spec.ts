@@ -6,13 +6,13 @@
  */
 import { test, expect } from "@playwright/test";
 import * as path from "path";
-import { captureGolden, compareImages, getSceneConfig } from "../compare-utils";
+import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
 
 const sceneConfig = getSceneConfig(17);
 const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene17-pbr-std-thin-instances");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test("Scene 17 — PBR + Std Thin Instances matches Babylon.js reference", async ({ page }) => {
+test("Scene 17 — PBR + Std Thin Instances matches Babylon.js reference", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
     await captureGolden(browser, { sceneId: 17 });
 
@@ -24,6 +24,7 @@ test("Scene 17 — PBR + Std Thin Instances matches Babylon.js reference", async
     await page.locator("canvas").screenshot({ path: screenshotPath });
 
     const full = compareImages(screenshotPath, GOLDEN_REF);
+    await attachCompareArtifacts(testInfo, screenshotPath, GOLDEN_REF, REFERENCE_DIR);
     console.log(`Full image (${full.totalPixels} px):`);
     console.log(`  MAD: ${full.mad.toFixed(3)}`);
     console.log(`  Exact: ${((100 * full.exactMatch) / full.totalPixels).toFixed(1)}%`);

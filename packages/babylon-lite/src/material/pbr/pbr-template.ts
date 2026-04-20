@@ -68,6 +68,10 @@ export interface PbrTemplateConfig {
     readonly hasDoubleSided?: boolean;
     /** Has tonemap */
     readonly hasTonemap?: boolean;
+    /** ACES WGSL: tonemap helper functions (dynamically imported). Empty string = standard exponential tonemap. */
+    readonly acesHelpers?: string;
+    /** ACES WGSL: tonemap call block replacing the default exponential one. */
+    readonly acesTonemapCall?: string;
     /** Has alpha blending */
     readonly hasAlphaBlend?: boolean;
     /** Has specular AA */
@@ -88,6 +92,12 @@ export interface PbrTemplateConfig {
     readonly hasIbl?: boolean;
     /** Has clearcoat layer */
     readonly hasClearcoat?: boolean;
+    /** Has clearcoat intensity texture (R channel, multiplies intensity factor). */
+    readonly hasCcIntensityMap?: boolean;
+    /** Has clearcoat roughness texture (G channel, multiplies roughness factor). */
+    readonly hasCcRoughnessMap?: boolean;
+    /** Has clearcoat normal map (tangent-space, perturbs coat normal). */
+    readonly hasCcNormalMap?: boolean;
     /** Has sheen layer */
     readonly hasSheen?: boolean;
     /** Has anisotropy layer */
@@ -115,6 +125,8 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
         hasSpecGloss = false,
         hasDoubleSided = false,
         hasTonemap = false,
+        acesHelpers = "",
+        acesTonemapCall = "",
         hasAlphaBlend = false,
         hasSpecularAA = false,
         hasGammaAlbedo = false,
@@ -125,6 +137,9 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
         hasReflectanceExt = false,
         hasIbl = false,
         hasClearcoat = false,
+        hasCcIntensityMap = false,
+        hasCcRoughnessMap = false,
+        hasCcNormalMap = false,
         hasSheen = false,
         hasAnisotropy = false,
         anisoBrdfFunctions = "",
@@ -155,8 +170,11 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
     }
     baseVaryings.push({ name: "uv", type: "vec2<f32>" });
 
-    // ── Base mesh UBO fields (transform only) ──────────────────────
-    const baseMeshUboFields: UboField[] = [{ name: "world", type: "mat4x4<f32>" }];
+    // ── Base mesh UBO fields (transform + uv transform) ────────────
+    const baseMeshUboFields: UboField[] = [
+        { name: "world", type: "mat4x4<f32>" },
+        { name: "uvTransformST", type: "vec4<f32>" },
+    ];
 
     // ── Base material UBO fields ────────────────────────────────────
     const baseMaterialUboFields: UboField[] = [
@@ -164,6 +182,11 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
         { name: "directIntensity", type: "f32" },
         { name: "reflectance", type: "f32" },
         { name: "materialAlpha", type: "f32" },
+        // glTF metallicFactor / roughnessFactor (default 1.0) — applied over MR texture channels.
+        { name: "metallicFactor", type: "f32" },
+        { name: "roughnessFactor", type: "f32" },
+        { name: "_mrfPad0", type: "f32" },
+        { name: "_mrfPad1", type: "f32" },
         // Extension UBO fields in old-system order for byte-layout compat
         ...(hasReflectanceExt
             ? [
@@ -254,6 +277,16 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
     if (hasSheenTexture) {
         baseBindings.push(...tex2d("sheenTexture_", "sheenSampler_"));
     }
+    // Clearcoat textures — must match order in createPbrMeshBindGroup
+    if (hasCcIntensityMap) {
+        baseBindings.push(...tex2d("ccIntensityTexture", "ccIntensitySampler_"));
+    }
+    if (hasCcRoughnessMap) {
+        baseBindings.push(...tex2d("ccRoughnessTexture", "ccRoughnessSampler_"));
+    }
+    if (hasCcNormalMap) {
+        baseBindings.push(...tex2d("ccNormalTexture", "ccNormalSampler_"));
+    }
     if (hasMultiLight) {
         baseBindings.push({ name: "lights", type: { kind: "uniform-buffer" }, visibility: STAGE_FRAGMENT });
     }
@@ -294,7 +327,7 @@ out.worldPos = worldPos4.xyz;
 out.clipPos = scene.viewProj * worldPos4;
 out.worldNormal = (finalWorld * vec4<f32>(normalize(${normVar}), 0.0)).xyz;
 ${tangentBlock}
-out.uv = uv;
+out.uv = uv * mesh.uvTransformST.xy + mesh.uvTransformST.zw;
 /*VB*/
 return out;
 }`;
@@ -344,8 +377,8 @@ var alpha = baseColorSample.a;`;
         ? `let specGloss = textureSample(specGlossTexture, specGlossSampler, input.uv);
 let roughness = clamp(1.0 - specGloss.a, 0.0, 1.0);
 let metallic = 0.0;`
-        : `let roughness = clamp(orm.g, 0.0, 1.0);
-let metallic = orm.b;`;
+        : `let roughness = clamp(orm.g * material.roughnessFactor, 0.0, 1.0);
+let metallic = orm.b * material.metallicFactor;`;
 
     // Emissive default (overridden by emissive-color fragment's AT slot)
     const emissiveDefault = hasEmissiveColor
@@ -370,14 +403,23 @@ var colorF0 = mix(vec3<f32>(dielectricF0), baseColor, metallic);
 let colorF90 = vec3<f32>(1.0);
 let surfaceAlbedo = baseColor * (1.0 - dielectricF0) * (1.0 - metallic);`;
 
-    // Specular AA
+    // Specular AA + geometric-curvature roughness factors (BJS getAARoughnessFactors).
+    // AA_factor_x is the direct-light roughness floor (matches BJS `computeSheenLighting`
+    // which clamps info.roughness upward). AA_factor_y is the IBL/alphaG additive bump.
+    // Emitted unconditionally as var so sheen/other fragments can reference them
+    // without needing a define; zero on the no-curvature path makes them a no-op.
     const specularAABlock =
         hasSpecularAA || hasAnyNormal
-            ? `{ let nDfdx_AA = dpdx(N);
+            ? `var AA_factor_x = 0.0;
+var AA_factor_y = 0.0;
+{ let nDfdx_AA = dpdx(N);
   let nDfdy_AA = dpdy(N);
   let slopeSquare_AA = max(dot(nDfdx_AA, nDfdx_AA), dot(nDfdy_AA, nDfdy_AA));
-  alphaG += sqrt(slopeSquare_AA) * 0.75; }`
-            : "";
+  AA_factor_x = pow(saturate(slopeSquare_AA), 0.333);
+  AA_factor_y = sqrt(slopeSquare_AA) * 0.75;
+  alphaG += AA_factor_y; }`
+            : `var AA_factor_x = 0.0;
+var AA_factor_y = 0.0;`;
 
     // Direct lighting block
     let directLightBlock: string;
@@ -407,9 +449,14 @@ var directSpecular = vec3<f32>(0.0);
 /*BL*/`;
     }
 
-    // Tonemap
+    // Tonemap: BJS TONEMAPPING_STANDARD (exponential) by default; caller-supplied
+    // ACES WGSL (from pbr-aces-wgsl.ts) is used when provided.
+    const useAces = hasTonemap && acesTonemapCall !== "";
+    const acesBlock = useAces ? acesHelpers : "";
     const tonemapBlock = hasTonemap
-        ? `color *= scene.exposureLinear;
+        ? useAces
+            ? acesTonemapCall
+            : `color *= scene.exposureLinear;
 color = 1.0 - exp2(-1.590579 * color);`
         : `color *= scene.exposureLinear;`;
 
@@ -440,6 +487,7 @@ return vec4<f32>(color, finalAlpha);`
 /*FB*/
 /*FI*/
 ${BRDF_FUNCTIONS}
+${acesBlock}
 ${anisoBrdfBlock}
 ${multiLightDecls}
 ${doubleSidedEntry}

@@ -6,6 +6,7 @@ dist/
 our-render*
 our-*
 test-actual.png
+diff-map.png
 capture.json
 capture-full.json
 reference/**/babylon-ref-golden.png
@@ -24,10 +25,15 @@ reference/**/*-capture.json
 reference/**/diff*.png
 reference/**/debug-*.png
 lab/public/bundle/
+lab/public/bundle-baseline/
+lab/bundle-baseline-scene*.html
 lab/public/vendor/
 lab/public/perf-manifest.json
 test-results/
 .bundle-size-tmp/
 .env.local
 plans/
-
+log/
+browserstack.err
+local.log
+.perf-baseline-worktree/

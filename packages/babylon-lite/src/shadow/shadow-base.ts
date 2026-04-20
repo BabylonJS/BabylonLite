@@ -11,6 +11,8 @@
 import type { Mesh } from "../mesh/mesh.js";
 import type { MeshInternal } from "../mesh/mesh.js";
 import type { EngineContextInternal } from "../engine/engine.js";
+import { createUniformBuffer } from "../resource/gpu-buffers.js";
+import { createSingleUniformBGL } from "../shader/bgl-helpers.js";
 
 export interface ShadowCaster {
     positionBuffer: GPUBuffer;
@@ -30,11 +32,7 @@ export function buildCasters(engine: EngineContextInternal, meshes: Mesh[], mesh
         const gpu = (mesh as MeshInternal)._gpu;
         const worldMatrix = new Float32Array(mesh.worldMatrix);
 
-        const meshUBO = device.createBuffer({
-            size: 64,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
-        device.queue.writeBuffer(meshUBO, 0, worldMatrix as Float32Array<ArrayBuffer>);
+        const meshUBO = createUniformBuffer(engine, worldMatrix as Float32Array<ArrayBuffer>);
 
         const entries: GPUBindGroupEntry[] = [{ binding: 0, resource: { buffer: meshUBO } }, ...(extraEntries ?? [])];
         const bindGroup = device.createBindGroup({ layout: meshBGL, entries });
@@ -86,6 +84,83 @@ export function shadowMatrixChanged(a: Float32Array, b: Float32Array): boolean {
         }
     }
     return false;
+}
+
+/** Build a light-space view matrix (column-major 4x4) from direction + position.
+ *  Shared between directional and spot shadow generators. */
+export function buildLightViewMatrix(dirX: number, dirY: number, dirZ: number, px: number, py: number, pz: number): Float32Array {
+    const len = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ) || 1;
+    const fx = dirX / len;
+    const fy = dirY / len;
+    const fz = dirZ / len;
+
+    let upX = 0,
+        upY = 1,
+        upZ = 0;
+    if (Math.abs(fy) > 0.99) {
+        upX = 0;
+        upY = 0;
+        upZ = 1;
+    }
+    // right = cross(up, forward)
+    let rx = upY * fz - upZ * fy;
+    let ry = upZ * fx - upX * fz;
+    let rz = upX * fy - upY * fx;
+    const rLen = Math.sqrt(rx * rx + ry * ry + rz * rz) || 1;
+    rx /= rLen;
+    ry /= rLen;
+    rz /= rLen;
+
+    // up = cross(forward, right)
+    const ux = fy * rz - fz * ry;
+    const uy = fz * rx - fx * rz;
+    const uz = fx * ry - fy * rx;
+
+    // Column-major view matrix (stores basis as rows of rotation, plus translation column)
+    return new Float32Array([rx, ux, fx, 0, ry, uy, fy, 0, rz, uz, fz, 0, -(rx * px + ry * py + rz * pz), -(ux * px + uy * py + uz * pz), -(fx * px + fy * py + fz * pz), 1]);
+}
+
+/** Multiply two column-major 4x4 matrices: out = a * b. */
+export function multiply4x4(a: Float32Array, b: Float32Array): Float32Array {
+    const out = new Float32Array(16);
+    for (let row = 0; row < 4; row++) {
+        for (let col = 0; col < 4; col++) {
+            let sum = 0;
+            for (let k = 0; k < 4; k++) {
+                sum += a[row + k * 4]! * b[k + col * 4]!;
+            }
+            out[row + col * 4] = sum;
+        }
+    }
+    return out;
+}
+
+/** Create the shared depth-scene BGL (single uniform at binding 0, vertex stage). */
+export function createDepthSceneBGL(engine: EngineContextInternal, label: string): GPUBindGroupLayout {
+    return createSingleUniformBGL(engine, label, GPUShaderStage.VERTEX);
+}
+
+/** Create the shared shadow-params UBO (32 bytes) holding bias/depthScale/depth-range fields. */
+export function createShadowParamsUBO(engine: EngineContextInternal, bias: number, depthScale: number): GPUBuffer {
+    const data = new Float32Array(8);
+    data[0] = bias;
+    data[2] = depthScale;
+    data[4] = 0; // depthMinZ (WebGPU)
+    data[5] = 1; // depthMinZ + depthMaxZ
+    return createUniformBuffer(engine, data);
+}
+
+/** Create the shared receiver-side shadow UBO (96 bytes), initialised from state. */
+export function createSharedShadowUBO(
+    engine: EngineContextInternal,
+    lightMatrix: Float32Array,
+    depthValues: Float32Array,
+    shadowsInfo: Float32Array
+): { ubo: GPUBuffer; data: Float32Array } {
+    const data = new Float32Array(24);
+    writeShadowUboFields(data, { lightMatrix, depthValues, shadowsInfo });
+    const ubo = createUniformBuffer(engine, data);
+    return { ubo, data };
 }
 
 /** Draw all casters into the current render pass. */

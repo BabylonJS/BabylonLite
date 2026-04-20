@@ -1,0 +1,29 @@
+# BrowserStack SDK Configuration
+# Credentials: set BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY as env vars
+# (via .env.local locally, or pipeline secrets in CI).
+userName: BROWSERSTACK_USERNAME
+accessKey: BROWSERSTACK_ACCESS_KEY
+
+# Reporting
+projectName: Babylon-Lite
+buildName: ${BROWSERSTACK_BUILD_NAME}
+buildIdentifier: "#${BUILD_NUMBER}"
+
+# Target macOS for WebGPU support (Windows VMs lack GPU acceleration)
+platforms:
+    - os: OS X
+      osVersion: Sonoma
+      browserName: chrome
+      browserVersion: latest
+
+parallelsPerPlatform: 5
+
+# Local tunnel — required because tests hit localhost dev server
+browserstackLocal: true
+
+framework: playwright
+
+# Logging
+debug: false
+networkLogs: false
+consoleLogs: errors

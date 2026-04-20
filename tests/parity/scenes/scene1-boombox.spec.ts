@@ -10,13 +10,13 @@
  */
 import { test, expect } from "@playwright/test";
 import * as path from "path";
-import { captureGolden, compareImages, compareRegion, getSceneConfig } from "../compare-utils";
+import { attachCompareArtifacts, captureGolden, compareImages, compareRegion, getSceneConfig } from "../compare-utils";
 
 const sceneConfig = getSceneConfig(1);
 const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene1-boombox");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test("Scene 1 — BoomBox PBR matches Babylon.js reference", async ({ page }) => {
+test("Scene 1 — BoomBox PBR matches Babylon.js reference", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
     await captureGolden(browser, { sceneId: 1 });
 
@@ -40,6 +40,7 @@ test("Scene 1 — BoomBox PBR matches Babylon.js reference", async ({ page }) =>
 
     // Compare full image
     const full = compareImages(screenshotPath, GOLDEN_REF);
+    await attachCompareArtifacts(testInfo, screenshotPath, GOLDEN_REF, REFERENCE_DIR);
     console.log(`Full image (${full.totalPixels} px): MAD=${full.mad.toFixed(2)}`);
 
     // Assertions

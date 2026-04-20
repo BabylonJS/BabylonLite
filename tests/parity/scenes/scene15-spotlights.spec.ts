@@ -9,13 +9,13 @@
  */
 import { test, expect } from "@playwright/test";
 import * as path from "path";
-import { captureGolden, compareImages, getSceneConfig } from "../compare-utils";
+import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
 
 const sceneConfig = getSceneConfig(15);
 const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene15-spotlights");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test("Scene 15 — SpotLights + Ground matches Babylon.js reference", async ({ page }) => {
+test("Scene 15 — SpotLights + Ground matches Babylon.js reference", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
     await captureGolden(browser, { sceneId: 15 });
 
@@ -27,6 +27,7 @@ test("Scene 15 — SpotLights + Ground matches Babylon.js reference", async ({ p
     await page.locator("canvas").screenshot({ path: screenshotPath });
 
     const full = compareImages(screenshotPath, GOLDEN_REF);
+    await attachCompareArtifacts(testInfo, screenshotPath, GOLDEN_REF, REFERENCE_DIR);
     console.log(`Full image (${full.totalPixels} px): MAD=${full.mad.toFixed(3)}`);
 
     expect(full.mad, `Full image MAD should be ≤ ${sceneConfig.maxMad}`).toBeLessThanOrEqual(sceneConfig.maxMad);

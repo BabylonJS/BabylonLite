@@ -15,7 +15,7 @@ import { Scene } from "@babylonjs/core/scene";
 (async function () {
     const __initStart = performance.now();
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
-    const engine = new WebGPUEngine(canvas, { antialias: true });
+    const engine = new WebGPUEngine(canvas, { antialias: true, adaptToDeviceRatio: true });
     await engine.initAsync();
 
     const scene = new Scene(engine);
@@ -47,17 +47,26 @@ import { Scene } from "@babylonjs/core/scene";
     ground.position.y = -2.05;
     ground.receiveShadows = true;
 
-    // PBR ground material
+    // PBR ground material — await texture load explicitly (covers KTX and any async format)
     const gmat = new PBRMaterial("groundMat", scene);
-    gmat.albedoTexture = new Texture("https://playground.babylonjs.com/textures/ground.jpg", scene);
-    (gmat.albedoTexture as Texture).uScale = 6;
-    (gmat.albedoTexture as Texture).vScale = 6;
+    const albedoTex = await new Promise<Texture>((resolve, reject) => {
+        const tex = new Texture(
+            "https://playground.babylonjs.com/textures/ground.jpg",
+            scene,
+            undefined,
+            undefined,
+            undefined,
+            () => resolve(tex),
+            (_msg, err) => reject(err ?? new Error("texture load failed"))
+        );
+    });
+    albedoTex.uScale = 6;
+    albedoTex.vScale = 6;
+    gmat.albedoTexture = albedoTex;
     gmat.metallic = 0;
     gmat.roughness = 0.9;
     gmat.usePhysicalLightFalloff = false;
     ground.material = gmat;
-
-    await scene.whenReadyAsync();
 
     const shadowGen = new ShadowGenerator(1024, light);
     shadowGen.useBlurExponentialShadowMap = true;
@@ -132,6 +141,8 @@ import { Scene } from "@babylonjs/core/scene";
         canvas.dataset.drawCalls = String(eng._drawCalls ? eng._drawCalls.current : 0);
     });
     engine.runRenderLoop(() => scene.render());
+    window.addEventListener("resize", () => engine.resize());
+    await scene.whenReadyAsync();
     await new Promise<void>((resolve) => scene.onAfterRenderObservable.addOnce(resolve));
     canvas.dataset.initMs = String(performance.now() - __initStart);
     canvas.dataset.ready = "true";

@@ -50,8 +50,6 @@ export interface PbrLightExtension {
     readonly tag: string;
     /** Structured scene UBO field descriptors for the template composer. */
     readonly pbrSceneUboFields: readonly { readonly name: string; readonly type: "f32" | "vec3<f32>" | "vec4<f32>" }[];
-    /** SceneUniforms struct fields for light data (WGSL). */
-    emitSceneUboFields(): string;
     /** WGSL: compute L vector + NdotL. Assumes N, scene are in scope. */
     emitLightVector(): string;
     /** WGSL: compute direct diffuse. Assumes NdotL, surfaceAlbedo, lightColor, mesh in scope. */

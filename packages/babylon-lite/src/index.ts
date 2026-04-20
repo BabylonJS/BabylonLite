@@ -2,7 +2,7 @@
 // Tree-shakable: import only what you use.
 
 // ─── Core ────────────────────────────────────────────────────────────
-export { createEngine, startEngine, stopEngine, resizeEngine, disposeEngine } from "./engine/engine.js";
+export { createEngine, startEngine, stopEngine, resizeEngine, disposeEngine, renderOneFrame, VERSION } from "./engine/engine.js";
 export { createSceneContext, createDefaultCamera, removeFromScene, onBeforeRender, addToScene, disposeScene } from "./scene/scene.js";
 
 // ─── Camera ──────────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ export type { Mesh, MeshGPU } from "./mesh/mesh.js";
 export { ObservableVec3 } from "./math/observable-vec3.js";
 export { ObservableQuat } from "./math/observable-quat.js";
 export type { StandardMaterialProps, FogConfig } from "./material/standard/standard-material.js";
-export type { PbrMaterialProps, ClearCoatProps, AnisotropyProps } from "./material/pbr/pbr-material.js";
+export type { PbrMaterialProps, ClearCoatProps, AnisotropyProps, SubSurfaceProps, TranslucencyProps, ThicknessProps, TintProps, RefractionProps } from "./material/pbr/pbr-material.js";
 export type { PointLight } from "./light/point-light.js";
 export type { DirectionalLight } from "./light/directional-light.js";
 export type { SpotLight } from "./light/spot-light.js";

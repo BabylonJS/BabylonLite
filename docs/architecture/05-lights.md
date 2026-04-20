@@ -43,7 +43,6 @@ export const LIGHT_ENTRY_FLOATS = 16;  // 4 × vec4 = 64 bytes per light
 export interface PbrLightExtension {
   readonly tag: string;
   readonly pbrSceneUboFields: readonly { readonly name: string; readonly type: 'f32' | 'vec3<f32>' | 'vec4<f32>' }[];
-  emitSceneUboFields(): string;
   emitLightVector(): string;
   emitDirectDiffuse(): string;
   emitGeometricAA(): string;
@@ -307,11 +306,10 @@ PBR variants are tree-shakable — loaded via dynamic `import()` in each light's
 Each extension provides:
 
 1. **`pbrSceneUboFields`** — structured field descriptors for the PBR template composer
-2. **`emitSceneUboFields()`** — WGSL struct fields for the scene UBO
-3. **`emitLightVector()`** — WGSL code computing L vector, NdotL, and attenuation
-4. **`emitDirectDiffuse()`** — WGSL code computing direct diffuse contribution
-5. **`emitGeometricAA()`** — WGSL code for geometric anti-aliasing (hemispheric only)
-6. **`writeSceneUbo()`** — TypeScript function to pack light data into PBR scene UBO
+2. **`emitLightVector()`** — WGSL code computing L vector, NdotL, and attenuation
+3. **`emitDirectDiffuse()`** — WGSL code computing direct diffuse contribution
+4. **`emitGeometricAA()`** — WGSL code for geometric anti-aliasing (hemispheric only)
+5. **`writeSceneUbo()`** — TypeScript function to pack light data into PBR scene UBO
 
 Registration is done via `_setPbrLightExtension()` from `material/pbr/pbr-flags.js`. Only one PBR light extension is active at a time.
 
