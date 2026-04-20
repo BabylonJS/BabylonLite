@@ -102,7 +102,6 @@ export function mat4PerspectiveLH(fov: number, aspect: number, near: number, far
 
 export { mat4Invert } from "./mat4-invert.js";
 
-
 /** Create a scaling matrix. */
 export function mat4Scale(x: number, y: number, z: number): Mat4 {
     const out = new Float32Array(16) as Mat4;
