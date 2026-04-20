@@ -6,7 +6,7 @@
  * - Node hierarchy traversal with memoized world-matrix computation
  */
 import type { Mat4 } from "../math/types.js";
-import { mat4Compose, mat4Multiply } from "../math/mat4.js";
+import { mat4ComposeInto, mat4MultiplyInto } from "../math/mat4.js";
 
 // glTF 2.0 component types
 const FLOAT = 5126;
@@ -151,6 +151,12 @@ export function findParent(parentMap: Map<number, number>, childIdx: number): nu
  * Compute world matrix for a glTF node with memoization.
  * Uses parentMap for O(1) parent lookup and cache for O(1) repeat queries.
  * Total cost across all nodes: O(n) instead of O(n²).
+ *
+ * Zero-alloc path for the TRS case (common): `local` is composed into a shared
+ * scratch via `mat4ComposeInto`, then multiplied into the freshly-allocated
+ * `world` via `mat4MultiplyInto`. Only one Float32Array allocation per node
+ * (the cached world matrix itself) instead of two. Recursion always resolves
+ * `parentWorld` before touching the scratch, so the shared buffer is safe.
  */
 export function computeNodeWorldMatrix(json: any, nodeIdx: number, parentMap: Map<number, number>, cache: Map<number, Mat4>): Mat4 {
     const cached = cache.get(nodeIdx);
@@ -159,28 +165,36 @@ export function computeNodeWorldMatrix(json: any, nodeIdx: number, parentMap: Ma
     }
 
     const node = json.nodes[nodeIdx];
-    let local: Mat4;
+    const parentIdx = findParent(parentMap, nodeIdx);
+    // Resolve parent FIRST so any recursive call can safely reuse the shared scratch below.
+    const parentWorld: Mat4 = parentIdx !== -1 ? computeNodeWorldMatrix(json, parentIdx, parentMap, cache) : RH_TO_LH_ROOT;
 
+    let localBuf: Float32Array;
     if (node.matrix) {
-        local = new Float32Array(node.matrix) as Mat4;
+        // Pre-built matrix — copy into a fresh Float32Array (cannot alias scratch safely across calls).
+        localBuf = new Float32Array(node.matrix);
     } else {
         const t = node.translation ?? [0, 0, 0];
         const r = node.rotation ?? [0, 0, 0, 1];
         const s = node.scale ?? [1, 1, 1];
-        // Keep glTF TRS as-is — RH→LH handled by root pre-multiply
-        local = mat4Compose(t[0], t[1], t[2], r[0], r[1], r[2], r[3], s[0], s[1], s[2]);
+        const scratch = _getLocalScratch();
+        mat4ComposeInto(scratch, 0, t[0], t[1], t[2], r[0], r[1], r[2], r[3], s[0], s[1], s[2]);
+        localBuf = scratch;
     }
 
-    const parentIdx = findParent(parentMap, nodeIdx);
-    let world: Mat4;
-    if (parentIdx !== -1) {
-        const parentWorld = computeNodeWorldMatrix(json, parentIdx, parentMap, cache);
-        world = mat4Multiply(parentWorld, local);
-    } else {
-        // Top-level node: pre-multiply by RH→LH root
-        world = mat4Multiply(RH_TO_LH_ROOT, local);
-    }
+    const world = new Float32Array(16) as Mat4;
+    mat4MultiplyInto(world, 0, parentWorld, 0, localBuf, 0);
 
     cache.set(nodeIdx, world);
     return world;
+}
+
+// Lazy-init shared scratch for TRS composition. Module-level `new Float32Array` would kill
+// tree-shaking per GUIDANCE — defer until first use.
+let _localScratch: Float32Array | null = null;
+function _getLocalScratch(): Float32Array {
+    if (!_localScratch) {
+        _localScratch = new Float32Array(16);
+    }
+    return _localScratch;
 }

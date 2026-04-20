@@ -20,7 +20,10 @@ export function createEmissiveColorFragment(hasEmissiveTexture: boolean): Shader
     return {
         id: "emissive-color",
 
-        // UBO fields are in the PBR template's baseMeshUboFields for byte-layout compat.
+        uboFields: [
+            { name: "emissiveColor", type: "vec3<f32>" },
+            { name: "_emissiveColorPad", type: "f32" },
+        ],
 
         fragmentSlots: {
             AT: hasEmissiveTexture

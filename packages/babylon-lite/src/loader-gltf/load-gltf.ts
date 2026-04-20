@@ -28,34 +28,14 @@ export interface GltfMeshData {
     indexCount: number;
     worldMatrix: Mat4;
     material: GltfMaterialData;
-    /** Joint indices (4 per vertex), for skeletal animation. */
-    joints: Uint16Array | Uint8Array | null;
-    /** Joint blend weights (4 per vertex). */
-    weights: Float32Array | null;
-    /** Extra joint indices for 8-bone skinning (JOINTS_1). */
-    joints1: Uint16Array | Uint8Array | null;
-    /** Extra blend weights for 8-bone skinning (WEIGHTS_1). */
-    weights1: Float32Array | null;
-    /** Skin data if this mesh has skeletal deformation. */
-    skin: GltfSkinData | null;
-    /** Morph target deltas (position + optional normal per target). */
-    morphTargets: { positions: Float32Array; normals: Float32Array | null }[] | null;
-    /** Initial morph weights (one per target). */
-    morphWeights: number[] | null;
-    /** glTF node index this mesh came from (for hierarchy reconstruction). */
+    /** glTF node index this mesh came from (for hierarchy reconstruction
+     *  and for features that need to resolve skin/morph data lazily). */
     nodeIndex: number;
-}
-
-/** Parsed skin/skeleton data. */
-export interface GltfSkinData {
-    /** Node indices of joints in this skin. */
-    jointNodes: number[];
-    /** Inverse bind matrices — one 4×4 per joint (column-major Float32Array). */
-    inverseBindMatrices: Float32Array;
-    /** World matrices of each joint at rest pose. */
-    jointWorldMatrices: Mat4[];
-    /** World matrix of the mesh node that owns this skin. */
-    meshWorldMatrix: Mat4;
+    /** Raw primitive definition — features (skeleton, morph, …) read their
+     *  own attributes/targets from here without bloating core extraction. */
+    _primitive: any;
+    /** Pre-decoded primitive (Draco et al.) if a preMesh feature produced one. */
+    _decoded?: DecodedPrimitive;
 }
 
 /** Options for loadGltf. */
@@ -259,10 +239,6 @@ async function extractAllMeshes(
     worldMatrixCache: Map<number, Mat4>,
     decodedPrimitives: Map<unknown, DecodedPrimitive>,
 ): Promise<GltfMeshData[]> {
-    // Pre-load skin extraction once if any node uses a skin (avoids per-primitive dynamic import)
-    const needsSkin = json.nodes.some((n: any) => n.skin !== undefined) && !!json.skins;
-    const extractSkinFn = needsSkin ? (await import("./gltf-animation.js")).extractSkin : null;
-
     // Per-load image cache — avoids decoding the same glTF image index multiple times
     const imageCache = new Map<number, Promise<ImageBitmap>>();
 
@@ -320,34 +296,6 @@ async function extractAllMeshes(
                     : new Uint16Array(idxData.data.buffer, idxData.data.byteOffset, idxData.count)
                 : new Uint16Array(0);
 
-            // Joints + weights for skeletal animation (4-bone + optional 8-bone)
-            const jointsData = resolveAttr("JOINTS_0");
-            const weightsData = resolveAttr("WEIGHTS_0");
-            const joints1Data = resolveAttr("JOINTS_1");
-            const weights1Data = resolveAttr("WEIGHTS_1");
-
-            // Skin extraction is synchronous once the module is loaded
-            let skin: GltfSkinData | null = null;
-            if (node.skin !== undefined && extractSkinFn) {
-                skin = extractSkinFn(json, binChunk, node.skin, worldMatrix, parentMap, worldMatrixCache);
-            }
-
-            // Morph targets
-            let morphTargets: { positions: Float32Array; normals: Float32Array | null }[] | null = null;
-            let morphWeights: number[] | null = null;
-            if (primitive.targets && primitive.targets.length > 0) {
-                morphTargets = [];
-                for (const target of primitive.targets) {
-                    const posAcc = target.POSITION !== undefined ? resolveAccessor(json, binChunk, target.POSITION) : null;
-                    const normAcc = target.NORMAL !== undefined ? resolveAccessor(json, binChunk, target.NORMAL) : null;
-                    morphTargets.push({
-                        positions: posAcc ? (posAcc.data as Float32Array) : new Float32Array(posData.count * 3),
-                        normals: normAcc ? (normAcc.data as Float32Array) : null,
-                    });
-                }
-                morphWeights = mesh.weights ?? new Array(primitive.targets.length).fill(0);
-            }
-
             // Fire material fetch without awaiting — all materials load in parallel
             matPromises.push(getMat(primitive.material));
 
@@ -360,14 +308,9 @@ async function extractAllMeshes(
                 vertexCount: posData.count,
                 indexCount: idxData?.count ?? 0,
                 worldMatrix,
-                joints: (jointsData?.data ?? null) as Uint16Array | Uint8Array | null,
-                weights: (weightsData?.data ?? null) as Float32Array | null,
-                joints1: (joints1Data?.data ?? null) as Uint16Array | Uint8Array | null,
-                weights1: (weights1Data?.data ?? null) as Float32Array | null,
-                skin,
-                morphTargets,
-                morphWeights,
                 nodeIndex: nodeIdx,
+                _primitive: primitive,
+                _decoded: decoded,
             });
         }
     }

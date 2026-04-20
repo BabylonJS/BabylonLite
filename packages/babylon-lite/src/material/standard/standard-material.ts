@@ -33,17 +33,25 @@ function getSceneUboSize(): number {
 // ─── Standard Group Builder ──────────────────────────────────────────
 
 /** Lazy-imports the standard renderable builder and builds the pipeline. */
+// Material-property → fragment-module dispatch table. Each entry is a plain
+// extension: if any mesh's material has the named property, dynamic-import
+// the fragment module and register the named StdExt export. Keeping this as
+// a data table rather than an if-ladder keeps core size flat as extensions
+// grow.
+const _STD_MAT_EXTS: ReadonlyArray<readonly [keyof StandardMaterialProps, () => Promise<any>, string]> = [
+    ["bumpTexture", () => import("./fragments/normal-map-fragment.js"), "bumpStdExt"],
+    ["emissiveTexture", () => import("./fragments/std-emissive-fragment.js"), "stdEmissiveExt"],
+    ["specularTexture", () => import("./fragments/std-specular-fragment.js"), "stdSpecularExt"],
+    ["ambientTexture", () => import("./fragments/std-ambient-fragment.js"), "stdAmbientExt"],
+    ["lightmapTexture", () => import("./fragments/std-lightmap-fragment.js"), "stdLightmapExt"],
+    ["opacityTexture", () => import("./fragments/std-opacity-fragment.js"), "stdOpacityExt"],
+    ["reflectionTexture", () => import("./fragments/std-reflection-fragment.js"), "stdReflectionExt"],
+    ["reflectionCubeTexture", () => import("./fragments/std-cube-reflection-fragment.js"), "stdCubeReflectionExt"],
+];
+
 export const standardGroupBuilder: MeshGroupBuilder & { _loadRebuildSingle?: () => Promise<any> } = async (scene, meshes) => {
     const hasTI = meshes.some((m) => !!m.thinInstances);
-    const hasBump = meshes.some((m) => !!(m.material as any).bumpTexture);
     const hasShadow = meshes.some((m) => m.receiveShadows) && scene.lights.some((l: { shadowGenerator?: unknown }) => !!l.shadowGenerator);
-    const hasEmissive = meshes.some((m) => !!(m.material as any).emissiveTexture);
-    const hasSpecular = meshes.some((m) => !!(m.material as any).specularTexture);
-    const hasAmbient = meshes.some((m) => !!(m.material as any).ambientTexture);
-    const hasLightmap = meshes.some((m) => !!(m.material as any).lightmapTexture);
-    const hasOpacity = meshes.some((m) => !!(m.material as any).opacityTexture);
-    const hasReflection = meshes.some((m) => !!(m.material as any).reflectionTexture);
-    const hasCubeReflection = meshes.some((m) => !!(m.material as any).reflectionCubeTexture);
 
     let tiSync: ((engine: EngineContextInternal, ti: any, pass: GPURenderPassEncoder | GPURenderBundleEncoder, slot: number, hasColor: boolean) => number) | undefined;
     let tiFragment: any;
@@ -62,9 +70,6 @@ export const standardGroupBuilder: MeshGroupBuilder & { _loadRebuildSingle?: () 
             })
         );
     }
-    if (hasBump) {
-        imports.push(import("./fragments/normal-map-fragment.js").then((m) => _registerStdExt(m.bumpStdExt)));
-    }
     if (hasShadow) {
         imports.push(
             import("./fragments/std-shadow-fragment.js").then((m) => {
@@ -72,26 +77,10 @@ export const standardGroupBuilder: MeshGroupBuilder & { _loadRebuildSingle?: () 
             })
         );
     }
-    if (hasEmissive) {
-        imports.push(import("./fragments/std-emissive-fragment.js").then((m) => _registerStdExt(m.stdEmissiveExt)));
-    }
-    if (hasSpecular) {
-        imports.push(import("./fragments/std-specular-fragment.js").then((m) => _registerStdExt(m.stdSpecularExt)));
-    }
-    if (hasAmbient) {
-        imports.push(import("./fragments/std-ambient-fragment.js").then((m) => _registerStdExt(m.stdAmbientExt)));
-    }
-    if (hasLightmap) {
-        imports.push(import("./fragments/std-lightmap-fragment.js").then((m) => _registerStdExt(m.stdLightmapExt)));
-    }
-    if (hasOpacity) {
-        imports.push(import("./fragments/std-opacity-fragment.js").then((m) => _registerStdExt(m.stdOpacityExt)));
-    }
-    if (hasReflection) {
-        imports.push(import("./fragments/std-reflection-fragment.js").then((m) => _registerStdExt(m.stdReflectionExt)));
-    }
-    if (hasCubeReflection) {
-        imports.push(import("./fragments/std-cube-reflection-fragment.js").then((m) => _registerStdExt(m.stdCubeReflectionExt)));
+    for (const [prop, load, key] of _STD_MAT_EXTS) {
+        if (meshes.some((m) => !!(m.material as any)[prop])) {
+            imports.push(load().then((mod) => _registerStdExt(mod[key])));
+        }
     }
     if (imports.length > 0) {
         await Promise.all(imports);

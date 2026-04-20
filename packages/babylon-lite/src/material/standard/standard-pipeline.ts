@@ -111,13 +111,22 @@ export interface ShadowLightSlotLite {
 }
 
 const _stdExts = new Map<string, StdExt>();
+let _stdExtsSorted: readonly StdExt[] | null = null;
 
 export function _registerStdExt(ext: StdExt): void {
     _stdExts.set(ext.id, ext);
+    _stdExtsSorted = null;
 }
 
 export function _getStdExts(): ReadonlyMap<string, StdExt> {
     return _stdExts;
+}
+
+export function _getStdExtsSorted(): readonly StdExt[] {
+    if (!_stdExtsSorted) {
+        _stdExtsSorted = Array.from(_stdExts.values()).sort((a, b) => a.id.localeCompare(b.id));
+    }
+    return _stdExtsSorted;
 }
 
 /** Derived: mesh needs UV attribute (any texture present). */
@@ -434,10 +443,12 @@ export function createDynamicMeshGPU(
         material: StandardMaterialProps;
         lightsBuffer: GPUBuffer;
         shadowGenerators?: ShadowGenerator[];
+        /** Optional cache shared across meshes in one scene build to dedupe identical shadow bind groups. */
+        shadowBGCache?: Map<GPUBindGroupLayout, GPUBindGroup>;
     }
 ): DynamicMeshGPU {
     const device = engine.device;
-    const { worldMatrix, material, lightsBuffer, shadowGenerators = [] } = opts;
+    const { worldMatrix, material, lightsBuffer, shadowGenerators = [], shadowBGCache } = opts;
     const features = variant.features;
     const hasShadow = (features & RECEIVE_SHADOWS) !== 0;
     const needsUV = (features & NEEDS_UV) !== 0;
@@ -475,7 +486,7 @@ export function createDynamicMeshGPU(
 
     // Fragment-contributed bindings — iterate ext registry in alphabetical id order
     // to match composer's fragment sort order.
-    const sortedExts = Array.from(_stdExts.values()).sort((a, b) => a.id.localeCompare(b.id));
+    const sortedExts = _getStdExtsSorted();
     for (const ext of sortedExts) {
         if (features & ext.feature && ext.bind) {
             nextBinding = ext.bind(material, meshEntries, nextBinding);
@@ -485,17 +496,25 @@ export function createDynamicMeshGPU(
     const meshBG = device.createBindGroup({ layout: variant.meshBGL, entries: meshEntries });
 
     // Shadow bind group (group 2) — per-light shadow entries
-    // Each shadow light contributes: texture + sampler + shared UBO from the ShadowGenerator
+    // Each shadow light contributes: texture + sampler + shared UBO from the ShadowGenerator.
+    // When shadowBGCache is provided, reuse one BG across all meshes (within one build
+    // all receiving meshes share the same shadow generators).
     let shadowBG: GPUBindGroup | null = null;
     if (hasShadow && variant.shadowBGL && shadowGenerators.length > 0) {
-        const entries: GPUBindGroupEntry[] = [];
-        let b = 0;
-        for (const sg of shadowGenerators) {
-            entries.push({ binding: b++, resource: sg.blurredTexture.createView() });
-            entries.push({ binding: b++, resource: sg.blurredSampler });
-            entries.push({ binding: b++, resource: { buffer: sg.shadowUBO } });
+        const cached = shadowBGCache?.get(variant.shadowBGL);
+        if (cached) {
+            shadowBG = cached;
+        } else {
+            const entries: GPUBindGroupEntry[] = [];
+            let b = 0;
+            for (const sg of shadowGenerators) {
+                entries.push({ binding: b++, resource: sg.blurredTexture.createView() });
+                entries.push({ binding: b++, resource: sg.blurredSampler });
+                entries.push({ binding: b++, resource: { buffer: sg.shadowUBO } });
+            }
+            shadowBG = device.createBindGroup({ layout: variant.shadowBGL, entries });
+            shadowBGCache?.set(variant.shadowBGL, shadowBG);
         }
-        shadowBG = device.createBindGroup({ layout: variant.shadowBGL, entries });
     }
 
     return { meshBG, shadowBG, meshUBO, materialUBO, textureLevel, shadowGens: shadowGenerators };

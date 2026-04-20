@@ -173,3 +173,129 @@ export function drawCasters(pass: GPURenderPassEncoder, casters: ShadowCaster[])
         pass.drawIndexed(c.indexCount);
     }
 }
+
+export interface ShadowDepthInfraOptions {
+    label: string;
+    viewProj: Float32Array;
+    casterMeshes: Mesh[];
+    vertCode: string;
+    fragCode?: string;
+    colorTargets?: GPUColorTargetState[];
+    depthBias?: number;
+    depthBiasSlopeScale?: number;
+    extraMeshEntries?: GPUBindGroupEntry[];
+    extraMeshBglEntries?: GPUBindGroupLayoutEntry[];
+}
+
+export interface ShadowDepthInfra {
+    depthMeshBGL: GPUBindGroupLayout;
+    depthSceneBGL: GPUBindGroupLayout;
+    depthSceneBG: GPUBindGroup;
+    depthSceneUBO: GPUBuffer;
+    depthPipeline: GPURenderPipeline;
+    casters: ShadowCaster[];
+}
+
+/** Create the shared shadow depth-pass infra: BGLs, scene UBO/BG, caster list, and depth pipeline. */
+export function createShadowDepthInfra(engine: EngineContextInternal, opts: ShadowDepthInfraOptions): ShadowDepthInfra {
+    const device = engine.device;
+    const label = opts.label;
+
+    const meshBglEntries: GPUBindGroupLayoutEntry[] = [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } }];
+    if (opts.extraMeshBglEntries) {
+        for (const e of opts.extraMeshBglEntries) {
+            meshBglEntries.push(e);
+        }
+    }
+    const depthMeshBGL = device.createBindGroupLayout({ label: `${label}-depth-mesh`, entries: meshBglEntries });
+    const depthSceneBGL = createDepthSceneBGL(engine, `${label}-depth-scene`);
+    const depthSceneUBO = createUniformBuffer(engine, opts.viewProj as Float32Array<ArrayBuffer>);
+    const depthSceneBG = device.createBindGroup({ layout: depthSceneBGL, entries: [{ binding: 0, resource: { buffer: depthSceneUBO } }] });
+
+    const casters = buildCasters(engine, opts.casterMeshes, depthMeshBGL, opts.extraMeshEntries);
+
+    const vertModule = device.createShaderModule({ code: opts.vertCode, label: `${label}-depth-vert` });
+    const fragModule = opts.fragCode ? device.createShaderModule({ code: opts.fragCode, label: `${label}-depth-frag` }) : undefined;
+
+    const depthStencil: GPUDepthStencilState = { format: "depth32float", depthWriteEnabled: true, depthCompare: "less-equal" };
+    if (opts.depthBias !== undefined) {
+        depthStencil.depthBias = opts.depthBias;
+    }
+    if (opts.depthBiasSlopeScale !== undefined) {
+        depthStencil.depthBiasSlopeScale = opts.depthBiasSlopeScale;
+    }
+
+    const pipelineDesc: GPURenderPipelineDescriptor = {
+        label: `${label}-depth`,
+        layout: device.createPipelineLayout({ bindGroupLayouts: [depthSceneBGL, depthMeshBGL] }),
+        vertex: {
+            module: vertModule,
+            entryPoint: "main",
+            buffers: [{ arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x3" as GPUVertexFormat }] }],
+        },
+        depthStencil,
+        primitive: { topology: "triangle-list", cullMode: "back", frontFace: "ccw" },
+    };
+    if (fragModule && opts.colorTargets) {
+        pipelineDesc.fragment = { module: fragModule, entryPoint: "main", targets: opts.colorTargets };
+    }
+
+    const depthPipeline = device.createRenderPipeline(pipelineDesc);
+
+    return { depthMeshBGL, depthSceneBGL, depthSceneBG, depthSceneUBO, depthPipeline, casters };
+}
+
+export interface ShadowDirtyTracker {
+    /** Returns { dirty, lightChanged }. dirty=false means renderShadowMap can early-out. */
+    check(light: { worldMatrixVersion: number }, casters: ShadowCaster[]): { dirty: boolean; lightChanged: boolean };
+    commit(light: { worldMatrixVersion: number }, casters: ShadowCaster[]): void;
+}
+
+/** Per-generator dirty tracker for caster/light version changes. */
+export function createShadowDirtyTracker(): ShadowDirtyTracker {
+    let lastLv = -1;
+    let lastSum = -1;
+    let lastCount = -1;
+    return {
+        check(light, casters) {
+            let sum = 0;
+            for (const c of casters) {
+                sum += c._mesh.worldMatrixVersion;
+            }
+            const lv = light.worldMatrixVersion;
+            const lightChanged = lv !== lastLv || casters.length !== lastCount;
+            const dirty = lightChanged || sum !== lastSum;
+            return { dirty, lightChanged };
+        },
+        commit(light, casters) {
+            let sum = 0;
+            for (const c of casters) {
+                sum += c._mesh.worldMatrixVersion;
+            }
+            lastLv = light.worldMatrixVersion;
+            lastSum = sum;
+            lastCount = casters.length;
+        },
+    };
+}
+
+/** Update the light matrix UBOs if the new viewProj differs from the cached one.
+ *  Bumps sg._version, writes depthSceneUBO + sharedShadowUBO. Returns true if matrix changed. */
+export function updateShadowLightMatrix(
+    engine: EngineContextInternal,
+    sg: { lightMatrix: Float32Array; depthValues: Float32Array; shadowsInfo: Float32Array; shadowUBO: GPUBuffer; _version: number },
+    depthSceneUBO: GPUBuffer,
+    newViewProj: Float32Array,
+    sharedUboData: Float32Array
+): boolean {
+    if (!shadowMatrixChanged(sg.lightMatrix, newViewProj)) {
+        return false;
+    }
+    sg.lightMatrix.set(newViewProj);
+    sg._version++;
+    const queue = engine.device.queue;
+    queue.writeBuffer(depthSceneUBO, 0, sg.lightMatrix as Float32Array<ArrayBuffer>);
+    writeShadowUboFields(sharedUboData, sg);
+    queue.writeBuffer(sg.shadowUBO, 0, sharedUboData as Float32Array<ArrayBuffer>);
+    return true;
+}

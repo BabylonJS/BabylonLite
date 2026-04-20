@@ -4,13 +4,13 @@
  *  Pipelines cached per (fragmentKey, features, format, msaaSamples) tuple.
  *  The ComposedShader provides WGSL source, BGL descriptors, and vertex layouts. */
 
-import type { PbrMaterialProps, SheenProps } from "./pbr-material.js";
+import type { PbrMaterialProps } from "./pbr-material.js";
 import type { EnvironmentTextures } from "../../loader-env/load-env.js";
 import type { ComposedShader } from "../../shader/fragment-types.js";
 import type { EngineContextInternal } from "../../engine/engine.js";
 import { createPipelineCache, releaseVariant } from "../pipeline-cache.js";
 import type { PipelineCache } from "../pipeline-cache.js";
-import { _getPbrLightExtension, _getPbrExts } from "./pbr-flags.js";
+import { _getPbrLightExtension, _getPbrExtsSorted } from "./pbr-flags.js";
 import {
     PBR_HAS_NORMAL_MAP,
     PBR_HAS_EMISSIVE,
@@ -25,7 +25,6 @@ import {
     PBR_HAS_COTANGENT_NORMAL,
     PBR_HAS_METALLIC_REFLECTANCE_MAP,
     PBR_HAS_REFLECTANCE_MAP,
-    PBR_HAS_SHEEN_TEXTURE,
 } from "./pbr-flags.js";
 export * from "./pbr-flags.js";
 
@@ -160,6 +159,7 @@ export function getOrCreatePbrPipeline(
 export function createPbrMeshBindGroup(
     engine: EngineContextInternal,
     variant: PbrPipelineVariant,
+    composed: ComposedShader,
     meshUBO: GPUBuffer,
     materialUBO: GPUBuffer,
     material: PbrMaterialProps,
@@ -192,7 +192,22 @@ export function createPbrMeshBindGroup(
     };
 
     // Sort exts by id to match composer's alphabetical binding emission order.
-    const sortedExts = Array.from(_getPbrExts().values()).sort((a, b) => a.id.localeCompare(b.id));
+    const sortedExts = _getPbrExtsSorted();
+
+    // Build fragment-id → ext map that honours fragment-id variants like
+    // "clearcoat-IRN" (ext id "clearcoat"). Walk composed.fragmentKey to
+    // determine composer's topological binding order.
+    const extByFragId = new Map<string, import("./pbr-flags.js").PbrExt>();
+    const fragIds = composed.fragmentKey ? composed.fragmentKey.split("|").filter((s) => s.length > 0) : [];
+    for (const fid of fragIds) {
+        let match = sortedExts.find((e) => e.id === fid);
+        if (!match) {
+            match = sortedExts.find((e) => fid.startsWith(e.id + "-"));
+        }
+        if (match) {
+            extByFragId.set(fid, match);
+        }
+    }
 
     // Mesh UBO (binding 0)
     entries.push({ binding: b++, resource: { buffer: meshUBO } });
@@ -204,7 +219,7 @@ export function createPbrMeshBindGroup(
             b = ext.bind(ctx, entries, b);
         }
     }
-    // Base bindings (matching composer order: baseColor, normal, ORM, emissive, specGloss, sheen)
+    // Base bindings (matching composer order: baseColor, normal, ORM, emissive, specGloss)
     addTex(material.baseColorTexture!);
     if (hasAnyNormal) {
         addTex(material.normalTexture!);
@@ -216,29 +231,20 @@ export function createPbrMeshBindGroup(
     if (hasSpecGloss) {
         addTex(material.specGlossTexture!);
     }
-    if ((features & PBR_HAS_SHEEN_TEXTURE) !== 0) {
-        addTex((material.sheen as SheenProps).texture!);
-    }
-    // Base-tex phase exts (alphabetical: clearcoat < reflectance < ...).
-    for (const ext of sortedExts) {
-        if (ext.phase === "base-tex" && ext.bind) {
-            b = ext.bind(ctx, entries, b);
-        }
-    }
     // Lights UBO (after base texture bindings, before fragment bindings — matches composer order)
     if (lightsUBO) {
         entries.push({ binding: b++, resource: { buffer: lightsUBO } });
     }
-    // IBL-phase exts (alphabetical within phase).
-    for (const ext of sortedExts) {
-        if (ext.phase === "ibl" && ext.bind) {
-            b = ext.bind(ctx, entries, b);
+    // Non-vertex exts — iterate in composer's topological order (from
+    // composed.fragmentKey) so bind entries align with the emitted BGL.
+    const seenExts = new Set<import("./pbr-flags.js").PbrExt>();
+    for (const fid of fragIds) {
+        const ext = extByFragId.get(fid);
+        if (!ext || ext.phase === "vertex" || !ext.bind || seenExts.has(ext)) {
+            continue;
         }
-    }
-    for (const ext of sortedExts) {
-        if (ext.phase === "fragment" && ext.bind) {
-            b = ext.bind(ctx, entries, b);
-        }
+        seenExts.add(ext);
+        b = ext.bind(ctx, entries, b);
     }
 
     return device.createBindGroup({ layout: variant.meshBGL, entries });

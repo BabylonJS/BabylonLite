@@ -11,10 +11,12 @@
  *  - Energy conservation: albedo scaled by (1 - maxSheenColor * brdf.b)
  */
 
-import type { ShaderFragment } from "../../../shader/fragment-types.js";
+import type { ShaderFragment, BindingDecl } from "../../../shader/fragment-types.js";
 import type { PbrMaterialProps, SheenProps } from "../pbr-material.js";
 import type { PbrExt } from "../pbr-flags.js";
 import { PBR_HAS_SHEEN, PBR_HAS_SHEEN_TEXTURE, PBR_HAS_SHEEN_ALBEDO_SCALING } from "../pbr-flags.js";
+
+const STAGE_FRAGMENT = 0x2;
 
 const SHEEN_HELPERS = `
 fn normalDistributionFunction_CharlieSheen(NdotH_sh: f32, alphaG_sh: f32) -> f32 {
@@ -150,11 +152,24 @@ sheenRoughnessAdjusted *= sheenMapData.a;
         slots.NI = SHEEN_NON_IBL_MOD;
     }
 
+    const bindings: BindingDecl[] = [];
+    if (hasSheenTexture) {
+        bindings.push(
+            { name: "sheenTexture_", type: { kind: "texture", textureType: "texture_2d<f32>" }, visibility: STAGE_FRAGMENT },
+            { name: "sheenSampler_", type: { kind: "sampler", samplerType: "sampler" }, visibility: STAGE_FRAGMENT }
+        );
+    }
+
     return {
         id: "sheen",
         dependencies: hasIbl ? ["ibl"] : undefined,
 
-        // UBO fields are in the PBR template's baseMeshUboFields for byte-layout compat.
+        uboFields: [
+            { name: "sheenParams", type: "vec4<f32>" },
+            { name: "sheenParams2", type: "vec4<f32>" },
+        ],
+
+        bindings,
 
         helperFunctions: SHEEN_HELPERS,
 
@@ -202,6 +217,17 @@ export const sheenExt: PbrExt = {
         return createSheenFragment((ctx.features & PBR_HAS_SHEEN_TEXTURE) !== 0, ctx.hasIbl, (ctx.features & PBR_HAS_SHEEN_ALBEDO_SCALING) !== 0);
     },
     writeUbo: writeSheenUBO as PbrExt["writeUbo"],
+    bind(ctx, entries, b) {
+        if ((ctx.features & PBR_HAS_SHEEN_TEXTURE) === 0) {
+            return b;
+        }
+        const sh = (ctx.material as PbrMaterialProps).sheen as SheenProps | undefined;
+        if (sh?.texture) {
+            entries.push({ binding: b++, resource: sh.texture.view });
+            entries.push({ binding: b++, resource: sh.texture.sampler });
+        }
+        return b;
+    },
     textures(mat, out) {
         const sh = (mat as PbrMaterialProps).sheen;
         if (sh?.texture) {

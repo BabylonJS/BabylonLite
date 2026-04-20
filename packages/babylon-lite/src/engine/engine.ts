@@ -231,6 +231,15 @@ function drawList(enc: GPURenderPassEncoder | GPURenderBundleEncoder, list: read
             lb = r._sceneBG;
         }
         draws += r.draw(enc, engine);
+        // Renderables without a declared pipeline/sceneBG set their own state internally
+        // (e.g. PBR drawPackets cycles through multiple variants). Invalidate the trackers
+        // so the next renderable correctly re-binds even if it happens to match our record.
+        if (!r._pipeline) {
+            lp = null;
+        }
+        if (!r._sceneBG) {
+            lb = null;
+        }
     }
     return draws;
 }

@@ -129,6 +129,65 @@ interface BabylonLight {
     includedOnlyMeshesIds?: string[];
 }
 
+// ─── Standard-material texture-slot table ───────────────────────────
+// Declarative description of .babylon -> StandardMaterialProps texture mapping.
+// Each slot maps a source texture field on BabylonMaterial to a destination
+// Texture2D field on StandardMaterialProps, plus optional level/coordIndex/extras.
+type BabylonTexField = "diffuseTexture" | "bumpTexture" | "specularTexture" | "ambientTexture" | "lightmapTexture" | "opacityTexture" | "reflectionTexture";
+
+interface BabylonTexSlot {
+    readonly src: BabylonTexField;
+    /** Destination Texture2D field on StandardMaterialProps. */
+    readonly dst: string;
+    /** StandardMaterialProps field receiving `t.level`, if present. */
+    readonly level?: string;
+    /** Coordinate-index mapping. `only1`=true → only apply when coordIndex===1. */
+    readonly coordIndex?: { readonly dst: string; readonly only1?: boolean };
+    /** Skip this slot for a texture if predicate returns true (e.g. cube reflections). */
+    readonly skipIf?: (t: BabylonTexture) => boolean;
+    /** Apply remaining slot-specific side-effects (uvScale, alphaCutOff, etc.). */
+    readonly extra?: (t: BabylonTexture, mat: StandardMaterialProps) => void;
+}
+
+const TEX_SLOTS: readonly BabylonTexSlot[] = [
+    {
+        src: "diffuseTexture",
+        dst: "diffuseTexture",
+        coordIndex: { dst: "diffuseCoordIndex", only1: true },
+        extra: (t, m) => {
+            m.uvScale = [t.uScale ?? 1, t.vScale ?? 1];
+            if (t.hasAlpha) {
+                m.alphaCutOff = 0.4;
+            }
+        },
+    },
+    { src: "bumpTexture", dst: "bumpTexture", level: "bumpLevel" },
+    { src: "specularTexture", dst: "specularTexture", coordIndex: { dst: "specularCoordIndex", only1: true } },
+    { src: "ambientTexture", dst: "ambientTexture", level: "ambientTexLevel", coordIndex: { dst: "ambientCoordIndex", only1: true } },
+    { src: "lightmapTexture", dst: "lightmapTexture", level: "lightmapLevel", coordIndex: { dst: "lightmapCoordIndex" } },
+    {
+        src: "opacityTexture",
+        dst: "opacityTexture",
+        level: "opacityLevel",
+        extra: (t, m) => {
+            if (t.getAlphaFromRGB) {
+                m.opacityFromRGB = true;
+            }
+        },
+    },
+    {
+        src: "reflectionTexture",
+        dst: "reflectionTexture",
+        level: "reflectionLevel",
+        skipIf: (t) => t.isCube === true,
+        extra: (t, m) => {
+            if (t.coordinatesMode === 2) {
+                m.reflectionCoordMode = 2;
+            }
+        },
+    },
+];
+
 // ─── Public API ─────────────────────────────────────────────────────
 
 export interface LoadBabylonOptions {
@@ -199,105 +258,36 @@ export async function loadBabylon(engine: EngineContext, url: string, opts: Load
                 mat.backFaceCulling = false;
             }
 
-            if (md.diffuseTexture && opts.loadTextures !== false) {
-                const texUrl = baseUrl + md.diffuseTexture.name;
-                mat.uvScale = [md.diffuseTexture.uScale ?? 1, md.diffuseTexture.vScale ?? 1];
-                if (md.diffuseTexture.coordinatesIndex === 1) {
-                    mat.diffuseCoordIndex = 1;
+            if (opts.loadTextures !== false) {
+                for (const slot of TEX_SLOTS) {
+                    const t = md[slot.src];
+                    if (!t) {
+                        continue;
+                    }
+                    if (slot.skipIf?.(t)) {
+                        continue;
+                    }
+                    if (slot.level && t.level != null) {
+                        (mat as unknown as Record<string, unknown>)[slot.level] = t.level;
+                    }
+                    if (slot.coordIndex) {
+                        if (slot.coordIndex.only1) {
+                            if (t.coordinatesIndex === 1) {
+                                (mat as unknown as Record<string, unknown>)[slot.coordIndex.dst] = 1;
+                            }
+                        } else if (t.coordinatesIndex != null) {
+                            (mat as unknown as Record<string, unknown>)[slot.coordIndex.dst] = t.coordinatesIndex === 1 ? 1 : 0;
+                        }
+                    }
+                    slot.extra?.(t, mat);
+                    const texUrl = baseUrl + t.name;
+                    const dst = slot.dst;
+                    texturePromises.push(
+                        loadTexture2D(engine, texUrl).then((tex) => {
+                            (mat as unknown as Record<string, unknown>)[dst] = tex;
+                        })
+                    );
                 }
-                if (md.diffuseTexture.hasAlpha) {
-                    mat.alphaCutOff = 0.4;
-                }
-                texturePromises.push(
-                    loadTexture2D(engine, texUrl).then((tex) => {
-                        mat.diffuseTexture = tex;
-                    })
-                );
-            }
-
-            if (md.bumpTexture && opts.loadTextures !== false) {
-                const texUrl = baseUrl + md.bumpTexture.name;
-                if (md.bumpTexture.level != null) {
-                    mat.bumpLevel = md.bumpTexture.level;
-                }
-                texturePromises.push(
-                    loadTexture2D(engine, texUrl).then((tex) => {
-                        mat.bumpTexture = tex;
-                    })
-                );
-            }
-
-            if (md.specularTexture && opts.loadTextures !== false) {
-                const texUrl = baseUrl + md.specularTexture.name;
-                if (md.specularTexture.coordinatesIndex === 1) {
-                    mat.specularCoordIndex = 1;
-                }
-                texturePromises.push(
-                    loadTexture2D(engine, texUrl).then((tex) => {
-                        mat.specularTexture = tex;
-                    })
-                );
-            }
-
-            if (md.ambientTexture && opts.loadTextures !== false) {
-                const texUrl = baseUrl + md.ambientTexture.name;
-                if (md.ambientTexture.level != null) {
-                    mat.ambientTexLevel = md.ambientTexture.level;
-                }
-                if (md.ambientTexture.coordinatesIndex === 1) {
-                    mat.ambientCoordIndex = 1;
-                }
-                texturePromises.push(
-                    loadTexture2D(engine, texUrl).then((tex) => {
-                        mat.ambientTexture = tex;
-                    })
-                );
-            }
-
-            if (md.lightmapTexture && opts.loadTextures !== false) {
-                const texUrl = baseUrl + md.lightmapTexture.name;
-                if (md.lightmapTexture.level != null) {
-                    mat.lightmapLevel = md.lightmapTexture.level;
-                }
-                if (md.lightmapTexture.coordinatesIndex != null) {
-                    mat.lightmapCoordIndex = md.lightmapTexture.coordinatesIndex === 1 ? 1 : 0;
-                }
-                texturePromises.push(
-                    loadTexture2D(engine, texUrl).then((tex) => {
-                        mat.lightmapTexture = tex;
-                    })
-                );
-            }
-
-            if (md.opacityTexture && opts.loadTextures !== false) {
-                const texUrl = baseUrl + md.opacityTexture.name;
-                if (md.opacityTexture.level != null) {
-                    mat.opacityLevel = md.opacityTexture.level;
-                }
-                if (md.opacityTexture.getAlphaFromRGB) {
-                    mat.opacityFromRGB = true;
-                }
-                texturePromises.push(
-                    loadTexture2D(engine, texUrl).then((tex) => {
-                        mat.opacityTexture = tex;
-                    })
-                );
-            }
-
-            if (md.reflectionTexture && opts.loadTextures !== false && !md.reflectionTexture.isCube) {
-                const texUrl = baseUrl + md.reflectionTexture.name;
-                if (md.reflectionTexture.level != null) {
-                    mat.reflectionLevel = md.reflectionTexture.level;
-                }
-                const cm = md.reflectionTexture.coordinatesMode;
-                if (cm === 2) {
-                    mat.reflectionCoordMode = 2;
-                }
-                texturePromises.push(
-                    loadTexture2D(engine, texUrl).then((tex) => {
-                        mat.reflectionTexture = tex;
-                    })
-                );
             }
 
             if (md.reflectionTexture && opts.loadTextures !== false && md.reflectionTexture.isCube) {

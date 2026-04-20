@@ -82,24 +82,12 @@ export interface PbrTemplateConfig {
     readonly hasMorph?: boolean;
     /** Has occlusion in ORM texture (simple path, no reflectance ext) */
     readonly hasOcclusion?: boolean;
-    /** Has sheen texture binding in base template */
-    readonly hasSheenTexture?: boolean;
     /** Has emissive color UBO field (fragment handles emissive computation) */
     readonly hasEmissiveColor?: boolean;
     /** When true, the reflectance fragment handles F0 + occlusion computation */
     readonly hasReflectanceExt?: boolean;
     /** When true, include IBL SH coefficients in scene UBO */
     readonly hasIbl?: boolean;
-    /** Has clearcoat layer */
-    readonly hasClearcoat?: boolean;
-    /** Has clearcoat intensity texture (R channel, multiplies intensity factor). */
-    readonly hasCcIntensityMap?: boolean;
-    /** Has clearcoat roughness texture (G channel, multiplies roughness factor). */
-    readonly hasCcRoughnessMap?: boolean;
-    /** Has clearcoat normal map (tangent-space, perturbs coat normal). */
-    readonly hasCcNormalMap?: boolean;
-    /** Has sheen layer */
-    readonly hasSheen?: boolean;
     /** Has anisotropy layer */
     readonly hasAnisotropy?: boolean;
     /** Anisotropy WGSL: BRDF helper functions (dynamically imported). */
@@ -108,6 +96,50 @@ export interface PbrTemplateConfig {
     readonly anisoTBBlock?: string;
     /** Anisotropy WGSL: direct lighting D/G replacement (dynamically imported). */
     readonly anisoDirectDG?: string;
+}
+
+/**
+ * Return the scene UBO field list used by the PBR base template.
+ * Cheap list-building only — no WGSL assembly. Exposed so callers that only
+ * need the UBO layout (e.g. scene UBO spec computation) can avoid paying the
+ * full createPbrTemplate cost.
+ */
+export function getPbrBaseSceneUboFields(light: PbrLightConfig | null, hasMultiLight: boolean, hasIbl: boolean): readonly UboField[] {
+    // When hasMultiLight, light data comes from the lights UBO — scene UBO fields
+    // are kept as reserved padding for layout compatibility with background shaders.
+    const lightUboFields: readonly UboField[] =
+        hasMultiLight || !light
+            ? [
+                  { name: "lightDirection", type: "vec3<f32>" },
+                  { name: "lightIntensity", type: "f32" },
+                  { name: "lightDiffuseColor", type: "vec3<f32>" },
+                  { name: "_pad1", type: "f32" },
+                  { name: "lightGroundColor", type: "vec3<f32>" },
+              ]
+            : light.sceneUboFields;
+
+    // SH coefficients are included in the base template (not the IBL fragment)
+    // because the scene UBO writer uses fixed offsets for SH data.
+    const SH_NAMES = ["L00", "L1_1", "L10", "L11", "L2_2", "L2_1", "L20", "L21", "L22"] as const;
+    const shFields: UboField[] = hasIbl
+        ? SH_NAMES.flatMap((n, i) => [
+              { name: `vSpherical${n}`, type: "vec3<f32>" as const },
+              { name: `_shPad${i}`, type: "f32" as const },
+          ])
+        : [];
+
+    return [
+        { name: "viewProj", type: "mat4x4<f32>" },
+        { name: "cameraPosition", type: "vec3<f32>" },
+        { name: "_pad0", type: "f32" },
+        ...lightUboFields,
+        { name: "envRotationY", type: "f32" },
+        ...shFields,
+        { name: "exposureLinear", type: "f32" },
+        { name: "contrast", type: "f32" },
+        { name: "lodGenerationScale", type: "f32" },
+        { name: "_imgPad1", type: "f32" },
+    ];
 }
 
 /**
@@ -132,15 +164,9 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
         hasGammaAlbedo = false,
         hasMorph = false,
         hasOcclusion = false,
-        hasSheenTexture = false,
         hasEmissiveColor = false,
         hasReflectanceExt = false,
         hasIbl = false,
-        hasClearcoat = false,
-        hasCcIntensityMap = false,
-        hasCcRoughnessMap = false,
-        hasCcNormalMap = false,
-        hasSheen = false,
         hasAnisotropy = false,
         anisoBrdfFunctions = "",
         anisoTBBlock = "",
@@ -187,35 +213,10 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
         { name: "roughnessFactor", type: "f32" },
         { name: "_mrfPad0", type: "f32" },
         { name: "_mrfPad1", type: "f32" },
-        // Extension UBO fields in old-system order for byte-layout compat
-        ...(hasReflectanceExt
-            ? [
-                  { name: "occlusionStrength", type: "f32" as const },
-                  { name: "metallicF0Factor", type: "f32" as const },
-                  { name: "_mrPad0", type: "f32" as const },
-                  { name: "_mrPad1", type: "f32" as const },
-                  { name: "metallicReflectanceColor", type: "vec3<f32>" as const },
-                  { name: "_mrPad2", type: "f32" as const },
-              ]
-            : []),
-        ...(hasEmissiveColor
-            ? [
-                  { name: "emissiveColor", type: "vec3<f32>" as const },
-                  { name: "_emissiveColorPad", type: "f32" as const },
-              ]
-            : []),
-        ...(hasClearcoat
-            ? [
-                  { name: "ccParams", type: "vec4<f32>" as const },
-                  { name: "ccRefractionParams", type: "vec4<f32>" as const },
-              ]
-            : []),
-        ...(hasSheen
-            ? [
-                  { name: "sheenParams", type: "vec4<f32>" as const },
-                  { name: "sheenParams2", type: "vec4<f32>" as const },
-              ]
-            : []),
+        // Anisotropy UBO field kept here because its registration path does not
+        // yet flow through the composer fragment pipeline (see pbr-renderable:
+        // _registerPbrMaterialUboWriter). The reflectance/emissive/clearcoat/sheen
+        // UBO fields are now contributed by their own fragments.
         ...(hasAnisotropy ? [{ name: "anisotropyParams", type: "vec4<f32>" as const }] : []),
     ];
 
@@ -226,41 +227,7 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
     ];
 
     // ── Base scene UBO fields ───────────────────────────────────
-    // SH coefficients are included in the base template (not the IBL fragment)
-    // because the scene UBO writer uses fixed offsets for SH data.
-    const SH_NAMES = ["L00", "L1_1", "L10", "L11", "L2_2", "L2_1", "L20", "L21", "L22"] as const;
-    const shFields: UboField[] = hasIbl
-        ? SH_NAMES.flatMap((n, i) => [
-              { name: `vSpherical${n}`, type: "vec3<f32>" as const },
-              { name: `_shPad${i}`, type: "f32" as const },
-          ])
-        : [];
-
-    // When hasMultiLight, light data comes from the lights UBO — scene UBO fields
-    // are kept as reserved padding for layout compatibility with background shaders.
-    const lightUboFields: readonly UboField[] =
-        hasMultiLight || !light
-            ? [
-                  { name: "lightDirection", type: "vec3<f32>" },
-                  { name: "lightIntensity", type: "f32" },
-                  { name: "lightDiffuseColor", type: "vec3<f32>" },
-                  { name: "_pad1", type: "f32" },
-                  { name: "lightGroundColor", type: "vec3<f32>" },
-              ]
-            : light.sceneUboFields;
-
-    const baseSceneUboFields: UboField[] = [
-        { name: "viewProj", type: "mat4x4<f32>" },
-        { name: "cameraPosition", type: "vec3<f32>" },
-        { name: "_pad0", type: "f32" },
-        ...lightUboFields,
-        { name: "envRotationY", type: "f32" },
-        ...shFields,
-        { name: "exposureLinear", type: "f32" },
-        { name: "contrast", type: "f32" },
-        { name: "lodGenerationScale", type: "f32" },
-        { name: "_imgPad1", type: "f32" },
-    ];
+    const baseSceneUboFields: readonly UboField[] = getPbrBaseSceneUboFields(hasMultiLight || !light ? null : light, hasMultiLight, hasIbl);
 
     // ── Base bindings (always-present textures) ─────────────────
     const baseBindings: BindingDecl[] = [...tex2d("baseColorTexture", "baseColorSampler")];
@@ -273,19 +240,6 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
     }
     if (hasSpecGloss) {
         baseBindings.push(...tex2d("specGlossTexture", "specGlossSampler"));
-    }
-    if (hasSheenTexture) {
-        baseBindings.push(...tex2d("sheenTexture_", "sheenSampler_"));
-    }
-    // Clearcoat textures — must match order in createPbrMeshBindGroup
-    if (hasCcIntensityMap) {
-        baseBindings.push(...tex2d("ccIntensityTexture", "ccIntensitySampler_"));
-    }
-    if (hasCcRoughnessMap) {
-        baseBindings.push(...tex2d("ccRoughnessTexture", "ccRoughnessSampler_"));
-    }
-    if (hasCcNormalMap) {
-        baseBindings.push(...tex2d("ccNormalTexture", "ccNormalSampler_"));
     }
     if (hasMultiLight) {
         baseBindings.push({ name: "lights", type: { kind: "uniform-buffer" }, visibility: STAGE_FRAGMENT });

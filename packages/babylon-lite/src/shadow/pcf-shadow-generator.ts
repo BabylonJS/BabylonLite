@@ -20,24 +20,21 @@ import type { Mesh } from "../mesh/mesh.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { EngineContextInternal } from "../engine/engine.js";
 import type { ShadowGenerator } from "./shadow-generator.js";
-import { createUniformBuffer } from "../resource/gpu-buffers.js";
 import {
-    buildCasters,
     syncCasterMatrices,
     drawCasters,
-    shadowMatrixChanged,
-    writeShadowUboFields,
     buildLightViewMatrix,
     multiply4x4,
-    createDepthSceneBGL,
     createSharedShadowUBO,
     createShadowParamsUBO,
+    createShadowDepthInfra,
+    createShadowDirtyTracker,
+    updateShadowLightMatrix,
 } from "./shadow-base.js";
 import depthVertSrc from "../../shaders/shadow-pcf-depth.vertex.wgsl?raw";
 import { registerPcfShadowShader } from "../material/standard/standard-pipeline.js";
 import { registerPcfShadowBgl } from "../material/standard/standard-pipeline.js";
 import { WGSL_SCENE_UNIFORMS_SHADOW } from "../shader/wgsl-helpers.js";
-import { createSingleUniformBGL } from "../shader/bgl-helpers.js";
 
 // ─── PCF Shader Fragments (bundled only when PCF is used) ──────────
 
@@ -136,11 +133,15 @@ export function createPcfShadowGenerator(engine: EngineContext, light: SpotLight
 
     const { viewProj } = computeSpotLightMatrix(light, near, far);
 
-    // --- Depth pipeline BGL (needed before buildCasters) ---
-    const depthMeshBGL = createSingleUniformBGL(eng, "pcf-depth-mesh", GPUShaderStage.VERTEX);
-
-    // Build caster data + per-caster bind groups
-    const casters = buildCasters(eng, casterMeshes, depthMeshBGL);
+    // --- Shadow depth infra (BGL, scene UBO/BG, casters, depth-only pipeline with bias) ---
+    const { depthMeshBGL, depthSceneUBO, depthPipeline, depthSceneBG, casters } = createShadowDepthInfra(eng, {
+        label: "shadow-pcf",
+        viewProj,
+        casterMeshes,
+        vertCode: WGSL_SCENE_UNIFORMS_SHADOW + depthVertSrc,
+        depthBias: Math.round(bias * 1e7),
+        depthBiasSlopeScale: normalBias > 0 ? normalBias : 2,
+    });
 
     // --- Depth-only texture ---
     const depthTexture = device.createTexture({
@@ -148,36 +149,6 @@ export function createPcfShadowGenerator(engine: EngineContext, light: SpotLight
         size: { width: mapSize, height: mapSize },
         format: "depth32float",
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-    });
-
-    // --- Depth pipeline (vertex-only, no fragment) ---
-    const depthSceneUBO = createUniformBuffer(eng, viewProj as Float32Array<ArrayBuffer>);
-
-    const depthSceneBGL = createDepthSceneBGL(eng, "pcf-depth-scene");
-
-    const depthVert = device.createShaderModule({ code: WGSL_SCENE_UNIFORMS_SHADOW + depthVertSrc, label: "pcf-depth-vert" });
-
-    const depthPipeline = device.createRenderPipeline({
-        label: "shadow-pcf-depth",
-        layout: device.createPipelineLayout({ bindGroupLayouts: [depthSceneBGL, depthMeshBGL] }),
-        vertex: {
-            module: depthVert,
-            entryPoint: "main",
-            buffers: [{ arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x3" as GPUVertexFormat }] }],
-        },
-        depthStencil: {
-            format: "depth32float",
-            depthWriteEnabled: true,
-            depthCompare: "less-equal",
-            depthBias: Math.round(bias * 1e7),
-            depthBiasSlopeScale: normalBias > 0 ? normalBias : 2,
-        },
-        primitive: { topology: "triangle-list", cullMode: "back", frontFace: "ccw" },
-    });
-
-    const depthSceneBG = device.createBindGroup({
-        layout: depthSceneBGL,
-        entries: [{ binding: 0, resource: { buffer: depthSceneUBO } }],
     });
 
     // --- Comparison sampler for PCF ---
@@ -198,9 +169,8 @@ export function createPcfShadowGenerator(engine: EngineContext, light: SpotLight
     // Shared shadow UBO for all receiver meshes (96 bytes)
     const { ubo: sharedShadowUBO, data: shadowUboData } = createSharedShadowUBO(eng, lightMatrix, depthValuesArr, shadowsInfo);
 
-    // Shadow matrix early-out tracking (init to -1 to force first-frame render)
-    let _lastSpotLightVer = -1;
-    let _lastPcfCasterVerSum = -1;
+    // Shadow matrix early-out tracking
+    const dirtyTracker = createShadowDirtyTracker();
 
     const sg: ShadowGenerator = {
         shadowType: "pcf" as const,
@@ -208,32 +178,15 @@ export function createPcfShadowGenerator(engine: EngineContext, light: SpotLight
         blurredTexture: depthTexture, // PCF: depth texture (not blurred)
         blurredSampler: comparisonSampler, // PCF: comparison sampler
         renderShadowMap(encoder: GPUCommandEncoder): number {
-            // Check if anything has changed since last render
-            let casterVerSum = 0;
-            for (const c of casters) {
-                casterVerSum += c._mesh.worldMatrixVersion;
+            const { dirty, lightChanged } = dirtyTracker.check(light, casters);
+            if (!dirty) {
+                return 0;
             }
-            const lightVer = light.worldMatrixVersion;
-            const changed = lightVer !== _lastSpotLightVer || casterVerSum !== _lastPcfCasterVerSum;
-
-            if (!changed) {
-                return 0; // Nothing moved — shadow map is still valid
-            }
-
-            // Only recompute light matrix when light has moved
-            if (lightVer !== _lastSpotLightVer) {
-                _lastSpotLightVer = lightVer;
+            if (lightChanged) {
                 const updated = computeSpotLightMatrix(light, near, far);
-                if (shadowMatrixChanged(lightMatrix, updated.viewProj)) {
-                    lightMatrix.set(updated.viewProj);
-                    sg._version++;
-                    device.queue.writeBuffer(depthSceneUBO, 0, lightMatrix as Float32Array<ArrayBuffer>);
-                    // Update shared shadow UBO for all receivers
-                    writeShadowUboFields(shadowUboData, sg);
-                    device.queue.writeBuffer(sharedShadowUBO, 0, shadowUboData as Float32Array<ArrayBuffer>);
-                }
+                updateShadowLightMatrix(eng, sg, depthSceneUBO, updated.viewProj, shadowUboData);
             }
-            _lastPcfCasterVerSum = casterVerSum;
+            dirtyTracker.commit(light, casters);
 
             syncCasterMatrices(eng, casters);
 

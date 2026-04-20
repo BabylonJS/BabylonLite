@@ -23,16 +23,15 @@ import type { EngineContextInternal } from "../engine/engine.js";
 import { getOrCreateSampler } from "../resource/gpu-pool.js";
 import { createUniformBuffer } from "../resource/gpu-buffers.js";
 import {
-    buildCasters,
     syncCasterMatrices,
     drawCasters,
-    shadowMatrixChanged,
-    writeShadowUboFields,
     buildLightViewMatrix,
     multiply4x4,
-    createDepthSceneBGL,
     createShadowParamsUBO,
     createSharedShadowUBO,
+    createShadowDepthInfra,
+    createShadowDirtyTracker,
+    updateShadowLightMatrix,
 } from "./shadow-base.js";
 import depthVertSrc from "../../shaders/shadow-depth.vertex.wgsl?raw";
 import depthFragSrc from "../../shaders/shadow-depth.fragment.wgsl?raw";
@@ -172,20 +171,20 @@ export function createShadowGenerator(engine: EngineContext, light: DirectionalL
 
     const { viewProj } = computeDirectionalLightMatrix(light, casterMeshes, orthoMinZ, orthoMaxZ);
 
-    // --- Shadow depth pipeline BGLs (needed before buildCasters) ---
-    const depthMeshBGL = device.createBindGroupLayout({
-        label: "shadow-depth-mesh",
-        entries: [
-            { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } },
-            { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
-        ],
-    });
-
     // Shadow params UBO — depthValues = (0, 1) for WebGPU DirectionalLight (isNDCHalfZRange)
     const shadowParamsUBO = createShadowParamsUBO(eng, bias, depthScale);
 
-    // Build caster data + per-caster bind groups
-    const casters = buildCasters(eng, casterMeshes, depthMeshBGL, [{ binding: 1, resource: { buffer: shadowParamsUBO } }]);
+    // --- Shadow depth infra (BGLs, scene UBO/BG, casters, pipeline) ---
+    const { depthMeshBGL, depthSceneUBO, depthPipeline, depthSceneBG, casters } = createShadowDepthInfra(eng, {
+        label: "shadow",
+        viewProj,
+        casterMeshes,
+        vertCode: WGSL_SCENE_UNIFORMS_SHADOW + depthVertSrc,
+        fragCode: depthFragSrc,
+        colorTargets: [{ format: "rgba16float" }],
+        extraMeshEntries: [{ binding: 1, resource: { buffer: shadowParamsUBO } }],
+        extraMeshBglEntries: [{ binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }],
+    });
 
     // --- Textures ---
     const esmTexture = device.createTexture({
@@ -211,40 +210,6 @@ export function createShadowGenerator(engine: EngineContext, light: DirectionalL
         size: { width: blurSize, height: blurSize },
         format: "rgba16float",
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-    });
-
-    // --- Shadow depth pipeline ---
-    const depthSceneUBO = createUniformBuffer(eng, viewProj as Float32Array<ArrayBuffer>);
-
-    const depthSceneBGL = createDepthSceneBGL(eng, "shadow-depth-scene");
-
-    const depthVert = device.createShaderModule({ code: WGSL_SCENE_UNIFORMS_SHADOW + depthVertSrc, label: "shadow-depth-vert" });
-    const depthFrag = device.createShaderModule({ code: depthFragSrc, label: "shadow-depth-frag" });
-
-    const depthPipeline = device.createRenderPipeline({
-        label: "shadow-depth",
-        layout: device.createPipelineLayout({ bindGroupLayouts: [depthSceneBGL, depthMeshBGL] }),
-        vertex: {
-            module: depthVert,
-            entryPoint: "main",
-            buffers: [{ arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x3" as GPUVertexFormat }] }],
-        },
-        fragment: {
-            module: depthFrag,
-            entryPoint: "main",
-            targets: [{ format: "rgba16float" }],
-        },
-        depthStencil: {
-            format: "depth32float",
-            depthWriteEnabled: true,
-            depthCompare: "less-equal",
-        },
-        primitive: { topology: "triangle-list", cullMode: "back", frontFace: "ccw" },
-    });
-
-    const depthSceneBG = device.createBindGroup({
-        layout: depthSceneBGL,
-        entries: [{ binding: 0, resource: { buffer: depthSceneUBO } }],
     });
 
     // --- Blur pipeline ---
@@ -308,10 +273,8 @@ export function createShadowGenerator(engine: EngineContext, light: DirectionalL
     // Shared shadow UBO for all receiver meshes (96 bytes)
     const { ubo: sharedShadowUBO, data: shadowUboData } = createSharedShadowUBO(eng, lightMatrix, depthValuesArr, shadowsInfo);
 
-    // Shadow matrix early-out tracking (init to -1 to force first-frame render)
-    let _lastLightVer = -1;
-    let _lastCasterVerSum = -1;
-    let _lastCasterCount = -1;
+    // Shadow matrix early-out tracking
+    const dirtyTracker = createShadowDirtyTracker();
 
     const sg: ShadowGenerator = {
         shadowType: "esm" as const,
@@ -330,27 +293,15 @@ export function createShadowGenerator(engine: EngineContext, light: DirectionalL
     };
 
     sg.renderShadowMap = function renderShadowMap(encoder: GPUCommandEncoder): number {
-        let casterVerSum = 0;
-        for (const c of casters) {
-            casterVerSum += c._mesh.worldMatrixVersion;
-        }
-        const lv = light.worldMatrixVersion;
-        if (lv === _lastLightVer && casterVerSum === _lastCasterVerSum && casters.length === _lastCasterCount) {
+        const { dirty, lightChanged } = dirtyTracker.check(light, casters);
+        if (!dirty) {
             return 0;
         }
-        if (lv !== _lastLightVer || casters.length !== _lastCasterCount) {
+        if (lightChanged) {
             const updated = computeDirectionalLightMatrix(light, casterMeshes, orthoMinZ, orthoMaxZ);
-            if (shadowMatrixChanged(lightMatrix, updated.viewProj)) {
-                lightMatrix.set(updated.viewProj);
-                sg._version++;
-                device.queue.writeBuffer(depthSceneUBO, 0, lightMatrix as Float32Array<ArrayBuffer>);
-                writeShadowUboFields(shadowUboData, sg);
-                device.queue.writeBuffer(sharedShadowUBO, 0, shadowUboData as Float32Array<ArrayBuffer>);
-            }
+            updateShadowLightMatrix(eng, sg, depthSceneUBO, updated.viewProj, shadowUboData);
         }
-        _lastLightVer = lv;
-        _lastCasterVerSum = casterVerSum;
-        _lastCasterCount = casters.length;
+        dirtyTracker.commit(light, casters);
 
         syncCasterMatrices(eng, casters);
 
