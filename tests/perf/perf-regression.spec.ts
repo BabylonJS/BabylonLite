@@ -116,17 +116,34 @@ function round3(v: number): number {
 
 /**
  * Load a page with perf hooks injected, wait for ready, stop the RAF loop.
+ *
+ * Retries up to PAGE_LOAD_RETRIES times on transient CDP socket-idle errors
+ * (common during WebGPU shader compilation in CI/SwiftShader environments).
  */
+const PAGE_LOAD_RETRIES = 3;
+
 async function preparePage(context: BrowserContext, url: string): Promise<Page> {
-    const page = await context.newPage();
-    await page.addInitScript({ content: PERF_INIT_SCRIPT });
-    await page.goto(url, { waitUntil: "domcontentloaded" });
-    await page.waitForFunction(() => (document.querySelector("canvas") as HTMLCanvasElement)?.dataset.ready === "true", { timeout: 60_000 });
+    let lastError: Error | undefined;
 
-    // Stop the RAF loop so we control frame timing
-    await page.evaluate(() => (window as any).__perfStop());
+    for (let attempt = 1; attempt <= PAGE_LOAD_RETRIES; attempt++) {
+        const page = await context.newPage();
+        try {
+            await page.addInitScript({ content: PERF_INIT_SCRIPT });
+            await page.goto(url, { waitUntil: "domcontentloaded" });
+            await page.waitForFunction(() => (document.querySelector("canvas") as HTMLCanvasElement)?.dataset.ready === "true", { timeout: 60_000 });
 
-    return page;
+            // Stop the RAF loop so we control frame timing
+            await page.evaluate(() => (window as any).__perfStop());
+
+            return page;
+        } catch (e) {
+            lastError = e as Error;
+            console.warn(`preparePage attempt ${attempt}/${PAGE_LOAD_RETRIES} failed for ${url}: ${lastError.message}`);
+            await page.close().catch(() => {});
+        }
+    }
+
+    throw lastError!;
 }
 
 /**
