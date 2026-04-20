@@ -17,7 +17,7 @@
  *  - clearcoatNormalTexture (tangent-space normal, perturbs coat normal)
  */
 
-import type { ShaderFragment } from "../../../shader/fragment-types.js";
+import type { ShaderFragment, BindingDecl } from "../../../shader/fragment-types.js";
 import type { PbrMaterialProps, ClearCoatProps } from "../pbr-material.js";
 import type { PbrExt } from "../pbr-flags.js";
 import {
@@ -29,6 +29,8 @@ import {
     PBR2_CC_NORMAL_MAP,
     PBR2_CC_F0_REMAP_OFF,
 } from "../pbr-flags.js";
+
+const STAGE_FRAGMENT = 0x2;
 
 const CC_HELPERS = `
 fn visibility_Kelemen(VdotH_kl: f32) -> f32 {
@@ -218,11 +220,36 @@ export function createClearcoatFragment(features: number, features2: number, has
         (disableF0Remap ? "X" : "") +
         (hasSpecularAA ? "A" : "") +
         (hasBaseNormalMap ? "B" : "");
+    const bindings: BindingDecl[] = [];
+    if (hasIntensityMap) {
+        bindings.push(
+            { name: "ccIntensityTexture", type: { kind: "texture", textureType: "texture_2d<f32>" }, visibility: STAGE_FRAGMENT },
+            { name: "ccIntensitySampler_", type: { kind: "sampler", samplerType: "sampler" }, visibility: STAGE_FRAGMENT }
+        );
+    }
+    if (hasRoughnessMap) {
+        bindings.push(
+            { name: "ccRoughnessTexture", type: { kind: "texture", textureType: "texture_2d<f32>" }, visibility: STAGE_FRAGMENT },
+            { name: "ccRoughnessSampler_", type: { kind: "sampler", samplerType: "sampler" }, visibility: STAGE_FRAGMENT }
+        );
+    }
+    if (hasNormalMap) {
+        bindings.push(
+            { name: "ccNormalTexture", type: { kind: "texture", textureType: "texture_2d<f32>" }, visibility: STAGE_FRAGMENT },
+            { name: "ccNormalSampler_", type: { kind: "sampler", samplerType: "sampler" }, visibility: STAGE_FRAGMENT }
+        );
+    }
+
     return {
         id: suffix ? `clearcoat-${suffix}` : "clearcoat",
         dependencies: deps.length > 0 ? deps : undefined,
 
-        // UBO fields are in the PBR template's baseMeshUboFields for byte-layout compat.
+        uboFields: [
+            { name: "ccParams", type: "vec4<f32>" },
+            { name: "ccRefractionParams", type: "vec4<f32>" },
+        ],
+
+        bindings,
 
         helperFunctions: CC_HELPERS,
 

@@ -38,12 +38,8 @@ import {
     PBR_HAS_REFLECTANCE_MAP,
     PBR_HAS_SPECULAR_AA,
     PBR_HAS_EMISSIVE_COLOR,
-    PBR_HAS_SHEEN_TEXTURE,
     PBR_HAS_GAMMA_ALBEDO,
     PBR_HAS_RECEIVE_SHADOWS,
-    PBR2_CC_INT_MAP,
-    PBR2_CC_ROUGH_MAP,
-    PBR2_CC_NORMAL_MAP,
 } from "./pbr-pipeline.js";
 import { PBR_HAS_THIN_INSTANCES, PBR_HAS_INSTANCE_COLOR } from "./pbr-pipeline.js";
 import {
@@ -60,8 +56,6 @@ import {
     PBR_HAS_DOUBLE_SIDED,
     PBR_HAS_COTANGENT_NORMAL,
     PBR_HAS_OCCLUSION,
-    PBR_HAS_CLEARCOAT,
-    PBR_HAS_SHEEN,
     PBR_HAS_ANISOTROPY,
     PBR_HAS_SKYBOX,
 } from "./pbr-flags.js";
@@ -270,15 +264,10 @@ export async function buildPbrRenderables(
         const hasIbl = has(PBR_HAS_ENV);
         const hasMorph = has(PBR_HAS_MORPH_TARGETS);
         const hasShadow = has(PBR_HAS_RECEIVE_SHADOWS);
-        const hasCC = has(PBR_HAS_CLEARCOAT);
-        const hasSh = has(PBR_HAS_SHEEN);
         const hasAniso = has(PBR_HAS_ANISOTROPY);
         const hasEmCol = has(PBR_HAS_EMISSIVE_COLOR);
         const hasEmTex = has(PBR_HAS_EMISSIVE);
         const hasTI = has(PBR_HAS_THIN_INSTANCES);
-        const ccIntMap = (features2 & PBR2_CC_INT_MAP) !== 0;
-        const ccRoughMap = (features2 & PBR2_CC_ROUGH_MAP) !== 0;
-        const ccNormalMap = (features2 & PBR2_CC_NORMAL_MAP) !== 0;
 
         const template = createPbrTemplate({
             light: hasMultiLight ? null : lightConfig,
@@ -297,15 +286,9 @@ export async function buildPbrRenderables(
             hasGammaAlbedo: has(PBR_HAS_GAMMA_ALBEDO),
             hasMorph,
             hasOcclusion: has(PBR_HAS_OCCLUSION) && !hasReflExt,
-            hasSheenTexture: has(PBR_HAS_SHEEN_TEXTURE),
             hasEmissiveColor: hasEmCol,
             hasReflectanceExt: hasReflExt,
             hasIbl,
-            hasClearcoat: hasCC,
-            hasCcIntensityMap: ccIntMap,
-            hasCcRoughnessMap: ccRoughMap,
-            hasCcNormalMap: ccNormalMap,
-            hasSheen: hasSh,
             hasAnisotropy: hasAniso,
             anisoBrdfFunctions: hasAniso && _anisoExt ? _anisoExt.ANISO_BRDF_FUNCTIONS : "",
             anisoTBBlock: hasAniso && _anisoExt ? _anisoExt.makeAnisotropyTBBlock(hasNormal) : "",
@@ -401,7 +384,7 @@ export async function buildPbrRenderables(
         const worldMatrix = mesh.worldMatrix;
         const meshUBO = createMeshUBO(engine, worldMatrix, composed, mat);
         const materialUBO = createMaterialUBO(engine, mat, composed);
-        const materialBindGroup = createPbrMeshBindGroup(engine, variant, meshUBO, materialUBO, mat, envTextures ?? null, mesh, lightsUBOBuffer);
+        const materialBindGroup = createPbrMeshBindGroup(engine, variant, composed, meshUBO, materialUBO, mat, envTextures ?? null, mesh, lightsUBOBuffer);
 
         // Shadow bind group (group 2) — per-light: texture, sampler, and shared shadow UBO.
         // Shared across all receiving meshes in this build via shadowBGCache.

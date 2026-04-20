@@ -90,7 +90,14 @@ let surfaceAlbedo = baseColor * (vec3<f32>(1.0) - vec3<f32>(dielectricF0) * surf
     return {
         id: "reflectance",
 
-        // UBO fields are in the PBR template's baseMeshUboFields for byte-layout compat.
+        uboFields: [
+            { name: "occlusionStrength", type: "f32" },
+            { name: "metallicF0Factor", type: "f32" },
+            { name: "_mrPad0", type: "f32" },
+            { name: "_mrPad1", type: "f32" },
+            { name: "metallicReflectanceColor", type: "vec3<f32>" },
+            { name: "_mrPad2", type: "f32" },
+        ],
 
         bindings,
 

@@ -43,7 +43,7 @@ export function buildSinglePbrRenderable(scene: SceneContext, mesh: Mesh): Rende
     const materialUBO = _createPbrMaterialUBO(engine, mat, composed);
     // Pass shared lights UBO if available (multi-light path)
     const lightsUBO = (scene as SceneContextInternal)._pbrLightsUBO;
-    const materialBindGroup = createPbrMeshBindGroup(engine, variant, meshUBO, materialUBO, mat, envTextures ?? null, mesh, lightsUBO);
+    const materialBindGroup = createPbrMeshBindGroup(engine, variant, composed, meshUBO, materialUBO, mat, envTextures ?? null, mesh, lightsUBO);
 
     // Shadow bind group (group 2) — multi-shadow support
     const shadowLights: { gen: ShadowGenerator }[] = [];
