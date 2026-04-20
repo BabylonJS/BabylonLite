@@ -8,7 +8,6 @@
 #   5. Lint             — ESLint + TypeScript type-check
 #
 
-
 trigger: none
 
 pr:
