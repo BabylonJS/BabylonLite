@@ -152,6 +152,10 @@ const hasMatExt =
     (suffix: string) =>
     (json: any): boolean =>
         json.extensionsUsed?.includes(_MAT_EXT + suffix);
+const hasExt =
+    (name: string) =>
+    (json: any): boolean =>
+        json.extensionsUsed?.includes(name);
 
 /** Asset has at least one material that needs ORM compositing
  *  (separate metallicRoughnessTexture + occlusionTexture pointing at different images). */
@@ -170,7 +174,7 @@ function needsOrmComposite(json: any): boolean {
 
 const _features: GltfFeatureLoader[] = [
     // Pre-mesh features (geometry decompression)
-    [(j) => j.extensionsUsed?.includes("KHR_draco_mesh_compression"), () => import("./gltf-feature-draco.js")],
+    [hasExt("KHR_draco_mesh_compression"), () => import("./gltf-feature-draco.js")],
     // Material extensions
     [hasMatExt("clearcoat"), () => import("./gltf-ext-clearcoat.js")],
     [hasMatExt("emissive_strength"), () => import("./gltf-ext-emissive-strength.js")],
@@ -181,17 +185,18 @@ const _features: GltfFeatureLoader[] = [
     // Dielectric cluster (ior/specular/transmission/volume) — any of the four triggers the loader;
     // refraction render path is wired via fragments/refraction-fragment.ts (env-only V1).
     [(j) => ["transmission", "volume", "ior", "specular"].some((e) => hasMatExt(e)(j)), () => import("./gltf-ext-dielectric.js")],
-    [(j) => j.extensionsUsed?.includes("KHR_texture_transform"), () => import("./gltf-ext-uv-transform.js")],
+    [hasExt("KHR_texture_transform"), () => import("./gltf-ext-uv-transform.js")],
     [needsOrmComposite, () => import("./gltf-ext-orm.js")],
     // Per-mesh features (predicates inlined to avoid eager imports)
     [(json) => !!json.skins?.length && anyPrimitive(json, (p) => p.attributes?.JOINTS_0 !== undefined), () => import("./gltf-feature-skeleton.js")],
     [(json) => anyPrimitive(json, (p) => !!p.targets?.length), () => import("./gltf-feature-morph.js")],
     // Per-asset features
-    [(j) => j.extensionsUsed?.includes("KHR_lights_punctual"), () => import("./gltf-feature-lights-punctual.js")],
+    [hasExt("KHR_lights_punctual"), () => import("./gltf-feature-lights-punctual.js")],
     [(json) => !!json.animations?.length, () => import("./gltf-feature-animations.js")],
     [hasMatExt("variants"), () => import("./gltf-feature-variants.js")],
-    [(j) => j.extensionsUsed?.includes("KHR_node_visibility"), () => import("./gltf-ext-node-visibility.js")],
-    [(j) => j.extensionsUsed?.includes("KHR_animation_pointer"), () => import("./gltf-feature-animation-pointer.js")],
+    [hasExt("KHR_node_visibility"), () => import("./gltf-ext-node-visibility.js")],
+    [hasExt("KHR_animation_pointer"), () => import("./gltf-feature-animation-pointer.js")],
+    [hasExt("EXT_mesh_gpu_instancing"), () => import("./gltf-feature-gpu-instancing.js")],
 ];
 
 /** Dynamic-import every feature the asset triggers. */

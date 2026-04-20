@@ -316,6 +316,15 @@
         "tags": ["pbr", "gltf", "env", "node-visibility", "animation-pointer"]
     },
     {
+        "id": 35,
+        "slug": "scene35-gltf-instancing",
+        "name": "Scene 35 — EXT_mesh_gpu_instancing",
+        "maxMad": 0.02,
+        "maxRawKB": 80,
+        "description": "SimpleInstancing.glb (EXT_mesh_gpu_instancing) — 5×5×5 grid of 125 unit cubes driven by per-instance TRS accessors. Default IBL env. Matches PG #YG3BBF#57.",
+        "tags": ["pbr", "gltf", "env", "gpu-instancing"]
+    },
+    {
         "id": 40,
         "slug": "scene40-physics",
         "name": "Scene 40 — Physics",
