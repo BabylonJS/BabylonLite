@@ -89,11 +89,18 @@ export async function loadGltf(engine: EngineContext, url: string): Promise<Asse
     const root = buildNodeHierarchy(json, meshes, meshDatas);
 
     // Run every feature's per-asset hook (animations, variants, …) and merge
-    // the returned AssetContainer fragments.
+    // the returned AssetContainer fragments. `entities` is appended (never
+    // overwritten) so features like KHR_lights_punctual can contribute lights
+    // without trampling the root TransformNode.
     const assetFragments = await Promise.all(features.flatMap((f) => (f.applyAsset ? [f.applyAsset(meshes, root, ctx)] : [])));
     const container: AssetContainer = { entities: [root] };
     for (const frag of assetFragments) {
-        Object.assign(container, frag);
+        if (frag.entities?.length) {
+            container.entities.push(...frag.entities);
+        }
+        const { entities: _ignored, ...rest } = frag;
+        void _ignored;
+        Object.assign(container, rest);
     }
     return container;
 }
@@ -176,6 +183,7 @@ const _features: GltfFeatureLoader[] = [
     [(json) => !!json.skins?.length && anyPrimitive(json, (p) => p.attributes?.JOINTS_0 !== undefined), () => import("./gltf-feature-skeleton.js")],
     [(json) => anyPrimitive(json, (p) => !!p.targets?.length), () => import("./gltf-feature-morph.js")],
     // Per-asset features
+    [(j) => j.extensionsUsed?.includes("KHR_lights_punctual"), () => import("./gltf-feature-lights-punctual.js")],
     [(json) => !!json.animations?.length, () => import("./gltf-feature-animations.js")],
     [hasMatExt("variants"), () => import("./gltf-feature-variants.js")],
 ];

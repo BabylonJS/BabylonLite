@@ -18,6 +18,7 @@ export { createPointLight } from "./light/point-light.js";
 export { createDirectionalLight } from "./light/directional-light.js";
 export { createSpotLight } from "./light/spot-light.js";
 export type { LightBase } from "./light/types.js";
+export { setMaxLights, MAX_LIGHTS } from "./light/types.js";
 
 // ─── Mesh Factories (high-level) ─────────────────────────────────────
 export { createSphere, createBox, createTorus, createGround, createGroundFromHeightMap } from "./mesh/mesh-factories.js";

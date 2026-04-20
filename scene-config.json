@@ -270,11 +270,21 @@
         "slug": "scene30-volume-testing",
         "name": "Scene 30 — KHR_materials_volume_testing",
         "maxMad": 20.0,
-        "maxRawKB": 80.0,
+        "maxRawKB": 85.0,
         "description": "KHR_materials_volume_testing.glb (transmission + volume + ior + specular) against default IBL environment. V1 env-only refraction. Matches PG #YG3BBF#16.",
         "note": "MAD ceiling temporarily relaxed (18.59 actual vs 0.02 target). Env-only refraction cannot show scene-behind-the-glass; full parity requires opaque-scene RTT, deferred to land with the frame-graph.",
         "tags": ["pbr", "gltf", "env", "transmission", "volume"],
         "skipParity": true,
+        "skipPerf": true
+    },
+    {
+        "id": 33,
+        "slug": "scene33-lights-punctual",
+        "name": "Scene 33 — KHR_lights_punctual",
+        "maxMad": 0.5,
+        "maxRawKB": 90.0,
+        "description": "LightsPunctualLamp.glb (KHR_lights_punctual point lights + KHR_materials_transmission) with default IBL environment. Matches PG #YG3BBF#54.",
+        "tags": ["pbr", "gltf", "env", "lights-punctual", "transmission"],
         "skipPerf": true
     },
     {
