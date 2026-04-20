@@ -41,6 +41,7 @@ interface SceneConfigEntry {
     id: number;
     slug: string;
     name: string;
+    skipPerf?: boolean;
 }
 
 interface PerfResult {
@@ -54,7 +55,7 @@ const CONFIG_PATH = resolve(__dirname, "../../scene-config.json");
 const allScenes: SceneConfigEntry[] = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 
 const SELECTED = process.env.PERF_SCENES ? process.env.PERF_SCENES.split(",").map((s) => Number(s.trim())) : null;
-const SCENES = SELECTED ? allScenes.filter((s) => SELECTED.includes(s.id)) : allScenes;
+const SCENES = (SELECTED ? allScenes.filter((s) => SELECTED.includes(s.id)) : allScenes).filter((s) => !s.skipPerf);
 
 // Check if baseline bundles exist
 const BASELINE_DIR = resolve(__dirname, "../../lab/public/bundle-baseline");
