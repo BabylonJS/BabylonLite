@@ -211,7 +211,10 @@ function terserPropertyManglePlugin(): Plugin {
                         toplevel: true,
                         properties: {
                             regex: /^_[a-z]/,
-                            reserved: ["_pad", "_pad0", "_pad1", "_pad2", "_pad3", "_pad4", "_imgPad0", "_imgPad1", ...wasmReserved],
+                            // `_malloc`/`_free` are emscripten exports accessed on
+                            // externally-loaded modules (e.g. draco_decoder.js) whose
+                            // glue isn't in the bundle, so wasmReserved can't detect them.
+                            reserved: ["_pad", "_pad0", "_pad1", "_pad2", "_pad3", "_pad4", "_imgPad0", "_imgPad1", "_malloc", "_free", ...wasmReserved],
                         },
                     },
                     nameCache,

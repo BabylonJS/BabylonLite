@@ -95,9 +95,6 @@
                 border-radius: 6px;
                 font-size: 0.85rem;
                 color: #8b949e;
-                position: sticky;
-                top: 40px;
-                z-index: 20;
             }
             .tab-hint code {
                 color: #e6edf3;
@@ -2849,6 +2846,7 @@
         </div>
 
         <div id="panel-source" class="tab-panel active">
+            <div class="tab-hint">💡 Live scenes served from Vite dev server. Start with: <code>pnpm dev</code></div>
             <div class="perf-toolbar">
                 <div class="perf-filter-pills" id="source-filter-pills"></div>
             </div>
@@ -2856,6 +2854,7 @@
         </div>
 
         <div id="panel-parity" class="tab-panel">
+            <div class="tab-hint">💡 Compares golden reference (Babylon.js) vs Lite render from last <code>pnpm test:parity</code> run. MAD thresholds from <code>scene-config.json</code>; exceeding shown in <span style="color: #f85149">red</span>.</div>
             <div class="parity-toolbar">
                 <div style="flex: 1"></div>
                 <button class="btn parity-sort-btn active" onclick="sortParityGrid('num')" data-sort="num" title="Sort by scene number">Scene #</button>
@@ -2867,6 +2866,7 @@
         </div>
 
         <div id="panel-bundle" class="tab-panel">
+            <div class="tab-hint">💡 Bundle sizes shown below come from <code>manifest.json</code>. To regenerate: <code>pnpm build:bundle-scenes</code></div>
             <div class="perf-toolbar">
                 <div class="perf-filter-pills" id="bundle-filter-pills"></div>
                 <div style="flex: 1"></div>
@@ -2879,6 +2879,7 @@
         </div>
 
         <div id="panel-perf" class="tab-panel">
+            <div class="tab-hint">💡 RAF callback CPU time per scene, measured via Playwright. Run <code>pnpm test:perf</code> to refresh. <span id="perf-manifest-status" style="color: #3fb950"></span></div>
             <div class="perf-toolbar">
                 <div class="perf-filter-pills" id="perf-filter-pills"></div>
                 <div style="flex: 1"></div>
