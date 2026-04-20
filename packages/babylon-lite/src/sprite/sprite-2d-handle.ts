@@ -85,21 +85,22 @@ export function addSprite2D(layer: Sprite2DLayer, init: Sprite2DInit): Sprite2DH
         markDirty(layer._storage, i, i + 1);
     };
     const writeSizePx = (): void => {
-        // Size feeds local Mat3 too (scale extraction happens via scale, not size,
-        // but we still mark the world matrix dirty so children re-resolve).
+        // When parented, the renderable computes packed size from the world
+        // Mat3 each frame — skip the flat-buffer write entirely (perf win).
+        if (wm.parent !== null) {
+            return;
+        }
         const i = layer._idToIndex!.get(handle.id);
         if (i === undefined) {
             return;
         }
-        if (wm.parent === null) {
-            const off = i * SPRITE_2D_STRIDE;
-            const d = layer._storage.data;
-            const sx = handle.scale.x;
-            const sy = handle.scale.y;
-            d[off + 2] = _visible ? handle.sizePx.x * sx : 0;
-            d[off + 3] = _visible ? handle.sizePx.y * sy : 0;
-            markDirty(layer._storage, i, i + 1);
-        }
+        const off = i * SPRITE_2D_STRIDE;
+        const d = layer._storage.data;
+        const sx = handle.scale.x;
+        const sy = handle.scale.y;
+        d[off + 2] = _visible ? handle.sizePx.x * sx : 0;
+        d[off + 3] = _visible ? handle.sizePx.y * sy : 0;
+        markDirty(layer._storage, i, i + 1);
     };
     const writePivot = (): void => {
         const i = layer._idToIndex!.get(handle.id);

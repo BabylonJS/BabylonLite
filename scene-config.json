@@ -325,6 +325,7 @@
         "description": "Anchored sprite labels (A/B/C/D) above 4 boxes at varying camera distances; labels stay fixed pixel size; pickable=false on one sprite.",
         "tags": [
             "sprites",
+            "2d",
             "anchored",
             "labels"
         ]
@@ -339,6 +340,7 @@
         "description": "Two anchored layers in a 3D scene: animated alpha-blend spinner and depth-writing cutout silhouettes; deterministic via seekTime.",
         "tags": [
             "sprites",
+            "2d",
             "anchored",
             "animated",
             "cutout"
@@ -354,6 +356,7 @@
         "description": "Spherical billboards via createFacingBillboardSystem; reference is a BJS textured-plane oriented with cameraRight/cameraUp from the camera world matrix (same basis as Lite's composeFacingBillboard WGSL).",
         "tags": [
             "sprites",
+            "2d",
             "billboard",
             "facing"
         ]
@@ -368,6 +371,7 @@
         "description": "Cylindrical (yaw-locked) billboards via createYawLockedBillboardSystem; reference is BJS textured planes oriented with the same yaw-lock basis.",
         "tags": [
             "sprites",
+            "2d",
             "billboard",
             "yaw-locked"
         ]
@@ -382,6 +386,7 @@
         "description": "Axis-locked billboards (lock axis = world-X) via createAxisLockedBillboardSystem; reference is BJS textured planes oriented with the same axis-lock basis.",
         "tags": [
             "sprites",
+            "2d",
             "billboard",
             "axis-locked"
         ]
@@ -411,6 +416,7 @@
         "description": "Anchored Sprite Handle API: addAnchoredSprite returns a handle parentable to a 3D mesh; label follows a moving box via the renderable's world-matrix walker (Family 2).",
         "tags": [
             "sprites",
+            "2d",
             "anchored",
             "handle",
             "parenting"
@@ -426,6 +432,7 @@
         "description": "Billboard Sprite Handle API: addBillboardSprite returns a handle parented to a moving 3D box; translation follows the parent worldMatrix while the renderable faces the camera (Family 3).",
         "tags": [
             "sprites",
+            "2d",
             "billboard",
             "handle",
             "parenting"

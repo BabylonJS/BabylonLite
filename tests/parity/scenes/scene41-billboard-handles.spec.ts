@@ -1,23 +1,22 @@
 /**
- * Scene 29 — Sprites 2D Grid Parity Test (Family 1)
+ * Scene 41 — Billboard Sprite Handles + 3D Parenting Parity Test (Family 3, Handle API)
  *
- * Captures Babylon Lite's `Scene2DContext` rendering of a 25×10 sprite grid
- * and compares against a canvas2D-rendered reference (the canonical 2D
- * rendering of the same atlas at the same positions).
+ * Captures Babylon Lite's billboard-sprite handle-API scene (camera-facing
+ * sprite parented to a moving 3D box) and compares against the BJS reference.
  */
 import { test, expect } from "@playwright/test";
 import * as path from "path";
 import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
 
-const sceneConfig = getSceneConfig(29);
-const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene29-sprites-2d");
+const sceneConfig = getSceneConfig(41);
+const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene41-billboard-handles");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test("Scene 29 — Sprites 2D Grid matches canvas2D reference", async ({ page }, testInfo) => {
+test("Scene 41 — Billboard Sprite Handles + 3D Parenting matches BJS reference", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
-    await captureGolden(browser, { sceneId: 29 });
+    await captureGolden(browser, { sceneId: 41 });
 
-    await page.goto("/scene29.html");
+    await page.goto("/scene41.html");
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 20_000 });
     await page.waitForTimeout(500);
 

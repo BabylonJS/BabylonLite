@@ -1,25 +1,23 @@
 /**
- * Scene 31 — Sprites Animated Parity Test (Family 1)
+ * Scene 40 — Anchored Sprite Handles + 3D Parenting Parity Test (Family 2, Handle API)
  *
- * 12 spinner sprites with phase-offset clip playback frozen at seekTime=1.0s.
- * Compared against canvas2D reference.
+ * Captures Babylon Lite's anchored-sprite handle-API scene (label parented to a
+ * moving 3D box) and compares against the BJS reference rendering.
  */
 import { test, expect } from "@playwright/test";
 import * as path from "path";
 import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
 
-const SEEK_TIME = 1.0;
-const sceneConfig = getSceneConfig(31);
-const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene31-sprites-animated");
+const sceneConfig = getSceneConfig(40);
+const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene40-anchored-handles");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test("Scene 31 — Sprites Animated matches canvas2D reference at seekTime=1.0s", async ({ page }, testInfo) => {
+test("Scene 40 — Anchored Sprite Handles + 3D Parenting matches BJS reference", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
-    await captureGolden(browser, { sceneId: 31, seekTime: SEEK_TIME });
+    await captureGolden(browser, { sceneId: 40 });
 
-    await page.goto(`/scene31.html?seekTime=${SEEK_TIME}`);
+    await page.goto("/scene40.html");
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 20_000 });
-    await page.waitForFunction(() => document.querySelector("canvas")?.dataset.animationFrozen === "true", { timeout: 20_000 });
     await page.waitForTimeout(500);
 
     const screenshotPath = path.join(REFERENCE_DIR, "test-actual.png");

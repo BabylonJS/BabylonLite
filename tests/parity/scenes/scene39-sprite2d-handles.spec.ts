@@ -1,21 +1,23 @@
 /**
- * Scene 30 — Sprites UI Parity Test (Family 1)
+ * Scene 39 — Sprite2D Handles + 2D Parenting Parity Test (Family 1, Handle API)
  *
- * 4-layer HUD layout in `Scene2DContext` compared against canvas2D reference.
+ * Captures Babylon Lite's Sprite2D handle-API scene (moving character with a
+ * parented health-bar) and compares against the BJS reference rendering of the
+ * same layout via SpriteManager + manual per-frame parenting.
  */
 import { test, expect } from "@playwright/test";
 import * as path from "path";
 import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
 
-const sceneConfig = getSceneConfig(30);
-const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene30-sprites-ui");
+const sceneConfig = getSceneConfig(39);
+const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene39-sprite2d-handles");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test("Scene 30 — Sprites UI matches canvas2D reference", async ({ page }, testInfo) => {
+test("Scene 39 — Sprite2D Handles + 2D Parenting matches BJS reference", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
-    await captureGolden(browser, { sceneId: 30 });
+    await captureGolden(browser, { sceneId: 39 });
 
-    await page.goto("/scene30.html");
+    await page.goto("/scene39.html");
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 20_000 });
     await page.waitForTimeout(500);
 
