@@ -4,13 +4,13 @@
  *  Pipelines cached per (fragmentKey, features, format, msaaSamples) tuple.
  *  The ComposedShader provides WGSL source, BGL descriptors, and vertex layouts. */
 
-import type { PbrMaterialProps, SheenProps } from "./pbr-material.js";
+import type { PbrMaterialProps } from "./pbr-material.js";
 import type { EnvironmentTextures } from "../../loader-env/load-env.js";
 import type { ComposedShader } from "../../shader/fragment-types.js";
 import type { EngineContextInternal } from "../../engine/engine.js";
 import { createPipelineCache, releaseVariant } from "../pipeline-cache.js";
 import type { PipelineCache } from "../pipeline-cache.js";
-import { _getSubsurfaceExt, _getPbrLightExtension } from "./pbr-flags.js";
+import { _getPbrLightExtension, _getPbrExtsSorted } from "./pbr-flags.js";
 import {
     PBR_HAS_NORMAL_MAP,
     PBR_HAS_EMISSIVE,
@@ -25,10 +25,6 @@ import {
     PBR_HAS_COTANGENT_NORMAL,
     PBR_HAS_METALLIC_REFLECTANCE_MAP,
     PBR_HAS_REFLECTANCE_MAP,
-    PBR_HAS_SHEEN_TEXTURE,
-    PBR2_CC_INT_MAP,
-    PBR2_CC_ROUGH_MAP,
-    PBR2_CC_NORMAL_MAP,
 } from "./pbr-flags.js";
 export * from "./pbr-flags.js";
 
@@ -163,24 +159,21 @@ export function getOrCreatePbrPipeline(
 export function createPbrMeshBindGroup(
     engine: EngineContextInternal,
     variant: PbrPipelineVariant,
+    composed: ComposedShader,
     meshUBO: GPUBuffer,
     materialUBO: GPUBuffer,
     material: PbrMaterialProps,
     env: EnvironmentTextures | null,
-    boneTextureView?: GPUTextureView,
-    morphTargetView?: GPUTextureView,
-    morphWeightsBuffer?: GPUBuffer,
+    meshCtx: { skeleton?: { boneTexture: GPUTexture } | null; morphTargets?: { texture: GPUTexture; weightsBuffer?: GPUBuffer } | null } | null,
     lightsUBO?: GPUBuffer
 ): GPUBindGroup {
     const device = engine.device;
     const features = variant.features;
+    const features2 = variant.features2;
     const hasNormal = (features & PBR_HAS_NORMAL_MAP) !== 0;
     const hasCotangentNormal = (features & PBR_HAS_COTANGENT_NORMAL) !== 0;
     const hasAnyNormal = hasNormal || hasCotangentNormal;
     const hasEmissive = (features & PBR_HAS_EMISSIVE) !== 0;
-    const hasEnv = (features & PBR_HAS_ENV) !== 0;
-    const hasSkeleton = (features & PBR_HAS_SKELETON) !== 0;
-    const hasMorph = (features & PBR_HAS_MORPH_TARGETS) !== 0;
     const hasSpecGloss = (features & PBR_HAS_SPEC_GLOSS) !== 0;
 
     const entries: GPUBindGroupEntry[] = [];
@@ -190,19 +183,43 @@ export function createPbrMeshBindGroup(
         entries.push({ binding: b++, resource: t.sampler });
     };
 
+    const ctx: import("./pbr-flags.js").PbrBindCtx = {
+        features,
+        features2,
+        material,
+        mesh: meshCtx ?? undefined,
+        env,
+    };
+
+    // Sort exts by id to match composer's alphabetical binding emission order.
+    const sortedExts = _getPbrExtsSorted();
+
+    // Build fragment-id → ext map that honours fragment-id variants like
+    // "clearcoat-IRN" (ext id "clearcoat"). Walk composed.fragmentKey to
+    // determine composer's topological binding order.
+    const extByFragId = new Map<string, import("./pbr-flags.js").PbrExt>();
+    const fragIds = composed.fragmentKey ? composed.fragmentKey.split("|").filter((s) => s.length > 0) : [];
+    for (const fid of fragIds) {
+        let match = sortedExts.find((e) => e.id === fid);
+        if (!match) {
+            match = sortedExts.find((e) => fid.startsWith(e.id + "-"));
+        }
+        if (match) {
+            extByFragId.set(fid, match);
+        }
+    }
+
     // Mesh UBO (binding 0)
     entries.push({ binding: b++, resource: { buffer: meshUBO } });
     // Material UBO (binding 1)
     entries.push({ binding: b++, resource: { buffer: materialUBO } });
-    // Vertex bindings: morph before skeleton (alphabetical order matching composer)
-    if (hasMorph) {
-        entries.push({ binding: b++, resource: morphTargetView! });
-        entries.push({ binding: b++, resource: { buffer: morphWeightsBuffer! } });
+    // Vertex-phase exts (morph before skeleton via alphabetical composer order)
+    for (const ext of sortedExts) {
+        if (ext.phase === "vertex" && ext.bind) {
+            b = ext.bind(ctx, entries, b);
+        }
     }
-    if (hasSkeleton) {
-        entries.push({ binding: b++, resource: boneTextureView! });
-    }
-    // Base bindings (matching composer order: baseColor, normal, ORM, emissive, specGloss, sheen)
+    // Base bindings (matching composer order: baseColor, normal, ORM, emissive, specGloss)
     addTex(material.baseColorTexture!);
     if (hasAnyNormal) {
         addTex(material.normalTexture!);
@@ -214,45 +231,21 @@ export function createPbrMeshBindGroup(
     if (hasSpecGloss) {
         addTex(material.specGlossTexture!);
     }
-    if ((features & PBR_HAS_SHEEN_TEXTURE) !== 0) {
-        addTex((material.sheen as SheenProps).texture!);
-    }
-    // Clearcoat textures (after sheenTexture; matches template baseBindings order)
-    const features2 = variant.features2;
-    const cc = material.clearCoat as import("./pbr-material.js").ClearCoatProps | undefined;
-    if (cc) {
-        if ((features2 & PBR2_CC_INT_MAP) !== 0 && cc.texture) {
-            addTex(cc.texture);
-        }
-        if ((features2 & PBR2_CC_ROUGH_MAP) !== 0 && cc.roughnessTexture) {
-            addTex(cc.roughnessTexture);
-        }
-        if ((features2 & PBR2_CC_NORMAL_MAP) !== 0 && cc.bumpTexture) {
-            addTex(cc.bumpTexture);
-        }
-    }
     // Lights UBO (after base texture bindings, before fragment bindings — matches composer order)
     if (lightsUBO) {
         entries.push({ binding: b++, resource: { buffer: lightsUBO } });
     }
-    // Fragment bindings: IBL (comes before reflectance in composer's alphabetical order)
-    if (hasEnv && env) {
-        entries.push({ binding: b++, resource: env.brdfLutView });
-        entries.push({ binding: b++, resource: env.brdfSampler });
-        entries.push({ binding: b++, resource: env.specularCubeView });
-        entries.push({ binding: b++, resource: env.cubeSampler });
-    }
-    // Fragment bindings: reflectance maps (after IBL in alphabetical order)
-    if ((features & (PBR_HAS_METALLIC_REFLECTANCE_MAP | PBR_HAS_REFLECTANCE_MAP)) !== 0) {
-        if (material.metallicReflectanceTexture) {
-            addTex(material.metallicReflectanceTexture);
+    // Non-vertex exts — iterate in composer's topological order (from
+    // composed.fragmentKey) so bind entries align with the emitted BGL.
+    const seenExts = new Set<import("./pbr-flags.js").PbrExt>();
+    for (const fid of fragIds) {
+        const ext = extByFragId.get(fid);
+        if (!ext || ext.phase === "vertex" || !ext.bind || seenExts.has(ext)) {
+            continue;
         }
-        if (material.reflectanceTexture) {
-            addTex(material.reflectanceTexture);
-        }
+        seenExts.add(ext);
+        b = ext.bind(ctx, entries, b);
     }
-    // Fragment bindings: subsurface thickness map (after reflectance, "subsurface" sorts last)
-    _getSubsurfaceExt()?.bind(features, material, entries, b);
 
     return device.createBindGroup({ layout: variant.meshBGL, entries });
 }

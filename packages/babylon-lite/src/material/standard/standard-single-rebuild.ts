@@ -146,8 +146,7 @@ export function buildSingleStandardRenderable(scene: SceneContext, mesh: Mesh): 
                 return 0;
             }
             const g = (mesh as MeshInternal)._gpu;
-            pass.setPipeline(variant.pipeline);
-            pass.setBindGroup(0, variant.sceneBG);
+            // Pipeline + sceneBG are set by engine.drawList via _pipeline/_sceneBG.
             pass.setVertexBuffer(0, g.positionBuffer);
             pass.setVertexBuffer(1, g.normalBuffer);
             if (needsUV) {

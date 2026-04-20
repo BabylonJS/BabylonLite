@@ -7,8 +7,19 @@ import type { Mesh } from "../mesh/mesh.js";
 import type { GltfAnimationData, AnimationClip, AnimationSampler, AnimationChannel, NodeRest, SkeletonBinding, MorphBinding } from "../animation/types.js";
 import { INTERP_LINEAR, INTERP_STEP, INTERP_CUBICSPLINE, PATH_TRANSLATION, PATH_ROTATION, PATH_SCALE, PATH_WEIGHTS } from "../animation/types.js";
 import { mat4Invert, mat4Identity, mat4Multiply } from "../math/mat4.js";
-import type { GltfSkinData } from "./load-gltf.js";
 import { resolveAccessor, computeNodeWorldMatrix, findParent } from "./gltf-parser.js";
+
+/** Parsed skin/skeleton data. */
+export interface GltfSkinData {
+    /** Node indices of joints in this skin. */
+    jointNodes: number[];
+    /** Inverse bind matrices — one 4×4 per joint (column-major Float32Array). */
+    inverseBindMatrices: Float32Array;
+    /** World matrices of each joint at rest pose. */
+    jointWorldMatrices: Mat4[];
+    /** World matrix of the mesh node that owns this skin. */
+    meshWorldMatrix: Mat4;
+}
 
 // ─── Skin / Skeleton Extraction ─────────────────────────────────────
 

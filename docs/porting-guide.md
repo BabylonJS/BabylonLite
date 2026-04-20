@@ -326,7 +326,12 @@ feature is tree-shakable: scenes that don't use it pay no bundle cost.
 | `KHR_materials_sheen` | ✅ | Auto-detected (BJS-spec albedo scaling for glTF); or `createPbrMaterial({ sheen: { ... } })` |
 | `KHR_materials_anisotropy` | ✅ | Auto-detected; or `createPbrMaterial({ anisotropy: { ... } })` |
 | `KHR_materials_variants` | ✅ | `selectVariant(scene, name)`, `getVariantNames(scene)`, `resetVariant(scene)` |
+| `KHR_materials_ior` | ✅ | Auto-detected; index of refraction for dielectrics (Scene 30) |
+| `KHR_materials_specular` | ✅ | Auto-detected; dielectric specular intensity + color (Scene 30) |
+| `KHR_materials_volume` | ✅ | Auto-detected; attenuation color/distance + thickness (Scene 30) |
+| `KHR_materials_transmission` | ⚡ | V1 env-only refraction via IBL cube + Beer-Lambert (Scene 30). Full opaque-scene RTT refraction pending frame-graph. |
 | `KHR_texture_transform` | ✅ | Auto-resolved at load (material-wide UV transform) |
+| `KHR_draco_mesh_compression` | ✅ | Auto-detected; loads `draco_decoder.js` + `.wasm` on demand from site root (override via `setDracoBaseUrl()`) |
 | Subsurface translucency + thickness | ✅ | `createPbrMaterial({ subsurface: { translucency, thickness } })` |
 | Specular anti-aliasing | ✅ | Auto-on for glTF; manual: `createPbrMaterial({ enableSpecularAA: true })` |
 | Morph targets | ✅ | PBR meshes only (not `StandardMaterial`) |

@@ -96,6 +96,9 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
         }
     }
     const hasSomeShadows = shadowLights.length > 0;
+    // Shadow bind group cache — within this build, all receiving meshes share the
+    // same shadow generators, so keying by variant.shadowBGL alone is correct.
+    const shadowBGCache = new Map<GPUBindGroupLayout, GPUBindGroup>();
 
     // Per-mesh light filtering: bitmask cache (MAX_LIGHTS=4 → at most 16 entries).
     // When no light has filtering, all meshes hit the same bitmask → one shared UBO.
@@ -209,6 +212,7 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
             material: mat,
             lightsBuffer,
             shadowGenerators: meshShadowGens,
+            shadowBGCache,
         });
         group.packets.push({ mesh, gpu, _lastMaterial: mat, _lastWorldVersion: mesh.worldMatrixVersion });
 
@@ -267,8 +271,7 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
                 }
             },
             draw(pass: GPURenderPassEncoder | GPURenderBundleEncoder) {
-                pass.setPipeline(variant.pipeline);
-                pass.setBindGroup(0, variant.sceneBG);
+                // Pipeline + sceneBG are set by engine.drawList via _pipeline/_sceneBG.
                 let draws = 0;
                 for (const pkt of packets) {
                     if (pkt.mesh.material !== pkt._lastMaterial) {

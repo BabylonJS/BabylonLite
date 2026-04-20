@@ -15,6 +15,12 @@ export interface SceneConfig {
     maxRegionMad?: number;
     maxRawKB?: number;
     maxGzipKB?: number;
+    /** Optional human-readable caveat rendered on lab cards (e.g. temporarily relaxed ceilings). */
+    note?: string;
+    /** Skip this scene in parity tests. */
+    skipParity?: boolean;
+    /** Skip this scene in perf tests. */
+    skipPerf?: boolean;
 }
 
 let _sceneConfigCache: SceneConfig[] | null = null;
