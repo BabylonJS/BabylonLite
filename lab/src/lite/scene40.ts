@@ -7,7 +7,7 @@
 //   - The renderable's per-frame walker resolves world translation from the
 //     parent's worldMatrix and writes it into the slot.
 //
-// Lab-only demo — moving 3D box with a label sprite parented to it.
+// Honours `?seekTime=` for deterministic golden capture (per GUIDANCE.md §2c).
 
 import {
     addAnchoredSprite,
@@ -31,6 +31,12 @@ async function main(): Promise<void> {
     const engine = await createEngine(canvas);
     const scene = createSceneContext(engine);
     scene.clearColor = { r: 0.04, g: 0.06, b: 0.1, a: 1 };
+
+    const seekParam = new URLSearchParams(location.search).get("seekTime");
+    const seekTime = seekParam !== null ? parseFloat(seekParam) : null;
+    if (seekTime !== null) {
+        scene.fixedDeltaMs = 16.667;
+    }
 
     scene.camera = createArcRotateCamera(-Math.PI / 2, Math.PI / 3, 9, { x: 0, y: 0.5, z: 0 });
     scene.camera.fov = Math.PI / 4;
@@ -57,19 +63,32 @@ async function main(): Promise<void> {
     const layer = createAnchoredSpriteLayer(atlas, { capacity: 4, blendMode: "alpha" });
     addToScene(scene, layer);
 
-    // Label sprite parented to the box. Local position = (0, 0.8, 0) puts it
-    // 0.8 world-units above the box origin; pixel offset nudges it visually.
+    // Label sprite parented to the box at local (0, 0.8, 0) — pure world-space
+    // anchor (no pixel offset), so the BJS reference plane at the same local
+    // position is comparable.
     const label = addAnchoredSprite(layer, {
         position: [0, 0.8, 0],
         sizePx: [56, 56],
-        offsetPx: [0, -32],
         frame: 0,
     });
     label.parent = box;
 
     let t = 0;
+    const targetFrames = seekTime !== null ? Math.round(seekTime * 60) : 0;
+    let frameCounter = 0;
     onBeforeRender(scene, (dt) => {
-        t += dt / 1000;
+        if (seekTime !== null) {
+            // Frozen-tick mode: advance by exactly 16.667ms per frame, freeze
+            // after `targetFrames` advances (first frame's dt is 0).
+            const advances = Math.min(frameCounter, targetFrames);
+            t = (advances * 16.667) / 1000;
+            frameCounter++;
+            if (frameCounter === targetFrames + 1) {
+                canvas.dataset.animationFrozen = "true";
+            }
+        } else {
+            t += dt / 1000;
+        }
         box.position.x = Math.cos(t * 0.6) * 2;
         box.position.z = Math.sin(t * 0.6) * 2;
     });

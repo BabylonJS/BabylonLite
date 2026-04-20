@@ -22,6 +22,9 @@ import { BILLBOARD_ATLAS_INFO, BILLBOARD_ATLAS_URL } from "../_shared/sprite-bil
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0.04, 0.06, 0.1, 1);
 
+    const seekParam = new URLSearchParams(location.search).get("seekTime");
+    const seekTime = seekParam !== null ? parseFloat(seekParam) : null;
+
     const cam = new ArcRotateCamera("cam", -Math.PI / 2, Math.PI / 3, 9, new Vector3(0, 0.5, 0), scene);
     cam.fov = Math.PI / 4;
     cam.minZ = 0.1;
@@ -69,8 +72,23 @@ import { BILLBOARD_ATLAS_INFO, BILLBOARD_ATLAS_URL } from "../_shared/sprite-bil
     const tmpUp = new Vector3();
     const tmpFwd = new Vector3();
     const basis = new Matrix();
+
+    // Frame-counter-driven animation: matches Lite's fixedDeltaMs=16.667 tick
+    // so screenshots agree at the same `seekTime`. First frame's dt is 0.
+    let frameCounter = 0;
+    const targetFrames = seekTime !== null ? Math.round(seekTime * 60) : 0;
     scene.onBeforeRenderObservable.add(() => {
-        const t = (performance.now() - __initStart) / 1000;
+        let t: number;
+        if (seekTime !== null) {
+            const advances = Math.min(frameCounter, targetFrames);
+            t = (advances * 16.667) / 1000;
+            frameCounter++;
+            if (frameCounter === targetFrames + 1) {
+                canvas.dataset.animationFrozen = "true";
+            }
+        } else {
+            t = (performance.now() - __initStart) / 1000;
+        }
         box.position.x = Math.cos(t * 0.6) * 2;
         box.position.z = Math.sin(t * 0.6) * 2;
         const wm = cam.getWorldMatrix().m;

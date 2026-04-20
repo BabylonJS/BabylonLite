@@ -8,16 +8,18 @@ import { test, expect } from "@playwright/test";
 import * as path from "path";
 import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
 
+const SEEK_TIME = 1.5;
 const sceneConfig = getSceneConfig(41);
 const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene41-billboard-handles");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test("Scene 41 — Billboard Sprite Handles + 3D Parenting matches BJS reference", async ({ page }, testInfo) => {
+test("Scene 41 — Billboard Sprite Handles + 3D Parenting matches BJS reference at seekTime=1.5s", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
-    await captureGolden(browser, { sceneId: 41 });
+    await captureGolden(browser, { sceneId: 41, seekTime: SEEK_TIME });
 
-    await page.goto("/scene41.html");
+    await page.goto(`/scene41.html?seekTime=${SEEK_TIME}`);
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 20_000 });
+    await page.waitForFunction(() => document.querySelector("canvas")?.dataset.animationFrozen === "true", { timeout: 20_000 });
     await page.waitForTimeout(500);
 
     const screenshotPath = path.join(REFERENCE_DIR, "test-actual.png");

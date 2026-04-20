@@ -23,6 +23,9 @@ import { getLabelAtlasDataUrl, LABEL_ATLAS_INFO } from "../_shared/sprite-label-
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0.04, 0.06, 0.1, 1);
 
+    const seekParam = new URLSearchParams(location.search).get("seekTime");
+    const seekTime = seekParam !== null ? parseFloat(seekParam) : null;
+
     const cam = new ArcRotateCamera("cam", -Math.PI / 2, Math.PI / 3, 9, new Vector3(0, 0.5, 0), scene);
     cam.fov = Math.PI / 4;
     cam.minZ = 0.1;
@@ -37,12 +40,18 @@ import { getLabelAtlasDataUrl, LABEL_ATLAS_INFO } from "../_shared/sprite-label-
     box.position.y = 0.5;
 
     const atlasTex = await new Promise<Texture>((resolve) => {
-        const t = new Texture(getLabelAtlasDataUrl(), scene, true, false, Texture.LINEAR_LINEAR);
+        // 5th arg `invertY=true` (BJS default): the previous `false` left the
+        // atlas upside-down on the textured plane, mirroring the label glyph.
+        const t = new Texture(getLabelAtlasDataUrl(), scene, true, true, Texture.LINEAR_LINEAR);
         t.wrapU = Texture.CLAMP_ADDRESSMODE;
         t.wrapV = Texture.CLAMP_ADDRESSMODE;
         t.hasAlpha = true;
         t.uScale = LABEL_ATLAS_INFO.cellWidthPx / LABEL_ATLAS_INFO.widthPx;
         t.vScale = LABEL_ATLAS_INFO.cellHeightPx / LABEL_ATLAS_INFO.heightPx;
+        // invertY=true flips V on upload, so the default (vOffset=0) sample
+        // hits the original bottom-left tile ("C"). Offset by 0.5 so we sample
+        // the original top-left tile ("A") to match Lite's frame=0.
+        t.vOffset = 0.5;
         if (t.isReady()) {
             resolve(t);
         } else {
@@ -62,7 +71,7 @@ import { getLabelAtlasDataUrl, LABEL_ATLAS_INFO } from "../_shared/sprite-label-
     // Label plane "anchored" to box-top with a fixed pixel offset is hard to
     // simulate exactly without per-frame projection math; for this lab demo we
     // just translate it 0.8 units above the box (matches the Lite scene's
-    // local position before pixel offset) and parent it to the box.
+    // local position) and parent it to the box.
     const label = MeshBuilder.CreatePlane("label", { width: 0.8, height: 0.8 }, scene);
     label.material = labelMat;
     label.position = new Vector3(0, 0.8, 0);
@@ -74,8 +83,24 @@ import { getLabelAtlasDataUrl, LABEL_ATLAS_INFO } from "../_shared/sprite-label-
     const tmpFwd = new Vector3();
     const basis = new Matrix();
     label.rotationQuaternion = Quaternion.Identity();
+
+    // Frame-counter-driven animation: matches Lite's fixedDeltaMs=16.667
+    // tick exactly so screenshots agree at the same `seekTime`. First frame's
+    // dt is 0 (engine.ts §_renderFn) so we need (target+1) total frames.
+    let frameCounter = 0;
+    const targetFrames = seekTime !== null ? Math.round(seekTime * 60) : 0;
     scene.onBeforeRenderObservable.add(() => {
-        const t = (performance.now() - __initStart) / 1000;
+        let t: number;
+        if (seekTime !== null) {
+            const advances = Math.min(frameCounter, targetFrames);
+            t = (advances * 16.667) / 1000;
+            frameCounter++;
+            if (frameCounter === targetFrames + 1) {
+                canvas.dataset.animationFrozen = "true";
+            }
+        } else {
+            t = (performance.now() - __initStart) / 1000;
+        }
         box.position.x = Math.cos(t * 0.6) * 2;
         box.position.z = Math.sin(t * 0.6) * 2;
         const wm = cam.getWorldMatrix().m;

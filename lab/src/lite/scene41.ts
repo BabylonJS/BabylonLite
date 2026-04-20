@@ -27,6 +27,12 @@ async function main(): Promise<void> {
     const scene = createSceneContext(engine);
     scene.clearColor = { r: 0.04, g: 0.06, b: 0.1, a: 1 };
 
+    const seekParam = new URLSearchParams(location.search).get("seekTime");
+    const seekTime = seekParam !== null ? parseFloat(seekParam) : null;
+    if (seekTime !== null) {
+        scene.fixedDeltaMs = 16.667;
+    }
+
     scene.camera = createArcRotateCamera(-Math.PI / 2, Math.PI / 3, 9, { x: 0, y: 0.5, z: 0 });
     scene.camera.fov = Math.PI / 4;
     scene.camera.nearPlane = 0.1;
@@ -60,8 +66,19 @@ async function main(): Promise<void> {
     glow.parent = box;
 
     let t = 0;
+    const targetFrames = seekTime !== null ? Math.round(seekTime * 60) : 0;
+    let frameCounter = 0;
     onBeforeRender(scene, (dt) => {
-        t += dt / 1000;
+        if (seekTime !== null) {
+            const advances = Math.min(frameCounter, targetFrames);
+            t = (advances * 16.667) / 1000;
+            frameCounter++;
+            if (frameCounter === targetFrames + 1) {
+                canvas.dataset.animationFrozen = "true";
+            }
+        } else {
+            t += dt / 1000;
+        }
         box.position.x = Math.cos(t * 0.6) * 2;
         box.position.z = Math.sin(t * 0.6) * 2;
     });

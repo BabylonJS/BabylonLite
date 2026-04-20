@@ -28,6 +28,12 @@ async function main(): Promise<void> {
 
     const scene = createScene2DContext(engine, { clearColor: { r: 0.05, g: 0.06, b: 0.09, a: 1 } });
 
+    const seekParam = new URLSearchParams(location.search).get("seekTime");
+    const seekTime = seekParam !== null ? parseFloat(seekParam) : null;
+    if (seekTime !== null) {
+        scene.fixedDeltaMs = 16.667;
+    }
+
     const atlas = await loadSpriteAtlas(engine, getSpriteAtlasDataUrl(), {
         cellWidthPx: SPRITE_ATLAS_INFO.cellWidthPx,
         cellHeightPx: SPRITE_ATLAS_INFO.cellHeightPx,
@@ -57,8 +63,19 @@ async function main(): Promise<void> {
     healthBar.parent = character;
 
     let t = 0;
+    const targetFrames = seekTime !== null ? Math.round(seekTime * 60) : 0;
+    let frameCounter = 0;
     onBeforeRender2D(scene, (dt) => {
-        t += dt / 1000;
+        if (seekTime !== null) {
+            const advances = Math.min(frameCounter, targetFrames);
+            t = (advances * 16.667) / 1000;
+            frameCounter++;
+            if (frameCounter === targetFrames + 1) {
+                canvas.dataset.animationFrozen = "true";
+            }
+        } else {
+            t += dt / 1000;
+        }
         const x = canvas.width / 2 + Math.cos(t * 0.8) * (canvas.width / 2 - 120);
         character.position.x = x;
         character.rotation = Math.sin(t) * 0.1;
