@@ -334,5 +334,25 @@
         "description": "Havok Physics V2 sphere drop. Sphere falls onto ground under gravity with restitution bounce.",
         "tags": ["std", "procedural", "physics"],
         "skipPerf": true
+    },
+    {
+        "id": 50,
+        "slug": "scene50-pure-2d-sprites",
+        "name": "Scene 50 — Pure 2D Sprites",
+        "maxMad": 0.5,
+        "maxRawKB": 30,
+        "description": "Five static sprites from a 4×4 grid atlas, no SceneContext, no camera, no lights. Pure-2D bundle (forbids scene/scene-core).",
+        "tags": ["sprites", "2d"],
+        "skipPerf": true
+    },
+    {
+        "id": 51,
+        "slug": "scene51-sprite-grid",
+        "name": "Scene 51 — Sprite Grid (v2)",
+        "maxMad": 0.1,
+        "maxRawKB": 21,
+        "description": "25×10 grid of icon sprites with cycled tints and rotated thirds, rendered via the v2 sprite API. BJS SpriteManager oracle.",
+        "tags": ["sprites", "2d"],
+        "skipPerf": true
     }
 ]

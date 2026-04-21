@@ -439,7 +439,11 @@ function writeBundleInfo(scene: string, result: unknown): void {
 const sceneConfig: { id: number }[] = JSON.parse(readFileSync(resolve(ROOT, "scene-config.json"), "utf-8"));
 const ALL_SCENES = sceneConfig.map((s) => `scene${s.id}`);
 const SCENES = process.env.BUNDLE_SCENES ? process.env.BUNDLE_SCENES.split(",") : ALL_SCENES;
-const BJS_SCENES = process.env.SKIP_BJS ? [] : SCENES.map((s) => `bjs-${s}`);
+// Skip BJS counterparts for scenes that don't have a `lab/src/bjs/sceneN.ts` source
+// (e.g. pure-2D sprites scenes — `scene50` — that we own end-to-end with no BJS oracle).
+const BJS_SCENES = process.env.SKIP_BJS
+    ? []
+    : SCENES.map((s) => `bjs-${s}`).filter((bjs) => existsSync(resolve(labDir, `src/bjs/${bjs.slice(4)}.ts`)));
 
 function getAllJsFiles(dir: string): string[] {
     const results: string[] = [];

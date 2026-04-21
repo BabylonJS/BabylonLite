@@ -104,7 +104,7 @@ _The `RenderingContext` interface, `_renderingContexts` list, `registerScene`/`u
 
 ---
 
-### PR 1 — Pure 2D sprites _(first PR; first new visual)_
+### PR 1 — Pure 2D sprites _(first PR; first new visual)_ ✅ shipped on `lite-2d-v2`
 
 **Goal:** sprites on screen with no `Scene` involved at all.
 

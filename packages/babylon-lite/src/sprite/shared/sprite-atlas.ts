@@ -1,0 +1,199 @@
+/**
+ * Sprite atlas — shared foundation for `Sprite2DLayer` (and, in later PRs,
+ * billboards). A `SpriteAtlas` is a pure data record: a `Texture2D` plus
+ * an immutable list of `SpriteFrame`s and an optional clip table. The same
+ * atlas may back multiple layers / scenes; lifetime is governed by the
+ * underlying `Texture2D`.
+ *
+ * PR 1 ships only the grid-based atlas constructor and the loader, and
+ * stubs `createNamedSpriteAtlas` for forward-compat. Clips, named atlases,
+ * and TexturePacker JSON metadata land in later PRs.
+ */
+import type { EngineContext } from "../../engine/engine.js";
+import type { Texture2D, Texture2DOptions } from "../../texture/texture-2d.js";
+import { loadTexture2D } from "../../texture/texture-2d.js";
+
+/** Texture sampling mode for a sprite atlas. */
+export type SpriteSampling = "linear" | "nearest";
+
+/** Output blend mode for a sprite layer. PR 1 supports `"alpha"` and `"premultiplied"`. */
+export type SpriteBlendMode = "alpha" | "premultiplied" | "additive" | "multiply" | "cutout";
+
+/** A frame can be referenced by index (number) or by name (string). */
+export type SpriteFrameRef = number | string;
+
+/** A single frame in an atlas. UVs in [0,1]; pivot in [0,1] of the frame. */
+export interface SpriteFrame {
+    readonly name?: string;
+    readonly uvMin: readonly [number, number];
+    readonly uvMax: readonly [number, number];
+    readonly sourceSizePx: readonly [number, number];
+    readonly pivot: readonly [number, number];
+}
+
+/** Forward-compat shape; clip animation lands in a later PR. */
+export interface SpriteClip {
+    readonly name: string;
+    readonly frames: readonly number[];
+    readonly fps: number;
+    readonly loop: boolean;
+}
+
+/** A loaded sprite atlas — pure data, no methods. */
+export interface SpriteAtlas {
+    readonly texture: Texture2D;
+    readonly textureSizePx: readonly [number, number];
+    readonly frames: readonly SpriteFrame[];
+    readonly clips: readonly SpriteClip[];
+    readonly sampling: SpriteSampling;
+    readonly premultipliedAlpha: boolean;
+    /** @internal name → frame index lookup. */
+    readonly _frameByName: ReadonlyMap<string, number>;
+    /** @internal name → clip index lookup. */
+    readonly _clipByName: ReadonlyMap<string, number>;
+}
+
+/** Options for `createGridSpriteAtlas`. */
+export interface GridAtlasOptions {
+    cellWidthPx: number;
+    cellHeightPx: number;
+    /** Defaults to `floor(textureWidth / cellWidthPx)`. */
+    columns?: number;
+    /** Defaults to `floor(textureHeight / cellHeightPx)`. */
+    rows?: number;
+    marginPx?: number;
+    spacingPx?: number;
+    /** Default `[0.5, 0.5]`. */
+    pivot?: readonly [number, number];
+    sampling?: SpriteSampling;
+    premultipliedAlpha?: boolean;
+    /** Forward-compat; ignored in PR 1. */
+    clips?: readonly SpriteClip[];
+}
+
+/** Options for `loadSpriteAtlas`. PR 1 supports the `gridSize` path only. */
+export interface LoadAtlasOptions {
+    /** Grid cell size `[w, h]` in pixels. Required in PR 1. */
+    gridSize?: readonly [number, number];
+    /** Reserved for future PR — TexturePacker-style JSON. Throws if used in PR 1. */
+    metadataUrl?: string;
+    sampling?: SpriteSampling;
+    premultipliedAlpha?: boolean;
+    textureOptions?: Texture2DOptions;
+    /** Forward-compat; ignored in PR 1. */
+    clips?: readonly SpriteClip[];
+}
+
+const EMPTY_CLIPS: readonly SpriteClip[] = [];
+const EMPTY_CLIP_BY_NAME: ReadonlyMap<string, number> = new Map();
+
+/**
+ * Build a `SpriteAtlas` from a uniform grid over an existing texture. All
+ * cells share the supplied pivot. Frames are emitted row-major (top-left
+ * first). No name lookup map is populated because grid cells have no names.
+ */
+export function createGridSpriteAtlas(texture: Texture2D, options: GridAtlasOptions): SpriteAtlas {
+    const cellW = options.cellWidthPx;
+    const cellH = options.cellHeightPx;
+    const margin = options.marginPx ?? 0;
+    const spacing = options.spacingPx ?? 0;
+    const cols = options.columns ?? Math.max(1, Math.floor((texture.width - margin * 2 + spacing) / (cellW + spacing)));
+    const rows = options.rows ?? Math.max(1, Math.floor((texture.height - margin * 2 + spacing) / (cellH + spacing)));
+    const pivot = options.pivot ?? [0.5, 0.5];
+
+    const tw = texture.width;
+    const th = texture.height;
+    const frames: SpriteFrame[] = [];
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const x = margin + c * (cellW + spacing);
+            const y = margin + r * (cellH + spacing);
+            frames.push({
+                uvMin: [x / tw, y / th],
+                uvMax: [(x + cellW) / tw, (y + cellH) / th],
+                sourceSizePx: [cellW, cellH],
+                pivot: [pivot[0], pivot[1]],
+            });
+        }
+    }
+
+    return {
+        texture,
+        textureSizePx: [tw, th],
+        frames,
+        clips: options.clips ?? EMPTY_CLIPS,
+        sampling: options.sampling ?? "linear",
+        premultipliedAlpha: options.premultipliedAlpha ?? true,
+        _frameByName: new Map(),
+        _clipByName: EMPTY_CLIP_BY_NAME,
+    };
+}
+
+/**
+ * Reserved for a later PR. Building an atlas from a named frame table is
+ * not implemented in PR 1; it will accept the same shape as the
+ * documented spec when added.
+ */
+export function createNamedSpriteAtlas(
+    _texture: Texture2D,
+    _frames: readonly SpriteFrame[],
+    _clips?: readonly SpriteClip[],
+    _options?: { sampling?: SpriteSampling; premultipliedAlpha?: boolean }
+): SpriteAtlas {
+    throw new Error("createNamedSpriteAtlas is not yet implemented (lands in a later PR).");
+}
+
+/**
+ * Load a sprite atlas from an image URL. PR 1 supports only the
+ * `gridSize` path: the texture is fetched as a non-Y-flipped image
+ * (so atlas UVs map top-down with `(0,0)` at the image top-left) and
+ * partitioned into a grid via `createGridSpriteAtlas`.
+ */
+export async function loadSpriteAtlas(engine: EngineContext, textureUrl: string, options: LoadAtlasOptions = {}): Promise<SpriteAtlas> {
+    if (options.metadataUrl !== undefined) {
+        throw new Error("loadSpriteAtlas: metadataUrl is not implemented in PR 1.");
+    }
+    if (!options.gridSize) {
+        throw new Error("loadSpriteAtlas: options.gridSize is required in PR 1.");
+    }
+
+    const texOpts: Texture2DOptions = {
+        // Sprite UVs are top-down (origin at image top-left); do not flip.
+        invertY: false,
+        // Atlas frames typically tile cleanly; use clamp to avoid bleeding from neighbouring cells at edges.
+        addressModeU: "clamp-to-edge",
+        addressModeV: "clamp-to-edge",
+        // Sprites usually look best with bilinear filtering and no mip chain — sharp pixel art still works in nearest.
+        mipMaps: false,
+        minFilter: options.sampling === "nearest" ? "nearest" : "linear",
+        magFilter: options.sampling === "nearest" ? "nearest" : "linear",
+        ...options.textureOptions,
+    };
+
+    const texture = await loadTexture2D(engine, textureUrl, texOpts);
+    return createGridSpriteAtlas(texture, {
+        cellWidthPx: options.gridSize[0],
+        cellHeightPx: options.gridSize[1],
+        sampling: options.sampling ?? "linear",
+        // PNGs are decoded by `createImageBitmap` with `premultiplyAlpha: "none"`,
+        // but the canonical sprite path treats them as premultiplied so the blend
+        // pipeline picks `srcFactor: ONE`. Force-on per the PR 1 scope.
+        premultipliedAlpha: options.premultipliedAlpha ?? true,
+        clips: options.clips,
+    });
+}
+
+/** Resolve a `SpriteFrameRef` (index or name) to a frame index. Throws if unknown. */
+export function resolveSpriteFrame(atlas: SpriteAtlas, frame: SpriteFrameRef): number {
+    if (typeof frame === "number") {
+        if (frame < 0 || frame >= atlas.frames.length) {
+            throw new Error(`resolveSpriteFrame: index ${frame} out of range [0, ${atlas.frames.length})`);
+        }
+        return frame;
+    }
+    const idx = atlas._frameByName.get(frame);
+    if (idx === undefined) {
+        throw new Error(`resolveSpriteFrame: no frame named "${frame}"`);
+    }
+    return idx;
+}
