@@ -1,7 +1,7 @@
 /**
  * Scene 50 — Sprite Grid Parity Test
  *
- * Compares Babylon Lite's v2 sprite renderer rendering of a 25×10 sprite grid
+ * Compares Babylon Lite's sprite renderer rendering of a 25×10 sprite grid
  * against the Babylon.js SpriteManager rendering of the same grid (oracle).
  * Golden is captured automatically from the BJS reference page on first run
  * (or when RECAPTURE_GOLDEN=1 is set).

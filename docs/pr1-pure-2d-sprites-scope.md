@@ -2,8 +2,8 @@
 
 > **Source spec:** [`architecture/26-sprites.md`](architecture/26-sprites.md)
 > **Parent plan:** [`sprites-implementation-plan.md`](sprites-implementation-plan.md)
-> **Branch:** `lite-2d-v2`
-> **Status:** not started
+> **Branch:** `lite-2d`
+> **Status:** shipped
 
 ## Purpose
 
@@ -245,7 +245,7 @@ Cases (each uses a stub engine / mocked `GPUDevice`; follow the pattern of exist
 
 ## What "done" looks like
 
-One commit (or a small, obviously-related series) on `lite-2d-v2` that:
+One commit (or a small, obviously-related series) on `lite-2d` that:
 
 - Adds the files listed above.
 - Exports the listed public API.

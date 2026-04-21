@@ -1,8 +1,8 @@
-// Scene 50 — Sprite Grid (v2 sprite API)
+// Scene 50 — Sprite Grid
 //
-// Replicates the visual idea of lite-2d's scene50: a deterministic 25×10 grid
-// of icon sprites with cycled tints and rotated thirds, rendered via the v2
-// pure-2D sprite API (createSpriteRenderer / registerSpriteRenderer).
+// A deterministic 25×10 grid of icon sprites with cycled tints and rotated
+// thirds, rendered via the pure-2D sprite API
+// (createSpriteRenderer / registerSpriteRenderer).
 
 import { addSprite2DIndex, createEngine, createSprite2DLayer, createSpriteRenderer, loadSpriteAtlas, registerSpriteRenderer, startEngine } from "babylon-lite";
 import { getSpriteAtlasDataUrl, SPRITE_ATLAS_INFO } from "../_shared/sprite-atlas-image";

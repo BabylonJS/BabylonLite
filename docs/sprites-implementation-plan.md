@@ -104,7 +104,7 @@ _The `RenderingContext` interface, `_renderingContexts` list, `registerScene`/`u
 
 ---
 
-### PR 1 — Pure 2D sprites _(first PR; first new visual)_ ✅ shipped on `lite-2d-v2`
+### PR 1 — Pure 2D sprites _(first PR; first new visual)_ ✅ shipped
 
 **Goal:** sprites on screen with no `Scene` involved at all.
 
@@ -263,6 +263,6 @@ These apply to every PR:
 
 ## Open items
 
-- **Branch name** for the new clean branch off `master` — suggest `lite-sprites` or `lite-2d-v2`. User's choice.
+- **Branch name** for the new clean branch off `master` — suggest `lite-sprites` or `lite-2d`. User's choice.
 - **PR 4 — keep or unify branches?** Decide whether `anchored-sprite-layer` / `billboard-sprite-system` discriminators get unified under `sprite-2d-layer` or stay distinct. Defer to PR 4 author.
 - **Reconcile `sprites-scene-engine-changes-review.md`** with master's actual `RenderingContext` shape (review doc references the older `EngineRenderer` proposal). Cleanup task during PR 1.
