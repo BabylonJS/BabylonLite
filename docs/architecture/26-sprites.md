@@ -1,15 +1,26 @@
-# Module: Sprites (Unified Scene)
+# Module: Sprites
 
 > Package path: `packages/babylon-lite/src/sprite/`
 >
-> This is the standalone, one-shot architecture document for the sprites
-> module and the unified scene model that hosts it. A pure-2D app, a
-> pure-3D app, and a mixed 2D+3D app all use **one** `createSceneContext`,
-> **one** `addToScene`, **one** `startEngine`. Two sprite families are
-> defined: `Sprite2DLayer` (the foundation; pixel-coordinate quads, with
-> an opt-in world-anchor adapter for "2.5D" labels) and
-> `*BillboardSpriteSystem` (world-coordinate, perspective-correct,
-> camera-oriented quads in three orientation variants).
+> This is the standalone, one-shot architecture document for the sprite
+> module. Two sprite families are defined: `Sprite2DLayer` (the
+> foundation; pixel-coordinate quads, with an opt-in world-anchor adapter
+> for "2.5D" labels) and `*BillboardSpriteSystem` (world-coordinate,
+> perspective-correct, camera-oriented quads in three orientation
+> variants).
+>
+> The engine grows a small registration list. Two kinds of things can be
+> registered with an engine: a `SceneContext` (via `registerScene(engine, scene)`)
+> and a `SpriteRenderer` (via `registerSpriteRenderer(engine, sr)`). Each is
+> driven once per frame by `startEngine(engine)` in registration order.
+> Pure-2D experiences (Lottie/Rive-class apps) create a `SpriteRenderer`
+> and register it on the engine — no `SceneContext`, no `addToScene`.
+> Scene-based apps register a `SceneContext`, and the existing
+> `addToScene` switch gains one new `_entityType` branch for
+> `"sprite-2d-layer"` that creates / configures an internal
+> `SpriteRenderer` for HUD-overlay layers and routes depth-hosted layers
+> through the existing renderable system. The `SceneContext` shape and
+> `addToScene` switch body are otherwise unchanged.
 >
 > This document contains the full specification needed to implement the
 > module from scratch — public API, internal architecture, GPU layouts,
@@ -23,19 +34,18 @@ Lite's design rule is "build things on top of previous things." Sprites are
 2D quads. World-anchored ("2.5D") labels are 2D quads whose pixel position
 is computed each frame from a 3D anchor. Camera-facing world-sized
 billboards are different geometry (world-unit size, perspective
-foreshortening, depth participation), and so they remain a separate family —
-but they register through the **same** scene as everything else.
+foreshortening, depth participation), and so they remain a separate family.
 
-The module exposes **two** sprite families on a **single, dimension-agnostic
-`SceneContext`**:
+The module exposes **two** sprite families:
 
 1. **`Sprite2DLayer`** — the foundation. Pixel-coordinate quads, no view
-   matrix, no perspective divide, no required camera. Hosted by either:
-    - the `OverlayStage` (no depth attachment, MSAA = 1, swap-chain only) —
-      the default; or
-    - the `Scene3DStage` (the same MSAA + depth attachment the 3D pass uses)
-      — opted into per layer with `depth: "test"`, used when sprites must
-      occlude behind 3D geometry (anchored labels, world UI markers, etc.).
+   matrix, no perspective divide, no required camera. Each layer chooses
+   its depth participation at construction (`depth: "none" | "test" | "test-write"`),
+   which becomes part of the pipeline cache key. The same layer factory
+   serves both pure-2D apps (no scene; layers handed to a `SpriteRenderer`
+   that is registered on the engine) and scene-based HUD/anchored-label
+   use cases (added via `addToScene`; the scene creates the
+   `SpriteRenderer` for HUD layers internally).
 
     World-anchored sprites are not a separate family. They are
     `Sprite2DLayer` sprites with an opt-in `AnchorSource` adapter that runs
@@ -44,15 +54,14 @@ The module exposes **two** sprite families on a **single, dimension-agnostic
     `positionPx` (and optionally a derived `layerZ`) directly into the same
     80-byte instance slot a pure-2D sprite uses. The vertex shader,
     per-instance layout, packed buffer, and pipeline are **identical** to a
-    pure-2D layer; the only difference is which stage hosts the layer
-    (baked at construction, in the pipeline cache key — never branched per
-    frame).
+    pure-2D layer.
 
 2. **`*BillboardSpriteSystem`** — three orientation factories
    (`Facing`, `YawLocked`, `AxisLocked`), each with its own WGSL composer,
    pipeline, and dynamic-import chunk. World-coordinate quads, world-unit
-   size, perspective foreshortening, full depth participation. Hosted by
-   the `Scene3DStage` only.
+   size, perspective foreshortening, full depth participation. Drawn
+   inside the scene's 3D pass; not usable from the pure-2D path (no
+   camera).
 
 `SpriteAtlas`, `SpriteFrame`, `SpriteClip`, `SpriteClipState`, the per-clip
 animation tick, the handle/index two-tier API, and parenting are all shared
@@ -60,30 +69,31 @@ across both families and orthogonal to family.
 
 ### Pillars (front and centre)
 
-- **No `if` on render path.** Family selection, anchor mode, depth mode,
-  and stage hosting are all decided at layer/system construction time and
-  baked into the pipeline cache key. The per-frame loop walks fixed
-  arrays, with no scene-mode branch and no per-sprite mode test.
+- **No `if` on render path.** Family selection, anchor mode, and depth
+  mode are all decided at layer/system construction time and baked into
+  the pipeline cache key. The per-frame draw walks fixed arrays, with
+  no per-sprite mode test.
 - **Pay-for-use.** A pure-2D app's static import graph terminates at
-  `engine` + `scene-core` + `sprite-2d` (+ atlas/animation helpers). It
-  never names `Camera`, `Mesh`, `LightBase`, `Sprite3DSceneUBO`,
-  `Scene3DStage`, depth attachment, MSAA targets, billboard variants, or
-  anchor projection code. The 3D fields on `SceneContext`
-  (`camera?: Camera`, `lights?: LightBase[]`, …) are `import type` only
-  — TypeScript erases them at compile time, so pure-2D bundles never
-  fetch the `Camera` / `LightBase` / `Mesh` runtime classes.
-  Tree-shaking removes them all.
+  `engine` + `sprite-atlas` + `sprite-animation` + `sprite-2d` +
+  `sprite-renderer`. It never imports `scene-core`, `Camera`, `Mesh`,
+  `LightBase`, `Sprite3DSceneUBO`, depth/MSAA targets, billboard
+  variants, or anchor projection code. Tree-shaking removes them all.
+- **One engine loop, two registerable kinds.** `startEngine(engine)`
+  walks `engine._registrations` once per frame. Pure-2D registers a
+  `SpriteRenderer`; scene-based apps register a `SceneContext` (which
+  may itself register an internal HUD `SpriteRenderer` lazily). The
+  engine has no notion of "2D vs 3D" — it just iterates registrations.
 - **Extensions over hardcoding.** Anchoring is a tree-shakable
-  `sprite-anchor.ts` add-on. The 3D render stage (`Scene3DStage`) is a
-  lazy capability module pulled in only when a 3D entity is added to the
-  scene; the stage owns its own internal render-loop state.
+  `sprite-anchor.ts` add-on imported only when a scene actually uses
+  world anchors. Billboard variants are independent dynamic-import
+  chunks; importing one doesn't pull the others.
 
-## Taxonomy — Two Families on One Scene
+## Taxonomy — Two Sprite Families
 
-| Family                   | Variants                               | Coordinate space                                         | Size unit   | Depth                                   | Hosted by                                                             |
-| ------------------------ | -------------------------------------- | -------------------------------------------------------- | ----------- | --------------------------------------- | --------------------------------------------------------------------- |
-| `Sprite2DLayer`          | 1 (with optional `AnchorSource`)       | Pixels (layer-space; CPU-projected for anchored sprites) | Pixels      | Configurable per layer (composer-baked) | `OverlayStage` (default) **or** `Scene3DStage` (when `depth: "test"`) |
-| `*BillboardSpriteSystem` | 3: `Facing`, `YawLocked`, `AxisLocked` | World                                                    | World units | Read; write configurable                | `Scene3DStage` only                                                   |
+| Family                   | Variants                               | Coordinate space                                         | Size unit   | Depth                                   | Drawn by                                                                                                  |
+| ------------------------ | -------------------------------------- | -------------------------------------------------------- | ----------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `Sprite2DLayer`          | 1 (with optional `AnchorSource`)       | Pixels (layer-space; CPU-projected for anchored sprites) | Pixels      | Configurable per layer (composer-baked) | A `SpriteRenderer` registered on the engine (pure-2D or scene HUD), or the scene's 3D pass (depth-hosted) |
+| `*BillboardSpriteSystem` | 3: `Facing`, `YawLocked`, `AxisLocked` | World                                                    | World units | Read; write configurable                | The scene's 3D pass (no pure-2D path)                                                                     |
 
 ### Why anchored is no longer a family
 
@@ -178,314 +188,196 @@ import chunks, no `axisLock?: 'none'|'y'|Vec3` flag.
 - **2D-camera scene with pan/zoom** — that is `Sprite2DLayer.view`
   (per-layer pan + zoom + rotation), no additional family.
 
-## Resolution: One `SceneContext`, Composable Stages
+## Resolution: One engine loop, two registerable kinds
 
-**Decision: one `SceneContext` that declares 3D state as plain optional
-fields (`camera?: Camera`, `lights?: LightBase[]`, `meshes?: Mesh[]`, …)
-typed via `import type` so a pure-2D bundle never fetches the underlying
-runtime classes. Internal render-loop state (renderable lists, prepass
-list, uniform updaters, billboard systems, depth-hosted sprite layers,
-the shared 3D scene UBO) lives on the `Scene3DStage` instance itself,
-not on the scene. Render orchestration is a list of `RenderStage`s
-registered into `scene._stages` by lazy capability modules. Routing in
-`addToScene` is method-on-entity (`entity._addToScene(scene)`), so the
-scene core has zero static reference to any concrete entity type.**
+**Decision: the engine grows a small registration list. Two kinds of
+things can be registered with an engine: a `SceneContext` (via
+`registerScene(engine, scene)`) and a `SpriteRenderer` (via
+`registerSpriteRenderer(engine, sr)`). `startEngine(engine)` no longer
+takes a `scene` argument — it walks `engine._registrations` once per
+frame, calling each registration's `render` callback in registration
+order. Pure-2D experiences (Lottie/Rive-class apps) create a
+`SpriteRenderer`, register it, and never create a `SceneContext`.
+Scene-based apps register the scene; the existing `addToScene` switch
+gains one new `_entityType` branch for `"sprite-2d-layer"` that
+internally creates / configures a `SpriteRenderer` for HUD-overlay
+layers (and routes depth-hosted layers through the existing renderable
+system so they draw inside the scene's 3D pass).**
+
+The `SceneContext` shape, the `addToScene` switch body, and the existing
+3D render code are otherwise unchanged. The future render-graph work
+will replace `engine._registrations` with a real graph; both `Scene` and
+`SpriteRenderer` already conform to the `{ render, dispose }` shape that
+graph nodes will need, so the migration is a list-to-graph swap with no
+public-API change.
 
 ### Rejected alternatives
 
-| Alternative                                                                                       | Why rejected                                                                                                                                                                                                                                                           |
-| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Keep `SceneContext` (3D-shaped) and add `Scene2DContext`                                          | Two parallel APIs — the lead's directive explicitly rejects this.                                                                                                                                                                                                      |
-| Keep `SceneContext` with 3D fields directly + per-frame `if (is2D)`                               | Violates no-`if`-on-render-path. (3D fields can be present without `if`s — see chosen design.)                                                                                                                                                                         |
-| Lazy `scene._3d?: Scene3DState` slot + `getSceneCamera/setSceneCamera` accessors                  | Forces 3D code to write `getSceneCamera(scene)` / `scene._3d!.lights` instead of `scene.camera` / `scene.lights`. Mismatches Babylon.js shape, regresses DX for the engine's primary use case (3D), and adds a hidden indirection in the debugger for negligible gain. |
-| `defineProperty` getter/setter on `SceneContext` that lazily allocates a sub-object on assignment | Preserves `scene.camera = cam` ergonomics but ships accessor descriptors in every scene-core bundle (including pure-2D), introduces hidden control flow on a field write, and breaks the codebase's "pure state + free functions, no magic" invariant.                 |
-| Central `addToScene` switch over `_entityType`                                                    | Every entity-type branch lives in scene-core, so scene-core statically references every concrete factory module — the exact opposite of pay-for-use.                                                                                                                   |
+| Alternative | Why rejected |\n| -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| Add a `Scene2DContext` parallel to `SceneContext` | Two parallel APIs for the same operation — the lead's directive rejects this. |\n| Force pure-2D apps through `SceneContext` | A Lottie/Rive-class app then carries `SceneContext`'s shape and any per-frame branching it implies. Pure-2D experiences should not pay for scene infrastructure. |\n| Pure-2D users own their own `requestAnimationFrame` loop and call a free `renderSprite2DLayers(engine, layers, target)` function | Two different loop owners (engine for scene-based, user for pure-2D) means two first-frame-ready handshakes, two fixed-delta contracts, two device-loss recovery paths. Making the engine the sole loop owner via `register*` is a smaller surface area and frame-graph-shaped. |\n| Refactor `addToScene` into method-on-entity routing + per-stage wrappers | Frame graph will replace this code path — investing in restructuring it now is wasted effort. Keep the current switch and add one branch. |\n| Extract every sprite GPU detail into the scene render loop | Couples sprite rendering to scene orchestration. Then the pure-2D path either re-implements the GPU draws (forking) or pulls in scene infrastructure to reach them (wasted bytes). |
 
-### Routing — method-on-entity
-
-The scene core declares one interface and one routing thunk. It never
-imports concrete entity types.
+### The engine's registration list
 
 ```typescript
-// src/scene/scene-core.ts
-export interface SceneEntity {
-    /** Routing thunk invoked by addToScene. The entity is responsible for
-     *  installing itself into the right capability slot AND for ensuring any
-     *  required render stage is registered. */
-    readonly _addToScene: (scene: SceneContext) => void;
+// src/engine/engine.js — additions only.
+
+/** A thing that can be registered with an engine and driven once per frame. */
+export interface EngineRenderer {
+    /** Called once per frame, after the engine has acquired the swap-chain
+     *  view and created the per-frame command encoder. The renderer issues
+     *  its own passes against `encoder` (or, if it needs full control,
+     *  ignores `encoder` and submits its own). */
+    render(encoder: GPUCommandEncoder, deltaMs: number): void;
+    /** Called by `unregister*` and on engine disposal. */
+    dispose(): void;
 }
 
-export function addToScene(scene: SceneContext, entity: SceneEntity): void {
-    entity._addToScene(scene);
-}
+/** @internal Inside EngineContextInternal: */
+//   _registrations: EngineRenderer[];
+//   _firstFrameResolvers: (() => void)[];
+
+/** Drive the engine's render loop. Walks _registrations in order, once per frame. */
+export function startEngine(engine: EngineContext): Promise<void>;
 ```
 
-That's the entire `addToScene` for the unified scene. Every concrete
-factory (`createMesh`, `createDirectionalLight`, `createSprite2DLayer`,
-`createYawLockedBillboardSystem`, `loadGltf`, …) installs its own
-`_addToScene` thunk that calls the appropriate `ensureScene3DStage` /
-`ensureSprite2DCapability` / `ensureOverlayStage` helpers, lazy-initialises
-the matching optional field on `SceneContext` (e.g.
-`(scene.lights ??= []).push(this)`), and pushes any internal renderable
-into the stage instance's state.
+`startEngine` resolves on the first frame after registration that
+completes successfully — the same first-frame-ready contract today's
+`startEngine(engine, scene)` provides. There is no per-frame `if (is2D)`
+branch; the loop just iterates the list.
 
-A pure-2D app never imports any 3D factory, so:
-
-- The 3D stage module (`scene-3d-stage.ts`) is never loaded.
-- The 3D scene UBO module (`sprite-3d-scene-ubo.ts`) is never loaded.
-- The depth/MSAA target allocator (`render-3d-targets.ts`) is never loaded.
-- The shadow / opaque-vs-transparent split / mesh disposal / material-swap
-  queue / animation-group walker / fog / image-processing / PBR / Standard
-  material modules are all unreachable.
-- The optional 3D fields declared on `SceneContext` (`camera?: Camera`,
-  `lights?: LightBase[]`, …) are `import type` only, so the `Camera`,
-  `LightBase`, and `Mesh` runtime classes never enter the bundle.
-
-### `SceneContext` — the entire public scene API
+### The `SpriteRenderer`
 
 ```typescript
-// src/scene/scene-core.ts
+// src/sprite/sprite-renderer.ts
 import type { EngineContext } from "../engine/engine.js";
-// Type-only: TS erases these at compile time. Pure-2D bundles do NOT fetch
-// the underlying runtime classes. The optional 3D fields below are pure
-// shape declarations — they are `undefined` until a 3D entity registers itself.
-import type { Camera } from "../camera/camera.js";
-import type { LightBase } from "../light/types.js";
-import type { Mesh } from "../mesh/mesh.js";
-import type { ShadowGenerator } from "../shadow/shadow-generator.js";
-import type { AnimationGroup } from "../animation/animation-group.js";
-import type { FogConfig } from "../material/standard/standard-material.js";
+import type { Sprite2DLayer } from "./sprite-2d.js";
 
-export interface SceneOptions {
-    clearColor?: GPUColorDict;
-    /** Fixed delta time in ms for deterministic capture. 0 = use real rAF delta. */
-    fixedDeltaMs?: number;
+export interface SpriteRendererOptions {
+    /** Layers to draw, in registration order; the renderer also re-sorts internally
+     *  by `(order, layerZ, insertion)` per frame. */
+    layers: Sprite2DLayer[];
+    /** Color attachment. Defaults to the engine's swap-chain view. */
+    target?: GPUTextureView | (() => GPUTextureView);
+    /** Optional depth attachment. Required for layers with depth: "test" | "test-write". */
+    depthView?: GPUTextureView | (() => GPUTextureView | undefined);
+    /** "clear" (default for the very first registration in the engine each
+     *  frame) or "load" (default when there's already a registration ahead
+     *  of this one). Caller can override; the engine sets the right default
+     *  based on registration order. */
+    loadOp?: GPULoadOp;
+    clearValue?: GPUColorDict;
+    /** 1 (default) for pure-2D and HUD overlay; 4 when drawing into a 3D MSAA pass. */
+    sampleCount?: 1 | 4;
+    resolveTarget?: GPUTextureView | (() => GPUTextureView);
 }
 
-export interface ImageProcessingConfig {
-    exposure: number;
-    contrast: number;
-    toneMappingEnabled: boolean;
-    toneMappingType?: "standard" | "aces";
+export interface SpriteRenderer extends EngineRenderer {
+    readonly _kind: "sprite-renderer";
+    /** Mutable: callers may push/splice layers between frames. */
+    layers: Sprite2DLayer[];
 }
 
-export interface SceneContext {
-    readonly engine: EngineContext;
-    clearColor: GPUColorDict;
-    fixedDeltaMs: number;
-
-    // ─── Optional 3D fields ─────────────────────────────────────────────
-    // Declared on SceneContext directly so 3D code can write `scene.camera`,
-    // `scene.lights`, etc. without an accessor function. All `import type`
-    // — none of these names appear at runtime in a pure-2D bundle.
-    // Each field is `undefined` until the corresponding 3D factory's
-    // `_addToScene` thunk lazy-initialises it (e.g.
-    // `(scene.lights ??= []).push(light)`).
-    camera?: Camera;
-    lights?: LightBase[];
-    meshes?: Mesh[];
-    animationGroups?: AnimationGroup[];
-    fog?: FogConfig;
-    shadowGenerators?: ShadowGenerator[];
-    imageProcessing?: ImageProcessingConfig;
-}
-
-export function createSceneContext(engine: EngineContext, opts?: SceneOptions): SceneContext;
-export function addToScene(scene: SceneContext, entity: SceneEntity): void;
-export function removeFromScene(scene: SceneContext, entity: SceneEntity): void;
-export function onBeforeRender(scene: SceneContext, cb: (deltaMs: number) => void): void;
-export function disposeScene(scene: SceneContext): void;
-export function startEngine(engine: EngineContext, scene: SceneContext): Promise<void>;
+export function createSpriteRenderer(engine: EngineContext, opts: SpriteRendererOptions): SpriteRenderer;
+export function registerSpriteRenderer(engine: EngineContext, sr: SpriteRenderer): void;
+export function unregisterSpriteRenderer(engine: EngineContext, sr: SpriteRenderer): void;
+export function disposeSpriteRenderer(sr: SpriteRenderer): void;
 ```
 
-`SceneContext` runtime imports stay limited to `EngineContext`. The 3D
-shape (`Camera`, `LightBase`, `Mesh`, …) is exposed via `import type`,
-which TypeScript erases at compile time — pure-2D bundles never load
-those modules. Application code uses the same field-access syntax it
-would in Babylon.js: `scene.camera = cam`, `scene.lights?.push(light)`,
-`for (const m of scene.meshes ?? [])`. There is no accessor function
-layer; there is no `_3d` slot to pierce through.
+Internally a `SpriteRenderer.render(encoder, deltaMs)`:
 
-```typescript
-/** @internal — fields used by stages and capability modules only. */
-export interface SceneContextInternal extends SceneContext {
-    /** Render stages, in canonical execution order (canonicalized once at startEngine). */
-    _stages: RenderStage[];
-    /** Per-frame callbacks (animation, clip ticks, anchor projection, physics, …). */
-    _beforeRender: ((deltaMs: number) => void)[];
-    /** Deferred builders run once at startEngine. */
-    _deferredBuilders: (() => void | Promise<void>)[];
-    /** Cleanup callbacks. */
-    _disposables: (() => void)[];
-    _disposed: boolean;
+1. Resolves `target` / `depthView` / `resolveTarget` (calling the
+   thunk variants each frame so swap-chain view re-acquisition is cheap).
+2. Sorts `this.layers` by `(order, layerZ, insertion)`.
+3. For each layer, uploads any dirty per-instance data to the GPU.
+4. Begins one `GPURenderPass` keyed by `(sampleCount, hasDepth)` (max
+   four entries in the per-renderer pipeline cache).
+5. For each layer in sorted order, binds the right pipeline and issues
+   one `drawIndexed(6, instanceCount)`.
+6. Ends the pass.
 
-    /** Optional Sprite2D capability slot — populated lazily by ensureSprite2DCapability. */
-    _sprites?: import("../sprite/sprite-2d-capability.js").Sprite2DState;
-}
-```
+It is the single home for sprite GPU draw logic. There is no second
+implementation, no per-call-site fork.
 
-The `import("...")` reference above is **type-only** (TS erases it at
-compile time) and a **lazy-import path**. It does not pull the module
-into the scene-core chunk.
+### Caller 1: pure-2D — no `SceneContext`
 
-### `Scene3DStage` owns its own internal state
-
-There is no `Scene3DState` interface and no `_3d` slot on the scene. The
-user-facing 3D fields (`scene.camera`, `scene.lights`, …) live directly
-on `SceneContext` (above). The internal hot-render-loop state lives on
-the `Scene3DStage` instance itself, allocated lazily by
-`ensureScene3DStage(scene)`:
-
-```typescript
-// src/scene/scene-3d-stage.ts — only imported when a 3D entity is added.
-import type { Renderable, PrePassRenderable, SceneUniformUpdater, MeshGroupBuilder } from "../render/renderable.js";
-import type { Mesh } from "../mesh/mesh.js";
-
-/** @internal — held inside the Scene3DStage instance, not on the scene. */
-export interface Scene3DStageState {
-    _opaqueRenderables: Renderable[];
-    _transparentRenderables: Renderable[];
-    _prePasses: PrePassRenderable[];
-    _uniformUpdaters: SceneUniformUpdater[];
-    _groups: Map<MeshGroupBuilder, Mesh[]>;
-    _meshDisposables: Map<Mesh, (() => void)[]>;
-    _materialSwapQueue: Mesh[];
-    _renderableVersion: number;
-
-    /** Billboards live here (Scene3DStage hosts them). */
-    _billboardSystems: import("../sprite/sprite-billboard-shared.js").BillboardSpriteSystem[];
-
-    /** Sprite2DLayers with depth: "test" | "test-write" live here too. */
-    _depthHostedSpriteLayers: import("../sprite/sprite-2d.js").Sprite2DLayer[];
-
-    /** Lazy: the shared sprite 3D scene UBO. Created by the first billboard
-     *  system; reused thereafter. Never allocated in scenes with no billboards. */
-    _sprite3dSceneUBO?: GPUBuffer;
-}
-
-export interface Scene3DStage extends RenderStage {
-    readonly name: "scene-3d";
-    readonly state: Scene3DStageState;
-}
-
-/** Lazy + idempotent. On first call: instantiates Scene3DStage, registers it
- *  into scene._stages, and returns it. Subsequent calls return the same instance. */
-export function ensureScene3DStage(scene: SceneContext): Scene3DStage;
-```
-
-No accessor module. No `getSceneCamera` / `setSceneCamera`. 3D code
-reads and writes `scene.camera`, `scene.lights`, `scene.meshes`, etc.
-directly — same shape as Babylon.js.
-
-### Render stages
-
-```typescript
-// src/scene/render-stage.ts
-export interface RenderStage {
-    readonly name: "overlay" | "scene-3d";
-    /** Render this stage. The first stage in canonical order writes loadOp="clear";
-     *  subsequent stages write loadOp="load". The choice is set once at
-     *  canonicalization time and stored on the stage. */
-    readonly render: (encoder: GPUCommandEncoder, view: GPUTextureView, scene: SceneContext, deltaMs: number) => void;
-    _loadOp: GPULoadOp;
-}
-```
-
-Two stages exist. Each lives in its own module and is dynamic-imported by
-its `ensure*Stage` helper — neither is loaded by `scene-core.ts` directly.
-
-- **`OverlayStage`** (`src/scene/overlay-stage.ts`) — single render pass,
-  no depth attachment, MSAA = 1, color attachment is the swap-chain view.
-  Renders all `scene._sprites?._overlayLayers` in `(order, layerZ,
-insertion)` ascending. Owns the `Sprite2DSceneUBO` updater. Allocated by
-  `ensureOverlayStage(scene)`.
-
-- **`Scene3DStage`** (`src/scene/scene-3d-stage.ts`) — manages the
-  per-engine MSAA + depth attachment, the prepass list (shadow maps), the
-  opaque queue (sorted at build time), the transparent queue (sorted
-  per-frame back-to-front), and the post-overlay flush of any `Sprite2DLayer
-` with `depth !== "none"`. Allocated by `ensureScene3DStage(scene)`.
-  Hosts the full 3D render-loop logic (prepasses, opaque queue,
-  transparent queue, depth-hosted Sprite2D layers, billboards).
-
-### `startEngine` — one entry point, no `if`
-
-```typescript
-export async function startEngine(engine: EngineContext, scene: SceneContext): Promise<void> {
-    const eng = engine as EngineContextInternal;
-    const sc = scene as SceneContextInternal;
-
-    // 1. Run all deferred builders. Each builder dynamic-imports its renderable.
-    for (const b of sc._deferredBuilders) await b();
-    sc._deferredBuilders.length = 0;
-
-    // 2. Canonicalize stage order: [Scene3DStage?, OverlayStage?].
-    //    This runs ONCE here, never per frame.
-    canonicalizeStages(sc);
-
-    // 3. Resolve the first-stage clear: first stage gets "clear", rest get "load".
-    for (let i = 0; i < sc._stages.length; i++) {
-        sc._stages[i]._loadOp = i === 0 ? "clear" : "load";
-    }
-
-    let firstFrame = true;
-    return new Promise<void>((resolve) => {
-        const loop = (now: number, deltaMs: number) => {
-            for (const cb of sc._beforeRender) cb(deltaMs);
-            const encoder = eng.device.createCommandEncoder();
-            const view = eng.context.getCurrentTexture().createView();
-            // Hot loop: walk stages in canonical order. No is2D branch.
-            for (const stage of sc._stages) stage.render(encoder, view, scene, deltaMs);
-            eng.device.queue.submit([encoder.finish()]);
-            if (firstFrame) {
-                firstFrame = false;
-                resolve();
-            }
-            eng.requestFrame(loop);
-        };
-        eng.requestFrame(loop);
-    });
-}
-```
-
-There is no `if (is2D)`, no `if (scene.camera)`, no `if (passConfig.hasDepth)`.
-The per-frame loop iterates `sc._stages`. A pure-2D scene has exactly one
-stage (`OverlayStage`); a pure-3D scene has exactly one stage
-(`Scene3DStage`); a mixed scene has both, in canonical order, with the
-clear / load load-ops baked at canonicalization. Depth attachment, MSAA
-samples, swap-chain clear ownership — all are properties of whichever
-stage owns them. None requires a runtime branch.
-
-#### Why canonicalize stages
-
-A user that adds a HUD layer first and a mesh second would otherwise get
-`[OverlayStage, Scene3DStage]`, and the 3D content would draw on top of the
-HUD. Stage canonicalization runs once at `startEngine` and reorders to
-`[Scene3DStage?, OverlayStage?]` regardless of registration order. This is
-a single sort outside the hot loop, not a per-frame check.
-
-### Code samples
-
-#### Pure 2D — zero 3D bytes fetched
+A Lottie/Rive-class app never creates a scene. It creates a
+`SpriteRenderer`, registers it on the engine, and lets `startEngine`
+drive the loop:
 
 ```typescript
 const engine = await createEngine(canvas);
-const scene = createSceneContext(engine);
 const atlas = await loadSpriteAtlas(engine, "sprites.png", { gridSize: [32, 32] });
 const layer = createSprite2DLayer(atlas);
 addSprite2D(layer, { positionPx: [100, 200], sizePx: [64, 64], frame: 0 });
-addToScene(scene, layer);
-await startEngine(engine, scene);
+
+const sr = createSpriteRenderer(engine, {
+    layers: [layer],
+    clearValue: { r: 0, g: 0, b: 0, a: 1 },
+});
+registerSpriteRenderer(engine, sr);
+
+await startEngine(engine);
 ```
 
-Static import graph: `engine` + `scene-core` + `overlay-stage` +
-`sprite-2d` + `sprite-atlas` + `sprite-animation` + `sprite-gpu` +
-`sprite-2d-renderable` + `sprite-2d-shader`. Nothing else. No `Camera`,
-no `Mesh`, no `LightBase`, no `Scene3DStage`, no
-depth/MSAA target allocator, no PBR, no Standard, no shadow generator,
-no animation group, no anchor projection, no billboard variants.
+The static import graph is exactly: `engine` + `sprite-atlas` +
+`sprite-animation` + `sprite-2d` + `sprite-renderer`. Nothing else.
+No `SceneContext`, no `addToScene`, no `registerScene`, no `Camera`, no
+`Mesh`, no `LightBase`, no depth/MSAA target allocator, no PBR, no
+Standard, no shadow generator, no animation-group walker, no anchor
+projection, no billboard variants.
 
-#### Mixed 3D + anchored labels + HUD overlay — same API
+Anchored sprites are not supported in this path — there is no camera to
+project against. They require the scene-based path below.
+
+### Caller 2: scene-based — `registerScene` + existing `addToScene` + one new branch
+
+The new `registerScene(engine, scene)` is the scene-side analogue of
+`registerSpriteRenderer`. It runs the scene's deferred builders, wraps
+the scene as an `EngineRenderer`, and registers it on the engine. After
+that, `startEngine(engine)` drives the scene each frame just like it
+drives any other registered renderer.
+
+```typescript
+export function registerScene(engine: EngineContext, scene: SceneContext): Promise<void>;
+export function unregisterScene(engine: EngineContext, scene: SceneContext): void;
+```
+
+The current `addToScene` switch in `scene-core.ts` gains one new branch:
+
+```typescript
+} else if (entity._entityType === "sprite-2d-layer") {
+    const layer = entity as Sprite2DLayer;
+    // Bucket by depth mode — chosen at construction, never branched per-frame.
+    if (layer.depth === "none") {
+        (ctx._hudSpriteLayers ??= []).push(layer);
+    } else {
+        (ctx._depthHostedSpriteLayers ??= []).push(layer);
+    }
+    if (layer._deferredBuild) {
+        ctx._deferredBuilders.push(() => layer._deferredBuild!(scene));
+    }
+    return;
+}
+```
+
+The existing `"billboard-sprite-system"` branch stays as today (with its
+own `_deferredBuild` hook); billboards are pushed into the existing
+scene-level array.
+
+`registerScene` does two things in addition to running deferred builders:
+
+1. It registers the scene itself as an `EngineRenderer` on the engine.
+   The scene's `render(encoder, deltaMs)` runs the existing 3D pass —
+   prepasses, opaque queue, transparent queue. **Depth-hosted Sprite2D
+   layers** are drawn here as part of the existing renderable system
+   (their `_deferredBuild` pushed renderables into `_opaqueRenderables`
+   / `_transparentRenderables`).
+2. If `ctx._hudSpriteLayers?.length`, it lazily creates an internal
+   `SpriteRenderer` configured for the HUD bucket (MSAA = 1, swap-chain
+   view, `loadOp: "load"`) and `registerSpriteRenderer`s it on the
+   engine **after** the scene. The engine's per-frame loop walks the
+   list in order, so HUD sprites correctly draw on top of the 3D pass.
+
+End-to-end:
 
 ```typescript
 const engine = await createEngine(canvas);
@@ -494,9 +386,11 @@ const scene = createSceneContext(engine);
 addToScene(scene, createDirectionalLight([0, -1, 0]));
 addToScene(scene, await loadGltf(engine, "world.glb"));
 
-addToScene(scene, createYawLockedBillboardSystem(treeAtlas)); // Scene3DStage
+addToScene(scene, createYawLockedBillboardSystem(treeAtlas));
 
-// Anchored labels: same Sprite2DLayer factory, depth:"test" hosts it in Scene3DStage
+// Anchored labels: same Sprite2DLayer factory, depth:"test" routes it
+// into ctx._depthHostedSpriteLayers (drawn inside the 3D pass via the
+// existing renderable system).
 const labels = createSprite2DLayer(labelAtlas, { depth: "test" });
 addAnchoredSprite2D(labels, {
     anchor: createWorldAnchor([0, 1.8, 0]),
@@ -505,20 +399,23 @@ addAnchoredSprite2D(labels, {
 });
 addToScene(scene, labels);
 
-// HUD: same Sprite2DLayer factory, default depth:"none" hosts it in OverlayStage
+// HUD: same Sprite2DLayer factory, default depth:"none" routes it into
+// ctx._hudSpriteLayers (drawn by an internal SpriteRenderer registered
+// on the engine after the scene).
 const hud = createSprite2DLayer(hudAtlas);
 addSprite2D(hud, { positionPx: [16, 16], sizePx: [200, 32], frame: "score" });
 addToScene(scene, hud);
 
-await startEngine(engine, scene);
+await registerScene(engine, scene);
+await startEngine(engine);
 ```
 
-The third snippet is the punch line: **one** `createSprite2DLayer` factory
-used twice (once for anchored in-world labels, once for HUD), the same
-WGSL, the same per-instance layout, the same packed buffer. The `depth`
-option chooses which stage hosts the layer. The `addAnchoredSprite2D`
-helper attaches an `AnchorSource` and ensures the per-frame projection hook
-is installed for that layer.
+The punch line: **one** `createSprite2DLayer` factory, one WGSL, one
+80-byte instance layout, one packed buffer. The `depth` option chooses
+which path (in-3D-pass via existing renderables, or post-3D via an
+internal HUD `SpriteRenderer`) the layer ends up in. The
+`addAnchoredSprite2D` helper attaches an `AnchorSource` and ensures the
+per-frame projection hook is installed.
 
 ---
 
@@ -631,7 +528,6 @@ current frame index.
 // src/sprite/sprite-2d.ts
 import type { SpriteAtlas, SpriteBlendMode, SpriteFrameRef } from "./shared/sprite-atlas.js";
 import type { SpriteClipState } from "./shared/sprite-animation.js";
-import type { SceneEntity } from "../scene/scene-core.js";
 
 export type Sprite2DDepthMode = "none" | "test" | "test-write";
 
@@ -651,17 +547,18 @@ export interface Sprite2DLayerOptions {
     view?: Partial<Sprite2DView>;
     /**
      * Depth participation:
-     *  - "none"        (default) → hosted by OverlayStage, no depth attachment.
-     *  - "test"                  → hosted by Scene3DStage, depthCompare="less-equal", depthWrite=false.
+     *  - "none"        (default) → routed into `_hudSpriteLayers`; drawn after the 3D pass with no depth attachment, MSAA=1.
+     *  - "test"                  → routed into `_depthHostedSpriteLayers`; drawn inside the 3D pass with `depthCompare="less-equal"`, `depthWrite=false`.
      *                              Required when sprites must occlude behind 3D geometry.
-     *  - "test-write"            → hosted by Scene3DStage, depthCompare="less-equal", depthWrite=true.
+     *  - "test-write"            → routed into `_depthHostedSpriteLayers`; drawn inside the 3D pass with `depthCompare="less-equal"`, `depthWrite=true`.
      *                              Use for cutout sprites that should cast/receive depth in the opaque queue.
      *  Each value is a pipeline-cache key bit, baked at composition time. No runtime branch.
+     *  In the pure-2D path (no SceneContext), only `"none"` is meaningful — there is no camera, so anchored / depth-hosted sprites cannot be projected.
      */
     depth?: Sprite2DDepthMode;
 }
 
-export interface Sprite2DLayer extends SceneEntity {
+export interface Sprite2DLayer {
     readonly _entityType: "sprite-2d-layer";
     readonly atlas: SpriteAtlas;
     readonly depth: Sprite2DDepthMode;
@@ -769,7 +666,6 @@ never pays for `viewProjection` on the CPU.
 
 ```typescript
 // src/sprite/billboard/sprite-billboard-shared.ts
-import type { SceneEntity } from "../../scene/scene-core.js";
 import type { SpriteAtlas, SpriteBlendMode, SpriteFrameRef } from "../shared/sprite-atlas.js";
 import type { SpriteClipState } from "../shared/sprite-animation.js";
 
@@ -783,7 +679,7 @@ export interface BillboardSpriteSystemOptions {
     alphaCutoff?: number;
 }
 
-export interface BillboardSpriteSystem extends SceneEntity {
+export interface BillboardSpriteSystem {
     readonly _entityType: "billboard-sprite-system";
     readonly atlas: SpriteAtlas;
     blendMode: SpriteBlendMode;
@@ -832,12 +728,13 @@ export function playBillboardSpriteClip(handle: BillboardSpriteHandle, clip: str
 export function stopBillboardSpriteClip(handle: BillboardSpriteHandle): void;
 ```
 
-Each billboard factory's `_addToScene` thunk calls
-`ensureScene3DStage(scene)`, then pushes `this` into
-`stage.state._billboardSystems` and queues the renderable's deferred
-build. The first billboard added also lazy-allocates
-`stage.state._sprite3dSceneUBO` and registers its updater into
-`stage.state._uniformUpdaters`. Pure-2D scenes never load any of this.
+Each billboard factory's `_deferredBuild` callback (registered through
+`addToScene`'s existing `"billboard-sprite-system"` branch) pushes the
+system into the scene's `ctx._billboardSystems` array and queues the
+renderable build. The first billboard added also lazy-allocates the
+shared 3D scene UBO (`ctx._sprite3dSceneUBO`) and registers its updater.
+Pure-2D scenes never reach this code — they don't import `addToScene`,
+let alone register a billboard system.
 
 ### Picking — two pickers, not three
 
@@ -849,36 +746,41 @@ export function pickSprite2D(scene: SceneContext, xPx: number, yPx: number): Spr
 export function pickBillboardSprite(scene: SceneContext, xPx: number, yPx: number): Promise<SpritePickInfo | null>;
 ```
 
-`pickSprite2D` walks both `scene._sprites?._overlayLayers` and the
-active `Scene3DStage`'s `state._depthHostedSpriteLayers` (if a
-`Scene3DStage` is registered) in reverse `(order, layerZ,
-insertion)`. For anchored layers the picker reads the per-sprite
-`positionPx` directly — anchor projection has already been performed CPU-
-side this frame, so the picker hits the same screen rectangle the GPU
-draws. No GPU pick pass for Sprite2D.
+`pickSprite2D` walks both `scene._hudSpriteLayers` and
+`scene._depthHostedSpriteLayers` (whichever are present) in reverse
+`(order, layerZ, insertion)`. For anchored layers the picker reads the
+per-sprite `positionPx` directly — anchor projection has already been
+performed CPU-side this frame, so the picker hits the same screen
+rectangle the GPU draws. No GPU pick pass for Sprite2D.
 
 `pickBillboardSprite` is a GPU pick contributor; the full design is
 specified under [Picking](#picking) below.
 
-### Stage / capability helpers — `@internal`, never re-exported
+### Pure-2D usage — no scene
+
+A pure-2D app skips the scene entirely. It creates a `SpriteRenderer`,
+registers it on the engine, and lets `startEngine` drive the loop:
 
 ```typescript
-// src/sprite/sprite-2d-capability.ts — only loaded when a Sprite2DLayer is added.
-export interface Sprite2DState {
-    _overlayLayers: Sprite2DLayer[];
-    _pipelines: Map<string, GPURenderPipeline>; // lazy-init on first build
-}
-export function ensureSprite2DCapability(scene: SceneContext): Sprite2DState;
+import { createEngine, loadSpriteAtlas, createSprite2DLayer, addSprite2D, createSpriteRenderer, registerSpriteRenderer, startEngine } from "babylon-lite";
 
-// src/scene/overlay-stage.ts — only loaded when a Sprite2DLayer with depth: "none" is added.
-export function ensureOverlayStage(scene: SceneContext): void;
+const engine = await createEngine(canvas);
+const atlas = await loadSpriteAtlas(engine, "sprites.png", { gridSize: [32, 32] });
+const layer = createSprite2DLayer(atlas);
+addSprite2D(layer, { positionPx: [100, 200], sizePx: [64, 64], frame: 0 });
 
-// src/scene/scene-3d-stage.ts — only loaded when any 3D entity is added.
-// Allocates the Scene3DStage instance (with its own internal Scene3DStageState)
-// on first call; idempotent thereafter. Returns the stage so callers can push
-// renderables into stage.state.
-export function ensureScene3DStage(scene: SceneContext): Scene3DStage;
+const sr = createSpriteRenderer(engine, {
+    layers: [layer],
+    clearValue: { r: 0, g: 0, b: 0, a: 1 },
+});
+registerSpriteRenderer(engine, sr);
+
+await startEngine(engine);
 ```
+
+Nothing in `src/scene/*` is reachable from this code path — not even
+`scene-core.ts`. Anchored sprites are unsupported here (they require a
+camera).
 
 ---
 
@@ -1144,36 +1046,39 @@ loses one tick of animation in the captured image. All sprite families
 
 ### Shared Across All Layers
 
-| Setting       | Value                                                                  |
-| ------------- | ---------------------------------------------------------------------- |
-| Topology      | `triangle-list`                                                        |
-| Index buffer  | none (vertexless)                                                      |
-| Cull mode     | `none`                                                                 |
-| Front face    | `ccw`                                                                  |
-| Color target  | swap-chain format                                                      |
-| MSAA          | per-stage: 1 in OverlayStage, 4 in Scene3DStage                        |
-| Atlas sampler | per-atlas (`linear` or `nearest`), `clamp-to-edge`, no mipmaps default |
+| Setting       | Value                                                                                                                                                                                   |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Topology      | `triangle-list`                                                                                                                                                                         |
+| Index buffer  | none (vertexless)                                                                                                                                                                       |
+| Cull mode     | `none`                                                                                                                                                                                  |
+| Front face    | `ccw`                                                                                                                                                                                   |
+| Color target  | swap-chain format                                                                                                                                                                       |
+| MSAA          | follows the renderer's `sampleCount` setting (1 for `SpriteRenderer` pure-2D / HUD; 4 for depth-hosted layers drawn inside the scene's 3D MSAA pass via the existing renderable system) |
+| Atlas sampler | per-atlas (`linear` or `nearest`), `clamp-to-edge`, no mipmaps default                                                                                                                  |
 
 ### Sprite2DLayer per-`depth` Pipeline State
 
-| Layer `depth`  | Stage        | Depth attachment        | Depth compare | Depth write | Sort key                        | Render queue              |
-| -------------- | ------------ | ----------------------- | ------------- | ----------- | ------------------------------- | ------------------------- |
-| `"none"`       | OverlayStage | absent                  | n/a           | n/a         | `(order, layerZ, insertion)`    | overlay (final)           |
-| `"test"`       | Scene3DStage | engine depth attachment | `less-equal`  | `false`     | back-to-front by layer centroid | transparent (210 + order) |
-| `"test-write"` | Scene3DStage | engine depth attachment | `less-equal`  | `true`      | front-to-back by layer centroid | opaque (110 + order)      |
+| Layer `depth`  | Scene bucket               | Depth attachment        | Depth compare | Depth write | Sort key                        | Render queue              |
+| -------------- | -------------------------- | ----------------------- | ------------- | ----------- | ------------------------------- | ------------------------- |
+| `"none"`       | `_hudSpriteLayers`         | absent                  | n/a           | n/a         | `(order, layerZ, insertion)`    | overlay (final, post-3D)  |
+| `"test"`       | `_depthHostedSpriteLayers` | engine depth attachment | `less-equal`  | `false`     | back-to-front by layer centroid | transparent (210 + order) |
+| `"test-write"` | `_depthHostedSpriteLayers` | engine depth attachment | `less-equal`  | `true`      | front-to-back by layer centroid | opaque (110 + order)      |
 
 `depth` is in the pipeline cache key. The composer emits the matching
 `depthStencil` descriptor block (or omits it for `"none"`). **No runtime
-depth-state branch.**
+depth-state branch.** Pure-2D apps that bypass the scene only ever
+encounter `depth: "none"` layers (no camera → no anchored → no
+depth-hosted sprites) — their pipeline cache holds at most one entry.
 
 ### Bind Group Layouts
 
 **`Sprite2DSceneUBO`** (32 B) — `@group(0) @binding(0)` for every
-`Sprite2DLayer` regardless of stage. Allocated and updated by the
-**OverlayStage** when present, by the **Scene3DStage**'s sprite-binding
-helper when only depth-hosted Sprite2D layers exist. Either way, the same
-UBO struct is bound — anchored sprites do not need a `viewProjection` in
-the shader because anchor projection runs CPU-side.
+`Sprite2DLayer` regardless of caller. Allocated once per
+`SpriteRenderer` instance (or per `Sprite2DLayer` renderable for the
+in-scene depth-hosted path) and updated each frame from the supplied
+target metadata + (when a scene is present) the camera basis. Anchored
+sprites do not need a `viewProjection` in the shader because anchor
+projection runs CPU-side.
 
 ```wgsl
 struct Sprite2DSceneUBO {
@@ -1270,7 +1175,7 @@ Per-device, lazy. Key tuple:
 `(family, blendMode, depth, swapChainFormat, msaaSamples, pixelSnap, alphaCutoff*)`
 
 - `family`: `"sprite-2d" | "billboard-facing" | "billboard-yaw" | "billboard-axis"`.
-- `depth`: `"none" | "test" | "test-write"` — Sprite2D only; absent for billboards (which always use the Scene3DStage depth state).
+- `depth`: `"none" | "test" | "test-write"` — Sprite2D only; absent for billboards (which always use the scene's 3D depth state).
 - `pixelSnap`: bool — composer rewrites the snap line.
 - `alphaCutoff`: bool — present only when `blendMode === "cutout"`.
 - `opacity` is **not** in the key (per-layer UBO field, animatable).
@@ -1446,14 +1351,14 @@ never a pipeline recompile. This matches how Lite handles mesh `alpha`.
 
 ## Sorting and Transparency
 
-| Family / variant                      | Stage        | Queue                     | Sort key                                  | Blend     | Depth write |
-| ------------------------------------- | ------------ | ------------------------- | ----------------------------------------- | --------- | ----------- |
-| Sprite2DLayer `depth: "none"`         | OverlayStage | overlay (final pass)      | ascending `(order, layerZ, insertion)`    | per-blend | n/a         |
-| Sprite2DLayer `depth: "test"` blended | Scene3DStage | transparent (210 + order) | back-to-front by layer centroid           | per-blend | off         |
-| Sprite2DLayer `depth: "test"` cutout  | Scene3DStage | opaque (110 + order)      | front-to-back by layer centroid           | none      | off         |
-| Sprite2DLayer `depth: "test-write"`   | Scene3DStage | opaque (110 + order)      | front-to-back by layer centroid           | none      | on          |
-| Billboard blended                     | Scene3DStage | transparent (210 + order) | back-to-front by sprite view-Z (per-spr.) | per-blend | off         |
-| Billboard cutout                      | Scene3DStage | opaque (110 + order)      | front-to-back by sprite view-Z (per-spr.) | none      | on          |
+| Family / variant                      | Bucket / pass                      | Queue                     | Sort key                                  | Blend     | Depth write |
+| ------------------------------------- | ---------------------------------- | ------------------------- | ----------------------------------------- | --------- | ----------- |
+| Sprite2DLayer `depth: "none"`         | `_hudSpriteLayers` (post-3D)       | overlay (final pass)      | ascending `(order, layerZ, insertion)`    | per-blend | n/a         |
+| Sprite2DLayer `depth: "test"` blended | `_depthHostedSpriteLayers` (in-3D) | transparent (210 + order) | back-to-front by layer centroid           | per-blend | off         |
+| Sprite2DLayer `depth: "test"` cutout  | `_depthHostedSpriteLayers` (in-3D) | opaque (110 + order)      | front-to-back by layer centroid           | none      | off         |
+| Sprite2DLayer `depth: "test-write"`   | `_depthHostedSpriteLayers` (in-3D) | opaque (110 + order)      | front-to-back by layer centroid           | none      | on          |
+| Billboard blended                     | scene 3D pass                      | transparent (210 + order) | back-to-front by sprite view-Z (per-spr.) | per-blend | off         |
+| Billboard cutout                      | scene 3D pass                      | opaque (110 + order)      | front-to-back by sprite view-Z (per-spr.) | none      | on          |
 
 Depth-hosted Sprite2D layers do **not** sort sprites individually — their
 layer-centroid view-Z (mean of `positionPx` un-projected via the camera, or
@@ -1585,76 +1490,91 @@ loadSpriteAtlas(engine, url, opts) → SpriteAtlas
 createSprite2DLayer(atlas, { depth })
   └─> { atlas, depth, capacity, _data (Float32Array), _animations,
         _anchored: null,                                      // sparse map; null until first anchor
-        _addToScene: sprite2DAddToScene,                      // method-on-entity routing
         _deferredBuild,
         _version, _gpuVersion, _entityType: "sprite-2d-layer" }
 
 createYawLockedBillboardSystem(atlas, opts)
-  └─> { ..., _addToScene: yawBillboardAddToScene, ... }
+  └─> { ..., _entityType: "billboard-sprite-system", _deferredBuild, ... }
 ```
 
 ### Routing on `addToScene`
 
+The existing `addToScene` switch in `scene-core.ts` gains one new branch.
+All routing lives in that one switch:
+
 ```
-addToScene(scene, layer)
-  └─> layer._addToScene(scene)                                // method dispatch
-      └─> sprite2DAddToScene(this, scene):
-            const caps = ensureSprite2DCapability(scene);     // dynamic-imports sprite-2d-capability.ts
-            if (this.depth === "none") {
-                ensureOverlayStage(scene);                     // dynamic-imports overlay-stage.ts
-                caps._overlayLayers.push(this);
-            } else {
-                const stage = ensureScene3DStage(scene);       // dynamic-imports scene-3d-stage.ts
-                stage.state._depthHostedSpriteLayers.push(this);
-            }
-            scene._deferredBuilders.push(this._deferredBuild);
+addToScene(scene, layer)                                      // existing function
+  └─> switch on entity._entityType / duck-typing:
+        case "sprite-2d-layer":
+            (layer.depth === "none"
+              ? (ctx._hudSpriteLayers ??= [])
+              : (ctx._depthHostedSpriteLayers ??= [])
+            ).push(layer);
+            ctx._deferredBuilders.push(() => layer._deferredBuild!(scene));
+            return;
+        case "billboard-sprite-system": ... (unchanged)
 ```
 
-Pure-2D-only apps never call `ensureScene3DStage` and never load any `scene-3d-*`
-module.
+Pure-2D-only apps never call `addToScene` at all — they create a
+`SpriteRenderer` directly, register it on the engine, and own their
+layers without any scene.
 
-### Build (at `startEngine`)
+### Build (at `registerScene`)
 
-Each `_deferredBuild` dynamic-imports `sprite-2d-renderable.ts`, builds the
-pipeline (cache-keyed), allocates GPU buffers, creates bind groups, and
-pushes the renderable into the right list (`caps._overlayLayers` for
-overlay; `stage.state._opaqueRenderables` / `_transparentRenderables` for
-depth-hosted). The stage that owns the layer determines which list
-receives the renderable.
+`registerScene(engine, scene)` runs each `_deferredBuild`. Each builder
+dynamic-imports `sprite-2d-renderable.ts`, builds the pipeline
+(cache-keyed), allocates GPU buffers, and creates bind groups.
+Depth-hosted layers are also pushed into the scene's existing
+`_opaqueRenderables` / `_transparentRenderables` lists by their build
+callback so the scene's 3D pass picks them up. HUD layers are not added
+to those lists — instead, after the deferred builders complete,
+`registerScene` lazily creates an internal `SpriteRenderer` for
+`ctx._hudSpriteLayers` (if any) and `registerSpriteRenderer`s it on the
+engine right after the scene's own registration.
 
 ### Per-Frame Render
 
 ```
-1. Run scene._beforeRender hooks: clip ticks; anchor projection writes positionPx.
-2. For each updater in scene3DStage?.state._uniformUpdaters || []: write camera basis / VP / etc.
-3. For each stage in scene._stages (canonical order):
-     stage.render(encoder, view, scene, deltaMs)
-       OverlayStage:
-         - Begin pass with no depth, MSAA=1, loadOp=stage._loadOp
-         - For each Sprite2D layer in caps._overlayLayers (sorted by order):
-             dirty-range writeBuffer; bind pipeline + groups; pass.draw(6, count)
-         - End pass.
-       Scene3DStage:
-         - Run prepasses (shadow maps, etc.)
-         - Begin opaque pass with MSAA + depth, loadOp=stage._loadOp
-         - Draw _opaqueRenderables (meshes + cutout sprites + cutout billboards)
-         - End opaque pass.
-         - Begin transparent pass loading depth, loadOp=load
-         - Re-sort _transparentRenderables by camera-distance once if camera moved
-         - Draw _transparentRenderables (transparent meshes + blended sprites + blended billboards)
-         - End transparent pass.
-4. Submit command buffer.
+startEngine(engine) per-frame:
+  1. Acquire swap-chain view + create command encoder.
+  2. For each registration r in engine._registrations (in order):
+       r.render(encoder, deltaMs)
+         Scene wrapper (added by registerScene):
+           - Run scene._beforeRender hooks: clip ticks; anchor projection writes positionPx.
+           - Run uniform updaters (camera basis / VP / Sprite3DSceneUBO if present).
+           - Begin scene 3D pass (existing code) — MSAA=4, depth attached.
+               * Draw prepasses (shadow maps, …)
+               * Draw _opaqueRenderables (meshes, cutout sprites/billboards,
+                 cutout depth-hosted Sprite2D layers)
+               * Draw _transparentRenderables (transparent meshes, blended
+                 billboards, blended depth-hosted Sprite2D layers)
+             End 3D pass.
+         SpriteRenderer (HUD bucket added by registerScene; or pure-2D's own):
+           - Sort this.layers by (order, layerZ, insertion).
+           - For each dirty layer: writeBuffer dirty range.
+           - Begin pass keyed by (sampleCount, hasDepth); loadOp from registration order.
+           - For each layer: bind pipeline + groups; pass.draw(6, count).
+             End pass.
+  3. Submit command buffer.
 ```
 
-No `if (is2D)` anywhere. Stage list determines what runs. Empty lists
-inside a stage are a no-op cost equal to one `for` over zero entries.
+No `if (is2D)` anywhere. The engine just walks its registration list.
+Empty buckets inside a `SpriteRenderer` are skipped by a single
+`if (this.layers.length)` check; non-empty buckets fall through to the
+same draw path.
 
 ### Disposal
 
 `disposeScene(scene)` invokes every callback in `scene._disposables`,
 including the per-renderable GPU buffer / bind group / pipeline cleanups,
-the per-layer anchor hook removal, the OverlayStage's UBO disposal, and
-the Scene3DStage's depth/MSAA target releases.
+the per-layer anchor hook removal, and the per-target depth/MSAA
+attachment releases (existing code; sprites add no new attachments). It
+also `unregisterSpriteRenderer`s and `disposeSpriteRenderer`s the
+internal HUD `SpriteRenderer` if one was created.
+
+`disposeSpriteRenderer(sr)` releases the renderer's pipeline cache (per-
+device, max four entries) and any per-renderer UBO. Standalone pure-2D
+apps call it directly; scene-based apps don't — `disposeScene` cascades.
 
 ---
 
@@ -1898,14 +1818,11 @@ Imports:
 
 - `Texture2D`, `loadTexture2D` from `../texture/texture-2d.js`
 - `EngineContext` from `../engine/engine.js`
-- `SceneContext`, `SceneEntity`, `addToScene` from `../scene/scene-core.js`
-- `Renderable`, `SceneUniformUpdater` from `../render/renderable.js` (type-only)
 - `createPipelineCache` from `../material/pipeline-cache.js`
+- (only in `addToScene` integration code, not in pure-2D bundles) `SceneContext` from `../scene/scene-core.js`, type-only
 
 Lazy / dynamic-imported (never on the static graph of `sprite-2d.ts`):
 
-- `ensureScene3DStage` from `../scene/scene-3d-stage.js` — pulled in by depth-hosted Sprite2D layers and by every billboard factory. The stage owns its own internal renderable lists, billboard systems, and shared 3D scene UBO.
-- `ensureOverlayStage` from `../scene/overlay-stage.js` — pulled in by `depth: "none"` Sprite2D layers.
 - `AnchorSource`, `addAnchoredSprite2D` from `../sprite/anchor/sprite-anchor.js` — pulled in only when the app uses anchored sprites.
 - `Sprite3DSceneUBO` from `../sprite/billboard/sprite-3d-scene-ubo.js` — pulled in only by the first billboard system.
 - `gpu-picker.ts`, `picking-contributors.ts`, `billboard-pick-contributor.ts`, `billboard-pick-pipeline.ts` — pulled in only when `pickBillboardSprite` is called.
@@ -1941,31 +1858,32 @@ NOT depended on:
 - `sprite-handle-observable-write.test.ts` — observable field writes propagate to packed slot.
 - `sprite-handle-parent-2d.test.ts` — Spine-style 2D parenting: parent rotation/scale propagate.
 - `sprite-handle-anchor.test.ts` — `handle.anchor = createWorldAnchor([…])` lazy-imports `sprite-anchor.ts` and installs the projection.
-- `scene-routing.test.ts` — `addToScene(scene, layer)` calls `layer._addToScene(scene)` exactly once and the scene-core has zero static reference to `Sprite2DLayer`'s symbol (verified by source-map / dependency-graph inspection).
-- `scene-stages-canonical-order.test.ts` — Adding a HUD layer first, then a mesh, results in `[Scene3DStage, OverlayStage]` after `startEngine` regardless of registration order.
+- `sprite-renderer.test.ts` — `createSpriteRenderer(engine, opts)` + `registerSpriteRenderer(engine, sr)` + `startEngine(engine)` produces a deterministic frame with no `SceneContext` in scope; verifies pipeline cache `(sampleCount, hasDepth)` holds at most 4 entries; verifies `unregisterSpriteRenderer` removes it from the engine's render list.
+- `register-scene.test.ts` — `registerScene(engine, scene)` runs deferred builders, registers the scene as an `EngineRenderer`, and (when `_hudSpriteLayers` is non-empty) lazily registers an internal HUD `SpriteRenderer` immediately after.
+- `addToScene-sprite-2d-branch.test.ts` — Adding a `Sprite2DLayer { depth: "none" }` and a `Sprite2DLayer { depth: "test" }` to a scene routes them into `ctx._hudSpriteLayers` and `ctx._depthHostedSpriteLayers` respectively, with no other side effects.
 
 ### Visualization (Playwright)
 
 Existing scene families port across (the goldens are pixel-equivalent
 because the projection math is the same):
 
-- **Scene NN-sprites-2d** — pure `Sprite2DLayer` in a no-camera scene.
-- **Scene NN-sprites-overlay** — `Sprite2DLayer` HUD over a 3D PBR scene.
+- **Scene NN-sprites-2d** — pure `Sprite2DLayer` driven by a `SpriteRenderer` registered on the engine; no `SceneContext` exists.
+- **Scene NN-sprites-overlay** — `Sprite2DLayer` HUD over a 3D PBR scene (scene-based path).
 - **Scene NN-sprites-anchored** — `Sprite2DLayer { depth: "test" }` with `createWorldAnchor` labels pinned to mesh anchors.
 - **Scene NN-sprites-billboard-yaw** — unchanged.
 - **Scene NN-sprites-billboard-facing** — unchanged.
 - **Scene NN-sprites-cutout-vs-blend** — unchanged.
 - **Scene NN-sprites-animated** — unchanged.
-- **Scene NN-sprites-mixed-stages** — **NEW**. One scene with depth-hosted anchored labels behind 3D occluders AND an overlay HUD on top — verifies the canonical stage order and the swap-chain clear/load handshake.
+- **Scene NN-sprites-mixed** — **NEW**. One scene with depth-hosted anchored labels behind 3D occluders AND a HUD overlay on top — verifies that `registerScene` correctly registers the scene followed by an internal HUD `SpriteRenderer`, and that the engine's per-frame loop draws them in the right order (3D pass first, HUD second).
 
 ### Bundle Size Ceilings
 
 Bundle-size ratchets:
 
-- **Pure-2D ceiling.** A scene that imports only `createSceneContext`, `addToScene`, `startEngine`, `loadSpriteAtlas`, `createSprite2DLayer`, `addSprite2D` must NOT fetch any of: `scene-3d-stage.js`, `sprite-anchor.js`, `sprite-3d-scene-ubo.js`, `sprite-billboard-*.js`, `camera/*`, `light/*`, `mesh/*`, `shadow/*`, `material/pbr/*`, `material/standard/*`, `picking/*`. The optional 3D fields on `SceneContext` (`camera?`, `lights?`, `meshes?`, …) are `import type` only — the corresponding runtime classes must NOT appear in the bundle. This is the single most important ceiling.
+- **Pure-2D ceiling.** A pure-2D entry point that imports only `createEngine`, `loadSpriteAtlas`, `createSprite2DLayer`, `addSprite2D`, `createSpriteRenderer`, `registerSpriteRenderer`, and `startEngine` must NOT fetch any of: `scene/scene-core.js`, `sprite-anchor.js`, `sprite-3d-scene-ubo.js`, `sprite-billboard-*.js`, `camera/*`, `light/*`, `mesh/*`, `shadow/*`, `material/pbr/*`, `material/standard/*`, `picking/*`. This is the single most important ceiling — it is what justifies splitting `SpriteRenderer` into its own module separate from the scene.
 - **Anchored-only-no-billboard ceiling.** A scene with depth-hosted Sprite2D layers but no billboards must NOT fetch `sprite-3d-scene-ubo.js`, billboard renderables, or the GPU picker.
 - **Per-billboard-variant ceiling.** Each variant (`Facing`, `YawLocked`, `AxisLocked`) must NOT include the other two.
-- **Mesh-only no-sprite ceiling.** A scene with no sprites must NOT fetch `sprite-2d.js`, `overlay-stage.js`, or the body of `picking-contributors.js`.
+- **Mesh-only no-sprite ceiling.** A scene with no sprites must NOT fetch `sprite-2d.js`, `sprite-renderer.js`, or the body of `picking-contributors.js`.
 
 ---
 
@@ -1975,10 +1893,7 @@ Bundle-size ratchets:
 packages/babylon-lite/src/
 
   scene/
-    scene-core.ts                                # SceneContext (incl. optional 3D fields, type-only) + addToScene + startEngine + onBeforeRender + disposeScene + RenderStage type
-    scene-3d-stage.ts                            # Scene3DStage + Scene3DStageState + ensureScene3DStage (lazy; hosts the full 3D render loop; owns its own internal renderable / billboard / sprite3DSceneUBO state)
-    overlay-stage.ts                             # OverlayStage + ensureOverlayStage + Sprite2DSceneUBO updater
-    render-stage.ts                              # RenderStage interface + canonicalizeStages
+    scene-core.ts                                # Existing SceneContext + addToScene switch (gains one new "sprite-2d-layer" branch) + startEngine + onBeforeRender + disposeScene
 
   sprite/
     shared/
@@ -1993,9 +1908,9 @@ packages/babylon-lite/src/
     sprite-2d.ts                                 # createSprite2DLayer + Index API (no anchor code; foundation only)
     sprite-2d-handle.ts                          # Sprite2DHandle + addSprite2D / removeSprite2D (Handle API)
     sprite-2d-handle-walk.ts                     # walkParentedSprite2DHandles
-    sprite-2d-renderable.ts                     # Renderable builder for Sprite2DLayer (dynamic-imported)
+    sprite-2d-renderable.ts                     # Renderable builder for Sprite2DLayer (dynamic-imported by depth-hosted layers' deferred build only)
     sprite-2d-shader.ts                         # composeSprite2D WGSL emitter (covers pure 2D AND anchored)
-    sprite-2d-capability.ts                      # Sprite2DState + ensureSprite2DCapability
+    sprite-renderer.ts                           # createSpriteRenderer / registerSpriteRenderer / unregisterSpriteRenderer / disposeSpriteRenderer + (sampleCount, hasDepth) pipeline cache
 
     anchor/
       sprite-anchor.ts                           # AnchorSource + createWorldAnchor + createParentAnchor + addAnchoredSprite2D + setSprite2DAnchor + per-frame projection hook
@@ -2027,17 +1942,21 @@ packages/babylon-lite/src/
 ### Public-API additions to `packages/babylon-lite/src/index.ts`
 
 ```typescript
-// ─── Scene (UNIFIED) ─────────────────────────────────────────────────
-export { createSceneContext, addToScene, removeFromScene, onBeforeRender, disposeScene, startEngine } from "./scene/scene-core.js";
-export type { SceneContext, SceneOptions, SceneEntity, ImageProcessingConfig } from "./scene/scene-core.js";
+// ─── Engine ──────────────────────────────────────────────────────────
+export type { EngineRenderer } from "./engine/engine.js";
+// `startEngine` no longer takes a `scene` argument — it walks engine._registrations.
+export { startEngine } from "./engine/start-engine.js";
 
-// 3D fields (camera, lights, meshes, animationGroups, fog, shadowGenerators,
-// imageProcessing) are plain optional fields on SceneContext — read and write
-// them directly: `scene.camera = cam`, `scene.lights?.push(light)`, etc.
-// They are typed via `import type`, so a pure-2D bundle never fetches the
-// underlying runtime classes.
+// ─── Scene ───────────────────────────────────────────────────────────
+// The existing scene API is unchanged except for the new register/unregister pair.
+// The `addToScene` switch gains one new branch for `_entityType === "sprite-2d-layer"`.
+export { registerScene, unregisterScene } from "./scene/scene-core.js";
 
 // ─── Sprites ─────────────────────────────────────────────────────────
+// The engine-registerable sprite renderer — usable with OR without a SceneContext.
+export { createSpriteRenderer, registerSpriteRenderer, unregisterSpriteRenderer, disposeSpriteRenderer } from "./sprite/sprite-renderer.js";
+export type { SpriteRenderer, SpriteRendererOptions } from "./sprite/sprite-renderer.js";
+
 export { loadSpriteAtlas, createGridSpriteAtlas, createNamedSpriteAtlas, resolveSpriteFrame } from "./sprite/shared/sprite-atlas.js";
 export { createSpriteClipState } from "./sprite/shared/sprite-animation.js";
 export type { SpriteAtlas, SpriteFrame, SpriteClip, SpriteSampling, SpriteBlendMode, SpriteFrameRef, SpriteClipState } from "./sprite/shared/sprite-atlas.js";
@@ -2085,11 +2004,33 @@ export type { SpritePickInfo } from "./sprite/picking/pick-sprite-2d.js";
   layer; the composer would emit a second WGSL specialization). It would
   not be a separate family.
 
-- The method-on-entity routing makes "scene-core stays free of entity
-  imports" a structural property of the design rather than a coding
-  convention. Every regression of pay-for-use becomes a build-failing
-  bundle-size ratchet rather than a code-review judgement call.
+- Exposing `SpriteRenderer` as an engine-registerable primitive (not a
+  scene method) is what makes the pure-2D bundle ceiling enforceable.
+  `SpriteRenderer` does not name `SceneContext`, so a Lottie/Rive-class
+  app never has a code path through which scene infrastructure could
+  leak into the bundle. The bundle-size ratchet enforces this
+  structurally: it is a build failure, not a code-review judgement call.
 
-- Stage canonicalization runs once at `startEngine`, so registration
-  order is irrelevant. This avoids the most likely user-error class
-  ("HUD added before mesh, mesh draws over HUD").
+- The single new `_entityType` branch in `addToScene` is intentionally
+  the smallest possible scene-side change. The existing switch will be
+  replaced wholesale by the future render-graph work; investing in any
+  larger restructuring now (extracting per-type registration functions,
+  adding stage abstractions, etc.) would be redoing work that the render
+  graph is going to redo anyway. The two new bucket arrays
+  (`_hudSpriteLayers`, `_depthHostedSpriteLayers`) survive the
+  render-graph transition unchanged — they are just lists of layers,
+  irrespective of how they're scheduled.
+
+- Making the engine the sole render-loop owner via `register*` /
+  `startEngine(engine)` is the seed of the frame graph. Today
+  `engine._registrations` is a flat list iterated in order; tomorrow it
+  becomes a DAG of `EngineRenderer` nodes. Both `Scene` (wrapped by
+  `registerScene`) and `SpriteRenderer` already conform to the
+  `{ render, dispose }` shape graph nodes need, so the migration is a
+  list-to-graph swap with no public-API break.
+
+- Two output buckets is the right granularity. `"none"` versus
+  `"test"|"test-write"` corresponds exactly to the two distinct render-
+  pass shapes the GPU needs (no-depth/MSAA=1 vs. depth/MSAA=4), so the
+  bucket split mirrors a real GPU constraint rather than an arbitrary
+  taxonomy.
