@@ -338,7 +338,7 @@
     {
         "id": 50,
         "slug": "scene50-sprite-grid",
-        "name": "Scene 50 — Sprite Grid (v2)",
+        "name": "Scene 50 — Sprite Grid",
         "maxMad": 0.1,
         "maxRawKB": 21,
         "description": "25×10 grid of icon sprites with cycled tints and rotated thirds, rendered via the pure-2D sprite API. BJS SpriteManager oracle.",
