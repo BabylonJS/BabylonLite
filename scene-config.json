@@ -341,6 +341,15 @@
         "tags": ["pbr", "gltf", "env", "sheen", "specular", "texture-transform", "webp"]
     },
     {
+        "id": 38,
+        "slug": "scene38-procedural-builders",
+        "name": "Scene 38 — Procedural Builders",
+        "maxMad": 0.02,
+        "maxRawKB": 62.3,
+        "description": "Cylinder, cone, plane, disc, ring, polyhedron, ribbon, tube, and extruded shape rendered with StandardMaterial. Parity check against BJS MeshBuilder.",
+        "tags": ["std", "procedural"]
+    },
+    {
         "id": 40,
         "slug": "scene40-physics",
         "name": "Scene 40 — Physics",

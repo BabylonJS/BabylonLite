@@ -22,7 +22,7 @@ export type { LightBase } from "./light/types.js";
 export { setMaxLights, MAX_LIGHTS } from "./light/types.js";
 
 // ─── Mesh Factories (high-level) ─────────────────────────────────────
-export { createSphere, createBox, createTorus, createGround, createGroundFromHeightMap } from "./mesh/mesh-factories.js";
+export { createSphere, createBox, createTorus, createGround, createGroundFromHeightMap, createCylinder, createPlane, createDisc, createPolyhedron, createRibbon, createTube, createExtrudeShape } from "./mesh/mesh-factories.js";
 
 // ─── Textures ────────────────────────────────────────────────────────
 export { createSolidTexture2D } from "./texture/solid-texture.js";
@@ -99,6 +99,14 @@ export type { AnimationClip, GltfAnimationData } from "./animation/types.js";
 export type { SphereOptions } from "./mesh/create-sphere.js";
 export type { TorusOptions } from "./mesh/create-torus.js";
 export type { GroundOptions } from "./mesh/create-ground.js";
+export type { CylinderOptions } from "./mesh/create-cylinder.js";
+export type { PlaneOptions } from "./mesh/create-plane.js";
+export type { DiscOptions } from "./mesh/create-disc.js";
+export type { PolyhedronOptions } from "./mesh/create-polyhedron.js";
+export type { RibbonOptions } from "./mesh/create-ribbon.js";
+export type { TubeOptions } from "./mesh/create-tube.js";
+export type { ExtrudeShapeOptions } from "./mesh/create-extrude.js";
+export { CAP_NONE, CAP_START, CAP_END, CAP_ALL } from "./mesh/create-tube.js";
 
 // ─── Picking ─────────────────────────────────────────────────────────
 export { createGpuPicker, pickAsync, disposePicker } from "./picking/gpu-picker.js";

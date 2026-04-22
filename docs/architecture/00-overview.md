@@ -19,7 +19,7 @@
 | [00-overview.md](00-overview.md) | Overview | Repository structure, public API |
 | [01-shadow-generator.md](01-shadow-generator.md) | Shadow Generator | ESM + PCF shadows, depth pass, Gaussian blur |
 | [03-texture-2d.md](03-texture-2d.md) | Texture2D | Image upload, mipmap gen, invertY |
-| [04-mesh-generators.md](04-mesh-generators.md) | Mesh Generators | Ground/heightmap, torus, sphere, box |
+| [04-mesh-generators.md](04-mesh-generators.md) | Mesh Generators | Ground/heightmap, torus, sphere, box, cylinder, plane, disc, polyhedron, ribbon, tube, extrude |
 | [05-lights.md](05-lights.md) | Lights | Hemispheric, directional, point, spot + PBR variants, multi-light UBO |
 | [06-engine.md](06-engine.md) | Engine | GPU init, MSAA, render loop, swap chain |
 | [07-scene.md](07-scene.md) | Scene | SceneContext, one-way ownership |
@@ -149,7 +149,8 @@ babylon-lite/
 │   │   │   └── lights-ubo.ts     # Multi-light UBO packing
 │   │   ├── mesh/
 │   │   │   ├── mesh.ts            # Mesh type and GPU upload
-│   │   │   ├── mesh-factories.ts  # High-level createSphere/Box/Torus/Ground
+│   │   │   ├── mesh-factories.ts  # High-level createSphere/Box/Torus/Ground/Cylinder/Plane/Disc/Polyhedron/Ribbon/Tube/Extrude
+│   │   │   ├── path3d.ts          # Path3D parallel-transport frames (used by tube/extrude)
 │   │   │   ├── thin-instance.ts   # Thin instance CPU data model + public API
 │   │   │   ├── thin-instance-gpu.ts # GPU buffer sync (lazy-loaded by renderable)
 │   │   │   ├── create-sphere.ts   # Sphere geometry generator
@@ -284,6 +285,13 @@ createSpotLight(
 createSphere(engine: Engine, options?: SphereOptions): Mesh
 createBox(engine: Engine, size?: number): Mesh
 createTorus(engine: Engine, options?: TorusOptions): Mesh
+createCylinder(engine: Engine, options?: CylinderOptions): Mesh
+createPlane(engine: Engine, options?: PlaneOptions): Mesh
+createDisc(engine: Engine, options?: DiscOptions): Mesh
+createPolyhedron(engine: Engine, options?: PolyhedronOptions): Mesh
+createRibbon(engine: Engine, options: RibbonOptions): Mesh
+createTube(engine: Engine, options: TubeOptions): Mesh
+createExtrudeShape(engine: Engine, options: ExtrudeShapeOptions): Mesh
 createGround(engine: Engine, options?: GroundOptions): Mesh
 createGroundFromHeightMap(engine: Engine, url: string, options: GroundOptions): Promise<Mesh>
 
