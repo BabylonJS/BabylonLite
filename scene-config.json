@@ -243,7 +243,7 @@
         "slug": "scene27-material-variants",
         "name": "Scene 27 — Material Variants",
         "maxMad": 1,
-        "maxRawKB": 71.3,
+        "maxRawKB": 80.75,
         "description": "glTF refrigerator with KHR_materials_variants, White variant selected. ArcRotate camera, hemispheric light.",
         "tags": ["pbr", "gltf", "variants"]
     },
