@@ -126,14 +126,8 @@ export async function resolveImage(json: any, binChunk: DataView, imageIdx: numb
 // --- Node Hierarchy → World Matrix (Memoized) ---
 
 // Babylon.js RH→LH root: rotation [0,1,0,0] + scale [1,1,-1] = diag(-1,1,1,1)
-const RH_TO_LH_ROOT = (() => {
-    const m = new Float32Array(16) as Mat4;
-    m[0] = -1;
-    m[5] = 1;
-    m[10] = 1;
-    m[15] = 1;
-    return m;
-})();
+// prettier-ignore
+const RH_TO_LH_ROOT = new Float32Array([-1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1]) as Mat4;
 
 /** Build a parent index map by scanning node.children arrays once. O(n). */
 export function buildParentMap(json: any): Map<number, number> {

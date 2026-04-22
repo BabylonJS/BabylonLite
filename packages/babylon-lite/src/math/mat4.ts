@@ -61,24 +61,15 @@ export function mat4LookAtLH(eye: Vec3, target: Vec3, up: Vec3): Mat4 {
         z: zAxis.x * xAxis.y - zAxis.y * xAxis.x,
     };
 
-    const out = new Float32Array(16) as Mat4;
-    out[0] = xAxis.x;
-    out[1] = yAxis.x;
-    out[2] = zAxis.x;
-    out[3] = 0;
-    out[4] = xAxis.y;
-    out[5] = yAxis.y;
-    out[6] = zAxis.y;
-    out[7] = 0;
-    out[8] = xAxis.z;
-    out[9] = yAxis.z;
-    out[10] = zAxis.z;
-    out[11] = 0;
-    out[12] = -(xAxis.x * eye.x + xAxis.y * eye.y + xAxis.z * eye.z);
-    out[13] = -(yAxis.x * eye.x + yAxis.y * eye.y + yAxis.z * eye.z);
-    out[14] = -(zAxis.x * eye.x + zAxis.y * eye.y + zAxis.z * eye.z);
-    out[15] = 1;
-    return out;
+    return new Float32Array([
+        xAxis.x, yAxis.x, zAxis.x, 0,
+        xAxis.y, yAxis.y, zAxis.y, 0,
+        xAxis.z, yAxis.z, zAxis.z, 0,
+        -(xAxis.x * eye.x + xAxis.y * eye.y + xAxis.z * eye.z),
+        -(yAxis.x * eye.x + yAxis.y * eye.y + yAxis.z * eye.z),
+        -(zAxis.x * eye.x + zAxis.y * eye.y + zAxis.z * eye.z),
+        1,
+    ]) as Mat4;
 }
 
 /** Perspective projection (left-handed, zero-to-one depth). Matches Babylon.js. */
@@ -119,27 +110,8 @@ export function mat4Translation(x: number, y: number, z: number): Mat4 {
 
 /** Create a rotation matrix from a quaternion. */
 export function mat4FromQuat(qx: number, qy: number, qz: number, qw: number): Mat4 {
-    const xx = qx * qx,
-        yy = qy * qy,
-        zz = qz * qz;
-    const xy = qx * qy,
-        xz = qx * qz,
-        yz = qy * qz;
-    const wx = qw * qx,
-        wy = qw * qy,
-        wz = qw * qz;
-
     const out = new Float32Array(16) as Mat4;
-    out[0] = 1 - 2 * (yy + zz);
-    out[1] = 2 * (xy + wz);
-    out[2] = 2 * (xz - wy);
-    out[4] = 2 * (xy - wz);
-    out[5] = 1 - 2 * (xx + zz);
-    out[6] = 2 * (yz + wx);
-    out[8] = 2 * (xz + wy);
-    out[9] = 2 * (yz - wx);
-    out[10] = 1 - 2 * (xx + yy);
-    out[15] = 1;
+    mat4ComposeInto(out, 0, 0, 0, 0, qx, qy, qz, qw, 1, 1, 1);
     return out;
 }
 

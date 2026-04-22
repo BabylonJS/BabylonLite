@@ -9,11 +9,8 @@ import { evaluateSampler } from "../animation/evaluate.js";
 import { mat4ComposeInto, mat4MultiplyInto } from "../math/mat4.js";
 
 // RH→LH root transform (same as load-gltf.ts): diag(-1, 1, 1, 1)
-const RH_TO_LH = new Float32Array(16);
-RH_TO_LH[0] = -1;
-RH_TO_LH[5] = 1;
-RH_TO_LH[10] = 1;
-RH_TO_LH[15] = 1;
+// prettier-ignore
+const RH_TO_LH = new Float32Array([-1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1]);
 
 // Scratch 4x4 used during bone-matrix composition; reused across frames + bones.
 const _boneTmp = new Float32Array(16);
