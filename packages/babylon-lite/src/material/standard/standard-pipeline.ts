@@ -110,21 +110,25 @@ export interface ShadowLightSlotLite {
     shadowType: "esm" | "pcf";
 }
 
-const _stdExts = new Map<string, StdExt>();
+// Lazy-init: avoids a module-level `new Map()` that defeats tree-shaking for
+// consumers importing from standard-pipeline.ts without using extensions.
+// See GUIDANCE.md §4 ("Zero module-level side effects").
+let _stdExts: Map<string, StdExt> | null = null;
 let _stdExtsSorted: readonly StdExt[] | null = null;
 
 export function _registerStdExt(ext: StdExt): void {
-    _stdExts.set(ext.id, ext);
+    (_stdExts ??= new Map()).set(ext.id, ext);
     _stdExtsSorted = null;
 }
 
 export function _getStdExts(): ReadonlyMap<string, StdExt> {
-    return _stdExts;
+    return (_stdExts ??= new Map());
 }
 
 export function _getStdExtsSorted(): readonly StdExt[] {
     if (!_stdExtsSorted) {
-        _stdExtsSorted = Array.from(_stdExts.values()).sort((a, b) => a.id.localeCompare(b.id));
+        const map = _stdExts;
+        _stdExtsSorted = map ? Array.from(map.values()).sort((a, b) => a.id.localeCompare(b.id)) : [];
     }
     return _stdExtsSorted;
 }
@@ -479,8 +483,20 @@ export function createDynamicMeshGPU(
     // UV params UBO (always when UV or shadow is needed)
     if (hasShadow || needsUV) {
         const uvData = new Float32Array(4);
-        uvData[0] = material.uvScale[0];
-        uvData[1] = material.uvScale[1];
+        const scaleX = material.uvScale[0];
+        let scaleY = material.uvScale[1];
+        const offsetX = 0;
+        let offsetY = 0;
+        // Flip V for y-down source data (e.g. basis/compressed textures).
+        // uv * (sx, sy) + (ox, oy) with vFlip becomes uv.xy * (sx, -sy) + (ox, sy+oy).
+        if (material.diffuseTexture?.invertY) {
+            offsetY = scaleY;
+            scaleY = -scaleY;
+        }
+        uvData[0] = scaleX;
+        uvData[1] = scaleY;
+        uvData[2] = offsetX;
+        uvData[3] = offsetY;
         meshEntries.push({ binding: nextBinding++, resource: { buffer: createUniformBuffer(engine, uvData) } });
     }
 

@@ -1510,7 +1510,7 @@
                         </div>
                         <div class="arch-mod arch-mod-tex">
                             <div class="arch-mod-name">Textures</div>
-                            <div class="arch-mod-sub">2D · cube · solid color · KTX1 compressed · GPU mipmap gen · sRGB · sampler config</div>
+                            <div class="arch-mod-sub">2D · cube · solid color · KTX1 compressed · Basis Universal (.basis) · GPU mipmap gen · sRGB · sampler config</div>
                         </div>
                         <div class="arch-mod arch-mod-math">
                             <div class="arch-mod-name">Math</div>
@@ -2313,6 +2313,12 @@
                             <td>✅</td>
                             <td></td>
                         </tr>
+                        <tr>
+                            <td>Basis Universal (.basis)</td>
+                            <td>✅</td>
+                            <td>✅</td>
+                            <td>Scene 36 — transcoder fetched from BJS CDN; BC7 / ASTC / ETC2 / BC3 auto-select + RGBA32 fallback</td>
+                        </tr>
 
                         <!-- glTF 2.0 Extensions -->
                         <tr class="feat-cat">
@@ -3073,6 +3079,42 @@
                 });
             }
 
+            function loadParityDiff(s) {
+                var statsEl = document.getElementById("diff-stats-" + s.n);
+                if (statsEl) statsEl.textContent = "loading\u2026";
+                return Promise.all([loadImg(s.golden), loadImg(s.actual)]).then(function (imgs) {
+                    var golden = imgs[0],
+                        actual = imgs[1];
+                    var statsEl = document.getElementById("diff-stats-" + s.n);
+                    if (!golden) {
+                        if (statsEl) statsEl.innerHTML = '<span class="fail">golden ref missing \u2014 run BJS reference page</span>';
+                        return;
+                    }
+                    replaceSlot("diff-bjs-" + s.n, golden.cloneNode());
+                    if (!actual) {
+                        if (statsEl) statsEl.innerHTML = '<span class="warn">test-actual.png missing \u2014 run parity tests first</span>';
+                        return;
+                    }
+                    replaceSlot("diff-lite-" + s.n, actual.cloneNode());
+
+                    var result = computeDiff(golden, actual);
+                    replaceSlot("diff-img-" + s.n, result.diffCanvas);
+                    var card = document.getElementById("diff-card-" + s.n);
+                    if (card) {
+                        card.dataset.mad = result.mad.toFixed(4);
+                        card.dataset.redDots = String(result.redDots);
+                    }
+                    if (statsEl) {
+                        var threshold = s.maxMad;
+                        var madClass = result.mad <= threshold ? "pass" : "fail";
+                        var w5Class = result.within5Pct >= 90 ? "pass" : result.within5Pct >= 80 ? "warn" : "fail";
+                        statsEl.innerHTML =
+                            'MAD: <span class="' + madClass + '">' + result.mad.toFixed(2) + " / " + threshold + "</span> \u00b7 " +
+                            'W5: <span class="' + w5Class + '">' + result.within5Pct.toFixed(1) + "%</span>";
+                    }
+                });
+            }
+
             function initParityGrid(config) {
                 var parityScenes = config.map(function (s) {
                     return {
@@ -3083,6 +3125,7 @@
                         actual: "/reference/" + s.slug + "/test-actual.png",
                     };
                 });
+                window.__PARITY_SCENES__ = parityScenes;
 
                 var grid = document.getElementById("parity-grid");
                 grid.innerHTML = parityScenes
@@ -3123,49 +3166,7 @@
                     .join("");
 
                 // Load all diffs in parallel
-                var allDiffs = parityScenes.map(function (s) {
-                    return Promise.all([loadImg(s.golden), loadImg(s.actual)]).then(function (imgs) {
-                        var golden = imgs[0],
-                            actual = imgs[1];
-                        var statsEl = document.getElementById("diff-stats-" + s.n);
-                        if (!golden) {
-                            if (statsEl) statsEl.innerHTML = '<span class="fail">golden ref missing \u2014 run BJS reference page</span>';
-                            return;
-                        }
-                        replaceSlot("diff-bjs-" + s.n, golden.cloneNode());
-                        if (!actual) {
-                            if (statsEl) statsEl.innerHTML = '<span class="warn">test-actual.png missing \u2014 run parity tests first</span>';
-                            return;
-                        }
-                        replaceSlot("diff-lite-" + s.n, actual.cloneNode());
-
-                        var result = computeDiff(golden, actual);
-                        replaceSlot("diff-img-" + s.n, result.diffCanvas);
-                        var card = document.getElementById("diff-card-" + s.n);
-                        if (card) {
-                            card.dataset.mad = result.mad.toFixed(4);
-                            card.dataset.redDots = String(result.redDots);
-                        }
-                        if (statsEl) {
-                            var threshold = s.maxMad;
-                            var madClass = result.mad <= threshold ? "pass" : "fail";
-                            var w5Class = result.within5Pct >= 90 ? "pass" : result.within5Pct >= 80 ? "warn" : "fail";
-                            statsEl.innerHTML =
-                                'MAD: <span class="' +
-                                madClass +
-                                '">' +
-                                result.mad.toFixed(2) +
-                                " / " +
-                                threshold +
-                                "</span> \u00b7 " +
-                                'W5: <span class="' +
-                                w5Class +
-                                '">' +
-                                result.within5Pct.toFixed(1) +
-                                "%</span>";
-                        }
-                    });
-                });
+                var allDiffs = parityScenes.map(loadParityDiff);
                 // Re-apply stored sort now that MAD data is available
                 Promise.all(allDiffs).then(function () {
                     var activeBtn = document.querySelector(".parity-sort-btn.active");
@@ -3411,10 +3412,63 @@
                     requestAnimationFrame(function () {
                         window.scrollTo(0, savedScroll);
                     });
+                    startAutoRefresh();
                 })
                 .catch(function () {
                     console.warn("Failed to load scene-config.json");
                 });
+
+            // ── Auto-refresh: poll /lab-api/signature every ~1s and reload
+            //    bundle / perf / parity data when their source files change.
+            var _lastSig = null;
+            function startAutoRefresh() {
+                setInterval(pollSignature, 1500);
+            }
+            function pollSignature() {
+                if (document.hidden) return;
+                fetch("/lab-api/signature", { cache: "no-store" })
+                    .then(function(r) { return r.ok ? r.json() : null; })
+                    .then(function(sig) {
+                        if (!sig) return;
+                        var prev = _lastSig;
+                        _lastSig = sig;
+                        if (!prev) return;
+                        if (sig.bundle !== prev.bundle) {
+                            loadBundleManifest();
+                        }
+                        if (sig.perf !== prev.perf) {
+                            loadPerfManifest();
+                        }
+                        var parityScenes = window.__PARITY_SCENES__ || [];
+                        var byId = {};
+                        parityScenes.forEach(function(s) { byId["scene" + s.n] = s; });
+                        var newPar = sig.parity || {};
+                        var oldPar = prev.parity || {};
+                        var reloads = [];
+                        Object.keys(newPar).forEach(function(k) {
+                            if (newPar[k] !== oldPar[k] && byId[k]) {
+                                reloads.push(loadParityDiff(byId[k]));
+                            }
+                        });
+                        if (reloads.length) {
+                            Promise.all(reloads).then(function() {
+                                var activeBtn = document.querySelector(".parity-sort-btn.active");
+                                if (activeBtn && activeBtn.dataset.sort !== "num") {
+                                    sortParityGrid(activeBtn.dataset.sort, true);
+                                }
+                                if (parityFilterActive) {
+                                    // Re-apply red-diffs-only filter for updated cards
+                                    document.querySelectorAll("#parity-grid .diff-card").forEach(function (c) {
+                                        var mad = parseFloat(c.dataset.mad || "0");
+                                        var maxMad = parseFloat(c.dataset.maxMad || "1");
+                                        c.style.display = mad > maxMad ? "" : "none";
+                                    });
+                                }
+                            });
+                        }
+                    })
+                    .catch(function() {});
+            }
 
             /** Load an image from URL, return Image or null */
             function loadImg(url) {

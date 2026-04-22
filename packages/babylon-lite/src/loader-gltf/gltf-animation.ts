@@ -11,7 +11,7 @@ import type { Mat4 } from "../math/types.js";
 import type { Mesh } from "../mesh/mesh.js";
 import type { GltfAnimationData, AnimationClip, AnimationSampler, AnimationChannel, NodeRest, SkeletonBinding, MorphBinding } from "../animation/types.js";
 import { INTERP_LINEAR, INTERP_STEP, INTERP_CUBICSPLINE, PATH_TRANSLATION, PATH_ROTATION, PATH_SCALE, PATH_WEIGHTS } from "../animation/types.js";
-import { mat4Invert, mat4Identity, mat4Multiply } from "../math/mat4.js";
+import { mat4Invert, mat4Identity, mat4MultiplyInto } from "../math/mat4.js";
 import { resolveAccessor, computeNodeWorldMatrix, findParent } from "./gltf-parser.js";
 import type { SceneNode } from "../scene/scene-node.js";
 
@@ -53,6 +53,21 @@ export interface GltfSkinData {
 
 // ─── Skin / Skeleton Extraction ─────────────────────────────────────
 
+/** Resolve a skin's inverse-bind matrices, filling with identities when absent. */
+function resolveIBMs(json: any, binChunk: DataView, skin: any): Float32Array {
+    const jointCount = skin.joints.length;
+    if (skin.inverseBindMatrices !== undefined) {
+        const ibmData = resolveAccessor(json, binChunk, skin.inverseBindMatrices);
+        return new Float32Array(ibmData.data.buffer, ibmData.data.byteOffset, jointCount * 16);
+    }
+    const out = new Float32Array(jointCount * 16);
+    for (let i = 0; i < jointCount; i++) {
+        const o = i * 16;
+        out[o] = out[o + 5] = out[o + 10] = out[o + 15] = 1;
+    }
+    return out;
+}
+
 export function extractSkin(
     json: any,
     binChunk: DataView,
@@ -63,26 +78,8 @@ export function extractSkin(
 ): GltfSkinData {
     const skin = json.skins[skinIdx];
     const jointNodes: number[] = skin.joints;
-
-    // Resolve inverse bind matrices
-    let inverseBindMatrices: Float32Array;
-    if (skin.inverseBindMatrices !== undefined) {
-        const ibmData = resolveAccessor(json, binChunk, skin.inverseBindMatrices);
-        inverseBindMatrices = new Float32Array(ibmData.data.buffer, ibmData.data.byteOffset, jointNodes.length * 16);
-    } else {
-        // Default: identity for each joint
-        inverseBindMatrices = new Float32Array(jointNodes.length * 16);
-        for (let i = 0; i < jointNodes.length; i++) {
-            inverseBindMatrices[i * 16 + 0] = 1;
-            inverseBindMatrices[i * 16 + 5] = 1;
-            inverseBindMatrices[i * 16 + 10] = 1;
-            inverseBindMatrices[i * 16 + 15] = 1;
-        }
-    }
-
-    // Compute world matrices for each joint at rest pose
+    const inverseBindMatrices = resolveIBMs(json, binChunk, skin);
     const jointWorldMatrices: Mat4[] = jointNodes.map((nodeIdx) => computeNodeWorldMatrix(json, nodeIdx, parentMap, worldMatrixCache));
-
     return { jointNodes, inverseBindMatrices, jointWorldMatrices, meshWorldMatrix };
 }
 
@@ -91,25 +88,13 @@ export function extractSkin(
  *  At rest pose this simplifies to identity for each bone. */
 export function computeBoneTextureData(skin: GltfSkinData): Float32Array {
     const numBones = skin.jointNodes.length;
-    // 4 floats per texel (rgba32float), 4 texels per bone = 16 floats per bone
     const data = new Float32Array(numBones * 16);
-
-    // Compute inverse mesh world matrix
     const invMeshWorld = mat4Invert(skin.meshWorldMatrix) ?? mat4Identity();
-
+    const tmp = new Float32Array(16);
     for (let i = 0; i < numBones; i++) {
-        const jointWorld = skin.jointWorldMatrices[i]!;
-        const ibmOffset = i * 16;
-        const ibm = new Float32Array(skin.inverseBindMatrices.buffer, skin.inverseBindMatrices.byteOffset + ibmOffset * 4, 16) as Mat4;
-
-        // boneMatrix = inverse(meshWorld) * jointWorld * IBM
-        const temp = mat4Multiply(invMeshWorld, jointWorld);
-        const boneMatrix = mat4Multiply(temp, ibm);
-
-        // Store column-major (GPU reads 4 texels = 4 columns)
-        data.set(boneMatrix, i * 16);
+        mat4MultiplyInto(tmp, 0, invMeshWorld, 0, skin.jointWorldMatrices[i]!, 0);
+        mat4MultiplyInto(data, i * 16, tmp, 0, skin.inverseBindMatrices, i * 16);
     }
-
     return data;
 }
 
@@ -259,20 +244,7 @@ export function parseAnimationData(
 
         const skin = json.skins[node.skin];
         const jointNodes: number[] = skin.joints;
-
-        let inverseBindMatrices: Float32Array;
-        if (skin.inverseBindMatrices !== undefined) {
-            const ibmData = resolveAccessor(json, binChunk, skin.inverseBindMatrices);
-            inverseBindMatrices = new Float32Array(ibmData.data.buffer, ibmData.data.byteOffset, jointNodes.length * 16);
-        } else {
-            inverseBindMatrices = new Float32Array(jointNodes.length * 16);
-            for (let i = 0; i < jointNodes.length; i++) {
-                inverseBindMatrices[i * 16] = 1;
-                inverseBindMatrices[i * 16 + 5] = 1;
-                inverseBindMatrices[i * 16 + 10] = 1;
-                inverseBindMatrices[i * 16 + 15] = 1;
-            }
-        }
+        const inverseBindMatrices = resolveIBMs(json, binChunk, skin);
 
         const meshWorldMatrix = computeNodeWorldMatrix(json, nodeIdx, parentMap, worldMatrixCache);
         const invMeshWorld = mat4Invert(meshWorldMatrix) ?? mat4Identity();

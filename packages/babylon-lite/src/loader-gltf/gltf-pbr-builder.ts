@@ -11,6 +11,12 @@ import type { GltfFeature } from "./gltf-feature.js";
 import { mipLevelCount } from "../texture/mip-count.js";
 import { linearToSrgbByte } from "../color/color.js";
 
+/** Texture post-processor composed from every active feature's `wrapTexture`
+ *  hook. Identity when no feature contributes one (common case). Kept simple
+ *  so the core loader stays feature-agnostic and tree-shakes cleanly. */
+export type TextureWrapFn = (tex: Texture2D, texInfo: unknown) => Texture2D;
+export const identityTexWrap: TextureWrapFn = (tex) => tex;
+
 export type GenerateMipmapsFn = (engine: EngineContextInternal, texture: GPUTexture, face?: number) => void;
 
 export function uploadTex(
@@ -42,8 +48,8 @@ export function uploadTex(
 }
 
 /** Assemble a PbrMaterialPropsInternal from parsed glTF material data + already-uploaded
- *  textures + per-ext fragment overrides. The default ORM path picks the single image
- *  (or factor fallback); the gltf-ext-orm extension overrides via `extLayers`. */
+ *  textures + per-ext fragment overrides. Fast-path: no wrapTex, no occlusionOnUv2,
+ *  no occlusionTexture. Slow-path additions live in gltf-pbr-builder-ext.ts. */
 export function assemblePbrProps(
     mat: GltfMaterialData,
     baseColorTexture: Texture2D,
@@ -52,11 +58,6 @@ export function assemblePbrProps(
     emissiveTexture: Texture2D | undefined,
     extLayers: Partial<PbrMaterialProps> | undefined
 ): PbrMaterialPropsInternal {
-    // Propagate non-default emissiveFactor as `emissiveColor` so the emissive fragment
-    // multiplies the texture sample by it. Factors of [1,1,1] (pass-through) and
-    // [0,0,0] (no-emissive, the glTF spec default) both leave `emissiveColor` unset
-    // so scenes without emissive pay zero bytes for the emissive-color fragment.
-    // The emissive-strength extension overrides this via `extLayers`.
     const ef = mat.emissiveFactor;
     const defaultFactor = (ef[0] === 1 && ef[1] === 1 && ef[2] === 1) || (ef[0] === 0 && ef[1] === 0 && ef[2] === 0);
     return {
@@ -66,8 +67,7 @@ export function assemblePbrProps(
         emissiveTexture,
         doubleSided: mat.doubleSided,
         occlusionStrength: mat.occlusionImage ? 1.0 : 0,
-        // Apply factors only when a real MR texture is present. Without one,
-        // the factors are baked into the 1×1 fallback ORM bytes.
+        ...(mat.normalScale !== 1 ? { normalTextureScale: mat.normalScale } : undefined),
         ...(mat.metallicRoughnessImage ? { metallicFactor: mat.metallicFactor, roughnessFactor: mat.roughnessFactor } : undefined),
         ...(!defaultFactor ? { emissiveColor: [ef[0], ef[1], ef[2]] as [number, number, number] } : undefined),
         enableSpecularAA: true,
@@ -77,7 +77,9 @@ export function assemblePbrProps(
     } satisfies PbrMaterialPropsInternal;
 }
 
-/** Build the always-present default textures (base color + ORM) from a parsed glTF material. */
+/** Build the always-present default textures (base color + ORM) from a parsed glTF material.
+ *  Fast-path version: no wrapTex, no occlusion-on-uv2 handling. The slow path lives
+ *  in gltf-pbr-builder-ext.ts and is lazy-loaded only when needed. */
 export function buildDefaultPbrTextures(
     engine: EngineContextInternal,
     mat: GltfMaterialData,
@@ -109,7 +111,6 @@ export function buildDefaultPbrTextures(
         const clamp = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255);
         ormTexture = uploadTex(engine, null, false, sampler, generateMipmaps, new Uint8Array([255, clamp(mat.roughnessFactor), clamp(mat.metallicFactor), 255]));
     } else {
-        // Separate MR + occlusion: ext will override, but we need a placeholder.
         ormTexture = getCachedTex(mat.metallicRoughnessImage!, false);
     }
     return { baseColorTexture, ormTexture, normalTexture, emissiveTexture };
