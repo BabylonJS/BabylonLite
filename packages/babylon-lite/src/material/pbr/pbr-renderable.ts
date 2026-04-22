@@ -19,8 +19,7 @@ import type { Renderable, SceneUniformUpdater } from "../../render/renderable.js
 import type { ShaderFragment, ComposedShader } from "../../shader/fragment-types.js";
 import type { PbrLightConfig } from "./pbr-template.js";
 import type { UboField } from "../../shader/fragment-types.js";
-import { composeShader } from "../../shader/shader-composer.js";
-import { createPbrTemplate, getPbrBaseSceneUboFields } from "./pbr-template.js";
+import { getPbrBaseSceneUboFields } from "./pbr-template.js";
 import { computeUboLayout } from "../../shader/ubo-layout.js";
 import { acquireTexture, releaseTexture, clearSamplerCache } from "../../resource/gpu-pool.js";
 import { createEmptyUniformBuffer, createUniformBuffer } from "../../resource/gpu-buffers.js";
@@ -34,33 +33,13 @@ import {
     PBR_HAS_NORMAL_MAP,
     PBR_HAS_ALPHA_BLEND,
     PBR2_HAS_REFRACTION,
-    PBR2_HAS_UV_TRANSFORM,
-    PBR2_HAS_REFLECTANCE_FACTORS,
-    PBR2_HAS_VERTEX_COLOR,
     PBR2_HAS_UV2,
-    PBR_HAS_METALLIC_REFLECTANCE_MAP,
-    PBR_HAS_REFLECTANCE_MAP,
-    PBR_HAS_SPECULAR_AA,
-    PBR_HAS_EMISSIVE_COLOR,
-    PBR_HAS_GAMMA_ALBEDO,
-    PBR_HAS_RECEIVE_SHADOWS,
+    PBR2_HAS_VERTEX_COLOR,
+    PBR_HAS_THIN_INSTANCES,
+    PBR_HAS_INSTANCE_COLOR,
 } from "./pbr-pipeline.js";
-import { PBR_HAS_THIN_INSTANCES, PBR_HAS_INSTANCE_COLOR } from "./pbr-pipeline.js";
-import {
-    _getPbrLightExtension,
-    _registerPbrExt,
-    _getPbrExts,
-    PBR_HAS_EMISSIVE,
-    PBR_HAS_ENV,
-    PBR_HAS_TONEMAP,
-    PBR_HAS_MORPH_TARGETS,
-    PBR_HAS_SPEC_GLOSS,
-    PBR_HAS_DOUBLE_SIDED,
-    PBR_HAS_COTANGENT_NORMAL,
-    PBR_HAS_OCCLUSION,
-    PBR_HAS_ANISOTROPY,
-    PBR_HAS_SKYBOX,
-} from "./pbr-flags.js";
+import { _getPbrLightExtension, _registerPbrExt, _getPbrExts } from "./pbr-flags.js";
+import { createPbrComposer } from "./pbr-compose.js";
 import { computeMeshPbrFeatures } from "./pbr-mesh-features.js";
 import { detectPbrSceneFlags } from "./pbr-feature-detect.js";
 import { createPbrSceneUpdater } from "./pbr-scene-updater.js";
@@ -239,108 +218,32 @@ export async function buildPbrRenderables(
     const lightConfig: PbrLightConfig | null = lightExt ? lightExtToConfig(lightExt) : null;
     const hasLight = !!lightExt;
 
-    // ── Compose shaders per unique feature set (cached) ──
-    const composedCache = new Map<string, ComposedShader>();
-
-    function composePbr(features: number, features2: number = 0): ComposedShader {
-        const ckey = `${features}:${features2}`;
-        let c = composedCache.get(ckey);
-        if (c) {
-            return c;
-        }
-
-        const f = features;
-        const has = (bit: number) => (f & bit) !== 0;
-        const hasNormal = has(PBR_HAS_NORMAL_MAP);
-        const hasCotangent = has(PBR_HAS_COTANGENT_NORMAL);
-        const hasReflExt = has(PBR_HAS_METALLIC_REFLECTANCE_MAP | PBR_HAS_REFLECTANCE_MAP) || (features2 & PBR2_HAS_REFLECTANCE_FACTORS) !== 0;
-        const hasIbl = has(PBR_HAS_ENV);
-        const hasMorph = has(PBR_HAS_MORPH_TARGETS);
-        const hasShadow = has(PBR_HAS_RECEIVE_SHADOWS);
-        const hasAniso = has(PBR_HAS_ANISOTROPY);
-        const hasEmCol = has(PBR_HAS_EMISSIVE_COLOR);
-        const hasEmTex = has(PBR_HAS_EMISSIVE);
-        const hasTI = has(PBR_HAS_THIN_INSTANCES);
-
-        // Build optional ext config when any of these features are present.
-        const hasUvTx = (features2 & PBR2_HAS_UV_TRANSFORM) !== 0;
-        const hasVC = (features2 & PBR2_HAS_VERTEX_COLOR) !== 0;
-        const hasU2 = (features2 & PBR2_HAS_UV2) !== 0;
-        const needsExt = hasUvTx || hasVC || hasU2;
-        const ext =
-            needsExt && _createPbrTemplateExt
-                ? _createPbrTemplateExt({
-                      hasUvTransform: hasUvTx,
-                      hasVertexColor: hasVC,
-                      hasUv2: hasU2,
-                      hasOcclusionUv2: hasU2, // When UV2 is present and has occlusion on texcoord 1
-                      hasAnyNormal: hasNormal || hasCotangent,
-                      hasEmissiveTexture: hasEmTex,
-                      hasSpecGloss: has(PBR_HAS_SPEC_GLOSS),
-                  })
-                : undefined;
-
-        const template = createPbrTemplate({
-            light: hasMultiLight ? null : lightConfig,
-            hasMultiLight,
-            multiLightWGSL: _multiLightWGSL,
-            multiLightLoop: _multiLightLoop,
-            normalMode: hasNormal ? "tangent" : hasCotangent ? "cotangent" : "none",
-            hasEmissiveTexture: hasEmTex,
-            hasSpecGloss: has(PBR_HAS_SPEC_GLOSS),
-            hasDoubleSided: has(PBR_HAS_DOUBLE_SIDED),
-            hasTonemap: has(PBR_HAS_TONEMAP),
-            acesHelpers: _acesHelpers,
-            acesTonemapCall: _acesTonemapCall,
-            hasAlphaBlend: has(PBR_HAS_ALPHA_BLEND),
-            hasSpecularAA: has(PBR_HAS_SPECULAR_AA),
-            hasGammaAlbedo: has(PBR_HAS_GAMMA_ALBEDO),
-            hasMorph,
-            hasOcclusion: has(PBR_HAS_OCCLUSION) && !hasReflExt,
-            hasEmissiveColor: hasEmCol,
-            hasReflectanceExt: hasReflExt,
-            hasIbl,
-            hasAnisotropy: hasAniso,
-            anisoBrdfFunctions: hasAniso && _anisoExt ? _anisoExt.ANISO_BRDF_FUNCTIONS : "",
-            anisoTBBlock: hasAniso && _anisoExt ? _anisoExt.makeAnisotropyTBBlock(hasNormal) : "",
-            anisoDirectDG: hasAniso && _anisoExt ? _anisoExt.ANISO_DIRECT_DG : "",
-            ext,
-        });
-
-        const frags: ShaderFragment[] = [];
-        const hasAnyNormal = hasNormal || hasCotangent;
-        const hasSpecularAAbit = has(PBR_HAS_SPECULAR_AA);
-        const fragCtx: import("./pbr-flags.js").PbrFragCtx = {
-            features,
-            features2,
-            hasIbl,
-            hasAnyNormal,
-            hasSpecularAA: hasSpecularAAbit,
-            anisoBentNormalCode: hasAniso && _anisoExt ? _anisoExt.ANISO_BENT_NORMAL : "",
-            iblSkyboxCalc: has(PBR_HAS_SKYBOX) ? _iblSkyboxCalc : "",
-        };
-        // All registered exts contribute fragments via ext.frag().
-        // Registration order defines iteration order; callers register in composer-matching order.
-        for (const ext of _getPbrExts().values()) {
-            if (ext.frag) {
-                const fr = ext.frag(fragCtx);
-                if (fr) {
-                    frags.push(fr);
-                }
-            }
-        }
-        if (hasShadow && _createPbrShadowFragment) {
-            const slots = shadowLights.map((sl) => ({ lightIndex: sl.lightIndex, shadowType: sl.shadowType }));
-            frags.push(_createPbrShadowFragment(slots));
-        }
-        if (hasTI && _createThinInstanceFragment) {
-            frags.push(_createThinInstanceFragment(has(PBR_HAS_INSTANCE_COLOR)));
-        }
-
-        c = composeShader(template, frags);
-        composedCache.set(ckey, c);
-        return c;
+    // ACES tonemap WGSL is dynamically imported only when requested (keeps standard-tonemap bundles lean).
+    // Must be loaded before the composer is created so deps are fully resolved.
+    let _acesHelpers = "";
+    let _acesTonemapCall = "";
+    const hasTonemap = scene.imageProcessing.toneMappingEnabled;
+    if (hasTonemap && scene.imageProcessing.toneMappingType === "aces") {
+        const acesMod = await import("./pbr-aces-wgsl.js");
+        _acesHelpers = acesMod.ACES_HELPERS_WGSL;
+        _acesTonemapCall = acesMod.ACES_TONEMAP_CALL_WGSL;
     }
+
+    // ── Compose shaders per unique feature set (cached) ──
+    const composePbr = createPbrComposer({
+        hasMultiLight,
+        lightConfig,
+        multiLightWGSL: _multiLightWGSL,
+        multiLightLoop: _multiLightLoop,
+        acesHelpers: _acesHelpers,
+        acesTonemapCall: _acesTonemapCall,
+        createPbrTemplateExt: _createPbrTemplateExt,
+        anisoExt: _anisoExt,
+        iblSkyboxCalc: _iblSkyboxCalc,
+        createPbrShadowFragment: _createPbrShadowFragment,
+        shadowLights,
+        createThinInstanceFragment: _createThinInstanceFragment,
+    });
 
     // Stash composePbr on the scene so single-rebuild can reuse it
     (scene as SceneContextInternal)._composePbr = composePbr;
@@ -368,16 +271,6 @@ export async function buildPbrRenderables(
         lightsUBOScratch = new Float32Array(_LIGHTS_UBO_SIZE / 4);
         (scene as SceneContextInternal)._pbrLightsUBO = lightsUBOBuffer;
         (scene as SceneContextInternal)._pbrLightsUBOScratch = lightsUBOScratch;
-    }
-
-    const hasTonemap = scene.imageProcessing.toneMappingEnabled;
-    // ACES tonemap WGSL is dynamically imported only when requested (keeps standard-tonemap bundles lean).
-    let _acesHelpers = "";
-    let _acesTonemapCall = "";
-    if (hasTonemap && scene.imageProcessing.toneMappingType === "aces") {
-        const acesMod = await import("./pbr-aces-wgsl.js");
-        _acesHelpers = acesMod.ACES_HELPERS_WGSL;
-        _acesTonemapCall = acesMod.ACES_TONEMAP_CALL_WGSL;
     }
 
     const packets: PbrDrawPacket[] = [];
