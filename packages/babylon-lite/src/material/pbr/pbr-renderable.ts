@@ -161,75 +161,24 @@ export async function buildPbrRenderables(
     let hasAnyVertexColor = false;
     for (let i = 0; i < meshes.length; i++) {
         const m = meshes[i]!;
-        const mat = m.material as PbrMaterialProps;
+        const mat = m.material as PbrMaterialProps & { _hasReflExt?: boolean; _hasUvTx?: boolean };
         const mi = m as import("../../mesh/mesh.js").MeshInternal;
-        if (!hasSkybox && !!mat.skyboxMode) {
-            hasSkybox = true;
-        }
-        if (!hasMetallicReflectance && (!!mat.metallicReflectanceTexture || !!mat.reflectanceTexture || !!(mat as { _hasReflExt?: boolean })._hasReflExt)) {
-            hasMetallicReflectance = true;
-        }
-        if (!hasClearcoat && !!mat.clearCoat?.isEnabled) {
-            hasClearcoat = true;
-        }
-        if (!hasSheen && !!mat.sheen?.isEnabled) {
-            hasSheen = true;
-        }
-        if (!hasAnyAnisotropy && !!mat.anisotropy?.isEnabled) {
-            hasAnyAnisotropy = true;
-        }
-        if (!hasAnySubsurface && !!mat.subsurface?.translucency) {
-            hasAnySubsurface = true;
-        }
-        if (!hasRefraction && (mat.subsurface?.refraction?.intensity ?? 0) > 0) {
-            hasRefraction = true;
-        }
-        if (!needsEmissiveColor && !!mat.emissiveColor) {
-            needsEmissiveColor = true;
-        }
-        if (!hasSomeSkeletons && !!m.skeleton) {
-            hasSomeSkeletons = true;
-        }
-        if (!hasSomeMorphs && !!m.morphTargets) {
-            hasSomeMorphs = true;
-        }
-        if (!hasSomeThinInstances && !!m.thinInstances) {
-            hasSomeThinInstances = true;
-        }
-        if (!hasAnyUnlit && !!mat.unlit) {
-            hasAnyUnlit = true;
-        }
-        if (!hasAnyUvTransform && !!(mat as { _hasUvTx?: boolean })._hasUvTx) {
-            hasAnyUvTransform = true;
-        }
-        // UV2 and vertex color detection from mesh GPU buffers (mesh-level check).
-        // Note: UV2 is only considered "present" when occlusionTexCoord === 1, matching
-        // the logic in pbr-mesh-features.ts. This is a branch simplification.
-        if (!hasAnyUv2 && mi._gpu.uv2Buffer && mat.occlusionTexCoord === 1) {
-            hasAnyUv2 = true;
-        }
-        if (!hasAnyVertexColor && mi._gpu.colorBuffer) {
-            hasAnyVertexColor = true;
-        }
-        if (
-            hasSkybox &&
-            hasMetallicReflectance &&
-            hasClearcoat &&
-            hasSheen &&
-            hasAnyAnisotropy &&
-            hasAnySubsurface &&
-            hasRefraction &&
-            needsEmissiveColor &&
-            hasSomeSkeletons &&
-            hasSomeMorphs &&
-            hasSomeThinInstances &&
-            hasAnyUnlit &&
-            hasAnyUvTransform &&
-            hasAnyUv2 &&
-            hasAnyVertexColor
-        ) {
-            break;
-        }
+        hasSkybox ||= !!mat.skyboxMode;
+        hasMetallicReflectance ||= !!(mat.metallicReflectanceTexture || mat.reflectanceTexture || mat._hasReflExt);
+        hasClearcoat ||= !!mat.clearCoat?.isEnabled;
+        hasSheen ||= !!mat.sheen?.isEnabled;
+        hasAnyAnisotropy ||= !!mat.anisotropy?.isEnabled;
+        hasAnySubsurface ||= !!mat.subsurface?.translucency;
+        hasRefraction ||= (mat.subsurface?.refraction?.intensity ?? 0) > 0;
+        needsEmissiveColor ||= !!mat.emissiveColor;
+        hasSomeSkeletons ||= !!m.skeleton;
+        hasSomeMorphs ||= !!m.morphTargets;
+        hasSomeThinInstances ||= !!m.thinInstances;
+        hasAnyUnlit ||= !!mat.unlit;
+        hasAnyUvTransform ||= !!mat._hasUvTx;
+        // UV2 only counts when occlusion is on texcoord 1 (matches pbr-mesh-features.ts).
+        hasAnyUv2 ||= !!mi._gpu.uv2Buffer && mat.occlusionTexCoord === 1;
+        hasAnyVertexColor ||= !!mi._gpu.colorBuffer;
     }
 
     // IBL fragment
