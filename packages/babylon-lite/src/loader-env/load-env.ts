@@ -13,18 +13,10 @@ export interface EnvironmentTextures {
     cubeSampler: GPUSampler;
     brdfSampler: GPUSampler;
     irradianceSH: Float32Array;
-    /** Pre-scaled SH (9 vec3s in L00,L1_1,L10,L11,L2_2,L2_1,L20,L21,L22 order, for shader) */
-    sphericalHarmonics: {
-        l00: Float32Array;
-        l1_1: Float32Array;
-        l10: Float32Array;
-        l11: Float32Array;
-        l2_2: Float32Array;
-        l2_1: Float32Array;
-        l20: Float32Array;
-        l21: Float32Array;
-        l22: Float32Array;
-    };
+    /** Pre-scaled SH coefficients for shader, 36 floats in stride-4 layout:
+     *  [L00.rgb, 0, L1_1.rgb, 0, L10.rgb, 0, L11.rgb, 0, L2_2.rgb, 0,
+     *   L2_1.rgb, 0, L20.rgb, 0, L21.rgb, 0, L22.rgb, 0] */
+    sphericalHarmonics: Float32Array;
     /** LOD generation scale for specular IBL sampling. Default 0.8 (matches BJS BaseTexture). */
     lodGenerationScale: number;
 }
@@ -203,20 +195,20 @@ function parseEnvFile(buffer: ArrayBuffer): ParsedEnv {
 // Matches Babylon.js: SphericalHarmonics.FromPolynomial() + preScaleForRendering()
 
 /** @internal — exported only for env-helpers.ts; not part of the public API. */
-export function polynomialToPreScaledHarmonics(poly: Float32Array): EnvironmentTextures["sphericalHarmonics"] {
+export function polynomialToPreScaledHarmonics(poly: Float32Array): Float32Array {
     // poly layout (3 floats per group): x, y, z, xx, yy, zz, yz, zx, xy
     // Constants = K_fromPoly * PI * B_basis (pre-computed; signs folded in).
     // Matches Babylon.js SphericalHarmonics.FromPolynomial() + preScaleForRendering().
-    const C00xy = 0.3333338747897695; // 0.376127 * PI * sqrt(1/(4PI))
-    const C00z = 0.33333298856284405; // 0.376126 * PI * sqrt(1/(4PI))
-    const C1 = 1.4999984284682104; // 0.977204 * PI * sqrt(3/(4PI))
-    const C2 = 3.999982863580422; // 1.16538 * PI * sqrt(15/(4PI))
-    const C20zz = 1.3333326611423701; // 1.34567 * PI * sqrt(5/(16PI))
-    const C20xy = 0.6666653397393608; // 0.672834 * PI * sqrt(5/(16PI))
-    const C22 = 1.999991431790211; // 1.16538 * PI * sqrt(15/(16PI))
+    const C00xy = 0.3333338747897695;
+    const C00z = 0.33333298856284405;
+    const C1 = 1.4999984284682104;
+    const C2 = 3.999982863580422;
+    const C20zz = 1.3333326611423701;
+    const C20xy = 0.6666653397393608;
+    const C22 = 1.999991431790211;
 
-    const out = Array.from({ length: 9 }, () => new Float32Array(3));
-    const [l00, l1_1, l10, l11, l2_2, l2_1, l20, l21, l22] = out;
+    // Stride-4 layout matching shader UBO (9 vec3s + pad f32 each)
+    const out = new Float32Array(36);
     for (let i = 0; i < 3; i++) {
         const x = poly[i]!;
         const y = poly[3 + i]!;
@@ -227,15 +219,15 @@ export function polynomialToPreScaledHarmonics(poly: Float32Array): EnvironmentT
         const yz = poly[18 + i]!;
         const zx = poly[21 + i]!;
         const xy = poly[24 + i]!;
-        l00![i] = (xx + yy) * C00xy + zz * C00z;
-        l1_1![i] = y * C1;
-        l10![i] = z * C1;
-        l11![i] = x * C1;
-        l2_2![i] = xy * C2;
-        l2_1![i] = yz * C2;
-        l20![i] = zz * C20zz - (xx + yy) * C20xy;
-        l21![i] = zx * C2;
-        l22![i] = (xx - yy) * C22;
+        out[i] = (xx + yy) * C00xy + zz * C00z; // L00
+        out[4 + i] = y * C1; // L1_1
+        out[8 + i] = z * C1; // L10
+        out[12 + i] = x * C1; // L11
+        out[16 + i] = xy * C2; // L2_2
+        out[20 + i] = yz * C2; // L2_1
+        out[24 + i] = zz * C20zz - (xx + yy) * C20xy; // L20
+        out[28 + i] = zx * C2; // L21
+        out[32 + i] = (xx - yy) * C22; // L22
     }
-    return { l00: l00!, l1_1: l1_1!, l10: l10!, l11: l11!, l2_2: l2_2!, l2_1: l2_1!, l20: l20!, l21: l21!, l22: l22! };
+    return out;
 }

@@ -102,15 +102,7 @@ export function createPbrSceneUpdater(opts: PbrSceneUpdaterOptions): SceneUnifor
                 data[envRotYOffset] = envRotY;
                 const sh = envTextures?.sphericalHarmonics;
                 if (sh) {
-                    data.set(sh.l00, shBaseOffset);
-                    data.set(sh.l1_1, shBaseOffset + 4);
-                    data.set(sh.l10, shBaseOffset + 8);
-                    data.set(sh.l11, shBaseOffset + 12);
-                    data.set(sh.l2_2, shBaseOffset + 16);
-                    data.set(sh.l2_1, shBaseOffset + 20);
-                    data.set(sh.l20, shBaseOffset + 24);
-                    data.set(sh.l21, shBaseOffset + 28);
-                    data.set(sh.l22, shBaseOffset + 32);
+                    data.set(sh, shBaseOffset);
                 }
                 data[exposureOffset] = exposure;
                 data[exposureOffset + 1] = contrast;
