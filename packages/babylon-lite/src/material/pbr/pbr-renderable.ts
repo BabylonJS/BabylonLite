@@ -160,15 +160,16 @@ export async function buildPbrRenderables(
     let hasSomeThinInstances = false;
     let hasAnyUnlit = false;
     let hasAnyUvTransform = false;
+    let hasAnyUv2 = false;
+    let hasAnyVertexColor = false;
     for (let i = 0; i < meshes.length; i++) {
         const m = meshes[i]!;
         const mat = m.material as PbrMaterialProps;
+        const mi = m as import("../../mesh/mesh.js").MeshInternal;
         if (!hasSkybox && !!mat.skyboxMode) {
             hasSkybox = true;
         }
-        if (!hasMetallicReflectance && (!!mat.metallicReflectanceTexture || !!mat.reflectanceTexture ||
-            (mat.metallicF0Factor != null && Math.abs(mat.metallicF0Factor - 1) > 1e-6) ||
-            (mat.metallicReflectanceColor != null && (mat.metallicReflectanceColor[0] !== 1 || mat.metallicReflectanceColor[1] !== 1 || mat.metallicReflectanceColor[2] !== 1)))) {
+        if (!hasMetallicReflectance && (!!mat.metallicReflectanceTexture || !!mat.reflectanceTexture || !!(mat as { _hasReflExt?: boolean })._hasReflExt)) {
             hasMetallicReflectance = true;
         }
         if (!hasClearcoat && !!mat.clearCoat?.isEnabled) {
@@ -204,12 +205,20 @@ export async function buildPbrRenderables(
         if (!hasAnyUvTransform) {
             const txs: (Texture2D | undefined)[] = [mat.baseColorTexture, mat.normalTexture, mat.ormTexture, mat.emissiveTexture, mat.specGlossTexture];
             for (const t of txs) {
-                if (!t) continue;
-                if ((t.uScale !== undefined && t.uScale !== 1) || (t.vScale !== undefined && t.vScale !== 1) || (t.uOffset !== undefined && t.uOffset !== 0) || (t.vOffset !== undefined && t.vOffset !== 0) || (t.uAng !== undefined && t.uAng !== 0)) {
+                if (t && (t as any)._hasTx) {
                     hasAnyUvTransform = true;
                     break;
                 }
             }
+        }
+        // UV2 and vertex color detection from mesh GPU buffers (mesh-level check).
+        // Note: UV2 is only considered "present" when occlusionTexCoord === 1, matching
+        // the logic in pbr-mesh-features.ts. This is a branch simplification.
+        if (!hasAnyUv2 && mi._gpu.uv2Buffer && mat.occlusionTexCoord === 1) {
+            hasAnyUv2 = true;
+        }
+        if (!hasAnyVertexColor && mi._gpu.colorBuffer) {
+            hasAnyVertexColor = true;
         }
         if (
             hasSkybox &&
@@ -224,7 +233,9 @@ export async function buildPbrRenderables(
             hasSomeMorphs &&
             hasSomeThinInstances &&
             hasAnyUnlit &&
-            hasAnyUvTransform
+            hasAnyUvTransform &&
+            hasAnyUv2 &&
+            hasAnyVertexColor
         ) {
             break;
         }
@@ -322,6 +333,15 @@ export async function buildPbrRenderables(
         _registerPbrMaterialUboWriter("uv-transform", mod.writeUvTransformUBO);
     }
 
+    // Lazy-load pbr-template-ext when any advanced features are present.
+    // Scene1 has none of these, so it won't pay the ~1.5KB cost.
+    let _createPbrTemplateExt: typeof import("./pbr-template-ext.js").createPbrTemplateExt | null = null;
+    const hasAnyExt = hasAnyUvTransform || hasAnyVertexColor || hasAnyUv2;
+    if (hasAnyExt) {
+        const extMod = await import("./pbr-template-ext.js");
+        _createPbrTemplateExt = extMod.createPbrTemplateExt;
+    }
+
     let _createThinInstanceFragment: ((hasColor: boolean) => ShaderFragment) | null = null;
     let _syncThinInstanceBuffers:
         | ((engine: EngineContextInternal, ti: ThinInstanceData, pass: GPURenderPassEncoder | GPURenderBundleEncoder, slot: number, hasColor: boolean) => number)
@@ -361,6 +381,23 @@ export async function buildPbrRenderables(
         const hasEmTex = has(PBR_HAS_EMISSIVE);
         const hasTI = has(PBR_HAS_THIN_INSTANCES);
 
+        // Build optional ext config when any of these features are present.
+        const hasUvTx = (features2 & PBR2_HAS_UV_TRANSFORM) !== 0;
+        const hasVC = (features2 & PBR2_HAS_VERTEX_COLOR) !== 0;
+        const hasU2 = (features2 & PBR2_HAS_UV2) !== 0;
+        const needsExt = hasUvTx || hasVC || hasU2;
+        const ext = needsExt && _createPbrTemplateExt
+            ? _createPbrTemplateExt({
+                  hasUvTransform: hasUvTx,
+                  hasVertexColor: hasVC,
+                  hasUv2: hasU2,
+                  hasOcclusionUv2: hasU2, // When UV2 is present and has occlusion on texcoord 1
+                  hasAnyNormal: hasNormal || hasCotangent,
+                  hasEmissiveTexture: hasEmTex,
+                  hasSpecGloss: has(PBR_HAS_SPEC_GLOSS),
+              })
+            : undefined;
+
         const template = createPbrTemplate({
             light: hasMultiLight ? null : lightConfig,
             hasMultiLight,
@@ -385,10 +422,7 @@ export async function buildPbrRenderables(
             anisoBrdfFunctions: hasAniso && _anisoExt ? _anisoExt.ANISO_BRDF_FUNCTIONS : "",
             anisoTBBlock: hasAniso && _anisoExt ? _anisoExt.makeAnisotropyTBBlock(hasNormal) : "",
             anisoDirectDG: hasAniso && _anisoExt ? _anisoExt.ANISO_DIRECT_DG : "",
-            hasUvTransform: (features2 & PBR2_HAS_UV_TRANSFORM) !== 0,
-            hasVertexColor: (features2 & PBR2_HAS_VERTEX_COLOR) !== 0,
-            hasUv2: (features2 & PBR2_HAS_UV2) !== 0,
-            hasOcclusionUv2: (features2 & PBR2_HAS_UV2) !== 0,
+            ext,
         });
 
         const frags: ShaderFragment[] = [];

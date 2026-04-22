@@ -431,6 +431,23 @@ async function uploadMeshes(meshDatas: GltfMeshData[], features: GltfFeature[], 
         },
     };
 
+    // Slow-path trigger: per-texture UV wrapping OR occlusion sampled on UV2
+    // (texCoord=1 with no shared MR). Both cases require the ext module that
+    // builds textures with wrapTex and threads an occlusionTexture through
+    // assemblePbrProps. Scene1 (plain BoomBox PBR) hits neither → fast path.
+    let _needsPbrExt = wrapTex !== identityTexWrap;
+    if (!_needsPbrExt) {
+        for (const m of (json as { materials?: unknown[] }).materials ?? []) {
+            const mm = m as { occlusionTexture?: { texCoord?: number }; pbrMetallicRoughness?: { metallicRoughnessTexture?: unknown } };
+            if (mm.occlusionTexture && (mm.occlusionTexture.texCoord ?? 0) !== 0 && !mm.pbrMetallicRoughness?.metallicRoughnessTexture) {
+                _needsPbrExt = true;
+                break;
+            }
+        }
+    }
+    let _pbrExtPromise: Promise<typeof import("./gltf-pbr-builder-ext.js")> | null = null;
+    const _ensurePbrExt = () => (_pbrExtPromise ??= import("./gltf-pbr-builder-ext.js"));
+
     /** Default ORM upload: single MR-or-occlusion image, or 1×1 fallback baked from
      *  metallicFactor/roughnessFactor. The composite case (MR+occlusion separate) is
      *  handled by the gltf-ext-orm extension which overrides this via `extLayers`. */
@@ -443,11 +460,16 @@ async function uploadMeshes(meshDatas: GltfMeshData[], features: GltfFeature[], 
         if (cached) {
             return cached;
         }
-        cached = (async () => {
-            const tex = buildDefaultPbrTextures(engine, mat, sampler, _generateMipmaps!, getCachedTexture, wrapTex);
-            const extLayers = await runMatExts(mat, matExts, extCtx);
-            return assemblePbrProps(mat, tex.baseColorTexture, tex.ormTexture, tex.normalTexture, tex.emissiveTexture, extLayers, tex.occlusionTexture);
-        })();
+    cached = (async () => {
+                const extLayers = await runMatExts(mat, matExts, extCtx);
+                if (_needsPbrExt) {
+                    const extMod = await _ensurePbrExt();
+                    const tex = extMod.buildDefaultPbrTexturesExt(engine, mat, sampler, _generateMipmaps!, getCachedTexture, wrapTex);
+                    return extMod.assemblePbrPropsExt(mat, tex, extLayers);
+                }
+                const tex = buildDefaultPbrTextures(engine, mat, sampler, _generateMipmaps!, getCachedTexture);
+                return assemblePbrProps(mat, tex.baseColorTexture, tex.ormTexture, tex.normalTexture, tex.emissiveTexture, extLayers);
+            })();
         builtMaterialCache.set(mat, cached);
         return cached;
     }

@@ -29,7 +29,7 @@ const ext: GltfFeature = {
         if (!kt) {
             return tex;
         }
-        const patch: { uScale?: number; vScale?: number; uOffset?: number; vOffset?: number; uAng?: number } = {};
+        const patch: { uScale?: number; vScale?: number; uOffset?: number; vOffset?: number; uAng?: number; _hasTx?: true } = {};
         if (kt.scale) {
             patch.uScale = kt.scale[0];
             patch.vScale = kt.scale[1];
@@ -40,6 +40,11 @@ const ext: GltfFeature = {
         }
         if (kt.rotation) {
             patch.uAng = kt.rotation;
+        }
+        // Mark texture as having a transform so scene scan can check the flag
+        // instead of introspecting properties.
+        if (Object.keys(patch).length) {
+            patch._hasTx = true;
         }
         return Object.keys(patch).length ? cloneTexture2D(tex, patch) : tex;
     },
