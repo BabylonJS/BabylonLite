@@ -117,8 +117,6 @@ function makeMockAtlas(): SpriteAtlas {
         ],
         clips: [],
         premultipliedAlpha: true,
-        _frameByName: new Map(),
-        _clipByName: new Map(),
     };
 }
 

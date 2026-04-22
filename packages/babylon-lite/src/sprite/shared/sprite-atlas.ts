@@ -5,9 +5,10 @@
  * atlas may back multiple layers / scenes; lifetime is governed by the
  * underlying `Texture2D`.
  *
- * PR 1 ships only the grid-based atlas constructor and the loader, and
- * stubs `createNamedSpriteAtlas` for forward-compat. Clips, named atlases,
- * and TexturePacker JSON metadata land in later PRs.
+ * PR 1 ships only the grid-based atlas constructor and the loader. Frames
+ * are addressed by **integer index only**; a string-keyed wrapper type
+ * (analogous to a future `NamedSpriteAtlas`) will land alongside the
+ * TexturePacker JSON loader in a later PR. Clips are placeholder-only.
  */
 import type { EngineContext } from "../../engine/engine.js";
 import type { Texture2D, Texture2DOptions } from "../../texture/texture-2d.js";
@@ -18,9 +19,6 @@ export type SpriteSampling = "linear" | "nearest";
 
 /** Output blend mode for a sprite layer. PR 1 supports `"alpha"` and `"premultiplied"`. */
 export type SpriteBlendMode = "alpha" | "premultiplied" | "additive" | "multiply" | "cutout";
-
-/** A frame can be referenced by index (number) or by name (string). */
-export type SpriteFrameRef = number | string;
 
 /** A single frame in an atlas. UVs in [0,1]; pivot in [0,1] of the frame. */
 export interface SpriteFrame {
@@ -39,17 +37,13 @@ export interface SpriteClip {
     readonly loop: boolean;
 }
 
-/** A loaded sprite atlas — pure data, no methods. */
+/** A loaded sprite atlas — pure data, no methods. Frames are addressed by integer index. */
 export interface SpriteAtlas {
     readonly texture: Texture2D;
     readonly textureSizePx: readonly [number, number];
     readonly frames: readonly SpriteFrame[];
     readonly clips: readonly SpriteClip[];
     readonly premultipliedAlpha: boolean;
-    /** @internal name → frame index lookup. */
-    readonly _frameByName: ReadonlyMap<string, number>;
-    /** @internal name → clip index lookup. */
-    readonly _clipByName: ReadonlyMap<string, number>;
 }
 
 /** Options for `createGridSpriteAtlas`. */
@@ -93,7 +87,6 @@ export interface LoadAtlasOptions {
 }
 
 const EMPTY_CLIPS: readonly SpriteClip[] = [];
-const EMPTY_CLIP_BY_NAME: ReadonlyMap<string, number> = new Map();
 
 /**
  * Build a `SpriteAtlas` from a uniform grid over an existing texture. All
@@ -131,23 +124,7 @@ export function createGridSpriteAtlas(texture: Texture2D, options: GridAtlasOpti
         frames,
         clips: options.clips ?? EMPTY_CLIPS,
         premultipliedAlpha: options.premultipliedAlpha ?? false,
-        _frameByName: new Map(),
-        _clipByName: EMPTY_CLIP_BY_NAME,
     };
-}
-
-/**
- * Reserved for a later PR. Building an atlas from a named frame table is
- * not implemented in PR 1; it will accept the same shape as the
- * documented spec when added.
- */
-export function createNamedSpriteAtlas(
-    _texture: Texture2D,
-    _frames: readonly SpriteFrame[],
-    _clips?: readonly SpriteClip[],
-    _options?: { premultipliedAlpha?: boolean }
-): SpriteAtlas {
-    throw new Error("createNamedSpriteAtlas is not yet implemented (lands in a later PR).");
 }
 
 /**
@@ -192,17 +169,10 @@ export async function loadSpriteAtlas(engine: EngineContext, textureUrl: string,
     });
 }
 
-/** Resolve a `SpriteFrameRef` (index or name) to a frame index. Throws if unknown. */
-export function resolveSpriteFrame(atlas: SpriteAtlas, frame: SpriteFrameRef): number {
-    if (typeof frame === "number") {
-        if (frame < 0 || frame >= atlas.frames.length) {
-            throw new Error(`resolveSpriteFrame: index ${frame} out of range [0, ${atlas.frames.length})`);
-        }
-        return frame;
+/** Resolve a frame index (just bounds-checks). Throws if out of range. */
+export function resolveSpriteFrame(atlas: SpriteAtlas, frame: number): number {
+    if (frame < 0 || frame >= atlas.frames.length) {
+        throw new Error(`resolveSpriteFrame: index ${frame} out of range [0, ${atlas.frames.length})`);
     }
-    const idx = atlas._frameByName.get(frame);
-    if (idx === undefined) {
-        throw new Error(`resolveSpriteFrame: no frame named "${frame}"`);
-    }
-    return idx;
+    return frame;
 }

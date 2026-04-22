@@ -18,7 +18,7 @@
  */
 import type { EngineContext, EngineContextInternal, RenderingContext } from "../engine/engine.js";
 import type { Sprite2DLayer } from "./sprite-2d.js";
-import { INSTANCE_FLOATS_PER_SPRITE, INSTANCE_STRIDE_BYTES } from "./sprite-2d.js";
+import { INSTANCE_STRIDE_BYTES } from "./sprite-2d.js";
 import type { SpriteBlendMode } from "./shared/sprite-atlas.js";
 
 /** Tag used by the engine and by tests to identify a sprite renderer. */
@@ -66,8 +66,10 @@ interface LayerGpu {
     instanceBuffer: GPUBuffer;
     instanceBufferCapacity: number;
     uniformBuffer: GPUBuffer;
+    /** Built once per layer; the bind group binds the uniform buffer + atlas texture/sampler,
+     *  none of which change after construction (atlas is `readonly` on the layer; uniform
+     *  buffer is allocated once in `ensureLayerGpu`). Cleared if we ever recreate either. */
     bindGroup: GPUBindGroup | null;
-    bindGroupVersion: number;
     uploadedVersion: number;
 }
 
@@ -142,27 +144,57 @@ let s = textureSample(atlasTex, atlasSamp, in.uv);
 return s * in.tint * vec4<f32>(1.0, 1.0, 1.0, L.opacity);
 }`;
 
-function blendModeKey(b: SpriteBlendMode): number {
-    // PR 1 supports alpha (0) and premultiplied (1) only; layer factory enforces this.
-    return b === "premultiplied" ? 1 : 0;
-}
-
-function pipelineKey(sampleCount: number, blendMode: SpriteBlendMode, hasDepth: boolean): number {
-    return (sampleCount << 8) | (blendModeKey(blendMode) << 4) | (hasDepth ? 1 : 0);
-}
-
-function blendDescriptor(blendMode: SpriteBlendMode): GPUBlendState {
-    if (blendMode === "premultiplied") {
-        return {
+/**
+ * Single source of truth for blend-mode → (key index, GPU descriptor). Adding a new
+ * mode is one entry here. The pipeline-cache key uses `index` (4 bits, room for 16
+ * modes); `descriptor` is what the pipeline factory hands to WebGPU.
+ */
+const BLEND_MODE_TABLE: Readonly<Record<SpriteBlendMode, { index: number; descriptor: GPUBlendState }>> = {
+    // Straight-alpha source. Matches BJS `ALPHA_COMBINE`.
+    alpha: {
+        index: 0,
+        descriptor: {
+            color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
+            alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+        },
+    },
+    // Premultiplied source (RGB already multiplied by A on the CPU or at decode).
+    premultiplied: {
+        index: 1,
+        descriptor: {
             color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
             alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
-        };
-    }
-    // "alpha" — straight (non-premultiplied) source.
-    return {
-        color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
-        alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
-    };
+        },
+    },
+    // Forward-compat — layer factory throws on these in PR 1, but the descriptors
+    // are wired so adding support is a one-line removal of the throw.
+    additive: {
+        index: 2,
+        descriptor: {
+            color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
+            alpha: { srcFactor: "one", dstFactor: "one", operation: "add" },
+        },
+    },
+    multiply: {
+        index: 3,
+        descriptor: {
+            color: { srcFactor: "dst", dstFactor: "zero", operation: "add" },
+            alpha: { srcFactor: "dst-alpha", dstFactor: "zero", operation: "add" },
+        },
+    },
+    cutout: {
+        // Alpha-tested; blend descriptor is irrelevant (fragment discards), but the
+        // pipeline still needs one. Behave like `alpha` for the rare blended pixel.
+        index: 4,
+        descriptor: {
+            color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
+            alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+        },
+    },
+};
+
+function pipelineKey(sampleCount: number, blendMode: SpriteBlendMode, hasDepth: boolean): number {
+    return (sampleCount << 8) | (BLEND_MODE_TABLE[blendMode].index << 4) | (hasDepth ? 1 : 0);
 }
 
 function buildPipeline(rr: SpriteRendererInternal, blendMode: SpriteBlendMode, hasDepth: boolean): PipelineEntry {
@@ -197,7 +229,7 @@ function buildPipeline(rr: SpriteRendererInternal, blendMode: SpriteBlendMode, h
         fragment: {
             module: rr._shaderModule,
             entryPoint: "fs",
-            targets: [{ format: rr._format, blend: blendDescriptor(blendMode), writeMask: GPUColorWrite.ALL }],
+            targets: [{ format: rr._format, blend: BLEND_MODE_TABLE[blendMode].descriptor, writeMask: GPUColorWrite.ALL }],
         },
         primitive: { topology: "triangle-list", cullMode: "none" },
         // Engine pass always has a depth-stencil attachment; we must declare one even when
@@ -240,7 +272,6 @@ function ensureLayerGpu(rr: SpriteRendererInternal, layer: Sprite2DLayer): Layer
             instanceBufferCapacity: cap,
             uniformBuffer,
             bindGroup: null,
-            bindGroupVersion: -1,
             uploadedVersion: -1,
         };
         rr._layerGpu.set(layer, lg);
@@ -275,13 +306,7 @@ function uploadLayer(rr: SpriteRendererInternal, lg: LayerGpu): void {
         if (hi > lo) {
             const offsetBytes = lo * INSTANCE_STRIDE_BYTES;
             const bytes = (hi - lo) * INSTANCE_STRIDE_BYTES;
-            rr._device.queue.writeBuffer(
-                lg.instanceBuffer,
-                offsetBytes,
-                layer._instanceData.buffer,
-                layer._instanceData.byteOffset + offsetBytes,
-                bytes
-            );
+            rr._device.queue.writeBuffer(lg.instanceBuffer, offsetBytes, layer._instanceData.buffer, layer._instanceData.byteOffset + offsetBytes, bytes);
         }
         layer._dirtyMin = 0;
         layer._dirtyMax = 0;
@@ -304,7 +329,7 @@ function uploadLayer(rr: SpriteRendererInternal, lg: LayerGpu): void {
 const _scratchUbo = new Float32Array(LAYER_UBO_BYTES / 4);
 
 function ensureBindGroup(rr: SpriteRendererInternal, lg: LayerGpu, entry: PipelineEntry): GPUBindGroup {
-    if (lg.bindGroup && lg.bindGroupVersion === lg.uploadedVersion + 1) {
+    if (lg.bindGroup) {
         return lg.bindGroup;
     }
     const tex = lg.layer.atlas.texture;
@@ -316,7 +341,6 @@ function ensureBindGroup(rr: SpriteRendererInternal, lg: LayerGpu, entry: Pipeli
             { binding: 2, resource: tex.sampler },
         ],
     });
-    lg.bindGroupVersion = lg.uploadedVersion + 1;
     return lg.bindGroup;
 }
 
@@ -383,6 +407,11 @@ function spriteRendererUpdate(rr: SpriteRendererInternal, _encoder: GPUCommandEn
     rr._targetWidth = rr._engine._targets.width;
     rr._targetHeight = rr._engine._targets.height;
 
+    // Sort layers in place by `order` once per frame. TimSort is O(n) on already-sorted input,
+    // so this is effectively free in the steady state. Documented side-effect on `rr.layers`
+    // (registration order is not the ground truth — `layer.order` is).
+    rr.layers.sort(compareLayers);
+
     for (const layer of rr.layers) {
         if (!layer.visible || layer.count === 0) {
             continue;
@@ -396,11 +425,10 @@ function spriteRendererRecord(rr: SpriteRendererInternal, pass: GPURenderPassEnc
     if (rr._disposed) {
         return 0;
     }
-    const sorted = rr.layers.slice().sort(compareLayers);
     let drawCalls = 0;
     pass.setIndexBuffer(rr._indexBuffer, "uint16");
 
-    for (const layer of sorted) {
+    for (const layer of rr.layers) {
         if (!layer.visible || layer.count === 0) {
             continue;
         }
@@ -459,6 +487,3 @@ export function disposeSpriteRenderer(sr: SpriteRenderer): void {
 export function _spriteRendererPipelineCacheSize(sr: SpriteRenderer): number {
     return (sr as SpriteRendererInternal)._pipelineCache.size;
 }
-
-/** @internal Re-used by `INSTANCE_FLOATS_PER_SPRITE` consumers (kept for type isolation). */
-export const _SPRITE_INSTANCE_FLOATS = INSTANCE_FLOATS_PER_SPRITE;

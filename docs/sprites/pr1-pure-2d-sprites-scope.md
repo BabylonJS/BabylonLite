@@ -72,7 +72,7 @@ reference/scene50-pure-2d-sprites/
 
 ```ts
 // Sprite atlas (shared foundation)
-export type { SpriteAtlas, SpriteFrame, SpriteFrameRef, SpriteBlendMode, SpriteSampling, GridAtlasOptions, LoadAtlasOptions } from "./sprite/shared/sprite-atlas.js";
+export type { SpriteAtlas, SpriteFrame, SpriteBlendMode, SpriteSampling, GridAtlasOptions, LoadAtlasOptions } from "./sprite/shared/sprite-atlas.js";
 export { createGridSpriteAtlas, loadSpriteAtlas, resolveSpriteFrame } from "./sprite/shared/sprite-atlas.js";
 
 // Sprite 2D layer + Index API
@@ -90,13 +90,27 @@ The full spec in 26-sprites.md describes a rich system. PR 1 ships **only this s
 
 ### `SpriteAtlas`
 
-- Exactly as specified in 26-sprites.md lines 451–467 (all fields).
+- Exactly as specified in 26-sprites.md lines 451–467, **with names omitted** — see decision note below.
 - `loadSpriteAtlas(engine, url, options)` — **grid-only** in PR 1. `options.gridSize` required; `metadataUrl` path throws "not implemented in PR 1".
 - `createGridSpriteAtlas(texture, options)` — full implementation.
-- `createNamedSpriteAtlas` — **not implemented in PR 1**. Throw "not yet implemented". Export type for forward-compat only.
-- `resolveSpriteFrame(atlas, ref)` — full implementation (handles both `number` index and `string` name).
+- `resolveSpriteFrame(atlas, index)` — index-only bounds check; throws if out of range.
 - `clips` field on atlas — accept in types but ignore in PR 1 (empty array default).
-- `_clipByName` — empty map.
+
+#### Decision: frame names live in a wrapper, not in `SpriteAtlas`
+
+The original spec proposed `SpriteFrameRef = number | string` and a `_frameByName` lookup
+baked into every atlas. PR 1 ships **integer frame indices only**:
+
+- `SpriteAtlas` carries no `_frameByName` / `_clipByName` maps.
+- `Sprite2DInit.frame` is `number | undefined`; same for `setSprite2DFrameIndex`.
+- `createNamedSpriteAtlas` is **not exported** (was a forward-compat stub; deleted).
+
+When the TexturePacker JSON loader lands, names will be added via a wrapper type
+(working name `NamedSpriteAtlas`) that holds a base `SpriteAtlas` plus a
+`Map<string, number>` and exposes `resolveByName(name): number`. Callers translate
+name → index at the boundary and the engine's hot path stays a pure integer lookup.
+Rationale: the `typeof` branch in `resolveSpriteFrame` was paid by every grid-atlas
+caller for a feature they don't use, and the engine doesn't need to own the name table.
 
 ### `Sprite2DLayer` + Index API
 
@@ -228,7 +242,7 @@ Cases (each uses a stub engine / mocked `GPUDevice`; follow the pattern of exist
 | `AnchorSource` adapter                            | PR 4                               |
 | Sprite picking                                    | PR 5                               |
 | `Sprite2DHandle` + `BillboardSpriteHandle`        | PR 6                               |
-| Named atlases (`createNamedSpriteAtlas`)          | later                              |
+| Named atlases (frame-by-name wrapper)             | with TexturePacker loader          |
 | Sprite clip animation                             | later                              |
 | `blendMode` additive/multiply/cutout              | later                              |
 | `pixelSnap`                                       | later                              |

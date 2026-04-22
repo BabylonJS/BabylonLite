@@ -7,7 +7,7 @@
  * PR 1 implements the Index API only. Animation, clip playback, and the
  * Handle API land in later PRs.
  */
-import type { SpriteAtlas, SpriteBlendMode, SpriteFrameRef } from "./shared/sprite-atlas.js";
+import type { SpriteAtlas, SpriteBlendMode } from "./shared/sprite-atlas.js";
 import { resolveSpriteFrame } from "./shared/sprite-atlas.js";
 
 /** Depth participation. PR 1 implements `"none"` only. */
@@ -69,7 +69,7 @@ export interface Sprite2DLayer {
 export interface Sprite2DInit {
     positionPx: [number, number];
     sizePx?: [number, number];
-    frame?: SpriteFrameRef;
+    frame?: number;
     rotation?: number;
     pivot?: [number, number];
     color?: [number, number, number, number];
@@ -318,7 +318,7 @@ export function removeSprite2DIndex(layer: Sprite2DLayer, index: number): void {
 }
 
 /** Update only the frame UVs for one sprite. */
-export function setSprite2DFrameIndex(layer: Sprite2DLayer, index: number, frame: SpriteFrameRef): void {
+export function setSprite2DFrameIndex(layer: Sprite2DLayer, index: number, frame: number): void {
     if (index < 0 || index >= layer.count) {
         throw new Error(`setSprite2DFrameIndex: index ${index} out of range [0, ${layer.count})`);
     }
