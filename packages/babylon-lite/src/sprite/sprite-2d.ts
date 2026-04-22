@@ -49,6 +49,14 @@ export interface Sprite2DLayer {
     _capacity: number;
     /** @internal Per-instance CPU staging buffer; layout = INSTANCE_FLOATS_PER_SPRITE per sprite. */
     _instanceData: Float32Array;
+    /** @internal `Uint32` view aliased onto `_instanceData.buffer` for in-place packed-int writes
+     *  (color slot). Re-created whenever `_instanceData` is reallocated. */
+    _instanceDataU32: Uint32Array;
+    /** @internal CPU-only side buffer holding the "true" size of each sprite while it is hidden
+     *  (`[w0, h0, w1, h1, …]`, 8 bytes per sprite). When `visible: false`, the sprite's GPU size
+     *  is zeroed (degenerate quad, no rasterizer cost) and the original size is stashed here so
+     *  `visible: true` without `sizePx` can restore it. Grown alongside `_instanceData`. */
+    _savedSize: Float32Array;
     /** @internal Bumped on any structural / per-instance edit; renderer compares. */
     _version: number;
     /** @internal Min dirty index inclusive (for partial uploads). */
@@ -76,21 +84,23 @@ export interface Sprite2DInit {
 }
 
 /**
- * Per-instance vertex layout (12 floats = 48 bytes, std430-style packing):
- *   [0..1]  positionPx.xy
- *   [2..3]  sizePx.xy
- *   [4..5]  uvMin.xy
- *   [6..7]  uvMax.xy
- *   [8]     rotation
- *   [9]     _pad
- *   [10]    colorRGBA packed unorm8x4 (reinterpreted as f32 by upload)
- *   [11]    _pad
+ * Per-instance vertex layout (10 floats = 40 bytes):
+ *   [0..1]  positionPx.xy   (float32x2 @ offset  0)
+ *   [2..3]  sizePx.xy       (float32x2 @ offset  8)
+ *   [4..5]  uvMin.xy        (float32x2 @ offset 16)
+ *   [6..7]  uvMax.xy        (float32x2 @ offset 24)
+ *   [8]     rotation        (float32   @ offset 32)
+ *   [9]     colorRGBA       (unorm8x4  @ offset 36, packed via the aliased Uint32 view)
  *
- * The renderer treats slot [10] as a `unorm8x4` vertex attribute (4 bytes
- * stored in 4-byte stride slot) — Float32Array is just a convenient
- * homogeneous backing store; the bits are written via a Uint8Array view.
+ * The renderer treats slot [9] as a `unorm8x4` vertex attribute (4 bytes seen as RGBA on the
+ * GPU). Float32Array is just a convenient homogeneous backing store; the bits are written
+ * via the cached `_instanceDataU32` view on `layer._instanceData.buffer`.
+ *
+ * Visibility (`visible: false`) is implemented by zeroing slots [2..3]; the sprite's true
+ * size is stashed in `layer._savedSize` so a later `visible: true` (without re-supplying
+ * `sizePx`) can restore it.
  */
-export const INSTANCE_FLOATS_PER_SPRITE = 12;
+export const INSTANCE_FLOATS_PER_SPRITE = 10;
 /** @internal Per-sprite stride in bytes — kept in sync with INSTANCE_FLOATS_PER_SPRITE. */
 export const INSTANCE_STRIDE_BYTES = INSTANCE_FLOATS_PER_SPRITE * 4;
 
@@ -122,6 +132,7 @@ export function createSprite2DLayer(atlas: SpriteAtlas, opts: Sprite2DLayerOptio
         rotation: opts.view?.rotation ?? 0,
     };
 
+    const instanceData = new Float32Array(capacity * INSTANCE_FLOATS_PER_SPRITE);
     return {
         _entityType: "sprite-2d-layer",
         atlas,
@@ -134,7 +145,9 @@ export function createSprite2DLayer(atlas: SpriteAtlas, opts: Sprite2DLayerOptio
         view,
         count: 0,
         _capacity: capacity,
-        _instanceData: new Float32Array(capacity * INSTANCE_FLOATS_PER_SPRITE),
+        _instanceData: instanceData,
+        _instanceDataU32: new Uint32Array(instanceData.buffer),
+        _savedSize: new Float32Array(capacity * 2),
         _version: 0,
         _dirtyMin: 0,
         _dirtyMax: 0,
@@ -149,6 +162,10 @@ function growCapacity(layer: Sprite2DLayer, minCapacity: number): void {
     const next = new Float32Array(cap * INSTANCE_FLOATS_PER_SPRITE);
     next.set(layer._instanceData);
     layer._instanceData = next;
+    layer._instanceDataU32 = new Uint32Array(next.buffer);
+    const nextSaved = new Float32Array(cap * 2);
+    nextSaved.set(layer._savedSize);
+    layer._savedSize = nextSaved;
     layer._capacity = cap;
 }
 
@@ -162,13 +179,16 @@ function packColor(r: number, g: number, b: number, a: number): number {
 }
 
 /**
- * Write one sprite's instance data into `layer._instanceData[base..base+12]`.
- * `prev` is the existing 12-float record (or null on add) so that update
- * patches can fall back to existing values.
+ * Write one sprite's instance data into `layer._instanceData[base..base+10]`.
+ * `prev` is the existing 10-float record (or null on add) so update patches can
+ * fall back to existing values. `slotIndex` is the sprite's slot (i.e. `base /
+ * INSTANCE_FLOATS_PER_SPRITE`) and is used to index `layer._savedSize` for the
+ * visibility round-trip.
  */
-function writeInstance(layer: Sprite2DLayer, base: number, init: Sprite2DInit, prev: Float32Array | null): void {
+function writeInstance(layer: Sprite2DLayer, slotIndex: number, init: Partial<Sprite2DInit>, prev: Float32Array | null): void {
     const data = layer._instanceData;
     const atlas = layer.atlas;
+    const base = slotIndex * INSTANCE_FLOATS_PER_SPRITE;
 
     let frameIdx = -1;
     if (init.frame !== undefined) {
@@ -176,12 +196,22 @@ function writeInstance(layer: Sprite2DLayer, base: number, init: Sprite2DInit, p
     }
     const frame = frameIdx >= 0 ? atlas.frames[frameIdx]! : null;
 
+    // Visibility round-trip: when hidden, the sprite's GPU size in slots [2..3] is 0,
+    // and the original size lives in `_savedSize[slotIndex*2 .. *2+1]`. On show-without-sizePx
+    // we must read from the saved-size buffer, not slots [2..3] which would be 0.
     const prevSizeX = prev ? prev[2]! : 0;
     const prevSizeY = prev ? prev[3]! : 0;
-    const visible = init.visible ?? (prev ? !(prevSizeX === 0 && prevSizeY === 0) : true);
-    const sizeSrc = init.sizePx ?? (frame ? frame.sourceSizePx : ([prevSizeX, prevSizeY] as readonly [number, number]));
+    const wasHidden = prev ? prevSizeX === 0 && prevSizeY === 0 : false;
+    const savedBase = slotIndex * 2;
+    const prevSavedW = wasHidden ? layer._savedSize[savedBase]! : prevSizeX;
+    const prevSavedH = wasHidden ? layer._savedSize[savedBase + 1]! : prevSizeY;
+    const visible = init.visible ?? (prev ? !wasHidden : true);
+    const sizeSrc = init.sizePx ?? (frame ? frame.sourceSizePx : ([prevSavedW, prevSavedH] as readonly [number, number]));
     const sizeX = visible ? sizeSrc[0] : 0;
     const sizeY = visible ? sizeSrc[1] : 0;
+    // Stash the "true" size while hidden so it can be restored later.
+    layer._savedSize[savedBase] = visible ? 0 : sizeSrc[0];
+    layer._savedSize[savedBase + 1] = visible ? 0 : sizeSrc[1];
 
     let uMin = prev ? prev[4]! : 0;
     let vMin = prev ? prev[5]! : 0;
@@ -205,13 +235,13 @@ function writeInstance(layer: Sprite2DLayer, base: number, init: Sprite2DInit, p
     }
 
     const color = init.color ?? (prev ? null : [1, 1, 1, 1]);
-    const colorPacked = color
-        ? packColor(color[0], color[1], color[2], color[3])
-        : // re-pack the previous packed bits exactly (already a float-aliased u32 pattern)
-          undefined;
+    const colorPacked = color ? packColor(color[0], color[1], color[2], color[3]) : undefined;
 
-    data[base + 0] = init.positionPx[0];
-    data[base + 1] = init.positionPx[1];
+    const posX = init.positionPx ? init.positionPx[0] : prev![0]!;
+    const posY = init.positionPx ? init.positionPx[1] : prev![1]!;
+
+    data[base + 0] = posX;
+    data[base + 1] = posY;
     data[base + 2] = sizeX;
     data[base + 3] = sizeY;
     data[base + 4] = uMin;
@@ -219,15 +249,13 @@ function writeInstance(layer: Sprite2DLayer, base: number, init: Sprite2DInit, p
     data[base + 6] = uMax;
     data[base + 7] = vMax;
     data[base + 8] = init.rotation ?? (prev ? prev[8]! : 0);
-    data[base + 9] = 0;
 
     if (colorPacked !== undefined) {
-        // Aliased write: same 4 bytes, viewed as either u32 or f32.
-        new Uint32Array(data.buffer, data.byteOffset + (base + 10) * 4, 1)[0] = colorPacked;
+        // Aliased write into the cached Uint32 view — same 4 bytes the GPU sees as unorm8x4.
+        layer._instanceDataU32[base + 9] = colorPacked;
     } else if (prev) {
-        data[base + 10] = prev[10]!;
+        data[base + 9] = prev[9]!;
     }
-    data[base + 11] = 0;
 }
 
 function markDirty(layer: Sprite2DLayer, lo: number, hi: number): void {
@@ -254,8 +282,7 @@ export function addSprite2DIndex(layer: Sprite2DLayer, init: Sprite2DInit): numb
     if (idx >= layer._capacity) {
         growCapacity(layer, idx + 1);
     }
-    const base = idx * INSTANCE_FLOATS_PER_SPRITE;
-    writeInstance(layer, base, init, null);
+    writeInstance(layer, idx, init, null);
     layer.count++;
     markDirty(layer, idx, idx + 1);
     return idx;
@@ -268,18 +295,7 @@ export function updateSprite2DIndex(layer: Sprite2DLayer, index: number, patch: 
     }
     const base = index * INSTANCE_FLOATS_PER_SPRITE;
     const prev = layer._instanceData.subarray(base, base + INSTANCE_FLOATS_PER_SPRITE);
-    const merged: Sprite2DInit = {
-        positionPx: patch.positionPx ?? [prev[0]!, prev[1]!],
-        sizePx: patch.sizePx,
-        frame: patch.frame,
-        rotation: patch.rotation,
-        pivot: patch.pivot,
-        color: patch.color,
-        flipX: patch.flipX,
-        flipY: patch.flipY,
-        visible: patch.visible,
-    };
-    writeInstance(layer, base, merged, prev);
+    writeInstance(layer, index, patch, prev);
     markDirty(layer, index, index + 1);
 }
 
@@ -291,10 +307,13 @@ export function removeSprite2DIndex(layer: Sprite2DLayer, index: number): void {
     const last = layer.count - 1;
     if (index !== last) {
         layer._instanceData.copyWithin(index * INSTANCE_FLOATS_PER_SPRITE, last * INSTANCE_FLOATS_PER_SPRITE, (last + 1) * INSTANCE_FLOATS_PER_SPRITE);
-        markDirty(layer, index, index + 1);
-    } else {
-        markDirty(layer, index, index + 1);
+        // Carry the swapped sprite's saved-size scratch with it.
+        layer._savedSize.copyWithin(index * 2, last * 2, (last + 1) * 2);
     }
+    // Clear the now-unused tail saved-size slot so a future re-add starts clean.
+    layer._savedSize[last * 2] = 0;
+    layer._savedSize[last * 2 + 1] = 0;
+    markDirty(layer, index, index + 1);
     layer.count--;
 }
 

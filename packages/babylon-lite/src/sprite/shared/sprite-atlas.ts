@@ -45,7 +45,6 @@ export interface SpriteAtlas {
     readonly textureSizePx: readonly [number, number];
     readonly frames: readonly SpriteFrame[];
     readonly clips: readonly SpriteClip[];
-    readonly sampling: SpriteSampling;
     readonly premultipliedAlpha: boolean;
     /** @internal name → frame index lookup. */
     readonly _frameByName: ReadonlyMap<string, number>;
@@ -65,7 +64,6 @@ export interface GridAtlasOptions {
     spacingPx?: number;
     /** Default `[0.5, 0.5]`. */
     pivot?: readonly [number, number];
-    sampling?: SpriteSampling;
     premultipliedAlpha?: boolean;
     /** Forward-compat; ignored in PR 1. */
     clips?: readonly SpriteClip[];
@@ -78,7 +76,17 @@ export interface LoadAtlasOptions {
     /** Reserved for future PR — TexturePacker-style JSON. Throws if used in PR 1. */
     metadataUrl?: string;
     sampling?: SpriteSampling;
+    /** Marks the atlas as carrying premultiplied RGBA so the renderer picks the
+     *  premultiplied blend pipeline (`srcFactor: ONE`). Default `false` — matches
+     *  the bits PNG decoding produces. Set together with `premultiplyOnLoad: true`
+     *  for mathematically correct soft edges. Setting this `true` without
+     *  `premultiplyOnLoad: true` is only correct if the source image is *already*
+     *  premultiplied on disk (e.g. produced by a build step). */
     premultipliedAlpha?: boolean;
+    /** Tell the texture loader to premultiply alpha at decode time
+     *  (`createImageBitmap({ premultiplyAlpha: "premultiply" })`). Default `false`.
+     *  Pair with `premultipliedAlpha: true` for the premultiplied blend pipeline. */
+    premultiplyOnLoad?: boolean;
     textureOptions?: Texture2DOptions;
     /** Forward-compat; ignored in PR 1. */
     clips?: readonly SpriteClip[];
@@ -122,8 +130,7 @@ export function createGridSpriteAtlas(texture: Texture2D, options: GridAtlasOpti
         textureSizePx: [tw, th],
         frames,
         clips: options.clips ?? EMPTY_CLIPS,
-        sampling: options.sampling ?? "linear",
-        premultipliedAlpha: options.premultipliedAlpha ?? true,
+        premultipliedAlpha: options.premultipliedAlpha ?? false,
         _frameByName: new Map(),
         _clipByName: EMPTY_CLIP_BY_NAME,
     };
@@ -138,7 +145,7 @@ export function createNamedSpriteAtlas(
     _texture: Texture2D,
     _frames: readonly SpriteFrame[],
     _clips?: readonly SpriteClip[],
-    _options?: { sampling?: SpriteSampling; premultipliedAlpha?: boolean }
+    _options?: { premultipliedAlpha?: boolean }
 ): SpriteAtlas {
     throw new Error("createNamedSpriteAtlas is not yet implemented (lands in a later PR).");
 }
@@ -167,6 +174,9 @@ export async function loadSpriteAtlas(engine: EngineContext, textureUrl: string,
         mipMaps: false,
         minFilter: options.sampling === "nearest" ? "nearest" : "linear",
         magFilter: options.sampling === "nearest" ? "nearest" : "linear",
+        // Premultiply at decode if requested. Pair with `premultipliedAlpha: true` for
+        // a mathematically honest premultiplied pipeline.
+        premultiplyAlpha: options.premultiplyOnLoad ?? false,
         ...options.textureOptions,
     };
 
@@ -174,11 +184,10 @@ export async function loadSpriteAtlas(engine: EngineContext, textureUrl: string,
     return createGridSpriteAtlas(texture, {
         cellWidthPx: options.gridSize[0],
         cellHeightPx: options.gridSize[1],
-        sampling: options.sampling ?? "linear",
-        // PNGs are decoded by `createImageBitmap` with `premultiplyAlpha: "none"`,
-        // but the canonical sprite path treats them as premultiplied so the blend
-        // pipeline picks `srcFactor: ONE`. Force-on per the PR 1 scope.
-        premultipliedAlpha: options.premultipliedAlpha ?? true,
+        // Default `false` — matches the straight RGBA bits the PNG decoder produces.
+        // Callers wanting premultiplied blending should pass `premultiplyOnLoad: true`
+        // *and* `premultipliedAlpha: true` together so storage and blend factors agree.
+        premultipliedAlpha: options.premultipliedAlpha ?? false,
         clips: options.clips,
     });
 }

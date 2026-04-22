@@ -189,7 +189,7 @@ function buildPipeline(rr: SpriteRendererInternal, blendMode: SpriteBlendMode, h
                         { shaderLocation: 2, offset: 16, format: "float32x2" }, // uvMin
                         { shaderLocation: 3, offset: 24, format: "float32x2" }, // uvMax
                         { shaderLocation: 4, offset: 32, format: "float32" }, // rotation
-                        { shaderLocation: 5, offset: 40, format: "unorm8x4" }, // color (RGBA8)
+                        { shaderLocation: 5, offset: 36, format: "unorm8x4" }, // color (RGBA8)
                     ],
                 },
             ],
@@ -260,8 +260,29 @@ function ensureLayerGpu(rr: SpriteRendererInternal, layer: Sprite2DLayer): Layer
 function uploadLayer(rr: SpriteRendererInternal, lg: LayerGpu): void {
     const layer = lg.layer;
     if (lg.uploadedVersion !== layer._version && layer.count > 0) {
-        const bytes = layer.count * INSTANCE_STRIDE_BYTES;
-        rr._device.queue.writeBuffer(lg.instanceBuffer, 0, layer._instanceData.buffer, layer._instanceData.byteOffset, bytes);
+        // First sight (or post-grow `uploadedVersion = -1`): upload the whole live range.
+        // Subsequent: upload only the dirty span, clamped to live count (a `remove` may have
+        // marked a slot beyond `count` as dirty; that data is no longer live).
+        let lo: number;
+        let hi: number;
+        if (lg.uploadedVersion === -1) {
+            lo = 0;
+            hi = layer.count;
+        } else {
+            lo = layer._dirtyMin;
+            hi = Math.min(layer._dirtyMax, layer.count);
+        }
+        if (hi > lo) {
+            const offsetBytes = lo * INSTANCE_STRIDE_BYTES;
+            const bytes = (hi - lo) * INSTANCE_STRIDE_BYTES;
+            rr._device.queue.writeBuffer(
+                lg.instanceBuffer,
+                offsetBytes,
+                layer._instanceData.buffer,
+                layer._instanceData.byteOffset + offsetBytes,
+                bytes
+            );
+        }
         layer._dirtyMin = 0;
         layer._dirtyMax = 0;
         lg.uploadedVersion = layer._version;
