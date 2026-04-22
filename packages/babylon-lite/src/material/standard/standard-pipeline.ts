@@ -479,8 +479,20 @@ export function createDynamicMeshGPU(
     // UV params UBO (always when UV or shadow is needed)
     if (hasShadow || needsUV) {
         const uvData = new Float32Array(4);
-        uvData[0] = material.uvScale[0];
-        uvData[1] = material.uvScale[1];
+        const scaleX = material.uvScale[0];
+        let scaleY = material.uvScale[1];
+        const offsetX = 0;
+        let offsetY = 0;
+        // Flip V for y-down source data (e.g. basis/compressed textures).
+        // uv * (sx, sy) + (ox, oy) with vFlip becomes uv.xy * (sx, -sy) + (ox, sy+oy).
+        if (material.diffuseTexture?.invertY) {
+            offsetY = scaleY;
+            scaleY = -scaleY;
+        }
+        uvData[0] = scaleX;
+        uvData[1] = scaleY;
+        uvData[2] = offsetX;
+        uvData[3] = offsetY;
         meshEntries.push({ binding: nextBinding++, resource: { buffer: createUniformBuffer(engine, uvData) } });
     }
 

@@ -30,6 +30,11 @@ export interface Texture2D {
     vOffset?: number;
     /** Rotation in radians around the (0,0) UV corner. */
     uAng?: number;
+    /** True if the texel data is stored with origin at the top (y-down) and
+     *  must be flipped in V when sampled with standard (y-up) UVs. Applied at
+     *  UV-transform time in the material, so compressed-format textures (where
+     *  in-place row flipping is impractical) remain correct. */
+    invertY?: boolean;
 }
 
 /** Create a fresh Texture2D wrapper that shares GPU resources with `base`

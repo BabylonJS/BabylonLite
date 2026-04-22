@@ -145,12 +145,6 @@ export function createStandardTemplate(config: StandardTemplateConfig): ShaderTe
     if (hasShadow || needsUV) {
         baseBindings.push({ name: "uvParams", type: { kind: "uniform-buffer" }, visibility: STAGE_VERTEX });
     }
-    if (textures.emissive) {
-        baseBindings.push(
-            { name: "emissiveTex", type: { kind: "texture", textureType: "texture_2d<f32>" }, visibility: STAGE_FRAGMENT },
-            { name: "emissiveSampler", type: { kind: "sampler", samplerType: "sampler" }, visibility: STAGE_FRAGMENT }
-        );
-    }
     // bump bindings are provided by the normal-map fragment (not baseBindings)
     // emissive, specular, ambient, lightmap, opacity, reflection bindings
     // are provided by their respective fragments (not baseBindings)

@@ -26,6 +26,7 @@ export { createSphere, createBox, createTorus, createGround, createGroundFromHei
 // ─── Textures ────────────────────────────────────────────────────────
 export { createSolidTexture2D } from "./texture/solid-texture.js";
 export { loadKtxTexture2D } from "./texture/ktx-loader.js";
+export { loadBasisTexture2D } from "./texture/basis-loader.js";
 
 // ─── Materials ───────────────────────────────────────────────────────
 export { createStandardMaterial } from "./material/standard/standard-material.js";

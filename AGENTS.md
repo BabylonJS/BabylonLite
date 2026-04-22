@@ -30,6 +30,7 @@ This repo uses two Copilot chat modes (`.github/chatmodes/`):
    - `git diff tests/bundle-size.test.ts` — no ceiling changes
    - `git diff reference/` — no golden reference changes
    These can be chained via `pnpm test` (build + parity). **Do NOT run `pnpm test:perf`** — perf tests are machine-sensitive and reserved for the user / CI. If perf validation is needed, ask the user to run it locally.
+   **Iteration tip:** During the edit/test loop on a specific scene, run only that scene's spec (`npx playwright test tests/parity/scenes/<scene>.spec.ts`) to save time. Run the full `pnpm test` only as the final guardrail gate before declaring success.
 5. **All pass** → Gandalf reports success. **Any fail** → Einstein sent back to fix.
 
 ### Guardrails (Non-Negotiable)

@@ -226,8 +226,7 @@
         "maxMad": 0.5,
         "maxRawKB": 52.4,
         "description": "Ground plane with KTX compressed texture (auto-format selection), UV tiling, FreeCamera, hemispheric light.",
-        "tags": ["std", "procedural"],
-        "skipParity": true
+        "tags": ["std", "procedural"]
     },
     {
         "id": 26,
@@ -303,8 +302,7 @@
         "maxRawKB": 90.0,
         "description": "LightsPunctualLamp.glb (KHR_lights_punctual point lights + KHR_materials_transmission) with default IBL environment. Matches PG #YG3BBF#54.",
         "note": "MAD ceiling temporarily relaxed (0.5 actual vs 0.02 target). Glass lampshade needs correct transmission parity (see scene 30) to tighten maxMad below 0.5.",
-        "tags": ["pbr", "gltf", "env", "lights-punctual", "transmission"],
-        "skipPerf": true
+        "tags": ["pbr", "gltf", "env", "lights-punctual", "transmission"]
     },
     {
         "id": 34,
@@ -325,6 +323,15 @@
         "tags": ["pbr", "gltf", "env", "gpu-instancing"]
     },
     {
+        "id": 36,
+        "slug": "scene36-basis-texture",
+        "name": "Scene 36 — Basis Universal Texture",
+        "maxMad": 0.5,
+        "maxRawKB": 52.5,
+        "description": "Box with a .basis texture as diffuse+emissive. Transcoder fetched from the BJS CDN; auto-selects BC7/ASTC/ETC2/BC3/RGBA32 per device. Matches PG #4RN0VF.",
+        "tags": ["std", "procedural", "basis"]
+    },
+    {
         "id": 37,
         "slug": "scene37-sheen-sofa",
         "name": "Scene 37 — Sheen Wood Leather Sofa",
@@ -341,7 +348,6 @@
         "maxRawKB": 55,
         "maxGzipKB": 22,
         "description": "Havok Physics V2 sphere drop. Sphere falls onto ground under gravity with restitution bounce.",
-        "tags": ["std", "procedural", "physics"],
-        "skipPerf": true
+        "tags": ["std", "procedural", "physics"]
     }
 ]
