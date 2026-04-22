@@ -44,10 +44,8 @@ import {
 import { PBR_HAS_THIN_INSTANCES, PBR_HAS_INSTANCE_COLOR } from "./pbr-pipeline.js";
 import {
     _getPbrLightExtension,
-    _getPbrMaterialUboWriters,
     _registerPbrExt,
     _getPbrExts,
-    _registerPbrMaterialUboWriter,
     PBR_HAS_EMISSIVE,
     PBR_HAS_ENV,
     PBR_HAS_TONEMAP,
@@ -262,8 +260,7 @@ export async function buildPbrRenderables(
     let _anisoExt: typeof import("./fragments/anisotropy-fragment.js") | null = null;
     if (hasAnyAnisotropy) {
         _anisoExt = await import("./fragments/anisotropy-fragment.js");
-        const anisoMod = _anisoExt;
-        _registerPbrMaterialUboWriter("anisotropy", (d, m, o) => anisoMod.writeAnisotropyUBO(d, m as PbrMaterialProps, o));
+        _registerPbrExt(_anisoExt.anisotropyExt);
     }
 
     if (hasAnySubsurface) {
@@ -666,11 +663,6 @@ function writeMaterialData(data: Float32Array, material: PbrMaterialProps, spec:
         data[off + 1] = material.roughnessFactor ?? 1.0;
     }
 
-    for (const write of _getPbrMaterialUboWriters().values()) {
-        write(data, material, spec.offsets);
-    }
-
-    // Unified PBR extensions contribute their material-UBO slice.
     for (const ext of _getPbrExts().values()) {
         if (ext.writeUbo) {
             ext.writeUbo(data, material, spec.offsets);
