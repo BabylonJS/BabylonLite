@@ -71,6 +71,10 @@ const ATTRIBUTE_TYPES: Record<string, NodeValueType> = {
     uv: "vec2f",
     uv2: "vec2f",
     color: "vec4f",
+    matricesIndices: "vec4f",
+    matricesWeights: "vec4f",
+    matricesIndicesExtra: "vec4f",
+    matricesWeightsExtra: "vec4f",
 };
 
 function emitAttribute(block: NodeBlock, stage: Stage, state: NodeBuildState): NodeExpr {

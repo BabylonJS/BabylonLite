@@ -57,7 +57,13 @@ function getTable(): Map<string, BlockLoader> {
     t.set("LightInformationBlock", () => import("./blocks/light-information.js"));
     t.set("FogBlock", () => import("./blocks/fog-block.js"));
     t.set("PerturbNormalBlock", () => import("./blocks/perturb-normal.js"));
-    // Block loaders are added here as they land. Phase 1d–1e populate this list further.
+    // Vertex-transform blocks (phase 1d):
+    t.set("BonesBlock", () => import("./blocks/bones-block.js"));
+    t.set("InstancesBlock", () => import("./blocks/instances-block.js"));
+    t.set("MorphTargetsBlock", () => import("./blocks/morph-targets.js"));
+    // Shadow (phase 1e):
+    t.set("ShadowMapBlock", () => import("./blocks/shadow-map.js"));
+    // Each entry MUST use a literal string import so Rollup splits per-block chunks.
     // Each entry MUST use a literal string import so Rollup splits per-block chunks.
     _table = t;
     return t;
