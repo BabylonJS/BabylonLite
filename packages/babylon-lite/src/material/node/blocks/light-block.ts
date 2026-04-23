@@ -47,8 +47,9 @@ export const emitter: BlockEmitter = {
             const dc = resolveOptional(block, "diffuseColor", "vec3<f32>(1.0)", stage, state, ctx, "vec3f");
             const sc = resolveOptional(block, "specularColor", "vec3<f32>(1.0)", stage, state, ctx, "vec3f");
             const gl = resolveOptional(block, "glossiness", "0.5", stage, state, ctx, "f32");
+            const sf = state.shadowLights.length > 0 ? `nme_computeShadowFactors(in)` : `vec4<f32>(1.0)`;
             callVar = `_lt${ctx.temp(state, "light")}`;
-            state.fragment.body.push(`let ${callVar} = nme_computeLighting(${wp}, ${wn}, ${cp}, ${dc}, ${sc}, ${gl});`);
+            state.fragment.body.push(`let ${callVar} = nme_computeLighting(${wp}, ${wn}, ${cp}, ${dc}, ${sc}, ${gl}, ${sf});`);
             state.fragment.memo.set(memoKey, { expr: callVar, type: "vec4f" });
         } else {
             callVar = callExpr.expr;
@@ -57,7 +58,7 @@ export const emitter: BlockEmitter = {
         const out: Record<string, NodeExpr> = {
             diffuseOutput: { expr: `${callVar}.diffuse`, type: "vec3f" },
             specularOutput: { expr: `${callVar}.specular`, type: "vec3f" },
-            shadow: { expr: "1.0", type: "f32" }, // placeholder until ShadowMapBlock lands
+            shadow: { expr: `${callVar}.shadow`, type: "f32" },
         };
         return out[outputName] ?? { expr: `${callVar}.diffuse`, type: "vec3f" };
     },

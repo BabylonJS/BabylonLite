@@ -113,6 +113,16 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
                 entries.push({ binding: compile.morphBindings.textureBinding, resource: mt.texture.createView() });
                 entries.push({ binding: compile.morphBindings.uboBinding, resource: { buffer: mt.weightsBuffer } });
             }
+            for (let si = 0; si < compile.shadowBindings.length; si++) {
+                const sb = compile.shadowBindings[si]!;
+                const sg = material._shadowGenerators[si];
+                if (!sg) {
+                    throw new Error(`NodeMaterial: material requires shadow generator #${si} but none was supplied to parseNodeMaterialFromSnippet({ shadowGenerators }).`);
+                }
+                entries.push({ binding: sb.texBinding, resource: sg.blurredTexture.createView(sb.shadowType === "pcf" ? { aspect: "depth-only" } : undefined) });
+                entries.push({ binding: sb.sampBinding, resource: sg.blurredSampler });
+                entries.push({ binding: sb.uboBinding, resource: { buffer: sg.shadowUBO } });
+            }
             const meshBG = device.createBindGroup({ label: "node-mesh-bg", layout: meshBGL, entries });
 
             packets.push({ mesh, meshUBO, meshBG, _lastWorldVersion: mesh.worldMatrixVersion });

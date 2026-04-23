@@ -103,6 +103,13 @@ export interface NodeBuildState {
      *  bindings (morph texture + morph UBO), declares the struct, and adds
      *  a `@builtin(vertex_index)` param to vs_main. */
     usesMorphTargets: boolean;
+    /** Set by parseNodeMaterialFromSnippet when shadowGenerators are supplied.
+     *  The pipeline allocates shadow bindings (texture + sampler + UBO) per
+     *  shadow-casting light, emits light-space varyings in vs_main, and injects
+     *  a `nme_computeShadowFactors` helper that LightBlock calls before the
+     *  lighting loop. Zero entries = no bindings, no WGSL — invisible to scenes
+     *  without shadows. */
+    shadowLights: { lightIndex: number; shadowType: "esm" | "pcf" }[];
 }
 
 export interface NodeTextureBinding {

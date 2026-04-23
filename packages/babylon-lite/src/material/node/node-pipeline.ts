@@ -61,6 +61,8 @@ export interface NodeCompileResult {
     readonly lightsBinding: number | null;
     /** Slots for the morph-target texture + weights UBO, or `null` when no MorphTargetsBlock is present. */
     readonly morphBindings: { readonly textureBinding: number; readonly uboBinding: number } | null;
+    /** Per shadow-casting light: slot assignments in group 1 for the shadow texture, sampler, and shadowInfo UBO. Empty when the material uses no shadows. */
+    readonly shadowBindings: ReadonlyArray<{ readonly lightIndex: number; readonly texBinding: number; readonly sampBinding: number; readonly uboBinding: number; readonly shadowType: "esm" | "pcf" }>;
 }
 
 // ─── Pipeline cache ─────────────────────────────────────────────────
@@ -125,6 +127,11 @@ export interface CompileOpts {
     readonly format: GPUTextureFormat;
     readonly msaaSamples: number;
     readonly backFaceCulling?: boolean;
+    /** When `state.shadowLights` is non-empty, this factory produces shadow
+     *  bindings + WGSL. Loaded via `await import("./node-shadow.js")` from
+     *  `node-material.ts` only when `shadowGenerators` was supplied, so
+     *  non-shadow scenes never bundle the PCF/ESM helpers. */
+    readonly shadowEmitter?: typeof import("./node-shadow.js").emitShadow;
 }
 
 export function compileNodePipeline(state: NodeBuildState, vertexBody: string, fragmentBody: string, opts: CompileOpts): NodeCompileResult {
@@ -197,6 +204,22 @@ export function compileNodePipeline(state: NodeBuildState, vertexBody: string, f
         );
     }
 
+    // Shadow bindings (per shadow-casting light). Emission/WGSL live in the
+    // dynamically-imported `node-shadow.ts` module so scenes without shadows
+    // never bundle the PCF/ESM helper code. `shadowEmitter` is supplied only
+    // when `shadowGenerators` was passed to `parseNodeMaterialFromSnippet`.
+    const shadowEmit =
+        state.shadowLights.length > 0 && opts.shadowEmitter
+            ? opts.shadowEmitter(state.shadowLights, nextBinding, state.varyings)
+            : null;
+    if (shadowEmit) {
+        nextBinding += shadowEmit.bindingCount;
+    }
+    const shadowBindings = shadowEmit?.bindings ?? [];
+    const shadowWgslDecls = shadowEmit ? [shadowEmit.wgslDecls] : [];
+    const shadowVertexInject = shadowEmit?.vertexInject ?? "";
+    const shadowFragmentHelper = shadowEmit?.fragmentHelper ?? "";
+
     // Module-scope helpers (function defs, struct defs) — dedupe across both
     // stages by key. Fail on same-key/different-source to avoid silent loss.
     const helperSources = new Map<string, string>();
@@ -232,6 +255,12 @@ export function compileNodePipeline(state: NodeBuildState, vertexBody: string, f
     }
     wgslParts.push(vertexIn);
     wgslParts.push(vertexOut);
+    if (shadowWgslDecls.length > 0) {
+        wgslParts.push(shadowWgslDecls.join("\n"));
+    }
+    if (shadowFragmentHelper.length > 0) {
+        wgslParts.push(shadowFragmentHelper);
+    }
     for (const src of helperSources.values()) {
         wgslParts.push(src);
     }
@@ -244,6 +273,7 @@ export function compileNodePipeline(state: NodeBuildState, vertexBody: string, f
             `    var out: VertexOut;\n` +
             `    var ${SENTINEL_VTX_OUTPUT}: vec4<f32> = vec4<f32>(0.0, 0.0, 0.0, 1.0);\n` +
             `${indent(vertexBody)}\n` +
+            (shadowVertexInject.length > 0 ? `    ${shadowVertexInject}\n` : ``) +
             `    out.position = ${SENTINEL_VTX_OUTPUT};\n` +
             `    return out;\n` +
             `}`
@@ -293,6 +323,9 @@ export function compileNodePipeline(state: NodeBuildState, vertexBody: string, f
             buffer: { type: "uniform", minBindingSize: 32 },
         });
     }
+    if (shadowEmit) {
+        meshBglEntries.push(...shadowEmit.bglEntries);
+    }
     const meshBGL = device.createBindGroupLayout({ label: "node-mesh", entries: meshBglEntries });
 
     // Vertex buffers: one GPUVertexBufferLayout per declared attribute, each at location=i.
@@ -331,6 +364,7 @@ export function compileNodePipeline(state: NodeBuildState, vertexBody: string, f
         textureBindings,
         lightsBinding,
         morphBindings,
+        shadowBindings,
     };
     cache.set(cacheKey, result);
     return result;

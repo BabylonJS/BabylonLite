@@ -38,6 +38,7 @@ export function createBuildState(): NodeBuildState {
         nextTemp: 0,
         usesLightsUbo: false,
         usesMorphTargets: false,
+        shadowLights: [],
     };
 }
 
@@ -187,8 +188,13 @@ export interface EmitResult {
  *  and emit the pair of WGSL shader strings. The caller is responsible for
  *  wrapping the result with the pipeline's bind-group / entry-point scaffolding
  *  (done by `node-pipeline.ts`). */
-export function emitGraph(graph: NodeGraph, loadedEmitters: Map<string, BlockEmitter>, fragmentRootId: number, vertexRootId: number | null): EmitResult {
+export function emitGraph(graph: NodeGraph, loadedEmitters: Map<string, BlockEmitter>, fragmentRootId: number, vertexRootId: number | null, shadowLights?: readonly { lightIndex: number; shadowType: "esm" | "pcf" }[]): EmitResult {
     const state = createBuildState();
+    if (shadowLights) {
+        for (const sl of shadowLights) {
+            state.shadowLights.push(sl);
+        }
+    }
     const ctx = makeContext(graph, loadedEmitters);
 
     // Emit fragment root.

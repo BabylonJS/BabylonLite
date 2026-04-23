@@ -39,6 +39,14 @@ export interface ParseNodeMaterialOptions {
     readonly json?: string | object;
     /** Texture overrides keyed by TextureBlock / ImageSourceBlock name. */
     readonly textures?: Readonly<Record<string, Texture2D>>;
+    /** Shadow generators to integrate into the material. Each contributes
+     *  one shadow-light slot whose lightIndex is the position of its light in
+     *  `scene.lights` at the time of rendering. Materials built without this
+     *  option have zero shadow bindings / zero shadow WGSL. */
+    readonly shadowGenerators?: readonly import("../../shadow/shadow-generator.js").ShadowGenerator[];
+    /** For each entry in shadowGenerators, the index of the owning light in
+     *  scene.lights. When omitted, defaults to [0, 1, …] (first N lights). */
+    readonly shadowLightIndices?: readonly number[];
 }
 
 // ─── Internal shape (what the renderable + updater read) ────────────
@@ -49,6 +57,7 @@ export interface NodeMaterialInternal extends NodeMaterial {
     readonly _graph: NodeGraph;
     /** Ordered list of vertex attribute names that the pipeline's vertex buffers expect. */
     readonly _vertexAttrNames: readonly string[];
+    readonly _shadowGenerators: readonly import("../../shadow/shadow-generator.js").ShadowGenerator[];
     _sceneUBO: GPUBuffer | null;
     _nodeUBO: GPUBuffer | null;
     _uboDirty: boolean;
@@ -78,13 +87,35 @@ export async function parseNodeMaterialFromSnippet(engine: EngineContext, snippe
     }
     const vertRoot = findBlockByClassName(graph, "VertexOutputBlock");
 
-    const { vertexWgsl, fragmentWgsl, state } = emitGraph(graph, emitters, fragRoot.id, vertRoot ? vertRoot.id : null);
+    // Pre-populate shadow metadata BEFORE emitGraph so LightBlock can dispatch
+    // to nme_computeShadowFactors(...) during emission. When no shadow
+    // generators are supplied, state.shadowLights stays empty and zero shadow
+    // WGSL / zero shadow bindings are emitted (tree-shakable).
+    const shadowLightsPre: { lightIndex: number; shadowType: "esm" | "pcf" }[] = [];
+    if (options.shadowGenerators && options.shadowGenerators.length > 0) {
+        const defaultIdx = options.shadowGenerators.map((_, i) => i);
+        const indices = options.shadowLightIndices ?? defaultIdx;
+        for (let i = 0; i < options.shadowGenerators.length; i++) {
+            shadowLightsPre.push({ lightIndex: indices[i]!, shadowType: options.shadowGenerators[i]!.shadowType });
+        }
+    }
+
+    const { vertexWgsl, fragmentWgsl, state } = emitGraph(graph, emitters, fragRoot.id, vertRoot ? vertRoot.id : null, shadowLightsPre);
+
+    // Dynamic import: the PCF/ESM WGSL helpers live in node-shadow.ts and
+    // are only loaded when the caller supplied shadowGenerators. Scenes
+    // without shadows never bundle this module.
+    let shadowEmitter: typeof import("./node-shadow.js").emitShadow | undefined;
+    if (options.shadowGenerators && options.shadowGenerators.length > 0) {
+        shadowEmitter = (await import("./node-shadow.js")).emitShadow;
+    }
 
     const engineInternal = engine as EngineContextInternal;
     const compile = compileNodePipeline(state, vertexWgsl, fragmentWgsl, {
         engine: engineInternal,
         format: engineInternal.format,
         msaaSamples: engineInternal.msaaSamples,
+        shadowEmitter,
     });
 
     // Build the `inputs` map: one NodeInputHandle per named uniform.
@@ -161,6 +192,7 @@ export async function parseNodeMaterialFromSnippet(engine: EngineContext, snippe
         _state: state,
         _graph: graph,
         _vertexAttrNames: attrNames,
+        _shadowGenerators: options.shadowGenerators ?? [],
         _sceneUBO: null,
         _nodeUBO: null,
         _uboDirty: false,
