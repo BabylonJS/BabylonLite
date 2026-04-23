@@ -294,7 +294,10 @@ const exportKindCache = new Map<string, Record<string, BundleInfoExport["kind"]>
  * declarations. Also follows same-package `export { X } from "./path.js"`
  * re-exports so chips inherit their original kind.
  */
-function extractExportKinds(absPath: string, visited: Set<string> = new Set()): Record<string, BundleInfoExport["kind"]> {
+function extractExportKinds(
+    absPath: string,
+    visited: Set<string> = new Set(),
+): Record<string, BundleInfoExport["kind"]> {
     const cached = exportKindCache.get(absPath);
     if (cached) return cached;
     const map: Record<string, BundleInfoExport["kind"]> = {};
@@ -313,7 +316,10 @@ function extractExportKinds(absPath: string, visited: Set<string> = new Set()): 
     for (const m of src.matchAll(/^\s*export\s+(?:const|let|var)\s+(\w+)(?:\s*:[^=\r\n]+)?\s*=\s*([^\r\n]{0,200})/gm)) {
         const name = m[1]!;
         const rhs = m[2]!.trimStart();
-        const looksLikeFn = /^(async\s+)?function\b/.test(rhs) || /^(async\s+)?\([^)]*\)\s*(?::[^=]+)?=>/.test(rhs) || /^(async\s+)?[A-Za-z_$][\w$]*\s*=>/.test(rhs);
+        const looksLikeFn =
+            /^(async\s+)?function\b/.test(rhs) ||
+            /^(async\s+)?\([^)]*\)\s*(?::[^=]+)?=>/.test(rhs) ||
+            /^(async\s+)?[A-Za-z_$][\w$]*\s*=>/.test(rhs);
         map[name] = looksLikeFn ? "function" : "const";
     }
     // Parse imports so we can resolve bare `export { X }` lists below.
@@ -433,8 +439,7 @@ function writeBundleInfo(scene: string, result: unknown): void {
 const sceneConfig: { id: number }[] = JSON.parse(readFileSync(resolve(ROOT, "scene-config.json"), "utf-8"));
 const ALL_SCENES = sceneConfig.map((s) => `scene${s.id}`);
 const SCENES = process.env.BUNDLE_SCENES ? process.env.BUNDLE_SCENES.split(",") : ALL_SCENES;
-// Skip BJS counterparts for scenes that don't have a `lab/src/bjs/sceneN.ts` source.
-const BJS_SCENES = process.env.SKIP_BJS ? [] : SCENES.map((s) => `bjs-${s}`).filter((bjs) => existsSync(resolve(labDir, `src/bjs/${bjs.slice(4)}.ts`)));
+const BJS_SCENES = process.env.SKIP_BJS ? [] : SCENES.map((s) => `bjs-${s}`);
 
 function getAllJsFiles(dir: string): string[] {
     const results: string[] = [];
@@ -727,7 +732,12 @@ async function measureLiveSizes(): Promise<Record<string, { rawKB: number; gzipK
     return manifest;
 }
 
-async function measurePage(browser: any, port: number, htmlFile: string, bundlePath: string): Promise<{ rawKB: number; gzipKB: number; chunks: string[] }> {
+async function measurePage(
+    browser: any,
+    port: number,
+    htmlFile: string,
+    bundlePath: string
+): Promise<{ rawKB: number; gzipKB: number; chunks: string[] }> {
     const page = await browser.newPage();
     const jsPayloads: Buffer[] = [];
     const chunkFiles: string[] = [];
