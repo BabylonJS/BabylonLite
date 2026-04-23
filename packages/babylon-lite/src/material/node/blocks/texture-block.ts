@@ -54,11 +54,12 @@ export const emitter: BlockEmitter = {
         // Memoize the full sample per-stage so rgba/rgb/r/... share one textureSample call.
         const memoKey = `_tex_${block.id}_sample`;
         const stageState = stage === "vertex" ? state.vertex : state.fragment;
-        let sampleVar = stageState.helpers.get(memoKey);
-        if (!sampleVar) {
-            sampleVar = `_s${ctx.temp(state, "tex")}`;
+        let sampleExpr = stageState.memo.get(memoKey);
+        if (!sampleExpr) {
+            const sampleVar = `_s${ctx.temp(state, "tex")}`;
             stageState.body.push(`let ${sampleVar} = textureSample(nodeTex_${bindingName}, nodeSamp_${bindingName}, ${uv.expr});`);
-            stageState.helpers.set(memoKey, sampleVar);
+            sampleExpr = { expr: sampleVar, type: "vec4f" };
+            stageState.memo.set(memoKey, sampleExpr);
         }
 
         // Special case: `level` output returns a pseudo-f32 (0.0 for now — proper LOD calc TBD).
@@ -67,6 +68,6 @@ export const emitter: BlockEmitter = {
         }
 
         const out = OUTPUT[outputName] ?? OUTPUT.rgba!;
-        return { expr: `${sampleVar}${out.swizzle}`, type: out.type };
+        return { expr: `${sampleExpr.expr}${out.swizzle}`, type: out.type };
     },
 };

@@ -37,8 +37,9 @@ export const emitter: BlockEmitter = {
         state.fragment.helpers.set(NME_LIGHTING_HELPER_KEY, NME_LIGHTING_HELPER_WGSL);
 
         const memoKey = `_light_${block.id}_call`;
-        let callVar = state.fragment.helpers.get(memoKey);
-        if (!callVar) {
+        let callExpr = state.fragment.memo.get(memoKey);
+        let callVar: string;
+        if (!callExpr) {
             const wp = resolveOptional(block, "worldPosition", "vec3<f32>(0.0)", stage, state, ctx, "vec3f");
             const wn = resolveOptional(block, "worldNormal", "vec3<f32>(0.0, 1.0, 0.0)", stage, state, ctx, "vec3f");
             const cp = resolveOptional(block, "cameraPosition", "_NME_CAMERA_POS_", stage, state, ctx, "vec3f");
@@ -47,7 +48,9 @@ export const emitter: BlockEmitter = {
             const gl = resolveOptional(block, "glossiness", "0.5", stage, state, ctx, "f32");
             callVar = `_lt${ctx.temp(state, "light")}`;
             state.fragment.body.push(`let ${callVar} = nme_computeLighting(${wp}, ${wn}, ${cp}, ${dc}, ${sc}, ${gl});`);
-            state.fragment.helpers.set(memoKey, callVar);
+            state.fragment.memo.set(memoKey, { expr: callVar, type: "vec4f" });
+        } else {
+            callVar = callExpr.expr;
         }
 
         const out: Record<string, NodeExpr> = {

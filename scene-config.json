@@ -379,5 +379,14 @@
         "maxRawKB": 60,
         "description": "Node Material with a vertex→fragment varying: normal attribute remapped as `normal * 0.5 + 0.5` → FragmentOutput.rgb. Exercises ScaleBlock, AddBlock, and attribute-to-fragment bridging.",
         "tags": ["nme", "procedural"]
+    },
+    {
+        "id": 62,
+        "slug": "scene62-nme-texture",
+        "name": "Scene 62 — NME Diffuse Texture",
+        "maxMad": 0.5,
+        "maxRawKB": 60,
+        "description": "Node Material sampling a 2D texture (crate.png) through a TextureBlock driven by the UV attribute. Exercises texture/sampler BGL slot allocation and `NodeInputHandle.texture` pass-through.",
+        "tags": ["nme", "procedural"]
     }
 ]

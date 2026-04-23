@@ -76,6 +76,15 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
             if (nodeUBO) {
                 entries.push({ binding: compile.nodeUboBinding!, resource: { buffer: nodeUBO } });
             }
+            for (const tb of compile.textureBindings) {
+                const slot = material._textureSlots.get(tb.name);
+                const tex = slot?.current;
+                if (!tex) {
+                    throw new Error(`NodeMaterial: texture binding "${tb.name}" not set. Provide it via options.textures or material.inputs["${tb.name}"].texture before the first render.`);
+                }
+                entries.push({ binding: tb.texBinding, resource: tex.view });
+                entries.push({ binding: tb.sampBinding, resource: tex.sampler });
+            }
             const meshBG = device.createBindGroup({ label: "node-mesh-bg", layout: meshBGL, entries });
 
             packets.push({ mesh, meshUBO, meshBG, _lastWorldVersion: mesh.worldMatrixVersion });

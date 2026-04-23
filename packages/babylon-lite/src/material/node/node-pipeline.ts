@@ -54,6 +54,8 @@ export interface NodeCompileResult {
     readonly nodeUboOffsets: ReadonlyMap<string, number>;
     /** The resolved bind-group slot (within group 1) for the node UBO. `null` if no uniforms. */
     readonly nodeUboBinding: number | null;
+    /** Per-texture binding slots assigned by the pipeline builder. */
+    readonly textureBindings: ReadonlyArray<{ readonly name: string; readonly texBinding: number; readonly sampBinding: number }>;
 }
 
 // ─── Pipeline cache ─────────────────────────────────────────────────
@@ -127,11 +129,23 @@ export function compileNodePipeline(state: NodeBuildState, vertexBody: string, f
     // Binding layout for group 1:
     //   slot 0 = mesh UBO (world matrix)
     //   slot 1 = node UBO (if nodeUboFields non-empty)
-    //   slot N,N+1 = texture + sampler (paired)
-    const nodeUboBinding = state.nodeUboFields.length > 0 ? 1 : null;
-    const nodeUbo = buildNodeUbo(state, 1);
+    //   slot N,N+1 = texture + sampler (paired) for each entry in state.textures
+    let nextBinding = 1;
+    const nodeUboBinding = state.nodeUboFields.length > 0 ? nextBinding++ : null;
+    const nodeUbo = nodeUboBinding !== null ? buildNodeUbo(state, nodeUboBinding) : null;
     const nodeUboSize = nodeUbo?.size ?? 0;
     const nodeUboOffsets: ReadonlyMap<string, number> = nodeUbo?.offsets ?? new Map<string, number>();
+
+    const textureBindings: { name: string; texBinding: number; sampBinding: number }[] = [];
+    const textureWgslDecls: string[] = [];
+    for (const tex of state.textures) {
+        const texBinding = nextBinding++;
+        const sampBinding = nextBinding++;
+        textureBindings.push({ name: tex.name, texBinding, sampBinding });
+        const wgslTexType = tex.kind === "textureCube" ? "texture_cube<f32>" : "texture_2d<f32>";
+        textureWgslDecls.push(`@group(1) @binding(${texBinding}) var nodeTex_${tex.name}: ${wgslTexType};`);
+        textureWgslDecls.push(`@group(1) @binding(${sampBinding}) var nodeSamp_${tex.name}: sampler;`);
+    }
 
     // Compose WGSL (node UBO struct inserted conditionally between mesh + VertexIn).
     const vertexIn = buildVertexIn(state);
@@ -143,6 +157,9 @@ export function compileNodePipeline(state: NodeBuildState, vertexBody: string, f
     ];
     if (nodeUbo) {
         wgslParts.push(nodeUbo.struct);
+    }
+    if (textureWgslDecls.length > 0) {
+        wgslParts.push(textureWgslDecls.join("\n"));
     }
     wgslParts.push(vertexIn);
     wgslParts.push(vertexOut);
@@ -181,7 +198,10 @@ export function compileNodePipeline(state: NodeBuildState, vertexBody: string, f
     if (nodeUboBinding !== null) {
         meshBglEntries.push({ binding: nodeUboBinding, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } });
     }
-    // (Texture entries would go here in scene 62+.)
+    for (const tb of textureBindings) {
+        meshBglEntries.push({ binding: tb.texBinding, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, texture: { sampleType: "float", viewDimension: "2d" } });
+        meshBglEntries.push({ binding: tb.sampBinding, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } });
+    }
     const meshBGL = device.createBindGroupLayout({ label: "node-mesh", entries: meshBglEntries });
 
     // Vertex buffers: one GPUVertexBufferLayout per declared attribute, each at location=i.
@@ -217,6 +237,7 @@ export function compileNodePipeline(state: NodeBuildState, vertexBody: string, f
         nodeUboSize,
         nodeUboOffsets,
         nodeUboBinding,
+        textureBindings,
     };
     cache.set(cacheKey, result);
     return result;

@@ -37,6 +37,8 @@ export interface ParseNodeMaterialOptions {
     readonly snippetServer?: string;
     /** Pre-resolved JSON (object or string). When provided, bypasses the network. */
     readonly json?: string | object;
+    /** Texture overrides keyed by TextureBlock / ImageSourceBlock name. */
+    readonly textures?: Readonly<Record<string, Texture2D>>;
 }
 
 // ─── Internal shape (what the renderable + updater read) ────────────
@@ -51,6 +53,8 @@ export interface NodeMaterialInternal extends NodeMaterial {
     _nodeUBO: GPUBuffer | null;
     _uboDirty: boolean;
     _uniformValues: Map<string, UniformSlot>;
+    /** Per-texture-binding Texture2D slot (populated from options.textures and/or inputs.*.texture). */
+    _textureSlots: Map<string, { current: Texture2D | null }>;
 }
 
 interface UniformSlot {
@@ -128,6 +132,23 @@ export async function parseNodeMaterialFromSnippet(engine: EngineContext, snippe
 
     const attrNames = state.vertexAttributes.map((a) => a.name);
 
+    // Per-texture handles (populated from options.textures, then exposed via inputs).
+    const textureSlots = new Map<string, { current: Texture2D | null }>();
+    for (const tb of compile.textureBindings) {
+        const slot = { current: options.textures?.[tb.name] ?? null };
+        textureSlots.set(tb.name, slot);
+        const handle: NodeInputHandle = {
+            type: "texture2d",
+            get texture(): Texture2D | null {
+                return slot.current;
+            },
+            set texture(v: Texture2D | null) {
+                slot.current = v;
+            },
+        } as NodeInputHandle;
+        inputs[tb.name] = handle;
+    }
+
     const _buildGroup: MeshGroupBuilder = async (scene, meshes): Promise<MeshGroupBuildResult> => {
         const { buildNodeMeshRenderables } = await import("./node-renderable.js");
         return buildNodeMeshRenderables(scene, meshes);
@@ -144,6 +165,7 @@ export async function parseNodeMaterialFromSnippet(engine: EngineContext, snippe
         _nodeUBO: null,
         _uboDirty: false,
         _uniformValues: uniformValues,
+        _textureSlots: textureSlots,
     };
     return material;
 }
