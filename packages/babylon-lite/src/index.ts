@@ -45,6 +45,8 @@ export { loadBasisTexture2D } from "./texture/basis-loader.js";
 // ─── Materials ───────────────────────────────────────────────────────
 export { createStandardMaterial } from "./material/standard/standard-material.js";
 export { createPbrMaterial } from "./material/pbr/pbr-material.js";
+export { parseNodeMaterialFromSnippet } from "./material/node/node-material.js";
+export type { NodeMaterial, NodeInputHandle, ParseNodeMaterialOptions } from "./material/node/node-material.js";
 export { markMaterialDirty } from "./material/material-dirty.js";
 export { enableMaterialTracking } from "./material/observable-material.js";
 
