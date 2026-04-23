@@ -36,6 +36,7 @@ const WGSL_SCENE_STRUCT = `struct SceneU {
 
 const WGSL_MESH_STRUCT = `struct MeshU {
     world: mat4x4<f32>,
+    receivesShadow: vec4<f32>,
 };
 @group(1) @binding(0) var<uniform> meshU: MeshU;`;
 

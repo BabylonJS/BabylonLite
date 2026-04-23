@@ -20,7 +20,9 @@ interface NodePacket {
     readonly mesh: Mesh;
     readonly meshUBO: GPUBuffer;
     readonly meshBG: GPUBindGroup;
+    readonly meshScratch: Float32Array;
     _lastWorldVersion: number;
+    _lastReceivesShadow: number;
 }
 
 /** Build NME renderables for a set of meshes that share a NodeMaterial. */
@@ -83,8 +85,13 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
 
         const packets: NodePacket[] = [];
         for (const mesh of matMeshes) {
-            const meshUBO = device.createBuffer({ label: "node-mesh-ubo", size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-            device.queue.writeBuffer(meshUBO, 0, mesh.worldMatrix as unknown as Float32Array<ArrayBuffer>);
+            // Mesh UBO layout: world (64B) + receivesShadow (vec4, 16B) = 80B.
+            const meshUBO = device.createBuffer({ label: "node-mesh-ubo", size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+            const meshScratch = new Float32Array(20);
+            meshScratch.set(mesh.worldMatrix as unknown as Float32Array, 0);
+            const recv = mesh.receiveShadows ? 1 : 0;
+            meshScratch[16] = recv;
+            device.queue.writeBuffer(meshUBO, 0, meshScratch);
 
             const entries: GPUBindGroupEntry[] = [{ binding: 0, resource: { buffer: meshUBO } }];
             if (nodeUBO) {
@@ -125,7 +132,7 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
             }
             const meshBG = device.createBindGroup({ label: "node-mesh-bg", layout: meshBGL, entries });
 
-            packets.push({ mesh, meshUBO, meshBG, _lastWorldVersion: mesh.worldMatrixVersion });
+            packets.push({ mesh, meshUBO, meshBG, meshScratch, _lastWorldVersion: mesh.worldMatrixVersion, _lastReceivesShadow: recv });
         }
 
         // Vertex attribute order (matches compile.state — captured on material).
@@ -138,9 +145,15 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
             _sceneBG: sceneBG,
             updateUBOs(): void {
                 for (const pkt of packets) {
-                    if (pkt.mesh.worldMatrixVersion !== pkt._lastWorldVersion) {
-                        device.queue.writeBuffer(pkt.meshUBO, 0, pkt.mesh.worldMatrix as unknown as Float32Array<ArrayBuffer>);
+                    const recv = pkt.mesh.receiveShadows ? 1 : 0;
+                    const worldChanged = pkt.mesh.worldMatrixVersion !== pkt._lastWorldVersion;
+                    const recvChanged = recv !== pkt._lastReceivesShadow;
+                    if (worldChanged || recvChanged) {
+                        pkt.meshScratch.set(pkt.mesh.worldMatrix as unknown as Float32Array, 0);
+                        pkt.meshScratch[16] = recv;
+                        device.queue.writeBuffer(pkt.meshUBO, 0, pkt.meshScratch);
                         pkt._lastWorldVersion = pkt.mesh.worldMatrixVersion;
+                        pkt._lastReceivesShadow = recv;
                     }
                 }
                 if (nodeUBO && material._uboDirty) {

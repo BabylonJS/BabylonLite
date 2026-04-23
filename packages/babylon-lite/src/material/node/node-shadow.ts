@@ -138,6 +138,7 @@ fn computeShadowESM${suf}(posFromLight: vec4<f32>, depthMetric: f32, darkness: f
             buffer: { type: "uniform", minBindingSize: 96 },
         });
     }
+    dispatchLines.push(`_sf = mix(vec4<f32>(1.0), _sf, meshU.receivesShadow.x);`);
     dispatchLines.push(`return _sf;`);
     return {
         bindings,

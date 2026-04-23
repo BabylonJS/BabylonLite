@@ -411,9 +411,9 @@
         "id": 65,
         "slug": "scene65-nme-shadow",
         "name": "Scene 65 — NME Shadow Receive",
-        "maxMad": 1.0,
+        "maxMad": 0.1,
         "maxRawKB": 78,
-        "description": "Node Material with shadow receive: sphere casts onto ground plane, both lit by one DirectionalLight with an ESM shadow generator. The NME LightBlock auto-multiplies diffuse+specular by the pipeline-emitted shadow factor. Same JSON graph as scene 63 — shadow integration is externally driven via parseNodeMaterialFromSnippet({ shadowGenerators }).",
+        "description": "Node Material with shadow receive: sphere casts onto ground plane, both lit by one DirectionalLight with an ESM shadow generator. Only meshes with receiveShadows=true are attenuated; the sphere stays fully lit. Same JSON graph as scene 63 — shadow integration is externally driven via parseNodeMaterialFromSnippet({ shadowGenerators }).",
         "tags": ["nme", "procedural", "shadows"]
     }
 ]
