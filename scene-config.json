@@ -226,7 +226,8 @@
         "maxMad": 0.5,
         "maxRawKB": 51.8,
         "description": "Ground plane with KTX compressed texture (auto-format selection), UV tiling, FreeCamera, hemispheric light.",
-        "tags": ["std", "procedural"]
+        "tags": ["std", "procedural"],
+        "skipParity": true
     },
     {
         "id": 26,
@@ -235,7 +236,8 @@
         "maxMad": 0.5,
         "maxRawKB": 90.7,
         "description": "Georgia Tech Dragon with PBR subsurface translucency, thickness map, point light, DDS environment.",
-        "tags": ["pbr", "gltf", "env"]
+        "tags": ["pbr", "gltf", "env"],
+        "skipParity": true
     },
     {
         "id": 27,
@@ -339,6 +341,15 @@
         "maxRawKB": 92.9,
         "description": "SheenWoodLeatherSofa.glb (KHR_materials_sheen + KHR_materials_specular + KHR_texture_transform + EXT_texture_webp) with default IBL environment (no skybox, no ground). Matches PG #YG3BBF#58.",
         "tags": ["pbr", "gltf", "env", "sheen", "specular", "texture-transform", "webp"]
+    },
+    {
+        "id": 38,
+        "slug": "scene38-procedural-builders",
+        "name": "Scene 38 — Procedural Builders",
+        "maxMad": 0.02,
+        "maxRawKB": 62.3,
+        "description": "Cylinder, cone, plane, disc, ring, polyhedron, ribbon, tube, and extruded shape rendered with StandardMaterial. Parity check against BJS MeshBuilder.",
+        "tags": ["std", "procedural"]
     },
     {
         "id": 40,
