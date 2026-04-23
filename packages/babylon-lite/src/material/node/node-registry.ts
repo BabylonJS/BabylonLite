@@ -22,6 +22,9 @@ function getTable(): Map<string, BlockLoader> {
         return _table;
     }
     const t = new Map<string, BlockLoader>();
+    t.set("InputBlock", () => import("./blocks/input-block.js"));
+    t.set("VectorMergerBlock", () => import("./blocks/vector-merger.js"));
+    t.set("FragmentOutputBlock", () => import("./blocks/fragment-output.js"));
     // Block loaders are added here as they land. Phase 1a–1e populate this list.
     // Each entry MUST use a literal string import so Rollup splits per-block chunks.
     _table = t;

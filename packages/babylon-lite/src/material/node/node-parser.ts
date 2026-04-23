@@ -24,7 +24,7 @@
  *  and `fetchSnippet` is a thin wrapper for tests to stub.
  */
 
-import type { NodeBlock, NodeConnection, NodeConnectionRef, NodeGraph, NodeValueType } from "./node-types.js";
+import type { NodeBlock, NodeConnection, NodeConnectionRef, NodeGraph } from "./node-types.js";
 
 // ─── Snippet fetch ───────────────────────────────────────────────────
 
@@ -103,14 +103,13 @@ export function parseNodeMaterialSource(source: unknown): NodeGraph {
                 typeof ri.targetBlockId === "number" && typeof ri.targetConnectionName === "string" ? { blockId: ri.targetBlockId, outputName: ri.targetConnectionName } : null;
             inputs.set(ri.name, {
                 name: ri.name,
-                type: "vec4f", // refined at emit time based on emitter; parser cannot infer type
                 source,
             });
         }
 
-        const outputs = new Map<string, NodeValueType>();
+        const outputs = new Set<string>();
         for (const ro of rb.outputs ?? []) {
-            outputs.set(ro.name, "vec4f");
+            outputs.add(ro.name);
         }
 
         blocks.set(rb.id, {

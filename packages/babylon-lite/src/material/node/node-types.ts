@@ -9,16 +9,13 @@ import type { UboField, BindingDecl, VertexAttribute, Varying } from "../../shad
 
 // ─── Graph (parser output) ───────────────────────────────────────────
 
-/** A single connection point on a block — either input (incoming) or output (outgoing). */
+/** A single connection point on a block — input only.
+ *  Output connection types are resolved by the emitter at graph-walk time. */
 export interface NodeConnection {
     /** Connection name on the owning block (e.g. "rgb", "uv", "color"). */
     readonly name: string;
-    /** WGSL-friendly type name. */
-    readonly type: NodeValueType;
     /** For inputs only: the upstream block id + output name. Null if unconnected. */
     readonly source: NodeConnectionRef | null;
-    /** For inputs only: a literal default value used when `source` is null. */
-    readonly defaultValue?: number | readonly number[];
 }
 
 export interface NodeConnectionRef {
@@ -35,8 +32,8 @@ export interface NodeBlock {
     readonly name: string;
     /** Inputs by name. */
     readonly inputs: ReadonlyMap<string, NodeConnection>;
-    /** Output names + types. */
-    readonly outputs: ReadonlyMap<string, NodeValueType>;
+    /** Output names (type is resolved by the emitter). */
+    readonly outputs: ReadonlySet<string>;
     /** Original serialized JSON for emitters that need extra fields (mode, value, etc.). */
     readonly serialized: Readonly<Record<string, unknown>>;
 }
@@ -44,7 +41,7 @@ export interface NodeBlock {
 /** Parsed graph. Roots are FragmentOutputBlock + VertexOutputBlock (located by className). */
 export interface NodeGraph {
     readonly blocks: ReadonlyMap<number, NodeBlock>;
-    /** Named overridable inputs (InputBlocks in mode=Uniform with `visibleInInspector` or just any uniform). */
+    /** Named overridable inputs (uniform InputBlocks) — name → block id. */
     readonly namedInputs: ReadonlyMap<string, number>;
 }
 
@@ -52,25 +49,51 @@ export interface NodeGraph {
 
 export type NodeValueType = "f32" | "vec2f" | "vec3f" | "vec4f" | "mat4f" | "texture2d" | "textureCube";
 
+/** Typed WGSL expression produced by an emitter. */
+export interface NodeExpr {
+    readonly expr: string;
+    readonly type: NodeValueType;
+}
+
+export const WGSL: Readonly<Record<NodeValueType, string>> = {
+    f32: "f32",
+    vec2f: "vec2<f32>",
+    vec3f: "vec3<f32>",
+    vec4f: "vec4<f32>",
+    mat4f: "mat4x4<f32>",
+    texture2d: "texture_2d<f32>",
+    textureCube: "texture_cube<f32>",
+};
+
+// ─── Shader stage ───────────────────────────────────────────────────
+
+/** Which shader stage an emitter writes into. Neutral blocks can run in either;
+ *  the walker places them in the stage of their consumer (fragment by default). */
+export type Stage = "vertex" | "fragment";
+
 // ─── Emitter API ────────────────────────────────────────────────────
 
-/** Build state mutated as the topological walk emits blocks. */
+/** Accumulators for a single shader stage. */
+export interface StageState {
+    /** Top-level helper declarations (functions, constants) keyed by canonical id. */
+    readonly helpers: Map<string, string>;
+    /** Statements emitted inside main(). */
+    readonly body: string[];
+    /** Memoized (blockId, outputName) → expr for already-emitted values in this stage. */
+    readonly memo: Map<string, NodeExpr>;
+}
+
+/** Build state threaded through every emit call. */
 export interface NodeBuildState {
-    // Vertex stage accumulators.
+    readonly vertex: StageState;
+    readonly fragment: StageState;
+    // Shared across stages:
     readonly vertexAttributes: VertexAttribute[];
-    readonly vertexUboFields: UboField[];
-    readonly vertexBody: string[];
-    // Fragment stage accumulators.
-    readonly fragmentBody: string[];
-    // Cross-stage.
     readonly varyings: Varying[];
     readonly nodeUboFields: UboField[];
     readonly bindings: BindingDecl[];
     readonly textures: NodeTextureBinding[];
-    readonly helpers: Map<string, string>;
-    // Memoization: blockId|outputName -> WGSL lvalue/expression already emitted.
-    readonly memo: Map<string, string>;
-    /** Monotonic counter for SSA-style temp names. */
+    /** Monotonic counter for SSA temp names, shared across stages. */
     nextTemp: number;
 }
 
@@ -84,13 +107,21 @@ export interface NodeTextureBinding {
 export interface BlockEmitter {
     /** Class name this emitter handles (e.g. "InputBlock"). */
     readonly className: string;
-    /** Emit the value of `outputName` for `block`, returning a WGSL expression. */
-    emit(block: NodeBlock, outputName: string, state: NodeBuildState, ctx: NodeEmitContext): string;
+    /** Which shader stage this block produces into. Defaults to "fragment". */
+    readonly stage?: Stage;
+    /** Emit the value of `outputName` for `block`, returning a typed WGSL expression. */
+    emit(block: NodeBlock, outputName: string, stage: Stage, state: NodeBuildState, ctx: NodeEmitContext): NodeExpr;
 }
 
 export interface NodeEmitContext {
-    /** Recursively resolve an input → WGSL expression (handles default values + memoization). */
-    readonly resolve: (block: NodeBlock, inputName: string, state: NodeBuildState) => string;
+    /** Resolve an input → WGSL expression (handles memoization + recursive walk). */
+    readonly resolve: (block: NodeBlock, inputName: string, stage: Stage, state: NodeBuildState) => NodeExpr;
+    /** Resolve a specific (producerBlock, outputName) — used when one block reads another directly. */
+    readonly resolveOutput: (producer: NodeBlock, outputName: string, stage: Stage, state: NodeBuildState) => NodeExpr;
     /** Mint a fresh SSA temp name. */
     readonly temp: (state: NodeBuildState, prefix?: string) => string;
+    /** Cast a typed expression to a target WGSL type when the shapes differ. */
+    readonly cast: (value: NodeExpr, target: NodeValueType) => NodeExpr;
+    /** Access the surrounding graph (so emitters can find upstream blocks). */
+    readonly graph: NodeGraph;
 }
