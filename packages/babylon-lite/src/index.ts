@@ -72,6 +72,7 @@ export { loadSkybox } from "./loader-skybox/load-skybox.js";
 // ─── Shadows ─────────────────────────────────────────────────────────
 export { createShadowGenerator } from "./shadow/shadow-generator.js";
 export { createPcfShadowGenerator } from "./shadow/pcf-shadow-generator.js";
+export { createPcfDirectionalShadowGenerator } from "./shadow/pcf-directional-shadow-generator.js";
 
 // ─── Animation ───────────────────────────────────────────────────────
 export { createAnimationController } from "./skeleton/skeleton-updater.js";

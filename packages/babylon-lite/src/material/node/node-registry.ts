@@ -63,7 +63,9 @@ function getTable(): Map<string, BlockLoader> {
     t.set("MorphTargetsBlock", () => import("./blocks/morph-targets.js"));
     // Shadow (phase 1e):
     t.set("ShadowMapBlock", () => import("./blocks/shadow-map.js"));
-    // Each entry MUST use a literal string import so Rollup splits per-block chunks.
+    // Scene 66 additions:
+    t.set("DiscardBlock", () => import("./blocks/discard-block.js"));
+    t.set("ReflectionTextureBlock", () => import("./blocks/reflection-texture-block.js"));
     // Each entry MUST use a literal string import so Rollup splits per-block chunks.
     _table = t;
     return t;

@@ -124,6 +124,10 @@ export interface BlockEmitter {
     readonly className: string;
     /** Which shader stage this block produces into. Defaults to "fragment". */
     readonly stage?: Stage;
+    /** Terminal "side-effect" block that has no outputs the graph reads (e.g.
+     *  DiscardBlock). emitGraph force-emits these after the root walk so they
+     *  participate even without a downstream consumer. */
+    readonly sideEffect?: boolean;
     /** Emit the value of `outputName` for `block`, returning a typed WGSL expression. */
     emit(block: NodeBlock, outputName: string, stage: Stage, state: NodeBuildState, ctx: NodeEmitContext): NodeExpr;
 }

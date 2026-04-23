@@ -220,6 +220,16 @@ export function emitGraph(graph: NodeGraph, loadedEmitters: Map<string, BlockEmi
         vertEmitter.emit(vertRoot, "", "vertex", state, ctx);
     }
 
+    // Force-emit side-effect blocks (e.g. DiscardBlock) that have no outputs
+    // the graph walk would visit. Each such emitter is expected to guard its
+    // own body via a memo key so multiple calls are idempotent.
+    for (const block of graph.blocks.values()) {
+        const e = loadedEmitters.get(block.className);
+        if (e?.sideEffect) {
+            e.emit(block, "", e.stage ?? "fragment", state, ctx);
+        }
+    }
+
     return {
         vertexWgsl: composeStage(state, "vertex"),
         fragmentWgsl: composeStage(state, "fragment"),
