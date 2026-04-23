@@ -33,8 +33,9 @@ export const emitter: BlockEmitter = {
     className: "LightBlock",
     stage: "fragment",
     emit(block, outputName, stage, state, ctx) {
-        // Inject helper + memoize call per-block.
+        // Inject helper + mark the lights UBO as required.
         state.fragment.helpers.set(NME_LIGHTING_HELPER_KEY, NME_LIGHTING_HELPER_WGSL);
+        state.usesLightsUbo = true;
 
         const memoKey = `_light_${block.id}_call`;
         let callExpr = state.fragment.memo.get(memoKey);

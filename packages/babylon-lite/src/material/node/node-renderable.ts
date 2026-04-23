@@ -12,6 +12,7 @@ import type { Mesh, MeshInternal } from "../../mesh/mesh.js";
 import type { Renderable, SceneUniformUpdater } from "../../render/renderable.js";
 import { updateSceneUniforms } from "../standard/standard-material.js";
 import { getViewProjectionMatrix, getViewMatrix, getCameraPosition } from "../../camera/camera.js";
+import { writeLightsUBO, refreshLightsUBO, getLightsUboSize, computeLightsVersion } from "../../render/lights-ubo.js";
 import type { NodeMaterialInternal } from "./node-material.js";
 import { writeNodeUBO } from "./node-material.js";
 
@@ -45,6 +46,19 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
     const renderables: Renderable[] = [];
     // First scene UBO wins as the shared one the updater writes into.
     let sharedSceneUBO: GPUBuffer | null = null;
+
+    // Shared NME lights UBO — created lazily when any material requires it.
+    let nmeLightsUBO: GPUBuffer | null = null;
+    let nmeLightsScratch: Float32Array | null = null;
+    let lastLightsVersion = -1;
+    function ensureLightsUBO(): GPUBuffer {
+        if (!nmeLightsUBO) {
+            nmeLightsUBO = writeLightsUBO(engine, scene.lights);
+            nmeLightsScratch = new Float32Array(getLightsUboSize() / 4);
+            lastLightsVersion = computeLightsVersion(scene.lights);
+        }
+        return nmeLightsUBO;
+    }
 
     for (const [material, matMeshes] of byMaterial) {
         const compile = material._compile;
@@ -84,6 +98,9 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
                 }
                 entries.push({ binding: tb.texBinding, resource: tex.view });
                 entries.push({ binding: tb.sampBinding, resource: tex.sampler });
+            }
+            if (compile.lightsBinding !== null) {
+                entries.push({ binding: compile.lightsBinding, resource: { buffer: ensureLightsUBO() } });
             }
             const meshBG = device.createBindGroup({ label: "node-mesh-bg", layout: meshBGL, entries });
 
@@ -143,6 +160,13 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
                 const ubo = material._sceneUBO;
                 if (ubo) {
                     updateSceneUniforms(engine, ubo, vp as Float32Array, v as Float32Array, eyeTuple);
+                }
+            }
+            if (nmeLightsUBO && nmeLightsScratch) {
+                const v2 = computeLightsVersion(scene.lights);
+                if (v2 !== lastLightsVersion) {
+                    lastLightsVersion = v2;
+                    refreshLightsUBO(engine, nmeLightsUBO, scene.lights, nmeLightsScratch);
                 }
             }
         },

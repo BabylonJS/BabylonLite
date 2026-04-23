@@ -95,6 +95,10 @@ export interface NodeBuildState {
     readonly textures: NodeTextureBinding[];
     /** Monotonic counter for SSA temp names, shared across stages. */
     nextTemp: number;
+    /** Set by any block that references the scene lights UBO (LightBlock,
+     *  LightInformationBlock, …). The pipeline builder allocates a binding +
+     *  struct decls + BGL entry when true. */
+    usesLightsUbo: boolean;
 }
 
 export interface NodeTextureBinding {

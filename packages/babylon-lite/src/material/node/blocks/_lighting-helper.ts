@@ -1,20 +1,18 @@
 /** Shared WGSL helper source for LightBlock.
  *
- *  This constant is only pulled into a shader when LightBlock is used. The
- *  pipeline builder inspects `state.fragment.helpers` for the "nme_lighting"
- *  key and — when present — prepends the helper together with the scene's
- *  shared Lights UBO layout.
- *
- *  Sentinels expected in scope of the helper:
- *    - `nmeLightsCount : u32`
- *    - `nmeLights : array<LightData, N>` (LightData = direction, color, type, ...)
- *  These are provided by the pipeline builder at bind-group assembly time.
+ *  This module exports just the `nme_computeLighting` function definition.
+ *  The surrounding `LightEntry` / `lightsUniforms` struct decls and the
+ *  `@group(1) @binding(N) var<uniform> nmeLights` declaration are injected
+ *  by the pipeline builder (see node-pipeline.ts) once `state.usesLightsUbo`
+ *  is true. Keeping them out of the helper lets a single `MAX_LIGHTS` value
+ *  (at compile time) drive both the WGSL array length and the BGL entry size.
  */
+
+import { MAX_LIGHTS } from "../../../light/types.js";
 
 export const NME_LIGHTING_HELPER_KEY = "nme_lighting";
 
-export const NME_LIGHTING_HELPER_WGSL = `
-struct NmeLightResult {
+export const NME_LIGHTING_HELPER_WGSL = `struct NmeLightResult {
     diffuse: vec3<f32>,
     specular: vec3<f32>,
 };
@@ -32,15 +30,48 @@ fn nme_computeLighting(
     result.specular = vec3<f32>(0.0);
     let viewDir = normalize(cameraPos - worldPos);
     let N = normalize(worldNormal);
-    for (var i: u32 = 0u; i < nmeLightsCount; i = i + 1u) {
-        let L = normalize(-nmeLights[i].direction.xyz);
-        let NdotL = max(dot(N, L), 0.0);
-        result.diffuse = result.diffuse + nmeLights[i].color.rgb * diffuseColor * NdotL;
-        let H = normalize(L + viewDir);
-        let NdotH = max(dot(N, H), 0.0);
-        let specFactor = pow(NdotH, max(glossiness * 255.0, 1.0));
-        result.specular = result.specular + nmeLights[i].color.rgb * specularColor * specFactor;
+    let lc = min(nmeLights.count, ${MAX_LIGHTS}u);
+    for (var i: u32 = 0u; i < lc; i = i + 1u) {
+        let L = nmeLights.lights[i];
+        let t = u32(L.vLightData.w);
+        var lv: vec3<f32>;
+        var atten: f32 = 1.0;
+        if (t == 3u) {
+            // Hemispheric: ground/sky mix via half-lambert.
+            let nl = 0.5 + 0.5 * dot(N, normalize(L.vLightData.xyz));
+            let diff = mix(L.vLightDirection.xyz, L.vLightDiffuse.rgb, nl);
+            result.diffuse = result.diffuse + diff * diffuseColor;
+            let H = normalize(viewDir + normalize(L.vLightData.xyz));
+            let sf = pow(max(0.0, dot(N, H)), max(1.0, glossiness * 255.0));
+            result.specular = result.specular + sf * L.vLightSpecular.rgb * specularColor;
+            continue;
+        }
+        if (t == 1u) {
+            // Directional: vLightData.xyz is the light's forward direction.
+            lv = normalize(-L.vLightData.xyz);
+        } else {
+            // Point / Spot: vLightData.xyz is world-space position; range in vLightDiffuse.a.
+            let d = L.vLightData.xyz - worldPos;
+            atten = max(0.0, 1.0 - length(d) / L.vLightDiffuse.a);
+            lv = normalize(d);
+            if (t == 2u) {
+                // Spot cone falloff (vLightDirection.xyz=dir, .w=cosHalfAngle; vLightSpecular.a=exp).
+                let c = max(0.0, dot(L.vLightDirection.xyz, -lv));
+                if (c >= L.vLightDirection.w) {
+                    atten = atten * max(0.0, pow(c, L.vLightSpecular.a));
+                } else {
+                    atten = 0.0;
+                }
+            }
+        }
+        let NdotL = max(0.0, dot(N, lv));
+        result.diffuse = result.diffuse + L.vLightDiffuse.rgb * diffuseColor * NdotL * atten;
+        let H = normalize(lv + viewDir);
+        let NdotH = max(0.0, dot(N, H));
+        let specFactor = pow(NdotH, max(1.0, glossiness * 255.0));
+        result.specular = result.specular + L.vLightSpecular.rgb * specularColor * specFactor * atten;
     }
     return result;
 }
 `;
+

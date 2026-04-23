@@ -388,5 +388,14 @@
         "maxRawKB": 60,
         "description": "Node Material sampling a 2D texture (crate.png) through a TextureBlock driven by the UV attribute. Exercises texture/sampler BGL slot allocation and `NodeInputHandle.texture` pass-through.",
         "tags": ["nme", "procedural"]
+    },
+    {
+        "id": 63,
+        "slug": "scene63-nme-light",
+        "name": "Scene 63 — NME Directional Light",
+        "maxMad": 0.5,
+        "maxRawKB": 60,
+        "description": "Node Material with one DirectionalLight: position/normal world-transformed, driven through LightBlock (Blinn-Phong) to FragmentOutput.rgb. Exercises the shared lights UBO binding + module-scope helper assembly.",
+        "tags": ["nme", "procedural"]
     }
 ]

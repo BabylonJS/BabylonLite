@@ -16,6 +16,7 @@ import type { EngineContextInternal } from "../../engine/engine.js";
 import { getSceneBindGroupLayout } from "../../render/scene-helpers.js";
 import { createStandardPipelineDescriptor } from "../../render/scene-helpers.js";
 import { computeUboLayout } from "../../shader/ubo-layout.js";
+import { MAX_LIGHTS, LIGHT_ENTRY_FLOATS } from "../../light/types.js";
 import type { NodeBuildState } from "./node-types.js";
 
 // ─── Shared WGSL preamble ───────────────────────────────────────────
@@ -56,6 +57,8 @@ export interface NodeCompileResult {
     readonly nodeUboBinding: number | null;
     /** Per-texture binding slots assigned by the pipeline builder. */
     readonly textureBindings: ReadonlyArray<{ readonly name: string; readonly texBinding: number; readonly sampBinding: number }>;
+    /** The bind-group slot (within group 1) for the shared lights UBO, or `null` when no block uses lights. */
+    readonly lightsBinding: number | null;
 }
 
 // ─── Pipeline cache ─────────────────────────────────────────────────
@@ -127,9 +130,10 @@ export function compileNodePipeline(state: NodeBuildState, vertexBody: string, f
     const device = engine.device;
 
     // Binding layout for group 1:
-    //   slot 0 = mesh UBO (world matrix)
-    //   slot 1 = node UBO (if nodeUboFields non-empty)
-    //   slot N,N+1 = texture + sampler (paired) for each entry in state.textures
+    //   slot 0         = mesh UBO (world matrix)
+    //   slot 1         = node UBO (if nodeUboFields non-empty)
+    //   slot N, N+1    = texture + sampler (paired) for each entry in state.textures
+    //   slot L         = shared lights UBO (if state.usesLightsUbo)
     let nextBinding = 1;
     const nodeUboBinding = state.nodeUboFields.length > 0 ? nextBinding++ : null;
     const nodeUbo = nodeUboBinding !== null ? buildNodeUbo(state, nodeUboBinding) : null;
@@ -147,6 +151,29 @@ export function compileNodePipeline(state: NodeBuildState, vertexBody: string, f
         textureWgslDecls.push(`@group(1) @binding(${sampBinding}) var nodeSamp_${tex.name}: sampler;`);
     }
 
+    const lightsBinding = state.usesLightsUbo ? nextBinding++ : null;
+    const lightsWgslDecls: string[] = [];
+    if (lightsBinding !== null) {
+        lightsWgslDecls.push(
+            `struct LightEntry { vLightData: vec4<f32>, vLightDiffuse: vec4<f32>, vLightSpecular: vec4<f32>, vLightDirection: vec4<f32> };`,
+            `struct lightsUniforms { count: u32, _p0: u32, _p1: u32, _p2: u32, lights: array<LightEntry, ${MAX_LIGHTS}> };`,
+            `@group(1) @binding(${lightsBinding}) var<uniform> nmeLights: lightsUniforms;`
+        );
+    }
+
+    // Module-scope helpers (function defs, struct defs) — dedupe across both
+    // stages by key. Fail on same-key/different-source to avoid silent loss.
+    const helperSources = new Map<string, string>();
+    for (const s of [state.vertex, state.fragment]) {
+        for (const [k, v] of s.helpers) {
+            const existing = helperSources.get(k);
+            if (existing !== undefined && existing !== v) {
+                throw new Error(`NodeMaterial: helper key "${k}" registered with conflicting source bodies`);
+            }
+            helperSources.set(k, v);
+        }
+    }
+
     // Compose WGSL (node UBO struct inserted conditionally between mesh + VertexIn).
     const vertexIn = buildVertexIn(state);
     const vertexOut = buildVertexOut(state);
@@ -161,8 +188,14 @@ export function compileNodePipeline(state: NodeBuildState, vertexBody: string, f
     if (textureWgslDecls.length > 0) {
         wgslParts.push(textureWgslDecls.join("\n"));
     }
+    if (lightsWgslDecls.length > 0) {
+        wgslParts.push(lightsWgslDecls.join("\n"));
+    }
     wgslParts.push(vertexIn);
     wgslParts.push(vertexOut);
+    for (const src of helperSources.values()) {
+        wgslParts.push(src);
+    }
 
     wgslParts.push(
         `@vertex\nfn vs_main(in: VertexIn) -> VertexOut {\n` +
@@ -202,6 +235,10 @@ export function compileNodePipeline(state: NodeBuildState, vertexBody: string, f
         meshBglEntries.push({ binding: tb.texBinding, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, texture: { sampleType: "float", viewDimension: "2d" } });
         meshBglEntries.push({ binding: tb.sampBinding, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } });
     }
+    if (lightsBinding !== null) {
+        const lightsUboByteSize = 16 + MAX_LIGHTS * LIGHT_ENTRY_FLOATS * 4;
+        meshBglEntries.push({ binding: lightsBinding, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: lightsUboByteSize } });
+    }
     const meshBGL = device.createBindGroupLayout({ label: "node-mesh", entries: meshBglEntries });
 
     // Vertex buffers: one GPUVertexBufferLayout per declared attribute, each at location=i.
@@ -238,6 +275,7 @@ export function compileNodePipeline(state: NodeBuildState, vertexBody: string, f
         nodeUboOffsets,
         nodeUboBinding,
         textureBindings,
+        lightsBinding,
     };
     cache.set(cacheKey, result);
     return result;

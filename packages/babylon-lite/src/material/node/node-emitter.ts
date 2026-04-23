@@ -36,6 +36,7 @@ export function createBuildState(): NodeBuildState {
         bindings: [],
         textures: [],
         nextTemp: 0,
+        usesLightsUbo: false,
     };
 }
 
@@ -220,8 +221,8 @@ export function emitGraph(graph: NodeGraph, loadedEmitters: Map<string, BlockEmi
 }
 
 function composeStage(state: NodeBuildState, stage: Stage): string {
+    // Helpers are emitted at module scope by the pipeline builder, NOT inside main.
+    // composeStage returns only the statements that belong inside the entry point.
     const s = stageOf(state, stage);
-    const helpers = Array.from(s.helpers.values()).join("\n");
-    const body = s.body.join("\n");
-    return helpers ? `${helpers}\n${body}` : body;
+    return s.body.join("\n");
 }
