@@ -17,6 +17,7 @@
  *     when that work lands. See `docs/sprites/pr1-pure-2d-sprites-scope.md`.
  */
 import type { EngineContext, EngineContextInternal, RenderingContext } from "../engine/engine.js";
+import { createEmptyUniformBuffer, createMappedBuffer } from "../resource/gpu-buffers.js";
 import type { Sprite2DLayer } from "./sprite-2d.js";
 import { INSTANCE_STRIDE_BYTES } from "./sprite-2d.js";
 import type { SpriteBlendMode } from "./shared/sprite-atlas.js";
@@ -299,10 +300,7 @@ function ensureLayerGpu(rr: SpriteRendererInternal, layer: Sprite2DLayer): Layer
             size: cap * INSTANCE_STRIDE_BYTES,
             usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
         });
-        const uniformBuffer = rr._device.createBuffer({
-            size: LAYER_UBO_BYTES,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
+        const uniformBuffer = createEmptyUniformBuffer(rr._engine, LAYER_UBO_BYTES, "sprite-layer-ubo");
         lg = {
             layer,
             instanceBuffer,
@@ -453,11 +451,7 @@ function compareLayers(a: Sprite2DLayer, b: Sprite2DLayer): number {
 export function createSpriteRenderer(engine: EngineContext, opts: SpriteRendererOptions): SpriteRenderer {
     const eng = engine as EngineContextInternal;
     const shaderModule = eng.device.createShaderModule({ code: WGSL_SHADER });
-    const indexBuffer = eng.device.createBuffer({
-        size: SHARED_INDEX_DATA.byteLength,
-        usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
-    });
-    eng.device.queue.writeBuffer(indexBuffer, 0, SHARED_INDEX_DATA.buffer, SHARED_INDEX_DATA.byteOffset, SHARED_INDEX_DATA.byteLength);
+    const indexBuffer = createMappedBuffer(eng, SHARED_INDEX_DATA, GPUBufferUsage.INDEX);
 
     const rr: SpriteRendererInternal = {
         _kind: KIND,

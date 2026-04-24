@@ -33,6 +33,8 @@ import type { EngineContext, EngineContextInternal } from "../../packages/babylo
 
 interface MockBuffer {
     destroy: ReturnType<typeof vi.fn>;
+    getMappedRange: ReturnType<typeof vi.fn>;
+    unmap: ReturnType<typeof vi.fn>;
     _destroyed: boolean;
 }
 
@@ -53,6 +55,8 @@ function mockBuffer(counters: MockCounters): MockBuffer {
                 counters.buffersDestroyed++;
             }
         }),
+        getMappedRange: vi.fn(() => new ArrayBuffer(64)),
+        unmap: vi.fn(),
     };
     return buf;
 }
