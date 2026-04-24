@@ -18,6 +18,8 @@ if (files.length === 0) {
 let totalTests = 0;
 let totalFailed = 0;
 let totalErrors = 0;
+let totalSkipped = 0;
+let totalWarnings = 0;
 
 for (const file of files) {
     if (!existsSync(file)) {
@@ -35,6 +37,7 @@ for (const file of files) {
         totalTests += num(attrs, "tests");
         totalFailed += num(attrs, "failures");
         totalErrors += num(attrs, "errors");
+        totalSkipped += num(attrs, "skipped");
     }
 
     // Parse failed <testcase> elements and emit error lines
@@ -46,6 +49,7 @@ for (const file of files) {
 
         const failMatch = cBody.match(/<failure[^>]*?(?:message="([^"]*)")?[^>]*>([\s\S]*?)<\/failure>/);
         const errMatch = cBody.match(/<error[^>]*?(?:message="([^"]*)")?[^>]*>([\s\S]*?)<\/error>/);
+        const skipMatch = cBody.match(/<skipped[^>]*\/?>/);
 
         if (failMatch || errMatch) {
             const name = attr(cAttrs, "name");
@@ -53,33 +57,33 @@ for (const file of files) {
             const bodyText = (failMatch?.[2] ?? errMatch?.[2] ?? "").trim();
             // Prefer body text (has full error + expected/received), fall back to message attr
             const raw = bodyText || msgAttr || "Test failed";
-            // Decode XML entities, strip stack traces, collapse whitespace
-            const decoded = raw
-                .replace(/&lt;/g, "<")
-                .replace(/&gt;/g, ">")
-                .replace(/&amp;/g, "&")
-                .replace(/&quot;/g, '"')
-                .replace(/&#10;/g, " ")
-                .replace(/&#13;/g, "")
-                .replace(/\s+at\s+.*/g, "") // strip stack trace lines
-                .replace(/\r?\n/g, " ")
-                .replace(/;/g, ",")
-                .replace(/\s{2,}/g, " ")
-                .trim()
-                .slice(0, 800);
-            console.log(`##vso[task.logissue type=error]${name}: ${decoded}`);
+            console.log(`##vso[task.logissue type=error]${name}: ${sanitize(raw)}`);
+        } else if (skipMatch) {
+            // Surface Playwright annotations (emitted as <properties>/<property>) from
+            // skipped tests. Any "warning"-typed annotation (e.g. perf suite's
+            // [NOT A PERFORMANCE ISSUE] skip) is reported as a pipeline warning.
+            const warnings = extractWarningAnnotations(cBody);
+            if (warnings.length > 0) {
+                const name = attr(cAttrs, "name");
+                for (const w of warnings) {
+                    totalWarnings++;
+                    console.log(`##vso[task.logissue type=warning]${name}: ${sanitize(w)}`);
+                }
+            }
         }
     }
 }
 
-const passed = totalTests - totalFailed - totalErrors;
+const passed = totalTests - totalFailed - totalErrors - totalSkipped;
 const failed = totalFailed + totalErrors;
 
 // Summary line
-console.log(`\nTest Results: ${passed} passed, ${failed} failed, ${totalTests} total`);
+console.log(`\nTest Results: ${passed} passed, ${failed} failed, ${totalSkipped} skipped, ${totalTests} total`);
 
 if (failed > 0) {
     console.log(`##vso[task.complete result=Failed]${failed} test(s) failed`);
+} else if (totalWarnings > 0) {
+    console.log(`##vso[task.complete result=SucceededWithIssues]${totalWarnings} warning(s)`);
 }
 
 function attr(str: string, name: string): string {
@@ -89,4 +93,39 @@ function attr(str: string, name: string): string {
 
 function num(str: string, name: string): number {
     return Number(attr(str, name)) || 0;
+}
+
+function sanitize(raw: string): string {
+    return raw
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, '"')
+        .replace(/&#10;/g, " ")
+        .replace(/&#13;/g, "")
+        .replace(/\s+at\s+.*/g, "") // strip stack trace lines
+        .replace(/\r?\n/g, " ")
+        .replace(/;/g, ",")
+        .replace(/\s{2,}/g, " ")
+        .trim()
+        .slice(0, 800);
+}
+
+// Playwright's JUnit reporter emits annotations under <properties> inside <testcase>.
+// Each annotation becomes a <property name="<type>" value="<description>"/> pair.
+// Collect descriptions for the "warning" type.
+function extractWarningAnnotations(body: string): string[] {
+    const propsBlock = body.match(/<properties>([\s\S]*?)<\/properties>/);
+    if (!propsBlock) return [];
+    const out: string[] = [];
+    const propRegex = /<property\s+([^/]*?)\/?>/g;
+    let m;
+    while ((m = propRegex.exec(propsBlock[1])) !== null) {
+        const pAttrs = m[1];
+        if (attr(pAttrs, "name").toLowerCase() === "warning") {
+            const value = attr(pAttrs, "value");
+            if (value) out.push(value);
+        }
+    }
+    return out;
 }
