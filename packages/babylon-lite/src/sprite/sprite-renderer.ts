@@ -60,6 +60,25 @@ interface LayerGpu {
      *  buffer is allocated once in `ensureLayerGpu`). Cleared if we ever recreate either. */
     bindGroup: GPUBindGroup | null;
     uploadedVersion: number;
+    /** Cached pipeline entry. Built lazily on first frame; never invalidated because blend mode
+     *  is immutable on a `Sprite2DLayer`. Lets `_record` skip the per-frame pipeline-cache lookup. */
+    pipelineEntry: PipelineEntry | null;
+    /** Snapshot of the last UBO bytes written to `uniformBuffer`. We rebuild the UBO into
+     *  `_scratchUbo` each frame, then `writeBuffer` only if the contents actually changed.
+     *  For static scenes (steady-state) this skips one `queue.writeBuffer` per layer per frame. */
+    lastUbo: Float32Array;
+    /** False until the first UBO upload. Forces an unconditional first write so `lastUbo` is real. */
+    uboUploaded: boolean;
+    /** Pre-recorded GPU command bundle: `setIndexBuffer` + `setPipeline` + `setBindGroup` +
+     *  `setVertexBuffer` + `drawIndexed`. Replayed via `pass.executeBundles([bundle])` for
+     *  near-zero per-frame CPU command-recording cost (the big WebGPU win for static scenes —
+     *  see `scene-core.ts._record` for the same pattern). Invalidated when `layer.count` changes
+     *  (the `drawIndexed` instance count is baked into the bundle) or when the instance buffer is
+     *  reallocated by `ensureLayerGpu` (the bundle holds a GPUBuffer reference). The UBO contents
+     *  may freely change frame-to-frame — the bundle binds the buffer *object*, not its bytes. */
+    renderBundle: GPURenderBundle | null;
+    /** `layer.count` value the cached `renderBundle` was recorded against. */
+    bundleCount: number;
 }
 
 interface SpriteRendererInternal extends SpriteRenderer {
@@ -291,6 +310,11 @@ function ensureLayerGpu(rr: SpriteRendererInternal, layer: Sprite2DLayer): Layer
             uniformBuffer,
             bindGroup: null,
             uploadedVersion: -1,
+            pipelineEntry: null,
+            lastUbo: new Float32Array(LAYER_UBO_BYTES / 4),
+            uboUploaded: false,
+            renderBundle: null,
+            bundleCount: -1,
         };
         rr._layerGpu.set(layer, lg);
     }
@@ -302,6 +326,8 @@ function ensureLayerGpu(rr: SpriteRendererInternal, layer: Sprite2DLayer): Layer
         });
         lg.instanceBufferCapacity = layer._capacity;
         lg.uploadedVersion = -1;
+        // Bundle baked a reference to the *old* GPUBuffer; the new buffer needs a re-record.
+        lg.renderBundle = null;
     }
     return lg;
 }
@@ -341,7 +367,10 @@ function uploadLayer(rr: SpriteRendererInternal, lg: LayerGpu): void {
         lg.uploadedVersion = layer._version;
     }
 
-    // Layer UBO — small + cheap; rewrite each frame so view / opacity / target dims stay in sync.
+    // Layer UBO — small + cheap, but every `queue.writeBuffer` walks the WebGPU validation
+    // layer, so we change-detect: build into `_scratchUbo`, compare to the per-layer
+    // `lastUbo` snapshot, and only upload when something actually changed. For static
+    // layers (steady-state) this skips one `queue.writeBuffer` per layer per frame.
     // Float layout matches the WGSL `Layer` struct (48 B total, 12 floats):
     //   [0..1]  viewPos.xy   [2] viewScale   [3] viewRot
     //   [4..5]  screenSize.xy   [6..7] pivot.xy
@@ -369,7 +398,21 @@ function uploadLayer(rr: SpriteRendererInternal, lg: LayerGpu): void {
         ubo[10] = 1;
         ubo[11] = op;
     }
-    rr._device.queue.writeBuffer(lg.uniformBuffer, 0, ubo.buffer, ubo.byteOffset, LAYER_UBO_BYTES);
+    const last = lg.lastUbo;
+    let dirty = !lg.uboUploaded;
+    if (!dirty) {
+        for (let i = 0; i < 12; i++) {
+            if (last[i] !== ubo[i]) {
+                dirty = true;
+                break;
+            }
+        }
+    }
+    if (dirty) {
+        rr._device.queue.writeBuffer(lg.uniformBuffer, 0, ubo.buffer, ubo.byteOffset, LAYER_UBO_BYTES);
+        last.set(ubo);
+        lg.uboUploaded = true;
+    }
 }
 
 const _scratchUbo = new Float32Array(LAYER_UBO_BYTES / 4);
@@ -471,8 +514,11 @@ function spriteRendererUpdate(rr: SpriteRendererInternal, _encoder: GPUCommandEn
 
     // Sort layers in place by `order` once per frame. TimSort is O(n) on already-sorted input,
     // so this is effectively free in the steady state. Documented side-effect on `rr.layers`
-    // (registration order is not the ground truth — `layer.order` is).
-    rr.layers.sort(compareLayers);
+    // (registration order is not the ground truth — `layer.order` is). Skipped for the common
+    // single-layer case to avoid even the comparator-call overhead.
+    if (rr.layers.length > 1) {
+        rr.layers.sort(compareLayers);
+    }
 
     for (const layer of rr.layers) {
         if (!layer.visible || layer.count === 0) {
@@ -485,17 +531,20 @@ function spriteRendererUpdate(rr: SpriteRendererInternal, _encoder: GPUCommandEn
 
 /**
  * Per-frame **record** pass (called by the engine inside the open render pass).
- * Binds the shared index buffer once, then for each visible non-empty layer:
- * `setPipeline` → `setBindGroup` → `setVertexBuffer` → `drawIndexed(6, layer.count)`.
- * One draw call per layer — 1000 sprites in a layer = 1 draw call (instancing).
- * Returns the draw-call count for the engine's telemetry.
+ * For each visible non-empty layer: builds (or reuses) a `GPURenderBundle` that bakes
+ * `setIndexBuffer` + `setPipeline` + `setBindGroup` + `setVertexBuffer` + `drawIndexed`,
+ * then replays it via `pass.executeBundles([bundle])`. The bundle is the per-frame
+ * fast path — it skips Chromium's per-call WebGPU validation and IPC, which dominates
+ * CPU cost for static scenes at multi-kHz framerates. Bundle is rebuilt only when
+ * `layer.count` changes or the instance buffer was reallocated.
+ * Returns one draw call per visible non-empty layer (1000 sprites in a layer = 1 draw
+ * call thanks to instancing).
  */
 function spriteRendererRecord(rr: SpriteRendererInternal, pass: GPURenderPassEncoder): number {
     if (rr._disposed) {
         return 0;
     }
     let drawCalls = 0;
-    pass.setIndexBuffer(rr._indexBuffer, "uint16");
 
     for (const layer of rr.layers) {
         if (!layer.visible || layer.count === 0) {
@@ -505,12 +554,32 @@ function spriteRendererRecord(rr: SpriteRendererInternal, pass: GPURenderPassEnc
         if (!lg) {
             continue;
         }
-        const entry = getOrBuildPipeline(rr, layer.blendMode, false);
+        // Pipeline entry is immutable for the layer's lifetime (blend mode is not mutable
+        // post-construction in PR 1) — cache on the `LayerGpu` so `_record` does no Map
+        // lookup or hash-key compute in the steady state.
+        let entry = lg.pipelineEntry;
+        if (!entry) {
+            entry = getOrBuildPipeline(rr, layer.blendMode, false);
+            lg.pipelineEntry = entry;
+        }
         const bg = ensureBindGroup(rr, lg, entry);
-        pass.setPipeline(entry.pipeline);
-        pass.setBindGroup(0, bg);
-        pass.setVertexBuffer(0, lg.instanceBuffer);
-        pass.drawIndexed(6, layer.count, 0, 0, 0);
+        // (Re)record the bundle when count changes (drawIndexed instance count is baked in)
+        // or when ensureLayerGpu reallocated the instance buffer (renderBundle was nulled).
+        if (lg.renderBundle == null || lg.bundleCount !== layer.count) {
+            const be = rr._device.createRenderBundleEncoder({
+                colorFormats: [rr._format],
+                depthStencilFormat: "depth24plus-stencil8",
+                sampleCount: rr._msaa,
+            });
+            be.setIndexBuffer(rr._indexBuffer, "uint16");
+            be.setPipeline(entry.pipeline);
+            be.setBindGroup(0, bg);
+            be.setVertexBuffer(0, lg.instanceBuffer);
+            be.drawIndexed(6, layer.count, 0, 0, 0);
+            lg.renderBundle = be.finish();
+            lg.bundleCount = layer.count;
+        }
+        pass.executeBundles([lg.renderBundle]);
         drawCalls++;
     }
 
