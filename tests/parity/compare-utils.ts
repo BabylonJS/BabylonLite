@@ -267,11 +267,7 @@ export async function captureGolden(browser: Browser, opts: CaptureGoldenOptions
     // Open BJS ref page in a fresh context to avoid interfering with Lite page
     const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     const bjsPage = await context.newPage();
-    const urlParams = opts.seekTime !== undefined
-        ? `?seekTime=${opts.seekTime}${opts.queryParams ? `&${opts.queryParams}` : ""}`
-        : opts.queryParams
-            ? `?${opts.queryParams}`
-            : "";
+    const urlParams = opts.seekTime !== undefined ? `?seekTime=${opts.seekTime}${opts.queryParams ? `&${opts.queryParams}` : ""}` : opts.queryParams ? `?${opts.queryParams}` : "";
     await bjsPage.goto(`/babylon-ref-scene${opts.sceneId}.html${urlParams}`);
 
     // Wait for BJS scene ready

@@ -87,7 +87,10 @@ describe("NME math block emitters", () => {
     });
 
     it("NegateBlock emits `-v`", async () => {
-        const r = await compile(makeUnaryGraph("NegateBlock") as any);
+        const g = makeUnaryGraph("NegateBlock");
+        // NegateBlock uses input name "value" instead of "input"
+        (g.blocks[1] as any).inputs = [{ name: "value", targetBlockId: 1, targetConnectionName: "output" }];
+        const r = await compile(g as any);
         expect(r.fragmentWgsl).toMatch(/-nodeU\.src/);
     });
 

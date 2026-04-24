@@ -7,7 +7,8 @@ async function compile(source: any, includeVertex = false) {
     const emitters = await loadGraphEmitters(graph);
     const fragRoot = findBlockByClassName(graph, "FragmentOutputBlock")!;
     const vertRoot = includeVertex ? findBlockByClassName(graph, "VertexOutputBlock") : null;
-    return emitGraph(graph, emitters, fragRoot.id, vertRoot?.id ?? null);
+    const r = emitGraph(graph, emitters, fragRoot.id, vertRoot?.id ?? null);
+    return r;
 }
 
 describe("NME lighting blocks", () => {
@@ -39,7 +40,9 @@ describe("NME lighting blocks", () => {
             outputNodes: [5],
         };
         const r = await compile(g);
-        expect(r.fragmentWgsl).toContain("fn nme_computeLighting");
+        // Helper is emitted in state.fragment.helpers, not in the body
+        expect(r.state.fragment.helpers.has("nme_lighting")).toBe(true);
+        expect(r.state.fragment.helpers.get("nme_lighting")).toContain("fn nme_computeLighting");
         expect(r.fragmentWgsl).toContain("nme_computeLighting(");
         // exactly one call in the body (helper signature is `fn nme_computeLighting(`)
         const calls = r.fragmentWgsl.match(/= nme_computeLighting\(/g) || [];
@@ -74,7 +77,9 @@ describe("NME lighting blocks", () => {
             outputNodes: [5],
         };
         const r = await compile(g);
-        expect(r.fragmentWgsl).toContain("fn nme_fogFactor");
+        // Helper is emitted in state.fragment.helpers, not in the body
+        expect(r.state.fragment.helpers.has("nme_fog")).toBe(true);
+        expect(r.state.fragment.helpers.get("nme_fog")).toContain("fn nme_fogFactor");
         expect(r.fragmentWgsl).toMatch(/mix\(nodeU\.fc, nodeU\.col, nme_fogFactor/);
     });
 
@@ -100,7 +105,7 @@ describe("NME lighting blocks", () => {
             outputNodes: [2],
         };
         const r = await compile(g);
-        expect(r.fragmentWgsl).toContain("nmeLights[2u].color.rgb");
+        expect(r.fragmentWgsl).toContain("nmeLights.lights[2u].vLightDiffuse.rgb");
     });
 
     it("PerturbNormalBlock injects helper and strength default", async () => {
@@ -133,7 +138,9 @@ describe("NME lighting blocks", () => {
             outputNodes: [6],
         };
         const r = await compile(g);
-        expect(r.fragmentWgsl).toContain("fn nme_perturbNormal");
+        // Helper is emitted in state.fragment.helpers, not in the body
+        expect(r.state.fragment.helpers.has("nme_perturbNormal")).toBe(true);
+        expect(r.state.fragment.helpers.get("nme_perturbNormal")).toContain("fn nme_perturbNormal");
         expect(r.fragmentWgsl).toMatch(/nme_perturbNormal\(nodeU\.wp, nodeU\.wn, nodeU\.uv, nodeU\.nm, 1\.0\)/);
     });
 });

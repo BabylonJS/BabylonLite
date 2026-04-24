@@ -2,12 +2,12 @@ import { describe, it, expect } from "vitest";
 import { parseNodeMaterialSource, findBlockByClassName } from "../../packages/babylon-lite/src/material/node/node-parser";
 import { emitGraph, loadGraphEmitters } from "../../packages/babylon-lite/src/material/node/node-emitter";
 
-async function compile(source: any, vertex = false) {
+async function compile(source: any, vertex = false, meshCaps?: { hasSkeleton?: boolean; hasInstances?: boolean }) {
     const graph = parseNodeMaterialSource(source);
     const emitters = await loadGraphEmitters(graph);
     const fragRoot = findBlockByClassName(graph, "FragmentOutputBlock")!;
     const vertRoot = vertex ? findBlockByClassName(graph, "VertexOutputBlock") : null;
-    return emitGraph(graph, emitters, fragRoot.id, vertRoot?.id ?? null);
+    return emitGraph(graph, emitters, fragRoot.id, vertRoot?.id ?? null, undefined, meshCaps);
 }
 
 describe("NME vertex-transform & shadow blocks", () => {
@@ -44,7 +44,7 @@ describe("NME vertex-transform & shadow blocks", () => {
             outputNodes: [5],
         };
         const r = await compile(g, true);
-        expect(r.vertexWgsl).toContain("_NME_WORLD_MATRIX_");
+        expect(r.vertexWgsl).toContain("meshU.world");
     });
 
     it("BonesBlock injects skinning helper", async () => {
@@ -92,9 +92,12 @@ describe("NME vertex-transform & shadow blocks", () => {
             ],
             outputNodes: [8],
         };
-        const r = await compile(g, true);
-        expect(r.vertexWgsl).toContain("fn nme_skinningMatrix");
-        expect(r.vertexWgsl).toContain("nme_skinningMatrix(in.matricesIndices, in.matricesWeights)");
+        const r = await compile(g, true, { hasSkeleton: true });
+        // Helper is emitted in state.vertex.helpers, not in the body
+        expect(r.state.vertex.helpers.has("nme_skinning")).toBe(true);
+        expect(r.state.vertex.helpers.get("nme_skinning")).toContain("fn nme_skinningMatrix");
+        // Call appears in the vertex body via TransformBlock → VertexOutput
+        expect(r.vertexWgsl).toContain("nme_skinningMatrix(");
     });
 
     it("MorphTargetsBlock emits _NME_MORPH_APPLY_ sentinel per output", async () => {
@@ -137,7 +140,7 @@ describe("NME vertex-transform & shadow blocks", () => {
             outputNodes: [6],
         };
         const r = await compile(g, true);
-        expect(r.vertexWgsl).toContain("_NME_MORPH_APPLY_POSITION(in.position)");
+        expect(r.vertexWgsl).toContain("nme_morphPosition(in.position, vertexIndex)");
     });
 
     it("ShadowMapBlock emits shadow sentinel keyed by lightId", async () => {
