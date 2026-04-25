@@ -64,6 +64,11 @@ interface RenderTargets {
     height: number;
 }
 
+export interface RenderTargetSize {
+    readonly width: number;
+    readonly height: number;
+}
+
 /**
  * Options for `createEngine`.
  * - `msaaSamples`: number of MSAA samples to use for the main render pass.
@@ -142,6 +147,12 @@ export function resizeEngine(engine: EngineContext): void {
     }
     eng._targets.depthTexture.destroy();
     eng._targets = createRenderTargets(eng.device, w, h, eng.format, eng.msaaSamples);
+}
+
+/** @internal Return the current engine-owned render target dimensions without exposing target resources. */
+export function getRenderTargetSize(engine: EngineContext): RenderTargetSize {
+    const targets = (engine as EngineContextInternal)._targets;
+    return { width: targets.width, height: targets.height };
 }
 
 /**
