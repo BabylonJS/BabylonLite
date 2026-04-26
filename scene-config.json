@@ -283,5 +283,14 @@
         "maxGzipKB": 22,
         "description": "Havok Physics V2 sphere drop. Sphere falls onto ground under gravity with restitution bounce.",
         "tags": ["std", "procedural", "physics"]
+    },
+    {
+        "id": 50,
+        "slug": "scene50-rtt-override",
+        "name": "Scene 50 — RTT with material override",
+        "maxMad": 0.01,
+        "maxRawKB": 75,
+        "description": "Frame-graph multi-pass authoring: sphere A (red) and box B in main; an offscreen 512×512 RTT renders A only, with a green override material from a different camera, and the RTT color is wired as B's diffuseTexture.",
+        "tags": ["std", "procedural", "frame-graph", "rtt", "multi-pass"]
     }
 ]

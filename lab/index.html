@@ -2843,6 +2843,7 @@
             <button class="tab" data-tab="parity">Parity <span class="tab-badge" style="background: #1a3a1a; color: #3fb950">diff</span></button>
             <button class="tab" data-tab="bundle">Bundle <span class="tab-badge tab-badge-bundle">dist</span></button>
             <button class="tab" data-tab="perf">Perf</button>
+            <button class="tab" data-tab="perfreg">Perf Regression</button>
         </div>
 
         <div id="panel-source" class="tab-panel active">
@@ -2893,6 +2894,24 @@
             </div>
 
             <div class="perf-grid" id="perf-grid"></div>
+        </div>
+
+        <div id="panel-perfreg" class="tab-panel">
+            <div class="tab-hint">💡 Current Babylon-Lite vs upstream-Lite baseline (per-scene RAF frame time). Run <code>pnpm test:perf-regression</code> to refresh. <span id="perfreg-manifest-status" style="color: #3fb950"></span></div>
+            <div class="perf-toolbar">
+                <div style="flex: 1"></div>
+                <button class="btn perfreg-sort-btn active" onclick="sortPerfRegGrid('num')" data-sort="num" title="Sort by scene number">Scene #</button>
+                <button class="btn perfreg-sort-btn" onclick="sortPerfRegGrid('worst')" data-sort="worst" title="Worst regressions first">Δ ↓</button>
+                <button class="btn perfreg-sort-btn" onclick="sortPerfRegGrid('best')" data-sort="best" title="Largest improvements first">Δ ↑</button>
+                <button class="btn" id="perfreg-filter-btn" onclick="togglePerfRegFilter()" title="Show only scenes regressed beyond limit">⚠ Regressions Only</button>
+                <span id="perfreg-status" class="perf-status"></span>
+            </div>
+            <div class="perf-legend">
+                <span style="color: #f85149">● regression &gt; limit</span>
+                <span style="color: #d29922">● slower (within limit)</span>
+                <span style="color: #3fb950">● faster</span>
+            </div>
+            <div class="perf-grid" id="perfreg-grid"></div>
         </div>
 
         <script>
@@ -3248,6 +3267,92 @@
                     });
             }
 
+            // ── Perf Regression tab (current Lite vs upstream Lite baseline) ──
+            window._perfRegManifest = null;
+            window._perfRegFilterRegressionsOnly = false;
+
+            function fmtDelta(pct) {
+                var sign = pct > 0 ? "+" : "";
+                return sign + pct.toFixed(1) + "%";
+            }
+            function deltaColor(pct, limit) {
+                if (pct > limit) return "#f85149";   // red
+                if (pct > 0)     return "#d29922";   // amber
+                return "#3fb950";                    // green
+            }
+            function renderPerfRegGrid() {
+                var grid = document.getElementById("perfreg-grid");
+                if (!grid) return;
+                var manifest = window._perfRegManifest;
+                grid.innerHTML = "";
+                if (!manifest || !manifest.scenes) return;
+                var limit = manifest.regressionPct || 5;
+                var keys = Object.keys(manifest.scenes);
+
+                var sortMode = (document.querySelector(".perfreg-sort-btn.active") || {}).dataset;
+                sortMode = sortMode ? sortMode.sort : "num";
+                if (sortMode === "worst") {
+                    keys.sort(function(a,b){ return manifest.scenes[b].avgDeltaPct - manifest.scenes[a].avgDeltaPct; });
+                } else if (sortMode === "best") {
+                    keys.sort(function(a,b){ return manifest.scenes[a].avgDeltaPct - manifest.scenes[b].avgDeltaPct; });
+                } else {
+                    keys.sort(function(a,b){ return manifest.scenes[a].id - manifest.scenes[b].id; });
+                }
+
+                var shown = 0;
+                keys.forEach(function(key){
+                    var e = manifest.scenes[key];
+                    if (window._perfRegFilterRegressionsOnly && e.avgDeltaPct <= limit) return;
+                    shown++;
+                    var card = document.createElement("div");
+                    card.className = "perf-scene-card";
+                    var color = deltaColor(e.avgDeltaPct, limit);
+                    card.innerHTML =
+                        '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">' +
+                        '  <div style="font-weight:600">#' + e.id + ' ' + e.name + '</div>' +
+                        '  <div style="font-size:18px;font-weight:700;color:' + color + '">' + fmtDelta(e.avgDeltaPct) + '</div>' +
+                        '</div>' +
+                        '<table style="width:100%;font-size:12px;color:#8b949e">' +
+                        '  <tr><th></th><th style="text-align:right">current</th><th style="text-align:right">baseline</th><th style="text-align:right">Δ</th></tr>' +
+                        '  <tr><td>avg</td><td style="text-align:right;color:#c9d1d9">' + e.current.avgMs + 'ms</td><td style="text-align:right">' + e.baseline.avgMs + 'ms</td><td style="text-align:right;color:' + color + '">' + fmtDelta(e.avgDeltaPct) + '</td></tr>' +
+                        '  <tr><td>p95</td><td style="text-align:right;color:#c9d1d9">' + e.current.p95Ms + 'ms</td><td style="text-align:right">' + e.baseline.p95Ms + 'ms</td><td style="text-align:right;color:' + deltaColor(e.p95DeltaPct, limit) + '">' + fmtDelta(e.p95DeltaPct) + '</td></tr>' +
+                        '  <tr><td>median</td><td style="text-align:right;color:#c9d1d9">' + e.current.medianMs + 'ms</td><td style="text-align:right">' + e.baseline.medianMs + 'ms</td><td style="text-align:right;color:' + deltaColor(e.medianDeltaPct, limit) + '">' + fmtDelta(e.medianDeltaPct) + '</td></tr>' +
+                        '</table>';
+                    grid.appendChild(card);
+                });
+
+                var status = document.getElementById("perfreg-status");
+                if (status) status.textContent = shown + " / " + keys.length + " scenes";
+            }
+            function sortPerfRegGrid(mode) {
+                document.querySelectorAll(".perfreg-sort-btn").forEach(function(b){ b.classList.toggle("active", b.dataset.sort === mode); });
+                renderPerfRegGrid();
+            }
+            function togglePerfRegFilter() {
+                window._perfRegFilterRegressionsOnly = !window._perfRegFilterRegressionsOnly;
+                var btn = document.getElementById("perfreg-filter-btn");
+                if (btn) btn.classList.toggle("active", window._perfRegFilterRegressionsOnly);
+                renderPerfRegGrid();
+            }
+            function loadPerfRegManifest() {
+                fetch("/perf-regression-manifest.json?t=" + Date.now())
+                    .then(function(r) { return r.ok ? r.json() : null; })
+                    .then(function(manifest) {
+                        if (!manifest || !manifest.scenes) {
+                            document.getElementById("perfreg-status").textContent = "No data \u2014 run pnpm test:perf-regression";
+                            return;
+                        }
+                        window._perfRegManifest = manifest;
+                        var count = Object.keys(manifest.scenes).length;
+                        var el = document.getElementById("perfreg-manifest-status");
+                        if (el) el.textContent = "\ud83d\udcca " + count + " scenes (limit \u00b1" + (manifest.regressionPct||5) + "%)";
+                        renderPerfRegGrid();
+                    })
+                    .catch(function() {
+                        document.getElementById("perfreg-status").textContent = "Failed to load perf-regression-manifest.json";
+                    });
+            }
+
             fetch("/scene-config.json?t=" + Date.now())
                 .then(function(r) { return r.json(); })
                 .then(function(config) {
@@ -3259,6 +3364,7 @@
                     restoreLabState();
                     loadBundleManifest();
                     loadPerfManifest();
+                    loadPerfRegManifest();
                     // Restore scroll position now that content is rendered
                     var savedScroll = parseInt(localStorage.getItem("lab-scroll-" + _currentTab) || "0", 10);
                     requestAnimationFrame(function() { window.scrollTo(0, savedScroll); });
