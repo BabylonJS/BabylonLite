@@ -87,24 +87,24 @@ export interface StandardMaterialProps {
   specularPower: number;
   emissiveColor: [number, number, number];
   ambientColor: [number, number, number];
-  diffuseTexture: Texture2D | null;
+  diffuseTexture: SampledTexture | null;
   diffuseCoordIndex: 0 | 1;
-  emissiveTexture: Texture2D | null;
-  bumpTexture: Texture2D | null;
+  emissiveTexture: SampledTexture | null;
+  bumpTexture: SampledTexture | null;
   bumpLevel: number;
-  specularTexture: Texture2D | null;
+  specularTexture: SampledTexture | null;
   specularCoordIndex: 0 | 1;
-  ambientTexture: Texture2D | null;
+  ambientTexture: SampledTexture | null;
   ambientTexLevel: number;
   ambientCoordIndex: 0 | 1;
-  lightmapTexture: Texture2D | null;
+  lightmapTexture: SampledTexture | null;
   lightmapLevel: number;
   lightmapCoordIndex: 0 | 1;
-  opacityTexture: Texture2D | null;
+  opacityTexture: SampledTexture | null;
   opacityLevel: number;
   opacityFromRGB: boolean;
   alphaCutOff: number;
-  reflectionTexture: Texture2D | null;
+  reflectionTexture: SampledTexture | null;
   reflectionLevel: number;
   reflectionCoordMode: 1 | 2;
   uvScale: [number, number];
@@ -126,7 +126,7 @@ export interface FogConfig {
 export function createStandardMaterial(): StandardMaterialProps;
 
 /** Collect all non-null textures for acquire/release tracking. */
-export function collectStdBoundTextures(mat: StandardMaterialProps): Texture2D[];
+export function collectStdBoundTextures(mat: StandardMaterialProps): SampledTexture[];
 
 /** Write per-frame scene uniforms (viewProjection, view, eye, fog). */
 export function updateSceneUniforms(
@@ -648,7 +648,7 @@ startEngine(engine, scene)                → runs deferred builders (async)
 
 ## Dependencies
 
-- **`standard-material.ts`**: Imports `Texture2D` from texture-2d, `computeUboLayout` from ubo-layout, `createStandardTemplate` from standard-template.
+- **`standard-material.ts`**: Imports `SampledTexture` from texture-2d, `computeUboLayout` from ubo-layout, `createStandardTemplate` from standard-template.
 - **`standard-template.ts`**: Imports `ShaderTemplate`, `UboField`, `VertexAttribute`, `Varying`, `BindingDecl` from fragment-types, `WGSL_FOG` from wgsl-helpers.
 - **`standard-pipeline.ts`**: Imports `createStandardTemplate` from standard-template, `composeShader` from shader-composer, `createPipelineCache` from pipeline-cache, types from standard-material, shadow generator types, lights UBO helpers.
 - **`standard-renderable.ts`**: Imports pipeline functions from standard-pipeline, `ShaderFragment` from fragment-types, scene/engine/mesh/light types, renderable interface, resource pool helpers.

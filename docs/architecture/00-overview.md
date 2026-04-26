@@ -18,7 +18,7 @@
 |-----|--------|-------|
 | [00-overview.md](00-overview.md) | Overview | Repository structure, public API |
 | [01-shadow-generator.md](01-shadow-generator.md) | Shadow Generator | ESM + PCF shadows, depth pass, Gaussian blur |
-| [03-texture-2d.md](03-texture-2d.md) | Texture2D | Image upload, mipmap gen, invertY |
+| [03-texture-2d.md](03-texture-2d.md) | SampledTexture | Image upload, mipmap gen, invertY |
 | [04-mesh-generators.md](04-mesh-generators.md) | Mesh Generators | Ground/heightmap, torus, sphere, box |
 | [05-lights.md](05-lights.md) | Lights | Hemispheric, directional, point, spot + PBR variants, multi-light UBO |
 | [06-engine.md](06-engine.md) | Engine | GPU init, MSAA, render loop, swap chain |
@@ -262,11 +262,11 @@ loadEnvironment(scene: SceneContext, url: string, options: {
 }): Promise<EnvironmentTextures>
 loadHdrEnvironment(scene: SceneContext, url: string, options?: HdrLoadOptions): Promise<EnvironmentTextures>
 loadBabylon(engine: Engine, url: string, opts?: LoadBabylonOptions): Promise<AssetContainer>
-loadTexture2D(engine: Engine, url: string, options?: Texture2DOptions): Promise<Texture2D>
+loadTexture2D(engine: Engine, url: string, options?: SampledTextureOptions): Promise<SampledTexture>
 loadSkybox(scene: SceneContext, baseUrl: string, ext: string, size?: number): Promise<void>
 
 // Texture factories
-createSolidTexture2D(engine: Engine, r: number, g: number, b: number, a?: number): Texture2D
+createSolidTexture2D(engine: Engine, r: number, g: number, b: number, a?: number): SampledTexture
 
 // Lights
 createHemisphericLight(direction?: [number,number,number], intensity?: number): HemisphericLight
@@ -454,12 +454,12 @@ interface SpotLight extends LightBase {
 
 // ─── Materials ───────────────────────────────────────────────────────
 interface PbrMaterialProps {
-  baseColorTexture?: Texture2D;
-  normalTexture?: Texture2D;
-  ormTexture?: Texture2D;                               // R=occ, G=rough, B=metal
-  emissiveTexture?: Texture2D;
+  baseColorTexture?: SampledTexture;
+  normalTexture?: SampledTexture;
+  ormTexture?: SampledTexture;                               // R=occ, G=rough, B=metal
+  emissiveTexture?: SampledTexture;
   emissiveColor?: [number, number, number];             // Linear RGB emissive (no texture)
-  specGlossTexture?: Texture2D;                         // KHR_materials_pbrSpecularGlossiness
+  specGlossTexture?: SampledTexture;                         // KHR_materials_pbrSpecularGlossiness
   doubleSided?: boolean;
   alpha?: number;                                        // Overall material alpha (default 1.0)
   alphaBlend?: boolean;                                  // Enable alpha blending (glTF BLEND)
@@ -469,8 +469,8 @@ interface PbrMaterialProps {
   occlusionStrength?: number;                            // AO strength from ORM R channel (default 1.0)
   metallicF0Factor?: number;                             // Dielectric F0 scale (default 1.0)
   metallicReflectanceColor?: [number, number, number];  // Tints dielectric reflectance (default [1,1,1])
-  metallicReflectanceTexture?: Texture2D;               // RGB=reflectance tint, A=F0 scalar
-  reflectanceTexture?: Texture2D;                       // RGB=reflectance tint only
+  metallicReflectanceTexture?: SampledTexture;               // RGB=reflectance tint, A=F0 scalar
+  reflectanceTexture?: SampledTexture;                       // RGB=reflectance tint only
   useOnlyMetallicFromMetallicReflectanceTexture?: boolean;
   enableSpecularAA?: boolean;                            // Specular anti-aliasing on IBL alphaG
   gammaAlbedo?: boolean;                                 // Apply pow(2.2) sRGB→linear in shader
@@ -490,7 +490,7 @@ interface SheenProps {
   color?: [number, number, number];
   roughness?: number;
   intensity?: number;
-  texture?: Texture2D;         // Sheen tint texture (modulates color)
+  texture?: SampledTexture;         // Sheen tint texture (modulates color)
 }
 
 interface StandardMaterialProps {
@@ -500,24 +500,24 @@ interface StandardMaterialProps {
   specularPower: number;
   emissiveColor: [number, number, number];
   ambientColor: [number, number, number];
-  diffuseTexture: Texture2D | null;
+  diffuseTexture: SampledTexture | null;
   diffuseCoordIndex: 0 | 1;
-  emissiveTexture: Texture2D | null;
-  bumpTexture: Texture2D | null;
+  emissiveTexture: SampledTexture | null;
+  bumpTexture: SampledTexture | null;
   bumpLevel: number;
-  specularTexture: Texture2D | null;
+  specularTexture: SampledTexture | null;
   specularCoordIndex: 0 | 1;
-  ambientTexture: Texture2D | null;
+  ambientTexture: SampledTexture | null;
   ambientTexLevel: number;
   ambientCoordIndex: 0 | 1;
-  lightmapTexture: Texture2D | null;
+  lightmapTexture: SampledTexture | null;
   lightmapLevel: number;
   lightmapCoordIndex: 0 | 1;
-  opacityTexture: Texture2D | null;
+  opacityTexture: SampledTexture | null;
   opacityLevel: number;
   opacityFromRGB: boolean;
   alphaCutOff: number;
-  reflectionTexture: Texture2D | null;
+  reflectionTexture: SampledTexture | null;
   reflectionLevel: number;
   reflectionCoordMode: 1 | 2;
   uvScale: [number, number];
@@ -546,8 +546,8 @@ interface Mesh {
 interface MeshGPU { /* internal GPU state */ }
 
 // ─── Textures ────────────────────────────────────────────────────────
-interface Texture2D { texture: GPUTexture; view: GPUTextureView; sampler: GPUSampler; width: number; height: number; }
-interface Texture2DOptions {
+interface SampledTexture { texture: GPUTexture; view: GPUTextureView; sampler: GPUSampler; }
+interface SampledTextureOptions {
   mipMaps?: boolean;         // Generate mipmaps (default true)
   addressModeU?: GPUAddressMode;  // Default 'repeat'
   addressModeV?: GPUAddressMode;  // Default 'repeat'
@@ -832,7 +832,7 @@ interface SceneUniformUpdater { update(engine): void; }
 Parses GLB containers (binary glTF 2.0). Not a general-purpose loader — optimized for
 the meshes we encounter in reference scenes. Returns `Mesh[]` (not `GpuMesh[]` — that interface no longer exists).
 
-**Texture caching**: Textures are cached per bitmap identity + sRGB flag to avoid duplicate GPU uploads. Uses a `Map<string, Texture2D>` with key format `${bitmapId}:${srgb?1:0}`.
+**Texture caching**: Textures are cached per bitmap identity + sRGB flag to avoid duplicate GPU uploads. Uses a `Map<string, SampledTexture>` with key format `${bitmapId}:${srgb?1:0}`.
 
 **Animation extraction**: Creates `AnimationGroup[]` from glTF animations via `createAnimationGroups()`, registers `_beforeRender` callbacks on the scene for playback.
 
