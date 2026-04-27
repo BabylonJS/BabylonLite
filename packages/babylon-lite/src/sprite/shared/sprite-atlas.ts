@@ -21,9 +21,6 @@ import { loadTexture2D } from "../../texture/texture-2d.js";
 /** Texture sampling mode for a sprite atlas. */
 export type SpriteSampling = "linear" | "nearest";
 
-/** Output blend mode for a sprite layer. PR 1 supports `"alpha"` and `"premultiplied"`. */
-export type SpriteBlendMode = "alpha" | "premultiplied" | "additive" | "multiply" | "cutout";
-
 /** A single frame in an atlas. UVs in [0,1]; pivot in [0,1] of the frame. */
 export interface SpriteFrame {
     readonly name?: string;
@@ -156,7 +153,7 @@ export async function loadSpriteAtlas(engine: EngineContext, textureUrl: string,
     });
 }
 
-/** Resolve a frame index (just bounds-checks). Throws if out of range. */
+/** @internal Resolve a frame index (just bounds-checks). Throws if out of range. */
 export function resolveSpriteFrame(atlas: SpriteAtlas, frame: number): number {
     if (frame < 0 || frame >= atlas.frames.length) {
         throw new Error(`resolveSpriteFrame: index ${frame} out of range [0, ${atlas.frames.length})`);

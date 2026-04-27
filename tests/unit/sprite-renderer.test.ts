@@ -149,12 +149,12 @@ describe("createSpriteRenderer", () => {
 });
 
 describe("registerSpriteRenderer / unregisterSpriteRenderer", () => {
-    it("pushes the renderer onto engine._renderingContexts", () => {
+    it("pushes the renderer onto its engine._renderingContexts", () => {
         const { engine } = makeMockEngine();
         const sr = createSpriteRenderer(engine, { layers: [createSprite2DLayer(makeMockAtlas())] });
         const list = (engine as EngineContextInternal)._renderingContexts;
         const before = list.length;
-        registerSpriteRenderer(engine, sr);
+        registerSpriteRenderer(sr);
         expect(list.length).toBe(before + 1);
         expect(list[list.length - 1]).toBe(sr);
     });
@@ -163,10 +163,21 @@ describe("registerSpriteRenderer / unregisterSpriteRenderer", () => {
         const { engine } = makeMockEngine();
         const sr = createSpriteRenderer(engine, { layers: [createSprite2DLayer(makeMockAtlas())] });
         const list = (engine as EngineContextInternal)._renderingContexts;
-        registerSpriteRenderer(engine, sr);
+        registerSpriteRenderer(sr);
         const len = list.length;
-        registerSpriteRenderer(engine, sr);
+        registerSpriteRenderer(sr);
         expect(list.length).toBe(len);
+    });
+
+    it("registers only with the engine that created the renderer", () => {
+        const { engine } = makeMockEngine();
+        const { engine: otherEngine } = makeMockEngine();
+        const sr = createSpriteRenderer(engine, { layers: [createSprite2DLayer(makeMockAtlas())] });
+
+        registerSpriteRenderer(sr);
+
+        expect((engine as EngineContextInternal)._renderingContexts).toContain(sr);
+        expect((otherEngine as EngineContextInternal)._renderingContexts).not.toContain(sr);
     });
 
     it("splices the renderer out", () => {
@@ -174,13 +185,38 @@ describe("registerSpriteRenderer / unregisterSpriteRenderer", () => {
         const sr = createSpriteRenderer(engine, { layers: [createSprite2DLayer(makeMockAtlas())] });
         const list = (engine as EngineContextInternal)._renderingContexts;
         const before = list.length;
-        registerSpriteRenderer(engine, sr);
-        unregisterSpriteRenderer(engine, sr);
+        registerSpriteRenderer(sr);
+        unregisterSpriteRenderer(sr);
         expect(list.length).toBe(before);
     });
 });
 
 describe("disposeSpriteRenderer", () => {
+    it("unregisters the renderer from the engine", () => {
+        const { engine } = makeMockEngine();
+        const sr = createSpriteRenderer(engine, { layers: [createSprite2DLayer(makeMockAtlas())] });
+        const list = (engine as EngineContextInternal)._renderingContexts;
+
+        registerSpriteRenderer(sr);
+        expect(list).toContain(sr);
+
+        disposeSpriteRenderer(sr);
+
+        expect(list).not.toContain(sr);
+    });
+
+    it("is idempotent after unregistering from the engine", () => {
+        const { engine } = makeMockEngine();
+        const sr = createSpriteRenderer(engine, { layers: [createSprite2DLayer(makeMockAtlas())] });
+        const list = (engine as EngineContextInternal)._renderingContexts;
+
+        registerSpriteRenderer(sr);
+        disposeSpriteRenderer(sr);
+        disposeSpriteRenderer(sr);
+
+        expect(list).not.toContain(sr);
+    });
+
     it("clears layers and destroys internal GPU buffers", () => {
         const { engine, counters } = makeMockEngine();
         const layer = createSprite2DLayer(makeMockAtlas());

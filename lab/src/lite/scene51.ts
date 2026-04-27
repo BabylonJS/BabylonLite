@@ -17,8 +17,9 @@
 // ALPHA_PREMULTIPLIED` to reach the same end-state. Both renderers see
 // premultiplied bits and use the matching blend factors.
 
-import { addSprite2DIndex, createEngine, createSprite2DLayer, createSpriteRenderer, loadSpriteAtlas, registerSpriteRenderer, startEngine } from "babylon-lite";
+import { createEngine, createSprite2DLayer, createSpriteRenderer, loadSpriteAtlas, registerSpriteRenderer, startEngine } from "babylon-lite";
 import { getSoftSpriteAtlasDataUrl, SOFT_SPRITE_ATLAS_INFO } from "../_shared/sprite-atlas-soft";
+import { addDeterministicSpriteGrid } from "../_shared/sprite-grid";
 
 async function main(): Promise<void> {
     const __initStart = performance.now();
@@ -37,41 +38,13 @@ async function main(): Promise<void> {
     });
 
     const layer = createSprite2DLayer(atlas, { capacity: 256, blendMode: "premultiplied", depth: "none" });
-
-    const cols = 25;
-    const rows = 10;
-    const cellPx = 40;
-    const gridW = cols * cellPx;
-    const gridH = rows * cellPx;
-    const ox = (canvas.width - gridW) / 2 + cellPx / 2;
-    const oy = (canvas.height - gridH) / 2 + cellPx / 2;
-
-    for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-            const idx = r * cols + c;
-            // 32 distinct gradient hues in the atlas; cycle through them.
-            const frame = idx % 32;
-            const tintIdx = idx % 3;
-            const color: [number, number, number, number] = tintIdx === 0 ? [1, 1, 1, 1] : tintIdx === 1 ? [1, 0.7, 0.7, 1] : [0.7, 1, 0.85, 1];
-            const rotation = idx % 5 === 0 ? Math.PI / 6 : 0;
-            const flipX = idx % 7 === 0;
-            const sizePx: [number, number] = idx % 11 === 0 ? [40, 40] : [28, 28];
-            addSprite2DIndex(layer, {
-                positionPx: [ox + c * cellPx, oy + r * cellPx],
-                sizePx,
-                frame,
-                color,
-                rotation,
-                flipX,
-            });
-        }
-    }
+    addDeterministicSpriteGrid(layer, canvas, { frameForIndex: (index) => index % 32 });
 
     const sr = createSpriteRenderer(engine, {
         layers: [layer],
         clearValue: { r: 0.07, g: 0.08, b: 0.12, a: 1.0 },
     });
-    registerSpriteRenderer(engine, sr);
+    registerSpriteRenderer(sr);
 
     await startEngine(engine);
     canvas.dataset.drawCalls = String(engine.drawCallCount);

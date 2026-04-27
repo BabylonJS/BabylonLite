@@ -11,7 +11,7 @@
 >
 > The engine grows a small registration list. Two kinds of things can be
 > registered with an engine: a `SceneContext` (via `registerScene(engine, scene)`)
-> and a `SpriteRenderer` (via `registerSpriteRenderer(engine, sr)`). Each is
+> and a `SpriteRenderer` (via `registerSpriteRenderer(sr)`). Each is
 > driven once per frame by `startEngine(engine)` in registration order.
 > Pure-2D experiences (Lottie/Rive-class apps) create a `SpriteRenderer`
 > and register it on the engine — no `SceneContext`, no `addToScene`.
@@ -193,7 +193,7 @@ import chunks, no `axisLock?: 'none'|'y'|Vec3` flag.
 **Decision: the engine grows a small registration list. Two kinds of
 things can be registered with an engine: a `SceneContext` (via
 `registerScene(engine, scene)`) and a `SpriteRenderer` (via
-`registerSpriteRenderer(engine, sr)`). `startEngine(engine)` no longer
+`registerSpriteRenderer(sr)`). `startEngine(engine)` no longer
 takes a `scene` argument — it walks `engine._registrations` once per
 frame, calling each registration's `render` callback in registration
 order. Pure-2D experiences (Lottie/Rive-class apps) create a
@@ -277,8 +277,8 @@ export interface SpriteRenderer extends EngineRenderer {
 }
 
 export function createSpriteRenderer(engine: EngineContext, opts: SpriteRendererOptions): SpriteRenderer;
-export function registerSpriteRenderer(engine: EngineContext, sr: SpriteRenderer): void;
-export function unregisterSpriteRenderer(engine: EngineContext, sr: SpriteRenderer): void;
+export function registerSpriteRenderer(sr: SpriteRenderer): void;
+export function unregisterSpriteRenderer(sr: SpriteRenderer): void;
 export function disposeSpriteRenderer(sr: SpriteRenderer): void;
 ```
 
@@ -313,7 +313,7 @@ const sr = createSpriteRenderer(engine, {
     layers: [layer],
     clearValue: { r: 0, g: 0, b: 0, a: 1 },
 });
-registerSpriteRenderer(engine, sr);
+registerSpriteRenderer(sr);
 
 await startEngine(engine);
 ```
@@ -429,7 +429,6 @@ import type { EngineContext } from "../../engine/engine.js";
 import type { Texture2D, Texture2DOptions } from "../../texture/texture-2d.js";
 
 export type SpriteSampling = "linear" | "nearest";
-export type SpriteBlendMode = "alpha" | "premultiplied" | "additive" | "multiply" | "cutout";
 export type SpriteFrameRef = number | string;
 
 /** A single frame in an atlas. UVs in [0,1]; pivot in [0,1] of the frame. */
@@ -491,6 +490,7 @@ export interface LoadAtlasOptions extends NamedAtlasOptions {
 export function loadSpriteAtlas(engine: EngineContext, textureUrl: string, options?: LoadAtlasOptions): Promise<SpriteAtlas>;
 export function createGridSpriteAtlas(texture: Texture2D, options: GridAtlasOptions): SpriteAtlas;
 export function createNamedSpriteAtlas(texture: Texture2D, frames: readonly SpriteFrame[], clips?: readonly SpriteClip[], options?: NamedAtlasOptions): SpriteAtlas;
+/** @internal */
 export function resolveSpriteFrame(atlas: SpriteAtlas, frame: SpriteFrameRef): number;
 
 // src/sprite/shared/sprite-animation.ts
@@ -526,9 +526,10 @@ current frame index.
 
 ```typescript
 // src/sprite/sprite-2d.ts
-import type { SpriteAtlas, SpriteBlendMode, SpriteFrameRef } from "./shared/sprite-atlas.js";
+import type { SpriteAtlas, SpriteFrameRef } from "./shared/sprite-atlas.js";
 import type { SpriteClipState } from "./shared/sprite-animation.js";
 
+export type SpriteBlendMode = "alpha" | "premultiplied" | "additive" | "multiply" | "cutout";
 export type Sprite2DDepthMode = "none" | "test" | "test-write";
 
 export interface Sprite2DView {
@@ -540,7 +541,6 @@ export interface Sprite2DView {
 export interface Sprite2DLayerOptions {
     capacity?: number;
     blendMode?: SpriteBlendMode;
-    pixelSnap?: boolean;
     opacity?: number;
     visible?: boolean;
     order?: number;
@@ -563,7 +563,6 @@ export interface Sprite2DLayer {
     readonly atlas: SpriteAtlas;
     readonly depth: Sprite2DDepthMode;
     blendMode: SpriteBlendMode;
-    pixelSnap: boolean;
     opacity: number;
     visible: boolean;
     order: number;
@@ -666,7 +665,8 @@ never pays for `viewProjection` on the CPU.
 
 ```typescript
 // src/sprite/billboard/sprite-billboard-shared.ts
-import type { SpriteAtlas, SpriteBlendMode, SpriteFrameRef } from "../shared/sprite-atlas.js";
+import type { SpriteAtlas, SpriteFrameRef } from "../shared/sprite-atlas.js";
+import type { SpriteBlendMode } from "../sprite-2d.js";
 import type { SpriteClipState } from "../shared/sprite-animation.js";
 
 export interface BillboardSpriteSystemOptions {
@@ -773,7 +773,7 @@ const sr = createSpriteRenderer(engine, {
     layers: [layer],
     clearValue: { r: 0, g: 0, b: 0, a: 1 },
 });
-registerSpriteRenderer(engine, sr);
+registerSpriteRenderer(sr);
 
 await startEngine(engine);
 ```
@@ -1858,7 +1858,7 @@ NOT depended on:
 - `sprite-handle-observable-write.test.ts` — observable field writes propagate to packed slot.
 - `sprite-handle-parent-2d.test.ts` — Spine-style 2D parenting: parent rotation/scale propagate.
 - `sprite-handle-anchor.test.ts` — `handle.anchor = createWorldAnchor([…])` lazy-imports `sprite-anchor.ts` and installs the projection.
-- `sprite-renderer.test.ts` — `createSpriteRenderer(engine, opts)` + `registerSpriteRenderer(engine, sr)` + `startEngine(engine)` produces a deterministic frame with no `SceneContext` in scope; verifies pipeline cache `(sampleCount, hasDepth)` holds at most 4 entries; verifies `unregisterSpriteRenderer` removes it from the engine's render list.
+- `sprite-renderer.test.ts` — `createSpriteRenderer(engine, opts)` + `registerSpriteRenderer(sr)` + `startEngine(engine)` produces a deterministic frame with no `SceneContext` in scope; verifies pipeline cache `(sampleCount, hasDepth)` holds at most 4 entries; verifies `unregisterSpriteRenderer` removes it from the engine's render list.
 - `register-scene.test.ts` — `registerScene(engine, scene)` runs deferred builders, registers the scene as an `EngineRenderer`, and (when `_hudSpriteLayers` is non-empty) lazily registers an internal HUD `SpriteRenderer` immediately after.
 - `addToScene-sprite-2d-branch.test.ts` — Adding a `Sprite2DLayer { depth: "none" }` and a `Sprite2DLayer { depth: "test" }` to a scene routes them into `ctx._hudSpriteLayers` and `ctx._depthHostedSpriteLayers` respectively, with no other side effects.
 
@@ -1897,7 +1897,7 @@ packages/babylon-lite/src/
 
   sprite/
     shared/
-      sprite-atlas.ts                            # SpriteAtlas, createGrid/Named/loadSpriteAtlas, resolveSpriteFrame
+      sprite-atlas.ts                            # SpriteAtlas, createGrid/Named/loadSpriteAtlas, internal resolveSpriteFrame
       sprite-animation.ts                        # SpriteClipState, evaluate/advanceSpriteClip
       sprite-gpu.ts                              # CPU→GPU dirty-range writeBuffer, capacity grow (dynamic-imported)
       sprite-pack-2d.ts                          # 80-byte pack helper for Sprite2DLayer
@@ -1957,9 +1957,10 @@ export { registerScene, unregisterScene } from "./scene/scene-core.js";
 export { createSpriteRenderer, registerSpriteRenderer, unregisterSpriteRenderer, disposeSpriteRenderer } from "./sprite/sprite-renderer.js";
 export type { SpriteRenderer, SpriteRendererOptions } from "./sprite/sprite-renderer.js";
 
-export { loadSpriteAtlas, createGridSpriteAtlas, createNamedSpriteAtlas, resolveSpriteFrame } from "./sprite/shared/sprite-atlas.js";
+export { loadSpriteAtlas, createGridSpriteAtlas, createNamedSpriteAtlas } from "./sprite/shared/sprite-atlas.js";
 export { createSpriteClipState } from "./sprite/shared/sprite-animation.js";
-export type { SpriteAtlas, SpriteFrame, SpriteClip, SpriteSampling, SpriteBlendMode, SpriteFrameRef, SpriteClipState } from "./sprite/shared/sprite-atlas.js";
+export type { SpriteAtlas, SpriteFrame, SpriteClip, SpriteSampling, SpriteFrameRef, SpriteClipState } from "./sprite/shared/sprite-atlas.js";
+export type { SpriteBlendMode } from "./sprite/sprite-2d.js";
 
 export { createSprite2DLayer, addSprite2D, removeSprite2D, updateSprite2D, setSprite2DFrame, playSprite2DClip, stopSprite2DClip } from "./sprite/sprite-2d.js";
 export { addSprite2DIndex, updateSprite2DIndex, removeSprite2DIndex, setSprite2DFrameIndex, playSprite2DClipIndex, stopSprite2DClipIndex } from "./sprite/sprite-2d.js";

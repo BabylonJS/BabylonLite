@@ -7,8 +7,11 @@
  * PR 1 implements the Index API only. Animation, clip playback, and the
  * Handle API land in later PRs.
  */
-import type { SpriteAtlas, SpriteBlendMode } from "./shared/sprite-atlas.js";
+import type { SpriteAtlas } from "./shared/sprite-atlas.js";
 import { resolveSpriteFrame } from "./shared/sprite-atlas.js";
+
+/** Output blend mode for a sprite layer. PR 1 supports `"alpha"` and `"premultiplied"`. */
+export type SpriteBlendMode = "alpha" | "premultiplied" | "additive" | "multiply" | "cutout";
 
 /** Depth participation. PR 1 implements `"none"` only. */
 export type Sprite2DDepthMode = "none" | "test" | "test-write";
@@ -24,7 +27,6 @@ export interface Sprite2DView {
 export interface Sprite2DLayerOptions {
     capacity?: number;
     blendMode?: SpriteBlendMode;
-    pixelSnap?: boolean;
     opacity?: number;
     visible?: boolean;
     order?: number;
@@ -47,7 +49,6 @@ export interface Sprite2DLayer {
     readonly atlas: SpriteAtlas;
     readonly depth: Sprite2DDepthMode;
     blendMode: SpriteBlendMode;
-    pixelSnap: boolean;
     opacity: number;
     visible: boolean;
     order: number;
@@ -155,7 +156,6 @@ export function createSprite2DLayer(atlas: SpriteAtlas, opts: Sprite2DLayerOptio
         atlas,
         depth,
         blendMode,
-        pixelSnap: opts.pixelSnap ?? false,
         opacity: opts.opacity ?? 1,
         visible: opts.visible ?? true,
         order: opts.order ?? 0,

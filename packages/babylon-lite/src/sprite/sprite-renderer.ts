@@ -15,7 +15,7 @@
  *     the relevant fields will be re-added to `SpriteRendererOptions`
  *     when that work lands. See `docs/sprites/pr1-pure-2d-sprites-scope.md`.
  */
-import { getRenderTargetSize } from "../engine/engine.js";
+import { getRenderTargetSize, registerRenderingContext, unregisterRenderingContext } from "../engine/engine.js";
 import type { EngineContext, EngineContextInternal, RenderingContext } from "../engine/engine.js";
 import { createEmptyUniformBuffer, createMappedBuffer } from "../resource/gpu-buffers.js";
 import type { Sprite2DLayer } from "./sprite-2d.js";
@@ -379,30 +379,25 @@ function spriteRendererRecord(rr: SpriteRendererInternal, pass: GPURenderPassEnc
     return drawCalls;
 }
 
-/** Push the renderer onto `engine._renderingContexts`. Idempotent — a second call is a no-op. */
-export function registerSpriteRenderer(engine: EngineContext, sr: SpriteRenderer): void {
-    const list = (engine as EngineContextInternal)._renderingContexts;
-    if (list.indexOf(sr) !== -1) {
-        return;
-    }
-    list.push(sr);
+/** Push the renderer onto its engine's `_renderingContexts`. Idempotent — a second call is a no-op. */
+export function registerSpriteRenderer(sr: SpriteRenderer): void {
+    const rr = sr as SpriteRendererInternal;
+    registerRenderingContext(rr._engine, sr);
 }
 
-/** Splice the renderer out of `engine._renderingContexts`. No-op if not present. */
-export function unregisterSpriteRenderer(engine: EngineContext, sr: SpriteRenderer): void {
-    const list = (engine as EngineContextInternal)._renderingContexts;
-    const i = list.indexOf(sr);
-    if (i !== -1) {
-        list.splice(i, 1);
-    }
+/** Splice the renderer out of its engine's `_renderingContexts`. No-op if not present. */
+export function unregisterSpriteRenderer(sr: SpriteRenderer): void {
+    const rr = sr as SpriteRendererInternal;
+    unregisterRenderingContext(rr._engine, sr);
 }
 
-/** Destroy all GPU resources owned by the renderer and clear `layers`. */
+/** Destroy all GPU resources owned by the renderer, unregister it from the engine, and clear `layers`. */
 export function disposeSpriteRenderer(sr: SpriteRenderer): void {
     const rr = sr as SpriteRendererInternal;
     if (rr._disposed) {
         return;
     }
+    unregisterSpriteRenderer(rr);
     rr._disposed = true;
     for (const lg of rr._layerGpu.values()) {
         lg.instanceBuffer.destroy();

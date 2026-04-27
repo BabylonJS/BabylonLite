@@ -112,8 +112,8 @@ _The `RenderingContext` interface, `_renderingContexts` list, `registerScene`/`u
 
 - `Sprite2DLayer` type — `depth: "none"` only for now
 - `SpriteRenderer` + `SpriteRendererOptions`. **`SpriteRenderer` implements `RenderingContext` directly** — provides `_update`, `_record`, `_drawCallsPre`, `clearColor`.
-- `createSpriteRenderer(engine, opts)` / `registerSpriteRenderer(engine, sr)` / `unregisterSpriteRenderer(engine, sr)` / `disposeSpriteRenderer(sr)`
-    - `registerSpriteRenderer` pushes onto `engine._renderingContexts` (same list scenes use)
+- `createSpriteRenderer(engine, opts)` / `registerSpriteRenderer(sr)` / `unregisterSpriteRenderer(sr)` / `disposeSpriteRenderer(sr)`
+    - `registerSpriteRenderer` pushes onto the renderer's engine `_renderingContexts` (same list scenes use)
     - `unregisterSpriteRenderer` removes it
 - WGSL pipeline + atlas/texture binding
 - Module: `sprite-renderer.ts`

@@ -72,11 +72,11 @@ reference/scene50-pure-2d-sprites/
 
 ```ts
 // Sprite atlas (shared foundation)
-export type { SpriteAtlas, SpriteFrame, SpriteBlendMode, SpriteSampling, GridAtlasOptions, LoadAtlasOptions } from "./sprite/shared/sprite-atlas.js";
-export { createGridSpriteAtlas, loadSpriteAtlas, resolveSpriteFrame } from "./sprite/shared/sprite-atlas.js";
+export type { SpriteAtlas, SpriteFrame, SpriteSampling, GridAtlasOptions, LoadAtlasOptions } from "./sprite/shared/sprite-atlas.js";
+export { createGridSpriteAtlas, loadSpriteAtlas } from "./sprite/shared/sprite-atlas.js";
 
 // Sprite 2D layer + Index API
-export type { Sprite2DLayer, Sprite2DLayerOptions, Sprite2DProps, Sprite2DView, Sprite2DDepthMode } from "./sprite/sprite-2d.js";
+export type { Sprite2DLayer, Sprite2DLayerOptions, Sprite2DProps, Sprite2DView, Sprite2DDepthMode, SpriteBlendMode } from "./sprite/sprite-2d.js";
 export { createSprite2DLayer, addSprite2DIndex, updateSprite2DIndex, removeSprite2DIndex, setSprite2DFrameIndex } from "./sprite/sprite-2d.js";
 
 // Sprite renderer
@@ -93,7 +93,7 @@ The full spec in 26-sprites.md describes a rich system. PR 1 ships **only this s
 - Exactly as specified in 26-sprites.md lines 451–467, **with names omitted** — see decision note below.
 - `loadSpriteAtlas(engine, url, options)` — **grid-only** in PR 1. `options.gridSize` required; `metadataUrl` path throws "not implemented in PR 1".
 - `createGridSpriteAtlas(texture, options)` — full implementation.
-- `resolveSpriteFrame(atlas, index)` — index-only bounds check; throws if out of range.
+- `resolveSpriteFrame(atlas, index)` — internal index-only bounds check used by the layer API; not exported from the public barrel.
 - `clips` field on atlas — **removed from PR 1**. Originally planned as a forward-compat empty-array placeholder; dropped to keep the surface honest. Will return as an additive change to `SpriteAtlas` when sprite clip animation lands (see "Deferred follow-ups" below).
 
 #### Decision: frame names live in a wrapper, not in `SpriteAtlas`
@@ -135,9 +135,9 @@ caller for a feature they don't use, and the engine doesn't need to own the name
     - `clearValue` optional (default `{ r: 0, g: 0, b: 0, a: 1 }`).
     - **Off-screen / per-renderer attachment options (`target`, `depthView`, `resolveTarget`, `loadOp`, `sampleCount`) are intentionally not on this interface in PR 1.** The renderer draws into the engine's shared pass (same as scenes), so these fields would be dead weight today. They will be added back when HUD-to-offscreen / per-context MSAA / depth-hosted rendering land — see the deferred-items table below.
 - `createSpriteRenderer(engine, opts)` — constructs the renderer, builds the pipeline for the one `(sampleCount=engineMsaa, hasDepth=false)` key.
-- `registerSpriteRenderer(engine, sr)` — pushes onto `engine._renderingContexts`. Idempotent (double-register is a no-op).
-- `unregisterSpriteRenderer(engine, sr)` — splices out.
-- `disposeSpriteRenderer(sr)` — destroys pipeline cache contents (buffers, pipelines) and clears `layers`.
+- `registerSpriteRenderer(sr)` — pushes onto the renderer's engine `_renderingContexts`. Idempotent (double-register is a no-op).
+- `unregisterSpriteRenderer(sr)` — splices out of the renderer's engine.
+- `disposeSpriteRenderer(sr)` — unregisters, destroys pipeline cache contents (buffers, pipelines), and clears `layers`.
 
 ### WGSL
 
@@ -190,7 +190,7 @@ async function main(): Promise<void> {
         layers: [layer],
         clearValue: { r: 0.1, g: 0.12, b: 0.18, a: 1.0 },
     });
-    registerSpriteRenderer(engine, sr);
+    registerSpriteRenderer(sr);
 
     await startEngine(engine);
     canvas.dataset.drawCalls = String(engine.drawCallCount);
@@ -244,7 +244,7 @@ Cases (each uses a stub engine / mocked `GPUDevice`; follow the pattern of exist
 | Named atlases (frame-by-name wrapper)                                                                                                                 | with TexturePacker loader                    |
 | Sprite clip animation (re-adds `SpriteClip` interface + `clips` field on `SpriteAtlas`; both were dropped from PR 1 to keep the surface honest)       | later                                        |
 | `blendMode` additive/multiply/cutout                                                                                                                  | later                                        |
-| `pixelSnap`                                                                                                                                           | later                                        |
+| `pixelSnap` option/property (omitted from PR 1 API until the renderer/shader actually snaps transformed positions)                                    | later                                        |
 | Per-sprite / per-frame `pivot` override (PR 1 ships per-layer pivot only)                                                                             | later                                        |
 | `SpriteRendererOptions.target` / `depthView` / `resolveTarget` / `loadOp` / `sampleCount` (off-screen / per-renderer attachments + per-renderer MSAA) | PR 2 – PR 4 (HUD-to-offscreen, depth-hosted) |
 | `order` interaction across multiple layers                                                                                                            | PR 2 or later (PR 1 has one layer)           |

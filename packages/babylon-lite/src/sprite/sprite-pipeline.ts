@@ -1,8 +1,7 @@
 /** Internal sprite pipeline helpers: owns WGSL, bind-group schema, pipeline construction, and bind-group creation. */
 import type { EngineContextInternal } from "../engine/engine.js";
-import type { Sprite2DLayer } from "./sprite-2d.js";
+import type { Sprite2DLayer, SpriteBlendMode } from "./sprite-2d.js";
 import { INSTANCE_STRIDE_BYTES } from "./sprite-2d.js";
-import type { SpriteBlendMode } from "./shared/sprite-atlas.js";
 
 export interface SpritePipelineEntry {
     readonly device: GPUDevice;
@@ -77,7 +76,9 @@ let s = textureSample(atlasTex, atlasSamp, in.uv);
 return s * in.tint * L.opacityMul;
 }`;
 
-const BLEND_MODE_TABLE: Readonly<Record<SpriteBlendMode, { index: number; descriptor: GPUBlendState }>> = {
+type SupportedSpriteBlendMode = Extract<SpriteBlendMode, "alpha" | "premultiplied">;
+
+const BLEND_MODE_TABLE: Readonly<Record<SupportedSpriteBlendMode, { index: number; descriptor: GPUBlendState }>> = {
     alpha: {
         index: 0,
         descriptor: {
@@ -92,28 +93,14 @@ const BLEND_MODE_TABLE: Readonly<Record<SpriteBlendMode, { index: number; descri
             alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
         },
     },
-    additive: {
-        index: 2,
-        descriptor: {
-            color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
-            alpha: { srcFactor: "one", dstFactor: "one", operation: "add" },
-        },
-    },
-    multiply: {
-        index: 3,
-        descriptor: {
-            color: { srcFactor: "dst", dstFactor: "zero", operation: "add" },
-            alpha: { srcFactor: "dst-alpha", dstFactor: "zero", operation: "add" },
-        },
-    },
-    cutout: {
-        index: 4,
-        descriptor: {
-            color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
-            alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
-        },
-    },
 };
+
+function getBlendModeEntry(blendMode: SpriteBlendMode): (typeof BLEND_MODE_TABLE)[SupportedSpriteBlendMode] {
+    if (blendMode === "alpha" || blendMode === "premultiplied") {
+        return BLEND_MODE_TABLE[blendMode];
+    }
+    throw new Error(`Sprite pipeline: blendMode: "${blendMode}" is not supported yet.`);
+}
 
 export function createSpritePipelineCache(): SpritePipelineCache {
     return {
@@ -179,7 +166,7 @@ function ensureCacheMatchesEngine(engine: EngineContextInternal, cache: SpritePi
 }
 
 function spritePipelineKey(format: GPUTextureFormat, sampleCount: number, blendMode: SpriteBlendMode, hasDepth: boolean): string {
-    return `${format}:${sampleCount}:${BLEND_MODE_TABLE[blendMode].index}:${hasDepth ? 1 : 0}`;
+    return `${format}:${sampleCount}:${getBlendModeEntry(blendMode).index}:${hasDepth ? 1 : 0}`;
 }
 
 function getShaderModule(engine: EngineContextInternal, cache: SpritePipelineCache): GPUShaderModule {
@@ -220,7 +207,7 @@ function buildSpritePipeline(engine: EngineContextInternal, cache: SpritePipelin
         fragment: {
             module,
             entryPoint: "fs",
-            targets: [{ format: engine.format, blend: BLEND_MODE_TABLE[blendMode].descriptor, writeMask: GPUColorWrite.ALL }],
+            targets: [{ format: engine.format, blend: getBlendModeEntry(blendMode).descriptor, writeMask: GPUColorWrite.ALL }],
         },
         primitive: { topology: "triangle-list", cullMode: "none" },
         depthStencil: {
