@@ -1,4 +1,4 @@
-/** PBRMetallicRoughnessBlock — direct lighting + optional IBL + optional clearcoat.
+/** PBRMetallicRoughnessBlock — direct lighting + optional IBL + optional clearcoat + optional sheen.
  *
  *  When the `reflection` input is connected (typically to a ReflectionBlock),
  *  this emitter runs the GGX direct-lighting path PLUS a split-sum IBL
@@ -7,8 +7,12 @@
  *  When the `clearcoat` input is connected (to a ClearCoatBlock), an extra
  *  GGX clear-coat layer is added on top: per-light Schlick fresnel + Kelemen
  *  visibility GGX specular, and the base layer (diffuse + specular + IBL)
- *  is modulated by (1 - ccFresnel * ccIntensity). The clear-coat IBL
- *  contribution samples the same env cube with a roughness-derived LOD.
+ *  is modulated by (1 - ccFresnel * ccIntensity).
+ *
+ *  When the `sheen` input is connected (to a SheenBlock), an extra Charlie
+ *  NDF + Ashikhmin visibility cloth/velvet sheen layer is added: per-light
+ *  direct sheen contribution and a sheen IBL term that uses the BRDF LUT
+ *  blue channel for the sheen-roughness lookup.
  *
  *  Outputs implemented (others stub to vec3<f32>(0)):
  *    - lighting / diffuseDir / specularDir / shadow / alpha
@@ -24,10 +28,8 @@ function ccDirectBlock(useClearcoat: boolean): string {
     if (!useClearcoat) {
         return "";
     }
-    // Per-light clearcoat specular accumulation: GGX + Kelemen visibility +
-    // Schlick fresnel. Updates ccDirectSpecAcc (vec3) and ccDirectAtten (f32).
     return `
-        // Clear-coat per-light specular.
+        // Clear-coat per-light specular (GGX + Kelemen visibility + Schlick).
         if (NdotL > 0.0 && atten > 0.0) {
             let ccH = normalize(V + L);
             let ccNdotH = clamp(dot(N, ccH), 0.0000001, 1.0);
@@ -45,7 +47,6 @@ function ccHemiBlock(useClearcoat: boolean): string {
     if (!useClearcoat) {
         return "";
     }
-    // Hemi clearcoat — use sky-half-vector as proxy.
     return `
         if (nl > 0.0) {
             let ccH_h = normalize(V + Ldir);
@@ -60,7 +61,36 @@ function ccHemiBlock(useClearcoat: boolean): string {
         }`;
 }
 
-function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean): string {
+function shDirectBlock(useSheen: boolean): string {
+    if (!useSheen) {
+        return "";
+    }
+    return `
+        // Sheen per-light direct (Charlie NDF + Ashikhmin visibility).
+        if (NdotL > 0.0 && atten > 0.0) {
+            let shH = normalize(V + L);
+            let shNdotH = clamp(dot(N, shH), 0.0000001, 1.0);
+            let shD = nme_pbr_charlieD(shNdotH, shAlphaG);
+            let shV = 1.0 / (4.0 * (NdotL + NdotV - NdotL * NdotV) + 0.0000001);
+            shDirectAcc = shDirectAcc + shColorScaled * shD * shV * NdotL * color * atten * sh;
+        }`;
+}
+
+function shHemiBlock(useSheen: boolean): string {
+    if (!useSheen) {
+        return "";
+    }
+    return `
+        if (nl > 0.0) {
+            let shH_h = normalize(V + Ldir);
+            let shNdotH_h = clamp(dot(N, shH_h), 0.0000001, 1.0);
+            let shD_h = nme_pbr_charlieD(shNdotH_h, shAlphaG);
+            let shV_h = 1.0 / (4.0 * (nl + NdotV - nl * NdotV) + 0.0000001);
+            shDirectAcc = shDirectAcc + shColorScaled * shD_h * shV_h * nl * entry.vLightSpecular.rgb * sh;
+        }`;
+}
+
+function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean): string {
     const ccDecls = useClearcoat
         ? `let ccIntensity = clamp(ccIntensityIn, 0.0, 1.0);
     let ccRough = clamp(ccRoughnessIn, 0.0, 1.0);
@@ -72,6 +102,22 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean): string {
         : `let ccDirectSpecAcc = vec3<f32>(0.0);
     let ccDirectAtten: f32 = 1.0;`;
 
+    const shDecls = useSheen
+        ? `let shIntensity = clamp(shIntensityIn, 0.0, 1.0);
+    let shRough = clamp(shRoughnessIn, 0.0, 1.0);
+    let shAlphaG = max(shRough * shRough, 0.0005);
+    let shColorScaled = shColorIn * shIntensity;
+    var shDirectAcc = vec3<f32>(0.0);`
+        : `let shDirectAcc = vec3<f32>(0.0);`;
+
+    const shIblTerm =
+        useEnv && useSheen
+            ? `let shSpecLod = log2(cubemapDim * shAlphaG) * sceneU.lodGenerationScale;
+    let shEnvRadiance = textureSampleLevel(nmeIblTexture, nmeIblSampler, R, clamp(shSpecLod, 0.0, maxLod)).rgb * sceneU.environmentIntensity;
+    let shBrdfBlue = textureSample(nmeBrdfLUT, nmeBrdfSampler, vec2<f32>(NdotV, shRough)).b;
+    let shFinalIbl = shEnvRadiance * shColorScaled * shBrdfBlue;`
+            : `let shFinalIbl = vec3<f32>(0.0);`;
+
     const ccIblFinal = useClearcoat
         ? `let ccFresnelIBL = nme_pbr_ccSchlick(ccF0, NdotV);
     let ccConsIBL = 1.0 - ccFresnelIBL * ccIntensity;
@@ -81,15 +127,21 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean): string {
     let ccSpecLod = log2(cubemapDim * ccAlphaG) * sceneU.lodGenerationScale;
     let ccEnvRadiance = textureSampleLevel(nmeIblTexture, nmeIblSampler, R, clamp(ccSpecLod, 0.0, maxLod)).rgb * sceneU.environmentIntensity;
     let ccFinalRadiance = ccEnvRadiance * ccSpecEnvRefl;
+    ${shIblTerm}
     r.lighting = finalIrradiance * ccConsIBL
         + finalRadianceScaled * ccConsIBL
         + finalSpecularScaledDirect * ccDirectAtten
         + diffuseAcc * ao_c * ccDirectAtten
         + ccDirectSpecAcc
-        + ccFinalRadiance;`
-        : `r.lighting = finalIrradiance + finalRadianceScaled + finalSpecularScaledDirect + diffuseAcc * ao_c;`;
+        + ccFinalRadiance
+        + shDirectAcc
+        + shFinalIbl;`
+        : `${shIblTerm}
+    r.lighting = finalIrradiance + finalRadianceScaled + finalSpecularScaledDirect + diffuseAcc * ao_c + shDirectAcc + shFinalIbl;`;
 
-    const ccDirectFinal = useClearcoat ? `r.lighting = (diffuseAcc + specAcc) * ao_c * ccDirectAtten + ccDirectSpecAcc;` : `r.lighting = (diffuseAcc + specAcc) * ao_c;`;
+    const ccDirectFinal = useClearcoat
+        ? `r.lighting = (diffuseAcc + specAcc) * ao_c * ccDirectAtten + ccDirectSpecAcc + shDirectAcc;`
+        : `r.lighting = (diffuseAcc + specAcc) * ao_c + shDirectAcc;`;
 
     const iblBlock = useEnv
         ? `
@@ -107,6 +159,9 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean): string {
     let brdfSample = textureSample(nmeBrdfLUT, nmeBrdfSampler, vec2<f32>(NdotV, rough_c));
     let envBrdf = brdfSample.rgb;
     let specEnvReflectance = (colorF90 - colorF0) * envBrdf.x + colorF0 * envBrdf.y;
+    // Specular environment occlusion (eho only matters with a normal map; we don't have one).
+    let seo = clamp((NdotVUnclamped + ao_c) * (NdotVUnclamped + ao_c) - 1.0 + ao_c, 0.0, 1.0);
+    let colorSpecEnvReflectance = specEnvReflectance * seo;
     let energyConservation = 1.0 + colorF0 * (1.0 / max(envBrdf.y, 0.001) - 1.0);
     let maxLod = f32(textureNumLevels(nmeIblTexture) - 1);
     let cubemapDim = f32(textureDimensions(nmeIblTexture).x);
@@ -114,7 +169,7 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean): string {
     var environmentRadiance = textureSampleLevel(nmeIblTexture, nmeIblSampler, R, clamp(specLod, 0.0, maxLod)).rgb * sceneU.environmentIntensity;
     environmentRadiance = mix(environmentRadiance, environmentIrradiance, alphaG);
     let finalIrradiance = environmentIrradiance * surfaceAlbedo * ao_c;
-    let finalRadianceScaled = environmentRadiance * specEnvReflectance * energyConservation;
+    let finalRadianceScaled = environmentRadiance * colorSpecEnvReflectance * energyConservation;
     let finalSpecularScaledDirect = specAcc * energyConservation;
     r.diffuseInd = finalIrradiance;
     r.specularInd = finalRadianceScaled;
@@ -129,6 +184,16 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean): string {
     let t = 1.0 - cosTheta;
     let t2 = t * t;
     return f0 + (1.0 - f0) * (t2 * t2 * t);
+}
+`
+        : ``;
+
+    const charlieFn = useSheen
+        ? `fn nme_pbr_charlieD(NdotH: f32, alphaG: f32) -> f32 {
+    let invR = 1.0 / max(alphaG, 0.0005);
+    let cos2h = NdotH * NdotH;
+    let sin2h = max(1.0 - cos2h, 0.0078125);
+    return (2.0 + invR) * pow(sin2h, invR * 0.5) / (2.0 * NME_PBR_PI);
 }
 `
         : ``;
@@ -158,16 +223,18 @@ fn nme_pbr_fresSchlick(c: f32, F0: vec3<f32>, F90: vec3<f32>) -> vec3<f32> {
     let t2 = t * t;
     return F0 + (F90 - F0) * (t2 * t2 * t);
 }
-${ccSchlickFn}fn nme_pbr_mr_compute(
+${ccSchlickFn}${charlieFn}fn nme_pbr_mr_compute(
     worldPos: vec3<f32>, worldNormal: vec3<f32>, cameraPos: vec3<f32>,
     baseColor: vec3<f32>, metallic: f32, roughness: f32, ao: f32,
     ccIntensityIn: f32, ccRoughnessIn: f32, ccIor: f32,
+    shIntensityIn: f32, shColorIn: vec3<f32>, shRoughnessIn: f32,
     shadowFactors: vec4<f32>
 ) -> NmePbrMrResult {
     var r: NmePbrMrResult;
     let N = normalize(worldNormal);
     let V = normalize(cameraPos - worldPos);
-    let NdotV = max(abs(dot(N, V)), 0.0001);
+    let NdotVUnclamped = dot(N, V);
+    let NdotV = abs(NdotVUnclamped) + 0.0001;
     let metallic_c = clamp(metallic, 0.0, 1.0);
     let rough_c = clamp(roughness, 0.04, 1.0);
     let alphaG = max(rough_c * rough_c, 0.0005);
@@ -176,7 +243,10 @@ ${ccSchlickFn}fn nme_pbr_mr_compute(
     let colorF0 = mix(dielectricF0, baseColor, metallic_c);
     let colorF90 = vec3<f32>(1.0);
     let ao_c = clamp(ao, 0.0, 1.0);
+    // Direct-light path uses its own roughness clamp (BJS pbrDirectLightingFunctions.fx l.103).
+    let directAlphaG = max(rough_c * rough_c, 0.0005);
     ${ccDecls}
+    ${shDecls}
     var diffuseAcc = vec3<f32>(0.0);
     var specAcc = vec3<f32>(0.0);
     var aggShadow: f32 = 0.0;
@@ -187,17 +257,13 @@ ${ccSchlickFn}fn nme_pbr_mr_compute(
         let t = u32(entry.vLightData.w);
         let sh = shadowFactors[i];
         if (t == 3u) {
+            // Hemispheric: ground/sky mix via half-lambert. BJS PBR-MR adds
+            // ONLY diffuse contribution from hemi lights (no GGX specular term);
+            // matching that for parity.
             let Ldir = normalize(entry.vLightData.xyz);
             let nl = 0.5 + 0.5 * dot(N, Ldir);
             let groundSky = mix(entry.vLightDirection.xyz, entry.vLightDiffuse.rgb, nl);
-            diffuseAcc = diffuseAcc + groundSky * surfaceAlbedo * sh;
-            let H = normalize(V + Ldir);
-            let NdotH = clamp(dot(N, H), 0.0000001, 1.0);
-            let VdotH = saturate(dot(V, H));
-            let D = nme_pbr_distGGX(NdotH, alphaG);
-            let G = nme_pbr_geomGGX(max(nl, 0.0001), NdotV, alphaG);
-            let cF = nme_pbr_fresSchlick(VdotH, colorF0, colorF90);
-            specAcc = specAcc + cF * D * G * max(nl, 0.0) * entry.vLightSpecular.rgb * sh;${ccHemiBlock(useClearcoat)}
+            diffuseAcc = diffuseAcc + groundSky * surfaceAlbedo * sh;${ccHemiBlock(useClearcoat)}${shHemiBlock(useSheen)}
             aggShadow = aggShadow + sh;
             nLights = nLights + 1.0;
             continue;
@@ -209,17 +275,26 @@ ${ccSchlickFn}fn nme_pbr_mr_compute(
             L = normalize(-entry.vLightData.xyz);
         } else {
             let toL = entry.vLightData.xyz - worldPos;
-            let dist = length(toL);
+            let d2 = dot(toL, toL);
+            let dist = sqrt(d2);
             L = toL / max(dist, 0.0001);
             let range = entry.vLightDiffuse.a;
-            atten = max(0.0, 1.0 - dist / range);
             if (t == 2u) {
+                // Spot: linear range falloff + cone falloff (matches Lite multi-light).
+                atten = max(0.0, 1.0 - dist / range);
                 let c = max(0.0, dot(entry.vLightDirection.xyz, -L));
                 if (c >= entry.vLightDirection.w) {
                     atten = atten * max(0.0, pow(c, entry.vLightSpecular.a));
                 } else {
                     atten = 0.0;
                 }
+            } else {
+                // Point: glTF-compatible inverse-square with smooth range cutoff
+                // (matches BJS lightFalloff=Physical and Lite multilight-wgsl).
+                let invR2 = 1.0 / range / range;
+                let sf = d2 * invR2;
+                let rangeAtten = clamp(1.0 - sf * sf, 0.0, 1.0);
+                atten = (rangeAtten * rangeAtten) / max(d2, 0.0001);
             }
         }
         let NdotL = max(dot(N, L), 0.0);
@@ -228,11 +303,11 @@ ${ccSchlickFn}fn nme_pbr_mr_compute(
             let H = normalize(V + L);
             let NdotH = clamp(dot(N, H), 0.0000001, 1.0);
             let VdotH = saturate(dot(V, H));
-            let D = nme_pbr_distGGX(NdotH, alphaG);
-            let G = nme_pbr_geomGGX(NdotL, NdotV, alphaG);
+            let D = nme_pbr_distGGX(NdotH, directAlphaG);
+            let G = nme_pbr_geomGGX(NdotL, NdotV, directAlphaG);
             let cF = nme_pbr_fresSchlick(VdotH, colorF0, colorF90);
             specAcc = specAcc + cF * D * G * NdotL * color * atten * sh;
-        }${ccDirectBlock(useClearcoat)}
+        }${ccDirectBlock(useClearcoat)}${shDirectBlock(useSheen)}
         aggShadow = aggShadow + sh;
         nLights = nLights + 1.0;
     }
@@ -257,14 +332,12 @@ export const emitter: BlockEmitter = {
     className: "PBRMetallicRoughnessBlock",
     stage: "fragment",
     emit(block, outputName, stage, state, ctx) {
-        // Resolve reflection FIRST so the helper variant is decided before injection.
         const reflectionConnected = !!block.inputs.get("reflection")?.source;
         if (reflectionConnected) {
             state.usesEnv = true;
             ctx.resolve(block, "reflection", stage, state);
         }
-        // Detect clearcoat connectivity and (if connected) walk into the
-        // ClearCoatBlock to gather its parameter inputs.
+        // Clearcoat: walk into ClearCoatBlock to gather params.
         const ccInputRef = block.inputs.get("clearcoat")?.source;
         let ccIntensityExpr = "0.0";
         let ccRoughnessExpr = "0.0";
@@ -281,8 +354,29 @@ export const emitter: BlockEmitter = {
                 ccIorExpr = resolveOptional(ccBlock, "indexOfRefraction", "1.5", "f32", stage, state, ctx);
             }
         }
-        const helperKey = `${HELPER_KEY_PREFIX}_${reflectionConnected ? "env" : "noenv"}_${useClearcoat ? "cc" : "nocc"}`;
-        state.fragment.helpers.set(helperKey, HELPER_WGSL(reflectionConnected, useClearcoat));
+        // Sheen: walk into SheenBlock to gather params.
+        const shInputRef = block.inputs.get("sheen")?.source;
+        let shIntensityExpr = "0.0";
+        let shColorExpr = "vec3<f32>(1.0)";
+        let shRoughnessExpr = "0.0";
+        let useSheen = false;
+        if (shInputRef) {
+            const shBlock = ctx.graph.blocks.get(shInputRef.blockId);
+            if (shBlock && shBlock.className === "SheenBlock") {
+                useSheen = true;
+                state.usesSheen = true;
+                ctx.resolveOutput(shBlock, shInputRef.outputName, stage, state);
+                shIntensityExpr = resolveOptional(shBlock, "intensity", "1.0", "f32", stage, state, ctx);
+                shColorExpr = resolveOptional(shBlock, "color", "vec3<f32>(1.0)", "vec3f", stage, state, ctx);
+                // BJS sheenBlock default roughness falls back to base roughness when unconnected.
+                const shrIn = shBlock.inputs.get("roughness");
+                shRoughnessExpr = shrIn?.source
+                    ? resolveOptional(shBlock, "roughness", "0.0", "f32", stage, state, ctx)
+                    : `clamp(${resolveOptional(block, "roughness", "0.5", "f32", stage, state, ctx)}, 0.0, 1.0)`;
+            }
+        }
+        const helperKey = `${HELPER_KEY_PREFIX}_${reflectionConnected ? "env" : "noenv"}_${useClearcoat ? "cc" : "nocc"}_${useSheen ? "sh" : "nosh"}`;
+        state.fragment.helpers.set(helperKey, HELPER_WGSL(reflectionConnected, useClearcoat, useSheen));
         state.usesLightsUbo = true;
 
         const memoKey = `_pbrmr_${block.id}_call`;
@@ -304,7 +398,7 @@ export const emitter: BlockEmitter = {
             const sf = state.shadowLights.length > 0 ? `nme_computeShadowFactors(in)` : `vec4<f32>(1.0)`;
             callVar = `_pbrR${ctx.temp(state, "pbr")}`;
             state.fragment.body.push(
-                `let ${callVar} = nme_pbr_mr_compute(${wp}, ${wn}, ${cp}, ${bc}, ${me}, ${ro}, ${ao}, ${ccIntensityExpr}, ${ccRoughnessExpr}, ${ccIorExpr}, ${sf});`
+                `let ${callVar} = nme_pbr_mr_compute(${wp}, ${wn}, ${cp}, ${bc}, ${me}, ${ro}, ${ao}, ${ccIntensityExpr}, ${ccRoughnessExpr}, ${ccIorExpr}, ${shIntensityExpr}, ${shColorExpr}, ${shRoughnessExpr}, ${sf});`
             );
             state.fragment.memo.set(memoKey, { expr: callVar, type: "vec4f" });
         }

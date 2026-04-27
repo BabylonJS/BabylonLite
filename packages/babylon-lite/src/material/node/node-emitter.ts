@@ -40,6 +40,7 @@ export function createBuildState(): NodeBuildState {
         usesMorphTargets: false,
         usesEnv: false,
         usesClearcoat: false,
+        usesSheen: false,
         shadowLights: [],
         hasSkeleton: false,
         hasInstances: false,

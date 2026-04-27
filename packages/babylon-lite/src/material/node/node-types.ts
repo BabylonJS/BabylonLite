@@ -127,6 +127,9 @@ export interface NodeBuildState {
      *  the connected ClearCoatBlock and emit the clear-coat layer code path
      *  (extra GGX layer + Fresnel modulation of the base specular). */
     usesClearcoat: boolean;
+    /** Set by SheenBlock; tells PBRMetallicRoughnessBlock to add the Charlie
+     *  NDF + Ashikhmin visibility sheen layer (cloth/velvet look). */
+    usesSheen: boolean;
     /** When false (default), BonesBlock emits a pass-through of its `world`
      *  input — no skeleton binding is required. Set to true only when every
      *  mesh using this material has a skeleton. */

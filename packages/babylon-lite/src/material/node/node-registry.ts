@@ -70,6 +70,7 @@ function getTable(): Map<string, BlockLoader> {
     t.set("PBRMetallicRoughnessBlock", () => import("./blocks/pbr-metallic-roughness-block.js"));
     t.set("ReflectionBlock", () => import("./blocks/reflection-block.js"));
     t.set("ClearCoatBlock", () => import("./blocks/clearcoat-block.js"));
+    t.set("SheenBlock", () => import("./blocks/sheen-block.js"));
     // Each entry MUST use a literal string import so Rollup splits per-block chunks.
     _table = t;
     return t;
