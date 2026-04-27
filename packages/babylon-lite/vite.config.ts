@@ -33,6 +33,7 @@ function emitPackageJson(outDir: string): Plugin {
 
 export default defineConfig(({ mode }) => {
   const outDir = mode === 'prod' ? 'dist/prod' : 'dist';
+  const isWatch = process.argv.includes('--watch');
   return {
     build: {
       lib: {
@@ -49,7 +50,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       dts({
-        rollupTypes: true,
+        rollupTypes: !isWatch,
         tsconfigPath: resolve(__dirname, 'tsconfig.json'),
         outDir,
       }),
