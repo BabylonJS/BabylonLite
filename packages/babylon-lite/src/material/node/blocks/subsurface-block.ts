@@ -1,8 +1,12 @@
-/** SubSurfaceBlock — subsurface translucency / refraction marker for PBR-MR.
+/** SubSurfaceBlock — passthrough marker.
  *
- *  Marker block (scene 71 — intensity-0 validation). PBR-MR ignores the
- *  block at intensity=0 (no translucency, no refraction). Real subsurface
- *  math will land alongside scene 72's full D8AK3Z snippet.
+ *  All actual subsurface math (translucency back-scatter, refraction sampling,
+ *  Beer-Lambert tint absorption) is implemented inside PBRMetallicRoughnessBlock,
+ *  which walks into the connected SubSurfaceBlock to read its inputs:
+ *    - thickness, tintColor, translucencyIntensity, translucencyDiffusionDist
+ *    - refraction (-> RefractionBlock for intensity / tintAtDistance)
+ *  This emitter only exists to register the class and report `usesSubsurface`
+ *  so the build pipeline can include any related infrastructure.
  */
 
 import type { BlockEmitter } from "../node-types.js";

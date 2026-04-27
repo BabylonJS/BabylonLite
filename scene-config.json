@@ -659,8 +659,6 @@
         "slug": "scene72-nme-pbr-full",
         "name": "Scene 72 — NME PBR Full (D8AK3Z)",
         "maxMad": 0.02,
-        "skipParity": true,
-        "note": "Snippet now loads its embedded textures (data URIs) on Lite side, but full visual parity requires real anisotropy + subsurface + perturbed-normal/bump implementations in the NME PBR-MR helper (currently marker-only). Lands MAD ~5.6; <0.02 needs a deep follow-up.",
         "description": "Full D8AK3Z#160 setup: 4 lights (hemi + point + spot + dir + PCF shadow) on sphere + ground, NME = EPY8BV/6 (PBR-MR + reflection + clearcoat + sheen + anisotropy + subsurface).",
         "tags": ["pbr", "nme", "procedural", "env", "shadows", "clearcoat", "sheen", "anisotropy", "subsurface"]
     }

@@ -1,5 +1,7 @@
-/** RefractionBlock — refraction layer marker for SubSurface.
- *  Marker only — full refraction math is future work.
+/** RefractionBlock — passthrough marker.
+ *  Refraction math (refract(V,N,eta), env LOD sampling, Beer-Lambert tint)
+ *  is implemented inside PBRMetallicRoughnessBlock, which walks down through
+ *  SubSurfaceBlock.refraction to read this block's intensity / tintAtDistance.
  */
 
 import type { BlockEmitter } from "../node-types.js";

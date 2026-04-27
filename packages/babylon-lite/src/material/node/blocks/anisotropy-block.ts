@@ -1,11 +1,9 @@
-/** AnisotropyBlock — anisotropic specular layer marker for PBR-MR.
+/** AnisotropyBlock — passthrough marker.
  *
- *  Marker block (scene 70 — intensity-0 validation). PBR-MR walks into the
- *  connected AnisotropyBlock to read `intensity`; at intensity=0 the
- *  anisotropic GGX D and V terms reduce to standard GGX, and the bent
- *  normal reduces to the regular normal — so the marker has no rendering
- *  effect when intensity=0. Real anisotropic math will land alongside
- *  scene 72's full D8AK3Z snippet when non-zero intensities are wired.
+ *  All anisotropic GGX math (alphaT/alphaB, anisotropic Burley D, anisotropic
+ *  Smith visibility, bent-normal env reflection) is implemented inside
+ *  PBRMetallicRoughnessBlock, which walks into the connected AnisotropyBlock
+ *  to read its inputs (intensity, direction, uv).
  */
 
 import type { BlockEmitter } from "../node-types.js";

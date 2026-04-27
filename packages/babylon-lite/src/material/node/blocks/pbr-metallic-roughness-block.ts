@@ -90,7 +90,58 @@ function shHemiBlock(useSheen: boolean): string {
         }`;
 }
 
-function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean): string {
+/** Subsurface IBL block — runs inside the env IBL section. Computes refraction
+ *  (refract V through N, sample env at refractionLOD, apply Coca-Lambert tint
+ *  absorption + reflectance complement) and translucency (back-scattered SH
+ *  irradiance with Burley transmittance). Contributes:
+ *    - finalRefraction (vec3, added to lighting)
+ *    - refractionOpacity (f32, scales finalIrradiance: 1 - refrIntensity)
+ *    - mutates finalIrradiance to include refractionIrradiance + (1-translucency) scale.
+ *
+ *  Always declares finalRefraction/refractionOpacity even when sub-features are
+ *  off so the downstream composition can reference them unconditionally. */
+function ssBlock(useSubsurface: boolean, useRefraction: boolean, useAnisotropy: boolean): string {
+    if (!useSubsurface && !useRefraction) {
+        return `let finalRefraction = vec3<f32>(0.0);
+    let refractionOpacity = 1.0;`;
+    }
+    const refrPart = useRefraction
+        ? `// Refraction: refract V through N at IOR, sample env at refraction LOD.
+    let refrIntensity = clamp(refrIntensityIn, 0.0, 1.0);
+    let invIor = 1.0 / max(refrIor, 1.0001);
+    let refrV_raw = refract(-V, ${useAnisotropy ? "aniN" : "N"}, invIor);
+    // Apply env rotation to refraction direction, same as R.
+    let refrV = vec3<f32>(refrV_raw.x * cosA + refrV_raw.z * sinA, refrV_raw.y, -refrV_raw.x * sinA + refrV_raw.z * cosA);
+    // BJS uses log2(cubemapDim * alphaG) for refraction LOD too (getLodFromAlphaG).
+    let refrLod = log2(cubemapDim * alphaG) * sceneU.lodGenerationScale;
+    let envRefr = textureSampleLevel(nmeIblTexture, nmeIblSampler, refrV, clamp(refrLod, 0.0, maxLod)).rgb * sceneU.environmentIntensity;
+    // Beer-Lambert tint absorption: volumeAlbedo = -log(tint)/distance, then exp(-volume * thickness).
+    let volumeAlbedo = nme_pbr_colorAtDistance(ssTintColor, refrTintAtDistance);
+    let refrTransmittance = vec3<f32>(refrIntensity) * nme_pbr_cocaLambert(volumeAlbedo, ssThickness);
+    let finalRefractionRaw = envRefr * refrTransmittance * (vec3<f32>(1.0) - colorSpecEnvReflectance);
+    let refractionOpacity = 1.0 - refrIntensity;`
+        : `let finalRefractionRaw = vec3<f32>(0.0);
+    let refractionOpacity = 1.0;`;
+    const ssPart = useSubsurface
+        ? `// Translucency: back-scattered SH irradiance with Burley transmittance.
+    let translucencyIntensity = clamp(ssTranslucencyIntensityIn, 0.0, 1.0);
+    let nN_env = -N_env;
+    let backIrradiance = (sceneU.vSphericalL00.xyz
+        + sceneU.vSphericalL1_1.xyz * nN_env.y + sceneU.vSphericalL10.xyz * nN_env.z + sceneU.vSphericalL11.xyz * nN_env.x
+        + sceneU.vSphericalL2_2.xyz * (nN_env.y * nN_env.x) + sceneU.vSphericalL2_1.xyz * (nN_env.y * nN_env.z)
+        + sceneU.vSphericalL20.xyz * (3.0 * nN_env.z * nN_env.z - 1.0) + sceneU.vSphericalL21.xyz * (nN_env.z * nN_env.x)
+        + sceneU.vSphericalL22.xyz * (nN_env.x * nN_env.x - nN_env.y * nN_env.y)) * sceneU.environmentIntensity;
+    let transmittance = nme_pbr_transmittanceBurley(ssTintColor, ssDiffusionDist, max(ssThickness, 0.0001)) * translucencyIntensity;
+    let refractionIrradiance = backIrradiance * transmittance;
+    // BJS pbrBlockFinalLitComponents.fx: finalIrradiance *= (1 - translucencyIntensity); finalIrradiance += refractionIrradiance.
+    finalIrradiance = finalIrradiance * (1.0 - translucencyIntensity) + refractionIrradiance * surfaceAlbedo;`
+        : ``;
+    return `${refrPart}
+    ${ssPart}
+    let finalRefraction = finalRefractionRaw;`;
+}
+
+function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean, useRefraction: boolean, useSubsurface: boolean, useAnisotropy: boolean): string {
     const ccDecls = useClearcoat
         ? `let ccIntensity = clamp(ccIntensityIn, 0.0, 1.0);
     let ccRough = clamp(ccRoughnessIn, 0.0, 1.0);
@@ -123,6 +174,7 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean):
             : `let shFinalIbl = vec3<f32>(0.0);`;
 
     const shIblScale = useClearcoat ? " * ccConsIBL" : "";
+    const refrCcScale = useClearcoat ? " * ccConsIBL" : "";
     const ccIblFinal = useClearcoat
         ? `let ccFresnelIBL = nme_pbr_ccSchlick(ccF0, NdotV);
     let ccConsIBL = 1.0 - ccFresnelIBL * ccIntensity;
@@ -141,9 +193,10 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean):
         + ccDirectSpecAcc
         + ccFinalRadiance
         + shDirectAcc
-        + shFinalIbl${shIblScale};`
+        + shFinalIbl${shIblScale}
+        + finalRefraction${refrCcScale};`
         : `${shIblTerm}
-    r.lighting = finalIrradiance + finalRadianceScaled + finalSpecularScaledDirect + diffuseAcc + shDirectAcc + shFinalIbl;`;
+    r.lighting = finalIrradiance + finalRadianceScaled + finalSpecularScaledDirect + diffuseAcc + shDirectAcc + shFinalIbl + finalRefraction;`;
 
     const ccDirectFinal = useClearcoat
         ? `r.lighting = (diffuseAcc + specAcc) * ccDirectAtten + ccDirectSpecAcc + shDirectAcc;`
@@ -154,7 +207,9 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean):
     // ── Split-sum IBL ──
     let envRot = sceneU.envRotationY;
     let cosA = cos(envRot); let sinA = sin(envRot);
-    let R_raw = reflect(-V, N);
+    // Use anisotropic bent normal for env specular reflection when anisotropy is on (BJS pbrBlockReflection.fx).
+    let N_specSrc = ${useAnisotropy ? "aniN" : "N"};
+    let R_raw = reflect(-V, N_specSrc);
     let R = vec3<f32>(R_raw.x * cosA + R_raw.z * sinA, R_raw.y, -R_raw.x * sinA + R_raw.z * cosA);
     let N_env = vec3<f32>(N.x * cosA + N.z * sinA, N.y, -N.x * sinA + N.z * cosA);
     let environmentIrradiance = (sceneU.vSphericalL00.xyz
@@ -173,9 +228,12 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean):
     let cubemapDim = f32(textureDimensions(nmeIblTexture).x);
     let specLod = log2(cubemapDim * alphaG) * sceneU.lodGenerationScale;
     var environmentRadiance = textureSampleLevel(nmeIblTexture, nmeIblSampler, R, clamp(specLod, 0.0, maxLod)).rgb * sceneU.environmentIntensity;
-    let finalIrradiance = environmentIrradiance * surfaceAlbedo * ao_c;
+    var finalIrradiance = environmentIrradiance * surfaceAlbedo * ao_c;
     let finalRadianceScaled = environmentRadiance * colorSpecEnvReflectance * energyConservation;
     let finalSpecularScaledDirect = specAcc * energyConservation;
+    ${ssBlock(useSubsurface, useRefraction, useAnisotropy)}
+    // BJS finalIrradiance *= refractionOpacity (pbrBlockFinalLitComponents).
+    finalIrradiance = finalIrradiance * refractionOpacity;
     r.diffuseInd = finalIrradiance;
     r.specularInd = finalRadianceScaled;
     ${ccIblFinal}`
@@ -203,6 +261,88 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean):
 `
         : ``;
 
+    // Real anisotropic GGX (BJS pbrHelperFunctions.fx ANISOTROPIC, default branch).
+    // alphaT = max(mix(alphaG, 1.0, anisotropy²), MINIMUMVARIANCE)
+    // alphaB = max(alphaG, MINIMUMVARIANCE)
+    // Burley anisotropic D + GGX-correlated anisotropic visibility.
+    const anisoFns = useAnisotropy
+        ? `fn nme_pbr_anisoRoughness(alphaG: f32, anisotropy: f32) -> vec2<f32> {
+    let alphaT = max(mix(alphaG, 1.0, anisotropy * anisotropy), 0.0005);
+    let alphaB = max(alphaG, 0.0005);
+    return vec2<f32>(alphaT, alphaB);
+}
+fn nme_pbr_anisoBentNormal(B_in: vec3<f32>, N: vec3<f32>, V: vec3<f32>, anisotropy: f32, roughness: f32) -> vec3<f32> {
+    var bent = cross(B_in, V);
+    bent = normalize(cross(bent, B_in));
+    let aMix = (1.0 - anisotropy * (1.0 - roughness));
+    let a = aMix * aMix * aMix * aMix;
+    return normalize(mix(bent, N, a));
+}
+fn nme_pbr_burleyAnisoD(NdotH: f32, TdotH: f32, BdotH: f32, alphaTB: vec2<f32>) -> f32 {
+    let a2 = alphaTB.x * alphaTB.y;
+    let v = vec3<f32>(alphaTB.y * TdotH, alphaTB.x * BdotH, a2 * NdotH);
+    let v2 = dot(v, v);
+    let w2 = a2 / max(v2, 0.0000001);
+    return a2 * w2 * w2 * (1.0 / NME_PBR_PI);
+}
+fn nme_pbr_visAnisoSmith(NdotL: f32, NdotV: f32, TdotV: f32, BdotV: f32, TdotL: f32, BdotL: f32, alphaTB: vec2<f32>) -> f32 {
+    let lambdaV = NdotL * length(vec3<f32>(alphaTB.x * TdotV, alphaTB.y * BdotV, NdotV));
+    let lambdaL = NdotV * length(vec3<f32>(alphaTB.x * TdotL, alphaTB.y * BdotL, NdotL));
+    return 0.5 / max(lambdaV + lambdaL, 0.0000001);
+}
+`
+        : ``;
+
+    // Burley translucency transmittance for SubSurface (BJS pbrBRDFFunctions.fx).
+    // Coca-Lambert volumetric absorption for refraction tint.
+    const ssFns =
+        useSubsurface || useRefraction
+            ? `fn nme_pbr_transmittanceBurley(tintColor: vec3<f32>, diffusionDist: vec3<f32>, thickness: f32) -> vec3<f32> {
+    let S = vec3<f32>(1.0) / max(diffusionDist, vec3<f32>(0.0001));
+    let temp = exp(-0.333333333 * thickness * S);
+    return tintColor * 0.25 * (temp * temp * temp + 3.0 * temp);
+}
+fn nme_pbr_cocaLambert(volumeAlbedo: vec3<f32>, distance: f32) -> vec3<f32> {
+    return exp(-volumeAlbedo * distance);
+}
+fn nme_pbr_colorAtDistance(color: vec3<f32>, distance: f32) -> vec3<f32> {
+    return -log(max(color, vec3<f32>(0.0001))) / max(distance, 0.0001);
+}
+`
+            : ``;
+
+    // anisoSetup runs at the top of nme_pbr_mr_compute, declaring TBN derived from
+    // screen-space derivatives of worldPos+UV (BJS cotangent_frame), then anisotropic
+    // tangent/bitangent rotation by anisoDirection. Always declares anisoT/anisoB/aniN/
+    // aniAlphaTB so the per-light/IBL branches can use them whether or not they're active.
+    const anisoSetup = useAnisotropy
+        ? `// Build TBN from screen-space derivatives (matches BJS cotangent_frame()).
+    let _adp1 = dpdx(worldPos);
+    let _adp2 = dpdy(worldPos);
+    let _aduv1 = dpdx(anisoUv);
+    let _aduv2 = dpdy(anisoUv);
+    let _adp2perp = cross(_adp2, N);
+    let _adp1perp = cross(N, _adp2);
+    let _atan = _adp2perp * _aduv1.x + _adp1perp * _aduv2.x;
+    let _abit = _adp2perp * _aduv1.y + _adp1perp * _aduv2.y;
+    let _adet = max(dot(_atan, _atan), dot(_abit, _abit));
+    let _ainvmax = select(0.0, inverseSqrt(_adet), _adet > 0.0);
+    let _aTBN0 = _atan * _ainvmax;
+    let _aTBN1 = _abit * _ainvmax;
+    // Anisotropy direction: 2D rotation in tangent plane.
+    let anisoIntensity = clamp(anisoIntensityIn, -1.0, 1.0);
+    let anisoDirN = normalize(vec3<f32>(anisoDirection, 0.0));
+    let anisoT_raw = _aTBN0 * anisoDirN.x + _aTBN1 * anisoDirN.y;
+    let anisoT = normalize(anisoT_raw);
+    let anisoB = normalize(cross(N, anisoT));
+    let aniAlphaTB = nme_pbr_anisoRoughness(alphaG, anisoIntensity);
+    // Bent normal for env reflection (BJS getAnisotropicBentNormals).
+    let aniN = nme_pbr_anisoBentNormal(anisoB, N, V, anisoIntensity, rough_c);`
+        : `let anisoT = vec3<f32>(1.0, 0.0, 0.0);
+    let anisoB = vec3<f32>(0.0, 0.0, 1.0);
+    let aniAlphaTB = vec2<f32>(alphaG, alphaG);
+    let aniN = N;`;
+
     return `struct NmePbrMrResult {
     lighting: vec3<f32>,
     diffuseDir: vec3<f32>,
@@ -228,11 +368,15 @@ fn nme_pbr_fresSchlick(c: f32, F0: vec3<f32>, F90: vec3<f32>) -> vec3<f32> {
     let t2 = t * t;
     return F0 + (F90 - F0) * (t2 * t2 * t);
 }
-${ccSchlickFn}${charlieFn}fn nme_pbr_mr_compute(
+${ccSchlickFn}${charlieFn}${anisoFns}${ssFns}fn nme_pbr_mr_compute(
     worldPos: vec3<f32>, worldNormal: vec3<f32>, cameraPos: vec3<f32>,
     baseColor: vec3<f32>, metallic: f32, roughness: f32, ao: f32,
     ccIntensityIn: f32, ccRoughnessIn: f32, ccIor: f32,
     shIntensityIn: f32, shColorIn: vec3<f32>, shRoughnessIn: f32,
+    refrIntensityIn: f32, refrIor: f32, refrTintAtDistance: f32,
+    ssTintColor: vec3<f32>, ssThickness: f32,
+    ssTranslucencyIntensityIn: f32, ssDiffusionDist: vec3<f32>,
+    anisoIntensityIn: f32, anisoDirection: vec2<f32>, anisoUv: vec2<f32>,
     shadowFactors: vec4<f32>
 ) -> NmePbrMrResult {
     var r: NmePbrMrResult;
@@ -250,6 +394,7 @@ ${ccSchlickFn}${charlieFn}fn nme_pbr_mr_compute(
     let ao_c = clamp(ao, 0.0, 1.0);
     // Direct-light path uses its own roughness clamp (BJS pbrDirectLightingFunctions.fx l.103).
     let directAlphaG = rough_c * rough_c + 0.0005;
+    ${anisoSetup}
     ${ccDecls}
     ${shDecls}
     var diffuseAcc = vec3<f32>(0.0);
@@ -310,10 +455,22 @@ ${ccSchlickFn}${charlieFn}fn nme_pbr_mr_compute(
             let H = normalize(V + L);
             let NdotH = clamp(dot(N, H), 0.0000001, 1.0);
             let VdotH = saturate(dot(V, H));
-            let D = nme_pbr_distGGX(NdotH, directAlphaG);
-            let G = nme_pbr_geomGGX(NdotL, NdotV, directAlphaG);
             let cF = nme_pbr_fresSchlick(VdotH, colorF0, colorF90);
-            specAcc = specAcc + cF * D * G * NdotL * color * atten * sh;
+            ${
+                useAnisotropy
+                    ? `let TdotH = dot(anisoT, H);
+            let BdotH = dot(anisoB, H);
+            let TdotV = dot(anisoT, V);
+            let BdotV = dot(anisoB, V);
+            let TdotL = dot(anisoT, L);
+            let BdotL = dot(anisoB, L);
+            let D = nme_pbr_burleyAnisoD(NdotH, TdotH, BdotH, aniAlphaTB);
+            let Vis = nme_pbr_visAnisoSmith(NdotL, NdotV, TdotV, BdotV, TdotL, BdotL, aniAlphaTB);
+            specAcc = specAcc + cF * D * Vis * NdotL * color * atten * sh;`
+                    : `let D = nme_pbr_distGGX(NdotH, directAlphaG);
+            let G = nme_pbr_geomGGX(NdotL, NdotV, directAlphaG);
+            specAcc = specAcc + cF * D * G * NdotL * color * atten * sh;`
+            }
         }${ccDirectBlock(useClearcoat)}${shDirectBlock(useSheen)}
         aggShadow = aggShadow + sh;
         nLights = nLights + 1.0;
@@ -389,8 +546,77 @@ export const emitter: BlockEmitter = {
                     : `clamp(${resolveOptional(block, "roughness", "0.5", "f32", stage, state, ctx)}, 0.0, 1.0)`;
             }
         }
-        const helperKey = `${HELPER_KEY_PREFIX}_${reflectionConnected ? "env" : "noenv"}_${useClearcoat ? "cc" : "nocc"}_${useSheen ? "sh" : "nosh"}`;
-        state.fragment.helpers.set(helperKey, HELPER_WGSL(reflectionConnected, useClearcoat, useSheen));
+        // SubSurface + Refraction: walk into SubSurfaceBlock to gather params,
+        // then optionally walk into a connected RefractionBlock for refraction
+        // intensity / tint-at-distance. PBR-MR's own indexOfRefraction feeds
+        // the refraction IOR by default (BJS pbrMetallicRoughnessBlock l.1035).
+        const ssInputRef = block.inputs.get("subsurface")?.source;
+        let useSubsurface = false;
+        let useRefraction = false;
+        let ssTintColorExpr = "vec3<f32>(1.0)";
+        let ssThicknessExpr = "0.0";
+        let ssTranslucencyIntensityExpr = "0.0";
+        let ssDiffusionDistExpr = "vec3<f32>(1.0)";
+        let refrIntensityExpr = "0.0";
+        let refrIorExpr = resolveOptional(block, "indexOfRefraction", "1.5", "f32", stage, state, ctx);
+        let refrTintAtDistanceExpr = "1.0";
+        if (ssInputRef) {
+            const ssBlk = ctx.graph.blocks.get(ssInputRef.blockId);
+            if (ssBlk && ssBlk.className === "SubSurfaceBlock") {
+                useSubsurface = true;
+                state.usesSubsurface = true;
+                ctx.resolveOutput(ssBlk, ssInputRef.outputName, stage, state);
+                ssTintColorExpr = resolveOptional(ssBlk, "tintColor", "vec3<f32>(1.0)", "vec3f", stage, state, ctx);
+                ssThicknessExpr = resolveOptional(ssBlk, "thickness", "0.0", "f32", stage, state, ctx);
+                ssTranslucencyIntensityExpr = resolveOptional(ssBlk, "translucencyIntensity", "0.0", "f32", stage, state, ctx);
+                ssDiffusionDistExpr = resolveOptional(ssBlk, "translucencyDiffusionDist", "vec3<f32>(1.0)", "vec3f", stage, state, ctx);
+                const refrInputRef = ssBlk.inputs.get("refraction")?.source;
+                if (refrInputRef) {
+                    const refrBlk = ctx.graph.blocks.get(refrInputRef.blockId);
+                    if (refrBlk && refrBlk.className === "RefractionBlock") {
+                        useRefraction = true;
+                        ctx.resolveOutput(refrBlk, refrInputRef.outputName, stage, state);
+                        refrIntensityExpr = resolveOptional(refrBlk, "intensity", "1.0", "f32", stage, state, ctx);
+                        refrTintAtDistanceExpr = resolveOptional(refrBlk, "tintAtDistance", "1.0", "f32", stage, state, ctx);
+                        // RefractionBlock.volumeIndexOfRefraction overrides PBR-MR's IOR if connected.
+                        const volIor = refrBlk.inputs.get("volumeIndexOfRefraction");
+                        if (volIor?.source) {
+                            refrIorExpr = resolveOptional(refrBlk, "volumeIndexOfRefraction", "1.5", "f32", stage, state, ctx);
+                        }
+                    }
+                }
+            }
+        }
+        // Anisotropy: walk into AnisotropyBlock for intensity / direction / uv.
+        const aniInputRef = block.inputs.get("anisotropy")?.source;
+        let useAnisotropy = false;
+        let anisoIntensityExpr = "0.0";
+        let anisoDirectionExpr = "vec2<f32>(1.0, 0.0)";
+        let anisoUvExpr = "vec2<f32>(0.0)";
+        if (aniInputRef) {
+            const aniBlk = ctx.graph.blocks.get(aniInputRef.blockId);
+            if (aniBlk && aniBlk.className === "AnisotropyBlock") {
+                useAnisotropy = true;
+                state.usesAnisotropy = true;
+                ctx.resolveOutput(aniBlk, aniInputRef.outputName, stage, state);
+                anisoIntensityExpr = resolveOptional(aniBlk, "intensity", "0.0", "f32", stage, state, ctx);
+                anisoDirectionExpr = resolveOptional(aniBlk, "direction", "vec2<f32>(1.0, 0.0)", "vec3f", stage, state, ctx);
+                // direction is a vec2 input — resolveOptional with vec3f fallback won't cast right;
+                // re-resolve with proper handling.
+                const dirIn = aniBlk.inputs.get("direction");
+                if (dirIn?.source) {
+                    const e = ctx.resolve(aniBlk, "direction", stage, state);
+                    anisoDirectionExpr = e.type === "vec2f" ? e.expr : `(${e.expr}).xy`;
+                }
+                const uvIn = aniBlk.inputs.get("uv");
+                if (uvIn?.source) {
+                    const e = ctx.resolve(aniBlk, "uv", stage, state);
+                    anisoUvExpr = e.type === "vec2f" ? e.expr : `(${e.expr}).xy`;
+                }
+            }
+        }
+        const helperKey = `${HELPER_KEY_PREFIX}_${reflectionConnected ? "env" : "noenv"}_${useClearcoat ? "cc" : "nocc"}_${useSheen ? "sh" : "nosh"}_${useRefraction ? "refr" : "norefr"}_${useSubsurface ? "ss" : "noss"}_${useAnisotropy ? "ani" : "noani"}`;
+        state.fragment.helpers.set(helperKey, HELPER_WGSL(reflectionConnected, useClearcoat, useSheen, useRefraction, useSubsurface, useAnisotropy));
         state.usesLightsUbo = true;
 
         const memoKey = `_pbrmr_${block.id}_call`;
@@ -412,7 +638,7 @@ export const emitter: BlockEmitter = {
             const sf = state.shadowLights.length > 0 ? `nme_computeShadowFactors(in)` : `vec4<f32>(1.0)`;
             callVar = `_pbrR${ctx.temp(state, "pbr")}`;
             state.fragment.body.push(
-                `let ${callVar} = nme_pbr_mr_compute(${wp}, ${wn}, ${cp}, ${bc}, ${me}, ${ro}, ${ao}, ${ccIntensityExpr}, ${ccRoughnessExpr}, ${ccIorExpr}, ${shIntensityExpr}, ${shColorExpr}, ${shRoughnessExpr}, ${sf});`
+                `let ${callVar} = nme_pbr_mr_compute(${wp}, ${wn}, ${cp}, ${bc}, ${me}, ${ro}, ${ao}, ${ccIntensityExpr}, ${ccRoughnessExpr}, ${ccIorExpr}, ${shIntensityExpr}, ${shColorExpr}, ${shRoughnessExpr}, ${refrIntensityExpr}, ${refrIorExpr}, ${refrTintAtDistanceExpr}, ${ssTintColorExpr}, ${ssThicknessExpr}, ${ssTranslucencyIntensityExpr}, ${ssDiffusionDistExpr}, ${anisoIntensityExpr}, ${anisoDirectionExpr}, ${anisoUvExpr}, ${sf});`
             );
             state.fragment.memo.set(memoKey, { expr: callVar, type: "vec4f" });
         }

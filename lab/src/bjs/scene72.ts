@@ -43,6 +43,8 @@ import { fetchScene72Snippet } from "../shared/scene72.js";
     cam.minZ = 0.1;
     cam.maxZ = 1000;
 
+    cam.attachControl(canvas, true);
+
     const hemi = new HemisphericLight("hemi", new Vector3(0, 1, 0), scene);
     hemi.intensity = 1;
     const point = new PointLight("point", new Vector3(0, 5, -2), scene);
