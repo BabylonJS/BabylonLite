@@ -68,6 +68,8 @@ import { fetchScene72Snippet } from "../shared/scene72.js";
     const { json } = await fetchScene72Snippet();
     const nm = NodeMaterial.Parse(json, scene);
     nm.build(false);
+    (window as unknown as { __nm: unknown; __scene: unknown }).__nm = nm;
+    (window as unknown as { __nm: unknown; __scene: unknown }).__scene = scene;
     sphere.material = nm;
     ground.material = nm;
 

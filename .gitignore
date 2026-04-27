@@ -41,3 +41,6 @@ local.log
 _diag.mjs
 _lite72*.wgsl
 _epy.json
+_bjs72*.txt
+_bjs72*.fx
+_pix.mjs

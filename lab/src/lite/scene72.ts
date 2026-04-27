@@ -52,15 +52,19 @@ async function loadSnippetTextures(engine: Parameters<typeof loadTexture2D>[0], 
     ]);
     for (const b of blocks) {
         if (b.customType !== "BABYLON.TextureBlock" && b.customType !== "BABYLON.ImageSourceBlock") continue;
-        const tex = b.texture as { url?: string; name?: string; gammaSpace?: boolean } | undefined;
+        const tex = b.texture as { url?: string; name?: string; gammaSpace?: boolean; invertY?: boolean; uOffset?: number; vOffset?: number; uScale?: number; vScale?: number } | undefined;
         // BJS snippet stores embedded data URIs in texture.name (texture.url is "").
         const url = (tex?.url && tex.url.length > 0) ? tex.url : (tex?.name && tex.name.startsWith("data:") ? tex.name : undefined);
         if (!url) continue;
         const key = sanitize((b.name as string | undefined) || `tex${b.id}`);
         const blockName = b.name as string | undefined;
         const useSrgb = blockName ? srgbTextureNames.has(blockName) : false;
+        // Honor texture.invertY from the snippet JSON (defaults to true in BJS, but
+        // many embedded snippet textures have it explicitly set false — failing to
+        // honor this flips bump/albedo/etc. upside down vs BJS reference).
+        const invertY = tex?.invertY ?? true;
         try {
-            out[key] = await loadTexture2D(engine, url, { srgb: useSrgb });
+            out[key] = await loadTexture2D(engine, url, { srgb: useSrgb, invertY });
         } catch (e) {
             console.warn("scene72: failed to load", key, e);
         }

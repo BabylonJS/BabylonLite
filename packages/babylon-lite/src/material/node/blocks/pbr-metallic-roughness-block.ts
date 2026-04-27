@@ -112,10 +112,10 @@ function ssBlock(useSubsurface: boolean, useRefraction: boolean, useAnisotropy: 
     let refrV_raw = refract(-V, ${useAnisotropy ? "aniN" : "N"}, invIor);
     // Apply env rotation to refraction direction, same as R.
     let refrV = vec3<f32>(refrV_raw.x * cosA + refrV_raw.z * sinA, refrV_raw.y, -refrV_raw.x * sinA + refrV_raw.z * cosA);
-    // BJS pbrBlockSubSurface.fx: refrAlphaG = mix(alphaG, 0, clamp(ior*3-2, 0, 1)).
-    // At IOR ≈ 1 → blurred like base alphaG; at IOR ≥ 1.33 → SHARP refraction (LOD 0).
-    // Without this our refraction averages a huge env area and shows only sky color.
-    let refrAlphaG = mix(alphaG, 0.0, clamp(refrIor * 3.0 - 2.0, 0.0, 1.0));
+    // BJS pbrBlockSubSurface.fx: refrAlphaG = mix(alphaG, 0, clamp(ior*3-2, 0, 1))
+    // where 'ior' is vRefractionInfos.y == 1/refrIor (NOT refrIor itself).
+    // For refrIor=1.31 (typical glass) the mix factor ≈ 0.29 (slightly sharper than base).
+    let refrAlphaG = mix(alphaG, 0.0, clamp(invIor * 3.0 - 2.0, 0.0, 1.0));
     let refrLod = log2(cubemapDim * refrAlphaG) * sceneU.lodGenerationScale;
     let envRefr = textureSampleLevel(nmeIblTexture, nmeIblSampler, refrV, clamp(refrLod, 0.0, maxLod)).rgb * sceneU.environmentIntensity;
     // Beer-Lambert tint absorption: volumeAlbedo = -log(tint)/distance, then exp(-volume * thickness).
@@ -136,18 +136,28 @@ function ssBlock(useSubsurface: boolean, useRefraction: boolean, useAnisotropy: 
         + sceneU.vSphericalL22.xyz * (nN_env.x * nN_env.x - nN_env.y * nN_env.y)) * sceneU.environmentIntensity;
     let transmittance = nme_pbr_transmittanceBurley(ssTintColor, ssDiffusionDist, max(ssThickness, 0.0001)) * translucencyIntensity;
     let refractionIrradiance = backIrradiance * transmittance;
-    // BJS pbrBlockFinalLitComponents.fx (LEGACY path):
-    //   surfaceAlbedo already multiplied by refractionOpacity above.
+    // BJS pbrBlockFinalLitComponents.fx exact order (LEGACY path):
+    //   finalIrradiance *= refractionOpacity (line 2587, unconditional — additional darkening
+    //                       on top of LEGACY's surfaceAlbedo *= refractionOpacity).
     //   finalIrradiance *= (1 - translucencyIntensity)
     //   finalIrradiance += refractionIrradiance
+    finalIrradiance = finalIrradiance * refractionOpacity;
     finalIrradiance = finalIrradiance * (1.0 - translucencyIntensity) + refractionIrradiance;`
-        : ``;
+        : `finalIrradiance = finalIrradiance * refractionOpacity;`;
     return `${refrPart}
     ${ssPart}
     let finalRefraction = finalRefractionRaw;`;
 }
 
-function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean, useRefraction: boolean, useSubsurface: boolean, useAnisotropy: boolean, useShAlbedoScaling: boolean): string {
+function HELPER_WGSL(
+    useEnv: boolean,
+    useClearcoat: boolean,
+    useSheen: boolean,
+    useRefraction: boolean,
+    useSubsurface: boolean,
+    useAnisotropy: boolean,
+    useShAlbedoScaling: boolean
+): string {
     const ccDecls = useClearcoat
         ? `let ccIntensity = clamp(ccIntensityIn, 0.0, 1.0);
     let ccRough = clamp(ccRoughnessIn, 0.0, 1.0);
@@ -207,6 +217,9 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean, 
     let ccFinalRadiance = ccEnvRadiance * ccSpecEnvRefl;
     ${shIblTerm}
     // SHEEN_ALBEDOSCALING applied to surfaceAlbedo-dependent terms (finalIrradiance, finalRadianceScaled, finalSpecularScaledDirect).
+    // Direct diffuse (diffuseAcc) is NOT multiplied by AO — BJS pbrBlockFinalUnlitComponents.fx
+    // computes ambientOcclusionForDirectDiffuse = mix(vec3(1), ao, vAmbientInfos.w) and the
+    // default vAmbientInfos.w = 0, so the direct path stays at vec3(1).
     r.lighting = finalIrradiance * shAlbedoScaling * ccConsIBL
         + finalRadianceScaled * shAlbedoScaling * ccConsIBL
         + finalSpecularScaledDirect * shAlbedoScaling * ccDirectAtten
@@ -254,10 +267,16 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean, 
     // applied. Instead, when refraction is on, the LEGACY path multiplies
     // surfaceAlbedo by refractionOpacity (subSurfaceBlock.fx ~line 338),
     // which darkens both env diffuse AND direct diffuse. We bake that here.
-    var finalIrradiance = environmentIrradiance * surfaceAlbedo * ao_c;
+    //
+    // Important: we use a fresh "finalIrradianceRaw" without ao multiplication — BJS
+    // applies ao multiplicatively at the very END of the env irradiance chain
+    // (pbrBlockFinalLitComponents.fx line 2595, after refraction + translucency).
+    var finalIrradiance = environmentIrradiance * surfaceAlbedo;
     let finalRadianceScaled = environmentRadiance * colorSpecEnvReflectance * energyConservation;
     let finalSpecularScaledDirect = specAcc * energyConservation;
     ${ssBlock(useSubsurface, useRefraction, useAnisotropy)}
+    // BJS finalIrradiance *= ao at the very end (pbrBlockFinalLitComponents.fx).
+    finalIrradiance = finalIrradiance * ao_c;
     r.diffuseInd = finalIrradiance;
     r.specularInd = finalRadianceScaled;
     ${ccIblFinal}`
@@ -285,22 +304,26 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean, 
 `
         : ``;
 
-    // Real anisotropic GGX (BJS pbrHelperFunctions.fx ANISOTROPIC, default branch).
-    // alphaT = max(mix(alphaG, 1.0, anisotropy²), MINIMUMVARIANCE)
-    // alphaB = max(alphaG, MINIMUMVARIANCE)
-    // Burley anisotropic D + GGX-correlated anisotropic visibility.
+    // Real anisotropic GGX (BJS pbrHelperFunctions.fx ANISOTROPIC_LEGACY branch — that's
+    // what NME PBR-MR enables). LEGACY formulas:
+    //   alphaT = max(alphaG * (1 + anisotropy), MINIMUMVARIANCE)
+    //   alphaB = max(alphaG * (1 - anisotropy), MINIMUMVARIANCE)
+    // Bent normal uses bitangent (anisotropy>=0) or tangent (anisotropy<0) as the
+    // anisotropic frame direction.
     const anisoFns = useAnisotropy
         ? `fn nme_pbr_anisoRoughness(alphaG: f32, anisotropy: f32) -> vec2<f32> {
-    let alphaT = max(mix(alphaG, 1.0, anisotropy * anisotropy), 0.0005);
-    let alphaB = max(alphaG, 0.0005);
+    let alphaT = max(alphaG * (1.0 + anisotropy), 0.0005);
+    let alphaB = max(alphaG * (1.0 - anisotropy), 0.0005);
     return vec2<f32>(alphaT, alphaB);
 }
-fn nme_pbr_anisoBentNormal(B_in: vec3<f32>, N: vec3<f32>, V: vec3<f32>, anisotropy: f32, roughness: f32) -> vec3<f32> {
-    var bent = cross(B_in, V);
-    bent = normalize(cross(bent, B_in));
-    let aMix = (1.0 - anisotropy * (1.0 - roughness));
-    let a = aMix * aMix * aMix * aMix;
-    return normalize(mix(bent, N, a));
+fn nme_pbr_anisoBentNormal(T: vec3<f32>, B: vec3<f32>, N: vec3<f32>, V: vec3<f32>, anisotropy: f32) -> vec3<f32> {
+    var anisotropicFrameDirection = B;
+    if (anisotropy < 0.0) {
+        anisotropicFrameDirection = T;
+    }
+    let anisoTan = cross(normalize(anisotropicFrameDirection), V);
+    let anisoNormal = cross(anisoTan, anisotropicFrameDirection);
+    return normalize(mix(N, anisoNormal, abs(anisotropy)));
 }
 fn nme_pbr_burleyAnisoD(NdotH: f32, TdotH: f32, BdotH: f32, alphaTB: vec2<f32>) -> f32 {
     let a2 = alphaTB.x * alphaTB.y;
@@ -361,7 +384,7 @@ fn nme_pbr_colorAtDistance(color: vec3<f32>, distance: f32) -> vec3<f32> {
     let anisoB = normalize(cross(N, anisoT));
     let aniAlphaTB = nme_pbr_anisoRoughness(alphaG, anisoIntensity);
     // Bent normal for env reflection (BJS getAnisotropicBentNormals).
-    let aniN = nme_pbr_anisoBentNormal(anisoB, N, V, anisoIntensity, rough_c);`
+    let aniN = nme_pbr_anisoBentNormal(anisoT, anisoB, N, V, anisoIntensity);`
         : `let anisoT = vec3<f32>(1.0, 0.0, 0.0);
     let anisoB = vec3<f32>(0.0, 0.0, 1.0);
     let aniAlphaTB = vec2<f32>(alphaG, alphaG);
