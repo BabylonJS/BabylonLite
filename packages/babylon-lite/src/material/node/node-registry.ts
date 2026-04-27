@@ -66,6 +66,9 @@ function getTable(): Map<string, BlockLoader> {
     // Scene 66 additions:
     t.set("DiscardBlock", () => import("./blocks/discard-block.js"));
     t.set("ReflectionTextureBlock", () => import("./blocks/reflection-texture-block.js"));
+    // PBR blocks (scene 67+):
+    t.set("PBRMetallicRoughnessBlock", () => import("./blocks/pbr-metallic-roughness-block.js"));
+    t.set("ReflectionBlock", () => import("./blocks/reflection-block.js"));
     // Each entry MUST use a literal string import so Rollup splits per-block chunks.
     _table = t;
     return t;

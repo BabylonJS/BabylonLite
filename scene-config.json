@@ -590,5 +590,21 @@
             "morph",
             "reflection"
         ]
+    },
+    {
+        "id": 67,
+        "slug": "scene67-nme-pbr-core",
+        "name": "Scene 67 — NME PBR Core",
+        "maxMad": 0.5,
+        "maxRawKB": 95,
+        "description": "NME PBRMetallicRoughnessBlock + ReflectionBlock with IBL plumbing. Sphere lit by hemi + point + spot + directional lights with env reflection (no skybox/ground). Foundation for the scene 67-71 PBR-NME phase.",
+        "tags": [
+            "pbr",
+            "nme",
+            "procedural",
+            "env"
+        ],
+        "skipParity": true,
+        "note": "WIP: Lite renders overbright; BJS NME PBR-MR renders black even with env loaded. Parity skipped pending investigation of BJS NME PBR-MR + env interaction."
     }
 ]

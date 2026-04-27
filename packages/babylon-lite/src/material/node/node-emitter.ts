@@ -38,6 +38,7 @@ export function createBuildState(): NodeBuildState {
         nextTemp: 0,
         usesLightsUbo: false,
         usesMorphTargets: false,
+        usesEnv: false,
         shadowLights: [],
         hasSkeleton: false,
         hasInstances: false,

@@ -107,6 +107,10 @@ export async function loadEnvironment(
     };
     // Only pull in the skybox/ground chunks if actually required. Scenes passing
     // skipSkybox+skipGround (with no DDS/HDR skybox) skip the imports entirely.
+    const hasNothingToBuild = bgOptions.skipSkybox && bgOptions.skipGround && !skyboxIsDds && !skyboxIsEnv;
+    if (hasNothingToBuild) {
+        return textures;
+    }
     const envBgBuilder = async (): Promise<void> => {
         const bgl = (scene as SceneContextInternal)._pbrSceneBGL;
         const bg = (scene as SceneContextInternal)._pbrSceneBG;

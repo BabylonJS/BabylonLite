@@ -116,6 +116,13 @@ export interface NodeBuildState {
      *  lighting loop. Zero entries = no bindings, no WGSL — invisible to scenes
      *  without shadows. */
     shadowLights: { lightIndex: number; shadowType: "esm" | "pcf" }[];
+    /** Set by ReflectionBlock or any block that needs scene env textures
+     *  (specular cube + BRDF LUT + SH irradiance). The pipeline allocates
+     *  4 group-1 bindings (env_iblTexture/sampler + env_brdfLUT/sampler) and
+     *  extends the NME scene UBO with SH coefficients + envRotationY +
+     *  lodGenerationScale + environmentIntensity. Materials without env
+     *  pay zero — empty default. */
+    usesEnv: boolean;
     /** When false (default), BonesBlock emits a pass-through of its `world`
      *  input — no skeleton binding is required. Set to true only when every
      *  mesh using this material has a skeleton. */
