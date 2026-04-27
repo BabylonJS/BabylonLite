@@ -112,8 +112,11 @@ function ssBlock(useSubsurface: boolean, useRefraction: boolean, useAnisotropy: 
     let refrV_raw = refract(-V, ${useAnisotropy ? "aniN" : "N"}, invIor);
     // Apply env rotation to refraction direction, same as R.
     let refrV = vec3<f32>(refrV_raw.x * cosA + refrV_raw.z * sinA, refrV_raw.y, -refrV_raw.x * sinA + refrV_raw.z * cosA);
-    // BJS uses log2(cubemapDim * alphaG) for refraction LOD too (getLodFromAlphaG).
-    let refrLod = log2(cubemapDim * alphaG) * sceneU.lodGenerationScale;
+    // BJS pbrBlockSubSurface.fx: refrAlphaG = mix(alphaG, 0, clamp(ior*3-2, 0, 1)).
+    // At IOR ≈ 1 → blurred like base alphaG; at IOR ≥ 1.33 → SHARP refraction (LOD 0).
+    // Without this our refraction averages a huge env area and shows only sky color.
+    let refrAlphaG = mix(alphaG, 0.0, clamp(refrIor * 3.0 - 2.0, 0.0, 1.0));
+    let refrLod = log2(cubemapDim * refrAlphaG) * sceneU.lodGenerationScale;
     let envRefr = textureSampleLevel(nmeIblTexture, nmeIblSampler, refrV, clamp(refrLod, 0.0, maxLod)).rgb * sceneU.environmentIntensity;
     // Beer-Lambert tint absorption: volumeAlbedo = -log(tint)/distance, then exp(-volume * thickness).
     let volumeAlbedo = nme_pbr_colorAtDistance(ssTintColor, refrTintAtDistance);
@@ -133,15 +136,12 @@ function ssBlock(useSubsurface: boolean, useRefraction: boolean, useAnisotropy: 
         + sceneU.vSphericalL22.xyz * (nN_env.x * nN_env.x - nN_env.y * nN_env.y)) * sceneU.environmentIntensity;
     let transmittance = nme_pbr_transmittanceBurley(ssTintColor, ssDiffusionDist, max(ssThickness, 0.0001)) * translucencyIntensity;
     let refractionIrradiance = backIrradiance * transmittance;
-    // BJS pbrBlockFinalLitComponents.fx (in this exact order):
-    //   finalIrradiance *= refractionOpacity        (refraction reduces direct env diffuse)
+    // BJS pbrBlockFinalLitComponents.fx (LEGACY path):
+    //   surfaceAlbedo already multiplied by refractionOpacity above.
     //   finalIrradiance *= (1 - translucencyIntensity)
     //   finalIrradiance += refractionIrradiance
-    // (refractionIrradiance does NOT multiply surfaceAlbedo unless SS_ALBEDOFORTRANSLUCENCYTINT is on,
-    //  which is default-off in BJS PBR-MR.)
-    finalIrradiance = finalIrradiance * refractionOpacity;
     finalIrradiance = finalIrradiance * (1.0 - translucencyIntensity) + refractionIrradiance;`
-        : `finalIrradiance = finalIrradiance * refractionOpacity;`;
+        : ``;
     return `${refrPart}
     ${ssPart}
     let finalRefraction = finalRefractionRaw;`;
@@ -249,6 +249,11 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean, 
     let cubemapDim = f32(textureDimensions(nmeIblTexture).x);
     let specLod = log2(cubemapDim * alphaG) * sceneU.lodGenerationScale;
     var environmentRadiance = textureSampleLevel(nmeIblTexture, nmeIblSampler, R, clamp(specLod, 0.0, maxLod)).rgb * sceneU.environmentIntensity;
+    // BJS NME PBR-MR sets LEGACY_SPECULAR_ENERGY_CONSERVATION=true, so the
+    // diffuse/specular conservation factor (1 - baseSpecularEnergy) is NOT
+    // applied. Instead, when refraction is on, the LEGACY path multiplies
+    // surfaceAlbedo by refractionOpacity (subSurfaceBlock.fx ~line 338),
+    // which darkens both env diffuse AND direct diffuse. We bake that here.
     var finalIrradiance = environmentIrradiance * surfaceAlbedo * ao_c;
     let finalRadianceScaled = environmentRadiance * colorSpecEnvReflectance * energyConservation;
     let finalSpecularScaledDirect = specAcc * energyConservation;
@@ -407,7 +412,7 @@ ${ccSchlickFn}${charlieFn}${anisoFns}${ssFns}fn nme_pbr_mr_compute(
     let rough_c = clamp(roughness, 0.04, 1.0);
     let alphaG = rough_c * rough_c + 0.0005;
     let dielectricF0 = vec3<f32>(0.04);
-    let surfaceAlbedo = baseColor * (1.0 - metallic_c) * (1.0 - 0.04);
+    var surfaceAlbedo = baseColor * (1.0 - metallic_c) * (1.0 - 0.04);
     let colorF0 = mix(dielectricF0, baseColor, metallic_c);
     let colorF90 = vec3<f32>(1.0);
     let ao_c = clamp(ao, 0.0, 1.0);
@@ -416,6 +421,15 @@ ${ccSchlickFn}${charlieFn}${anisoFns}${ssFns}fn nme_pbr_mr_compute(
     ${anisoSetup}
     ${ccDecls}
     ${shDecls}
+    ${
+        useRefraction
+            ? `// LEGACY_SPECULAR_ENERGY_CONSERVATION is on for BJS NME PBR-MR. When refraction
+    // is active, surfaceAlbedo is multiplied by (1 - refrIntensity) here so both
+    // direct diffuse AND env diffuse get the same darkening (BJS pbrBlockSubSurface.fx ~line 338).
+    let _refractionOpacityPre = 1.0 - clamp(refrIntensityIn, 0.0, 1.0);
+    surfaceAlbedo = surfaceAlbedo * _refractionOpacityPre;`
+            : ``
+    }
     var diffuseAcc = vec3<f32>(0.0);
     var specAcc = vec3<f32>(0.0);
     var aggShadow: f32 = 0.0;
