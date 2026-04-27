@@ -25,9 +25,34 @@ import {
     registerScene,
     parseNodeMaterialFromSnippet,
     loadEnvironment,
+    createSolidTexture2D,
+    loadTexture2D,
 } from "babylon-lite";
-import type { Mesh } from "babylon-lite";
+import type { Mesh, Texture2D } from "babylon-lite";
 import { fetchScene72Snippet } from "../shared/scene72.js";
+
+function sanitize(name: string): string {
+    return name.replace(/[^A-Za-z0-9_]/g, "_");
+}
+
+async function loadSnippetTextures(engine: Parameters<typeof loadTexture2D>[0], json: unknown): Promise<Record<string, Texture2D>> {
+    const blocks = (json as { blocks?: Array<Record<string, unknown>> }).blocks ?? [];
+    const out: Record<string, Texture2D> = {};
+    for (const b of blocks) {
+        if (b.customType !== "BABYLON.TextureBlock" && b.customType !== "BABYLON.ImageSourceBlock") continue;
+        const tex = b.texture as { url?: string; name?: string } | undefined;
+        // BJS snippet stores embedded data URIs in texture.name (texture.url is "").
+        const url = (tex?.url && tex.url.length > 0) ? tex.url : (tex?.name && tex.name.startsWith("data:") ? tex.name : undefined);
+        if (!url) continue;
+        const key = sanitize((b.name as string | undefined) || `tex${b.id}`);
+        try {
+            out[key] = await loadTexture2D(engine, url);
+        } catch (e) {
+            console.warn("scene72: failed to load", key, e);
+        }
+    }
+    return out;
+}
 
 async function main(): Promise<void> {
     const __initStart = performance.now();
@@ -66,7 +91,29 @@ async function main(): Promise<void> {
     dir.shadowGenerator = sg;
 
     const { json } = await fetchScene72Snippet();
-    const material = await parseNodeMaterialFromSnippet(engine, "", { json, shadowGenerators: [sg] });
+
+    // Load all textures embedded as data URIs in the snippet (Albedo, MetallicRoughness,
+    // AO, Opacity, Bump, Sheen, Anisotropy, ClearCoat, ClearCoat bump, ClearCoat tint,
+    // SubSurface thickness). Anything we fail to load falls back to a 1×1 solid.
+    const loaded = await loadSnippetTextures(engine, json);
+    const white = createSolidTexture2D(engine, 1, 1, 1, 1);
+    const flatNormal = createSolidTexture2D(engine, 0.5, 0.5, 1, 1);
+    const black = createSolidTexture2D(engine, 0, 0, 0, 1);
+    const fallback: Record<string, typeof white> = {
+        "Albedo_texture": white,
+        "MetallicRoughness_texture": white,
+        "AO_texture": white,
+        "Opacity_texture": white,
+        "Bump_texture": flatNormal,
+        "Sheen_texture": white,
+        "Anisotropy_texture": black,
+        "ClearCoat_texture": white,
+        "ClearCoat_bump_texture": flatNormal,
+        "ClearCoat_tint_texture": white,
+        "SubSurface_thickness_texture": white,
+    };
+    const textures = { ...fallback, ...loaded };
+    const material = await parseNodeMaterialFromSnippet(engine, "", { json, shadowGenerators: [sg], textures });
     (sphere as { material?: unknown }).material = material;
     (ground as { material?: unknown }).material = material;
 

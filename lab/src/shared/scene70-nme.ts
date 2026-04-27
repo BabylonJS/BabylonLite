@@ -222,6 +222,32 @@ export const SCENE70_NME_JSON = {
             ],
             outputs: [{ name: "anisotropy" }],
         },
+        // Flat tangent-space normal map color (0.5, 0.5, 1) → normal unchanged.
+        // Required so PerturbNormalBlock has a normalMapColor input.
+        {
+            customType: "BABYLON.InputBlock", id: 50, name: "flatNormalColor", target: 2,
+            inputs: [], outputs: [{ name: "output" }],
+            type: 32, mode: 0, systemValue: null, animationType: 0,
+            isBoolean: false, matrixMode: 0, isConstant: false,
+            valueType: "BABYLON.Color3", value: [0.5, 0.5, 1.0],
+            convertToGammaSpace: false, convertToLinearSpace: false,
+        },
+        // PerturbNormalBlock with a flat normal — output normal == input normal.
+        // Wired to PBR-MR.perturbedNormal so BJS skips the AnisotropyBlock's
+        // _generateTBNSpace path (which has a worldNormal varying-prefix bug).
+        {
+            customType: "BABYLON.PerturbNormalBlock", id: 51, name: "PerturbNormal", target: 4,
+            inputs: [
+                { name: "worldPosition", inputName: "worldPosition", targetBlockId: 10, targetConnectionName: "output" },
+                { name: "worldNormal", inputName: "worldNormal", targetBlockId: 11, targetConnectionName: "output" },
+                { name: "worldTangent", inputName: "worldTangent" },
+                { name: "uv", inputName: "uv", targetBlockId: 39, targetConnectionName: "output" },
+                { name: "normalMapColor", inputName: "normalMapColor", targetBlockId: 50, targetConnectionName: "output" },
+                { name: "strength", inputName: "strength" },
+            ],
+            outputs: [{ name: "output" }],
+            invertX: false, invertY: false,
+        },
         // PBR-MR — scene 67 setup (no clearcoat / sheen) + anisotropy.
         {
             customType: "BABYLON.PBRMetallicRoughnessBlock", id: 13, name: "PBR", target: 4,
@@ -230,7 +256,7 @@ export const SCENE70_NME_JSON = {
                 { name: "worldNormal", inputName: "worldNormal", targetBlockId: 11, targetConnectionName: "output" },
                 { name: "view", inputName: "view" },
                 { name: "cameraPosition", inputName: "cameraPosition", targetBlockId: 5, targetConnectionName: "output" },
-                { name: "perturbedNormal", inputName: "perturbedNormal" },
+                { name: "perturbedNormal", inputName: "perturbedNormal", targetBlockId: 51, targetConnectionName: "output" },
                 { name: "baseColor", inputName: "baseColor", targetBlockId: 6, targetConnectionName: "output" },
                 { name: "metallic", inputName: "metallic", targetBlockId: 7, targetConnectionName: "output" },
                 { name: "roughness", inputName: "roughness", targetBlockId: 8, targetConnectionName: "output" },
