@@ -38,15 +38,29 @@ function sanitize(name: string): string {
 async function loadSnippetTextures(engine: Parameters<typeof loadTexture2D>[0], json: unknown): Promise<Record<string, Texture2D>> {
     const blocks = (json as { blocks?: Array<Record<string, unknown>> }).blocks ?? [];
     const out: Record<string, Texture2D> = {};
+    // BJS PBR-NME convention: TextureBlock honors `convertToLinearSpace` /
+    // `convertToGammaSpace` flags in the shader, NOT the texture's storage
+    // format. The snippet has both false, but BJS samples sRGB-encoded color
+    // textures raw and uses them as if linear — which is incorrect physically
+    // but matches BJS's behavior. Lite's match is closer when we DO sRGB-decode
+    // the color textures, because Lite's gamma-encode path runs once at the
+    // end (matching BJS's final pass) and the linear math is more correct.
+    const srgbTextureNames = new Set([
+        "Albedo texture",
+        "Sheen texture",
+        "ClearCoat tint texture",
+    ]);
     for (const b of blocks) {
         if (b.customType !== "BABYLON.TextureBlock" && b.customType !== "BABYLON.ImageSourceBlock") continue;
-        const tex = b.texture as { url?: string; name?: string } | undefined;
+        const tex = b.texture as { url?: string; name?: string; gammaSpace?: boolean } | undefined;
         // BJS snippet stores embedded data URIs in texture.name (texture.url is "").
         const url = (tex?.url && tex.url.length > 0) ? tex.url : (tex?.name && tex.name.startsWith("data:") ? tex.name : undefined);
         if (!url) continue;
         const key = sanitize((b.name as string | undefined) || `tex${b.id}`);
+        const blockName = b.name as string | undefined;
+        const useSrgb = blockName ? srgbTextureNames.has(blockName) : false;
         try {
-            out[key] = await loadTexture2D(engine, url);
+            out[key] = await loadTexture2D(engine, url, { srgb: useSrgb });
         } catch (e) {
             console.warn("scene72: failed to load", key, e);
         }

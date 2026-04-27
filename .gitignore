@@ -37,3 +37,7 @@ log/
 browserstack.err
 local.log
 .perf-baseline-worktree/
+
+_diag.mjs
+_lite72*.wgsl
+_epy.json

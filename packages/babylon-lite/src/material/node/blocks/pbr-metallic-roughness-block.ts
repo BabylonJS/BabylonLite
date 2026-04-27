@@ -133,15 +133,21 @@ function ssBlock(useSubsurface: boolean, useRefraction: boolean, useAnisotropy: 
         + sceneU.vSphericalL22.xyz * (nN_env.x * nN_env.x - nN_env.y * nN_env.y)) * sceneU.environmentIntensity;
     let transmittance = nme_pbr_transmittanceBurley(ssTintColor, ssDiffusionDist, max(ssThickness, 0.0001)) * translucencyIntensity;
     let refractionIrradiance = backIrradiance * transmittance;
-    // BJS pbrBlockFinalLitComponents.fx: finalIrradiance *= (1 - translucencyIntensity); finalIrradiance += refractionIrradiance.
-    finalIrradiance = finalIrradiance * (1.0 - translucencyIntensity) + refractionIrradiance * surfaceAlbedo;`
-        : ``;
+    // BJS pbrBlockFinalLitComponents.fx (in this exact order):
+    //   finalIrradiance *= refractionOpacity        (refraction reduces direct env diffuse)
+    //   finalIrradiance *= (1 - translucencyIntensity)
+    //   finalIrradiance += refractionIrradiance
+    // (refractionIrradiance does NOT multiply surfaceAlbedo unless SS_ALBEDOFORTRANSLUCENCYTINT is on,
+    //  which is default-off in BJS PBR-MR.)
+    finalIrradiance = finalIrradiance * refractionOpacity;
+    finalIrradiance = finalIrradiance * (1.0 - translucencyIntensity) + refractionIrradiance;`
+        : `finalIrradiance = finalIrradiance * refractionOpacity;`;
     return `${refrPart}
     ${ssPart}
     let finalRefraction = finalRefractionRaw;`;
 }
 
-function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean, useRefraction: boolean, useSubsurface: boolean, useAnisotropy: boolean): string {
+function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean, useRefraction: boolean, useSubsurface: boolean, useAnisotropy: boolean, useShAlbedoScaling: boolean): string {
     const ccDecls = useClearcoat
         ? `let ccIntensity = clamp(ccIntensityIn, 0.0, 1.0);
     let ccRough = clamp(ccRoughnessIn, 0.0, 1.0);
@@ -155,10 +161,17 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean, 
 
     const shDecls = useSheen
         ? `let shIntensityRaw = clamp(shIntensityIn, 0.0, 1.0);
-    // BJS sheen WITHOUT albedoScaling: shIntensity *= (1 - reflectanceF0)
+    ${
+        useShAlbedoScaling
+            ? `// SHEEN_ALBEDOSCALING ON: don't pre-scale shIntensity (BJS pbrBlockSheen.fx).
+    // Instead the surfaceAlbedo is reduced by sheenAlbedoScaling later (we approximate
+    // with a scalar derived from the sheen color × intensity).
+    let shIntensity = shIntensityRaw;`
+            : `// BJS sheen WITHOUT albedoScaling: shIntensity *= (1 - reflectanceF0)
     // (pbrBlockSheen.fx line 132). reflectanceF0 = max(colorF0.r,g,b) scalar.
     let reflectanceF0 = max(colorF0.r, max(colorF0.g, colorF0.b));
-    let shIntensity = shIntensityRaw * (1.0 - reflectanceF0);
+    let shIntensity = shIntensityRaw * (1.0 - reflectanceF0);`
+    }
     let shRough = clamp(shRoughnessIn, 0.0, 1.0);
     let shAlphaG = shRough * shRough + 0.0005;
     let shColorScaled = shColorIn * shIntensity;
@@ -170,8 +183,15 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean, 
             ? `let shSpecLod = log2(cubemapDim * shAlphaG) * sceneU.lodGenerationScale;
     let shEnvRadiance = textureSampleLevel(nmeIblTexture, nmeIblSampler, R, clamp(shSpecLod, 0.0, maxLod)).rgb * sceneU.environmentIntensity;
     let shBrdfBlue = textureSample(nmeBrdfLUT, nmeBrdfSampler, vec2<f32>(NdotV, shRough)).b;
-    let shFinalIbl = shEnvRadiance * shColorScaled * shBrdfBlue;`
-            : `let shFinalIbl = vec3<f32>(0.0);`;
+    let shFinalIbl = shEnvRadiance * shColorScaled * shBrdfBlue;
+    ${
+        useShAlbedoScaling
+            ? `// SHEEN_ALBEDOSCALING: surface albedo and base specular scale by (1 - shInt × max(shColor) × envSheenBrdf.b).
+    let shAlbedoScaling = 1.0 - shIntensity * max(max(shColorIn.r, shColorIn.g), shColorIn.b) * shBrdfBlue;`
+            : `let shAlbedoScaling: f32 = 1.0;`
+    }`
+            : `let shFinalIbl = vec3<f32>(0.0);
+    let shAlbedoScaling: f32 = 1.0;`;
 
     const shIblScale = useClearcoat ? " * ccConsIBL" : "";
     const refrCcScale = useClearcoat ? " * ccConsIBL" : "";
@@ -186,17 +206,18 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean, 
     let ccEnvRadiance = textureSampleLevel(nmeIblTexture, nmeIblSampler, R, clamp(ccSpecLod, 0.0, maxLod)).rgb * sceneU.environmentIntensity;
     let ccFinalRadiance = ccEnvRadiance * ccSpecEnvRefl;
     ${shIblTerm}
-    r.lighting = finalIrradiance * ccConsIBL
-        + finalRadianceScaled * ccConsIBL
-        + finalSpecularScaledDirect * ccDirectAtten
-        + diffuseAcc * ccDirectAtten
+    // SHEEN_ALBEDOSCALING applied to surfaceAlbedo-dependent terms (finalIrradiance, finalRadianceScaled, finalSpecularScaledDirect).
+    r.lighting = finalIrradiance * shAlbedoScaling * ccConsIBL
+        + finalRadianceScaled * shAlbedoScaling * ccConsIBL
+        + finalSpecularScaledDirect * shAlbedoScaling * ccDirectAtten
+        + diffuseAcc * shAlbedoScaling * ccDirectAtten
         + ccDirectSpecAcc
         + ccFinalRadiance
         + shDirectAcc
         + shFinalIbl${shIblScale}
         + finalRefraction${refrCcScale};`
         : `${shIblTerm}
-    r.lighting = finalIrradiance + finalRadianceScaled + finalSpecularScaledDirect + diffuseAcc + shDirectAcc + shFinalIbl + finalRefraction;`;
+    r.lighting = (finalIrradiance + finalRadianceScaled + finalSpecularScaledDirect + diffuseAcc) * shAlbedoScaling + shDirectAcc + shFinalIbl + finalRefraction;`;
 
     const ccDirectFinal = useClearcoat
         ? `r.lighting = (diffuseAcc + specAcc) * ccDirectAtten + ccDirectSpecAcc + shDirectAcc;`
@@ -232,8 +253,6 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean, 
     let finalRadianceScaled = environmentRadiance * colorSpecEnvReflectance * energyConservation;
     let finalSpecularScaledDirect = specAcc * energyConservation;
     ${ssBlock(useSubsurface, useRefraction, useAnisotropy)}
-    // BJS finalIrradiance *= refractionOpacity (pbrBlockFinalLitComponents).
-    finalIrradiance = finalIrradiance * refractionOpacity;
     r.diffuseInd = finalIrradiance;
     r.specularInd = finalRadianceScaled;
     ${ccIblFinal}`
@@ -531,11 +550,13 @@ export const emitter: BlockEmitter = {
         let shColorExpr = "vec3<f32>(1.0)";
         let shRoughnessExpr = "0.0";
         let useSheen = false;
+        let useShAlbedoScaling = false;
         if (shInputRef) {
             const shBlock = ctx.graph.blocks.get(shInputRef.blockId);
             if (shBlock && shBlock.className === "SheenBlock") {
                 useSheen = true;
                 state.usesSheen = true;
+                useShAlbedoScaling = (shBlock.serialized as { albedoScaling?: boolean }).albedoScaling === true;
                 ctx.resolveOutput(shBlock, shInputRef.outputName, stage, state);
                 shIntensityExpr = resolveOptional(shBlock, "intensity", "1.0", "f32", stage, state, ctx);
                 shColorExpr = resolveOptional(shBlock, "color", "vec3<f32>(1.0)", "vec3f", stage, state, ctx);
@@ -615,8 +636,8 @@ export const emitter: BlockEmitter = {
                 }
             }
         }
-        const helperKey = `${HELPER_KEY_PREFIX}_${reflectionConnected ? "env" : "noenv"}_${useClearcoat ? "cc" : "nocc"}_${useSheen ? "sh" : "nosh"}_${useRefraction ? "refr" : "norefr"}_${useSubsurface ? "ss" : "noss"}_${useAnisotropy ? "ani" : "noani"}`;
-        state.fragment.helpers.set(helperKey, HELPER_WGSL(reflectionConnected, useClearcoat, useSheen, useRefraction, useSubsurface, useAnisotropy));
+        const helperKey = `${HELPER_KEY_PREFIX}_${reflectionConnected ? "env" : "noenv"}_${useClearcoat ? "cc" : "nocc"}_${useSheen ? "sh" : "nosh"}_${useRefraction ? "refr" : "norefr"}_${useSubsurface ? "ss" : "noss"}_${useAnisotropy ? "ani" : "noani"}_${useShAlbedoScaling ? "shAS" : "noShAS"}`;
+        state.fragment.helpers.set(helperKey, HELPER_WGSL(reflectionConnected, useClearcoat, useSheen, useRefraction, useSubsurface, useAnisotropy, useShAlbedoScaling));
         state.usesLightsUbo = true;
 
         const memoKey = `_pbrmr_${block.id}_call`;
