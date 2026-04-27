@@ -94,7 +94,7 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean):
     const ccDecls = useClearcoat
         ? `let ccIntensity = clamp(ccIntensityIn, 0.0, 1.0);
     let ccRough = clamp(ccRoughnessIn, 0.0, 1.0);
-    let ccAlphaG = max(ccRough * ccRough, 0.0005);
+    let ccAlphaG = ccRough * ccRough + 0.0005;
     let ccF0_raw = (ccIor - 1.0) / (ccIor + 1.0);
     let ccF0 = ccF0_raw * ccF0_raw;
     var ccDirectSpecAcc = vec3<f32>(0.0);
@@ -103,9 +103,13 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean):
     let ccDirectAtten: f32 = 1.0;`;
 
     const shDecls = useSheen
-        ? `let shIntensity = clamp(shIntensityIn, 0.0, 1.0);
+        ? `let shIntensityRaw = clamp(shIntensityIn, 0.0, 1.0);
+    // BJS sheen WITHOUT albedoScaling: shIntensity *= (1 - reflectanceF0)
+    // (pbrBlockSheen.fx line 132). reflectanceF0 = max(colorF0.r,g,b) scalar.
+    let reflectanceF0 = max(colorF0.r, max(colorF0.g, colorF0.b));
+    let shIntensity = shIntensityRaw * (1.0 - reflectanceF0);
     let shRough = clamp(shRoughnessIn, 0.0, 1.0);
-    let shAlphaG = max(shRough * shRough, 0.0005);
+    let shAlphaG = shRough * shRough + 0.0005;
     let shColorScaled = shColorIn * shIntensity;
     var shDirectAcc = vec3<f32>(0.0);`
         : `let shDirectAcc = vec3<f32>(0.0);`;
@@ -118,12 +122,14 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean):
     let shFinalIbl = shEnvRadiance * shColorScaled * shBrdfBlue;`
             : `let shFinalIbl = vec3<f32>(0.0);`;
 
+    const shIblScale = useClearcoat ? " * ccConsIBL" : "";
     const ccIblFinal = useClearcoat
         ? `let ccFresnelIBL = nme_pbr_ccSchlick(ccF0, NdotV);
     let ccConsIBL = 1.0 - ccFresnelIBL * ccIntensity;
-    let ccBrdfX = envBrdf.x;
-    let ccBrdfY = envBrdf.y;
-    let ccSpecEnvRefl = (vec3<f32>(ccF0) * ccBrdfY + (vec3<f32>(1.0) - vec3<f32>(ccF0)) * ccBrdfX) * ccIntensity;
+    // Clear-coat uses ITS OWN BRDF lookup at clearcoat roughness (BJS pbrBlockClearcoat.fx
+    // line ~environmentClearCoatBrdf = getBRDFLookup(NdotV, vClearCoatParams.y)).
+    let ccBrdfSample = textureSample(nmeBrdfLUT, nmeBrdfSampler, vec2<f32>(NdotV, ccRough)).rgb;
+    let ccSpecEnvRefl = (vec3<f32>(ccF0) * ccBrdfSample.y + (vec3<f32>(1.0) - vec3<f32>(ccF0)) * ccBrdfSample.x) * ccIntensity;
     let ccSpecLod = log2(cubemapDim * ccAlphaG) * sceneU.lodGenerationScale;
     let ccEnvRadiance = textureSampleLevel(nmeIblTexture, nmeIblSampler, R, clamp(ccSpecLod, 0.0, maxLod)).rgb * sceneU.environmentIntensity;
     let ccFinalRadiance = ccEnvRadiance * ccSpecEnvRefl;
@@ -135,7 +141,7 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean):
         + ccDirectSpecAcc
         + ccFinalRadiance
         + shDirectAcc
-        + shFinalIbl;`
+        + shFinalIbl${shIblScale};`
         : `${shIblTerm}
     r.lighting = finalIrradiance + finalRadianceScaled + finalSpecularScaledDirect + diffuseAcc + shDirectAcc + shFinalIbl;`;
 
@@ -191,7 +197,7 @@ function HELPER_WGSL(useEnv: boolean, useClearcoat: boolean, useSheen: boolean):
         ? `fn nme_pbr_charlieD(NdotH: f32, alphaG: f32) -> f32 {
     let invR = 1.0 / max(alphaG, 0.0005);
     let cos2h = NdotH * NdotH;
-    let sin2h = max(1.0 - cos2h, 0.0078125);
+    let sin2h = 1.0 - cos2h;
     return (2.0 + invR) * pow(sin2h, invR * 0.5) / (2.0 * NME_PBR_PI);
 }
 `
@@ -236,14 +242,14 @@ ${ccSchlickFn}${charlieFn}fn nme_pbr_mr_compute(
     let NdotV = abs(NdotVUnclamped) + 0.0001;
     let metallic_c = clamp(metallic, 0.0, 1.0);
     let rough_c = clamp(roughness, 0.04, 1.0);
-    let alphaG = max(rough_c * rough_c, 0.0005);
+    let alphaG = rough_c * rough_c + 0.0005;
     let dielectricF0 = vec3<f32>(0.04);
     let surfaceAlbedo = baseColor * (1.0 - metallic_c) * (1.0 - 0.04);
     let colorF0 = mix(dielectricF0, baseColor, metallic_c);
     let colorF90 = vec3<f32>(1.0);
     let ao_c = clamp(ao, 0.0, 1.0);
     // Direct-light path uses its own roughness clamp (BJS pbrDirectLightingFunctions.fx l.103).
-    let directAlphaG = max(rough_c * rough_c, 0.0005);
+    let directAlphaG = rough_c * rough_c + 0.0005;
     ${ccDecls}
     ${shDecls}
     var diffuseAcc = vec3<f32>(0.0);
