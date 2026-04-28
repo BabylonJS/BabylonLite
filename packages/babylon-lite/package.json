@@ -28,6 +28,9 @@
         "dev": "vite build --watch"
     },
     "sideEffects": false,
+    "publishConfig": {
+        "types": "./dist/index.d.ts"
+    },
     "devDependencies": {
         "@webgpu/types": "^0.1.52",
         "typescript": "^5.7.0",
