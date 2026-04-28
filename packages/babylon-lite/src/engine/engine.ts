@@ -53,6 +53,31 @@ export interface EngineContextInternal extends EngineContext {
     _renderingContexts: RenderingContext[];
 }
 
+/** @internal Return true if `context` is already registered with `engine`. */
+export function isRenderingContextRegistered(engine: EngineContext, context: RenderingContext): boolean {
+    return (engine as EngineContextInternal)._renderingContexts.indexOf(context) !== -1;
+}
+
+/** @internal Register a rendering context with the engine. Returns false if already present. */
+export function registerRenderingContext(engine: EngineContext, context: RenderingContext): boolean {
+    if (isRenderingContextRegistered(engine, context)) {
+        return false;
+    }
+    (engine as EngineContextInternal)._renderingContexts.push(context);
+    return true;
+}
+
+/** @internal Unregister a rendering context from the engine. Returns false if not present. */
+export function unregisterRenderingContext(engine: EngineContext, context: RenderingContext): boolean {
+    const list = (engine as EngineContextInternal)._renderingContexts;
+    const i = list.indexOf(context);
+    if (i === -1) {
+        return false;
+    }
+    list.splice(i, 1);
+    return true;
+}
+
 interface RenderTargets {
     // Null when MSAA is disabled (sampleCount === 1): we render directly into the
     // swapchain texture without a resolve step.
@@ -62,6 +87,11 @@ interface RenderTargets {
     depthView: GPUTextureView;
     width: number;
     height: number;
+}
+
+export interface RenderTargetSize {
+    readonly width: number;
+    readonly height: number;
 }
 
 /**
@@ -142,6 +172,12 @@ export function resizeEngine(engine: EngineContext): void {
     }
     eng._targets.depthTexture.destroy();
     eng._targets = createRenderTargets(eng.device, w, h, eng.format, eng.msaaSamples);
+}
+
+/** @internal Return the current engine-owned render target dimensions without exposing target resources. */
+export function getRenderTargetSize(engine: EngineContext): RenderTargetSize {
+    const targets = (engine as EngineContextInternal)._targets;
+    return { width: targets.width, height: targets.height };
 }
 
 /**
