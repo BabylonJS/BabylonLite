@@ -11,8 +11,8 @@ import type { SceneContext } from "../../scene/scene.js";
 import type { Mesh, MeshInternal } from "../../mesh/mesh.js";
 import type { MeshGPU } from "../../mesh/mesh.js";
 import type { Renderable, SceneUniformUpdater } from "../../render/renderable.js";
-import { updateSceneUniforms } from "../standard/standard-material.js";
-import { getViewProjectionMatrix, getViewMatrix, getCameraPosition } from "../../camera/camera.js";
+import { updateSceneUniforms } from "../scene-uniforms.js";
+import { getViewProjectionMatrix, getViewMatrix, getCameraPosition, getEffectiveAspectRatio } from "../../camera/camera.js";
 import { writeLightsUBO, refreshLightsUBO, getLightsUboSize, computeLightsVersion } from "../../render/lights-ubo.js";
 import type { NodeMaterialInternal } from "./node-material.js";
 import { writeNodeUBO } from "./node-material.js";
@@ -82,6 +82,7 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
     // Shared NME lights UBO — created lazily when any material requires it.
     let nmeLightsUBO: GPUBuffer | null = null;
     let nmeLightsScratch: Float32Array | null = null;
+    const imageScratch = new Float32Array(4);
     let lastLightsVersion = -1;
     function ensureLightsUBO(): GPUBuffer {
         if (!nmeLightsUBO) {
@@ -267,7 +268,7 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
             if (!cam) {
                 return;
             }
-            const aspect = eng.canvas.width / eng.canvas.height;
+            const aspect = getEffectiveAspectRatio(cam, eng.canvas.width, eng.canvas.height);
             const vp = getViewProjectionMatrix(cam, aspect);
             const v = getViewMatrix(cam);
             const eye = getCameraPosition(cam);
@@ -278,6 +279,11 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
                     continue;
                 }
                 updateSceneUniforms(engine, ubo, vp as Float32Array, v as Float32Array, eyeTuple);
+                imageScratch[0] = scene.imageProcessing.exposure;
+                imageScratch[1] = scene.imageProcessing.contrast;
+                imageScratch[2] = scene.imageProcessing.toneMappingEnabled ? 1 : 0;
+                imageScratch[3] = 0;
+                engine.device.queue.writeBuffer(ubo, 176, imageScratch);
                 if (material._compile.envBindings) {
                     material._envHelpers!.writeEnvSceneTail(engine, ubo, scene);
                 }

@@ -10,10 +10,11 @@ import type { Mesh } from "../../mesh/mesh.js";
 import type { MeshInternal } from "../../mesh/mesh.js";
 import type { Renderable, SceneUniformUpdater } from "../../render/renderable.js";
 import type { LightBase } from "../../light/types.js";
-import { updateSceneUniforms, collectStdBoundTextures } from "./standard-material.js";
+import { collectStdBoundTextures } from "./standard-material.js";
+import { updateSceneUniforms } from "../scene-uniforms.js";
 import type { StandardMaterialProps } from "./standard-material.js";
 import type { PbrMaterialProps } from "../pbr/pbr-material.js";
-import { getViewProjectionMatrix, getViewMatrix, getCameraPosition } from "../../camera/camera.js";
+import { getViewProjectionMatrix, getViewMatrix, getCameraPosition, getEffectiveAspectRatio } from "../../camera/camera.js";
 import { acquireTexture, releaseTexture, clearSamplerCache } from "../../resource/gpu-pool.js";
 import {
     computeFeatures,
@@ -281,7 +282,7 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
             if (!scene.camera || !sharedSceneUBO) {
                 return;
             }
-            const aspect = engine.canvas.width / engine.canvas.height;
+            const aspect = getEffectiveAspectRatio(scene.camera, engine.canvas.width, engine.canvas.height);
             const camVer = scene.camera.worldMatrixVersion;
             // Only rewrite scene UBO if camera or fog changed
             if (camVer !== _lastCamVersion || aspect !== _lastAspect || scene.fog !== _lastFog) {

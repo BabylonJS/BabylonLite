@@ -9,10 +9,11 @@ import type { SceneContext, SceneContextInternal } from "../../scene/scene.js";
 import type { Mesh } from "../../mesh/mesh.js";
 import type { MeshInternal } from "../../mesh/mesh.js";
 import type { Renderable } from "../../render/renderable.js";
-import { updateSceneUniforms, collectStdBoundTextures } from "./standard-material.js";
+import { collectStdBoundTextures } from "./standard-material.js";
+import { updateSceneUniforms } from "../scene-uniforms.js";
 import type { StandardMaterialProps } from "./standard-material.js";
 import { acquireTexture, releaseTexture } from "../../resource/gpu-pool.js";
-import { getViewProjectionMatrix, getViewMatrix, getCameraPosition } from "../../camera/camera.js";
+import { getViewProjectionMatrix, getViewMatrix, getCameraPosition, getEffectiveAspectRatio } from "../../camera/camera.js";
 import { computeLightsVersion } from "../../render/lights-ubo.js";
 import {
     computeFeatures,
@@ -94,7 +95,7 @@ export function buildSingleStandardRenderable(scene: SceneContext, mesh: Mesh): 
                 if (!scene.camera) {
                     return;
                 }
-                const aspect = engine.canvas.width / engine.canvas.height;
+                const aspect = getEffectiveAspectRatio(scene.camera, engine.canvas.width, engine.canvas.height);
                 const camVer = scene.camera.worldMatrixVersion;
                 if (camVer !== _lastCamVersion || aspect !== _lastAspect || scene.fog !== _lastFog) {
                     _lastCamVersion = camVer;

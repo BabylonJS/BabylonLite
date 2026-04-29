@@ -14,21 +14,7 @@
 import type { Texture2D } from "../../texture/texture-2d.js";
 import type { EngineContextInternal } from "../../engine/engine.js";
 import type { MeshGroupBuilder } from "../../render/renderable.js";
-import { computeUboLayout } from "../../shader/ubo-layout.js";
-import { createStandardTemplate } from "./standard-template.js";
 import { _getStdExts } from "./standard-pipeline.js";
-
-// ─── Shared Constants ────────────────────────────────────────────────
-
-// Scene UBO size derived from template's baseSceneUboFields (lazy-computed)
-let _sceneUboSize: number | null = null;
-function getSceneUboSize(): number {
-    if (_sceneUboSize === null) {
-        const tpl = createStandardTemplate({ textures: {}, needsUV: false, needsUV2: false, hasShadow: false });
-        _sceneUboSize = computeUboLayout(tpl.baseSceneUboFields).totalBytes;
-    }
-    return _sceneUboSize;
-}
 
 // ─── Standard Group Builder ──────────────────────────────────────────
 
@@ -212,45 +198,4 @@ export function collectStdBoundTextures(mat: StandardMaterialProps): Texture2D[]
         ext.textures?.(mat, t);
     }
     return t;
-}
-
-// ─── Scene Uniforms Update ───────────────────────────────────────────
-
-// Pre-allocated scratch buffer for scene uniform writes (avoids per-frame allocation)
-let _sceneUniformScratch: Float32Array<ArrayBuffer> | null = null;
-
-/** Write per-frame scene uniforms to the given UBO.
- *  Identical layout across all pipeline variants. */
-export function updateSceneUniforms(
-    engine: EngineContextInternal,
-    sceneUBO: GPUBuffer,
-    viewProjection: Float32Array,
-    viewMatrix: Float32Array,
-    eyePosition: [number, number, number],
-    fog?: FogConfig
-): void {
-    const device = engine.device;
-    const size = getSceneUboSize() / 4;
-    if (!_sceneUniformScratch || _sceneUniformScratch.length !== size) {
-        _sceneUniformScratch = new Float32Array(size);
-    }
-    const data = _sceneUniformScratch;
-    data.fill(0);
-    data.set(viewProjection, 0); // 0-15: viewProjection
-    data.set(viewMatrix, 16); // 16-31: view
-    data[32] = eyePosition[0]; // 32-35: vEyePosition
-    data[33] = eyePosition[1];
-    data[34] = eyePosition[2];
-    data[35] = 0;
-    if (fog) {
-        data[36] = fog.mode; // 36-39: vFogInfos
-        data[37] = fog.start;
-        data[38] = fog.end;
-        data[39] = fog.density;
-        data[40] = fog.color[0]; // 40-43: vFogColor
-        data[41] = fog.color[1];
-        data[42] = fog.color[2];
-        data[43] = 0;
-    }
-    device.queue.writeBuffer(sceneUBO, 0, data);
 }

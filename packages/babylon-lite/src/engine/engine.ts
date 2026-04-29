@@ -39,6 +39,8 @@ export interface RenderingContext {
     _update(encoder: GPUCommandEncoder, delta: number): GPUCommandEncoder;
     /** Record main-pass draws into `pass`. Returns draw-call count. */
     _record(pass: GPURenderPassEncoder): number;
+    /** Apply this context's active viewport/scissor to a pass. Defaults to full canvas. */
+    _setViewport?(pass: GPURenderPassEncoder, width: number, height: number): void;
 }
 
 /** @internal Engine with GPU internals exposed. Not re-exported from index.ts. */
@@ -301,6 +303,7 @@ function renderFrame(engine: EngineContextInternal, delta: number): void {
         rendered++;
 
         const pass = encoder.beginRenderPass(desc);
+        s._setViewport?.(pass, targets.width, targets.height);
         drawCalls += s._record(pass);
         pass.end();
     }

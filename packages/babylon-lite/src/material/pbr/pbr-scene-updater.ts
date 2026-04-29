@@ -16,7 +16,7 @@ import type { SceneUniformUpdater } from "../../render/renderable.js";
 import type { UboSpec } from "../../shader/fragment-types.js";
 import type { PbrLightConfig } from "./pbr-template.js";
 
-import { getViewProjectionMatrix, getCameraPosition } from "../../camera/camera.js";
+import { getViewProjectionMatrix, getCameraPosition, getEffectiveAspectRatio } from "../../camera/camera.js";
 import { _getPbrLightExtension } from "./pbr-flags.js";
 
 interface PbrSceneUpdaterOptions {
@@ -58,7 +58,7 @@ export function createPbrSceneUpdater(opts: PbrSceneUpdaterOptions): SceneUnifor
             if (!cam) {
                 return;
             }
-            const aspect = engine.canvas.width / engine.canvas.height;
+            const aspect = getEffectiveAspectRatio(cam, engine.canvas.width, engine.canvas.height);
             const camVer = cam.worldMatrixVersion;
             let lightVer = 0;
             for (const l of scene.lights) {

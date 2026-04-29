@@ -522,5 +522,14 @@
         "maxRawKB": 115,
         "description": "Full D8AK3Z#160 setup: 4 lights (hemi + point + spot + dir + PCF shadow) on sphere + ground, NME = checked-in local EPY8BV#6 data plus local texture assets (PBR-MR + reflection + clearcoat + sheen + anisotropy + subsurface).",
         "tags": ["pbr", "nme", "procedural", "env", "shadows", "clearcoat", "sheen", "anisotropy", "subsurface"]
+    },
+    {
+        "id": 73,
+        "slug": "scene73-wheel-nme-viewport",
+        "name": "Scene 73 — Wheel PBR vs NME Viewports",
+        "maxMad": 0.05,
+        "maxRawKB": 140,
+        "description": "CarbonFiberWheel.glb rendered twice on one canvas through two independent Babylon Lite scenes with split camera viewports: native glTF PBR clearcoat material on the left and checked-in C3NEY1#4 NME material on the right.",
+        "tags": ["pbr", "nme", "gltf", "env", "clearcoat", "viewport"]
     }
 ]
