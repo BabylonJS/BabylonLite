@@ -426,7 +426,7 @@ export function buildSingleStandardRenderable(scene: SceneContext, mesh: Mesh): 
 
 ### Pipeline Caching (`standard-pipeline.ts`)
 
-`getOrCreatePipeline` uses `createPipelineCache` from `../pipeline-cache.js`. Each `PipelineVariant` contains: `features`, `pipeline`, `sceneBGL`, `meshBGL`, `shadowBGL` (if applicable), `sceneUBO`, `sceneBG`, `meshUboTotalBytes`, `refCount`. Variants are reference-counted via `releaseStandardPipelineVariant()`.
+`getOrCreateStandardPipeline` keeps a per-`StandardShaderBindings` `Map<targetSignatureKey(sig), GPURenderPipeline>`. BGLs are stable across signatures (only the pipeline depends on `sig`), so meshBGs validate against any pipeline produced for the same `(features)` bindings instance.
 
 Composed shaders are also cached per `(features, fragmentIds)` to avoid recomposition when only format/MSAA differs. The scene UBO is created per pipeline variant (not per mesh), and a single `SceneUniformUpdater` writes to ALL variant UBOs each frame.
 
@@ -650,7 +650,7 @@ startEngine(engine, scene)                → runs deferred builders (async)
 
 - **`standard-material.ts`**: Imports `Texture2D` from texture-2d, `computeUboLayout` from ubo-layout, `createStandardTemplate` from standard-template.
 - **`standard-template.ts`**: Imports `ShaderTemplate`, `UboField`, `VertexAttribute`, `Varying`, `BindingDecl` from fragment-types, `WGSL_FOG` from wgsl-helpers.
-- **`standard-pipeline.ts`**: Imports `createStandardTemplate` from standard-template, `composeShader` from shader-composer, `createPipelineCache` from pipeline-cache, types from standard-material, shadow generator types, lights UBO helpers.
+- **`standard-pipeline.ts`**: Imports `createStandardTemplate` from standard-template, `composeShader` from shader-composer, types from standard-material, shadow generator types, lights UBO helpers.
 - **`standard-renderable.ts`**: Imports pipeline functions from standard-pipeline, `ShaderFragment` from fragment-types, scene/engine/mesh/light types, renderable interface, resource pool helpers.
 - **`standard-single-rebuild.ts`**: Imports pipeline functions, material types, resource pool helpers.
 - **Fragment modules** (`fragments/`): Each imports only `ShaderFragment` (and optionally `BindingDecl`, `Varying`) from `fragment-types.js`.

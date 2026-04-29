@@ -131,8 +131,6 @@ export interface ComposedShader {
     readonly meshUboSpec: UboSpec;
     readonly sceneUboSpec: UboSpec;
     readonly fragmentKey: string;                      // sorted IDs joined with "|" — pipeline cache key
-    readonly fragmentUboOffsets: ReadonlyMap<string, number>;       // fragment ID → float offset in mesh UBO
-    readonly fragmentBindingOffsets: ReadonlyMap<string, number>;   // fragment ID → starting binding index
 }
 ```
 
@@ -259,8 +257,6 @@ Algorithm:
 Two UBO specs are generated per composed shader:
 - **Mesh UBO**: template `baseMeshUboFields` + fragment `uboFields` (group 1, binding 0)
 - **Scene UBO**: template `baseSceneUboFields` + fragment `sceneUboFields` (group 0, binding 0)
-
-`fragmentUboOffsets` maps each fragment ID to its first field's float offset in the mesh UBO.
 
 ### Deduplication — `dedup()`
 

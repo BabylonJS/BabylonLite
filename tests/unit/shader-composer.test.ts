@@ -191,7 +191,6 @@ describe("composeShader", () => {
         expect(result.meshUboSpec.totalBytes).toBe(96); // 64 (world) + 16 + 16
         expect(result.meshUboSpec.offsets.get("ccParams")).toBe(64);
         expect(result.meshUboSpec.offsets.get("ccRefraction")).toBe(80);
-        expect(result.fragmentUboOffsets.get("clearcoat")).toBe(16); // 64 / 4 = float offset 16
     });
 
     it("appends fragment scene UBO fields", () => {
@@ -292,7 +291,6 @@ describe("composeShader", () => {
         // mesh UBO at binding 0, then fragment bindings start at 1
         expect(result.fragmentWGSL).toContain("@group(1) @binding(1) var brdfLUT: texture_2d<f32>");
         expect(result.fragmentWGSL).toContain("@group(1) @binding(2) var brdfSampler_: sampler");
-        expect(result.fragmentBindingOffsets.get("env")).toBe(1);
     });
 
     it("puts shadow bindings in group 2", () => {

@@ -97,7 +97,6 @@ babylon-lite/
 │   │   │   ├── directional-pbr.ts # Directional light PBR variant
 │   │   │   └── spot-light.ts      # createSpotLight()
 │   │   ├── material/
-│   │   │   ├── pipeline-cache.ts  # Shared pipeline cache utility
 │   │   │   ├── pbr/               # PBR metallic-roughness material
 │   │   │   │   ├── pbr-material.ts      # PbrMaterialProps + createPbrMaterial()
 │   │   │   │   ├── pbr-template.ts      # PBR shader template (WGSL generation)
@@ -1186,7 +1185,6 @@ For production builds, switch to `"./dist/index.js"`.
 | `src/light/directional-light.ts` | Directional light factory | 20 |
 | `src/light/directional-pbr.ts` | Directional light PBR variant | — |
 | `src/light/spot-light.ts` | Spot light factory | — |
-| `src/material/pipeline-cache.ts` | Shared pipeline cache utility | — |
 | `src/material/pbr/pbr-material.ts` | PBR material props + factory | 25 |
 | `src/material/pbr/pbr-template.ts` | PBR shader template (WGSL gen) | 230 |
 | `src/material/pbr/pbr-flags.ts` | PBR feature flag bitmask | — |

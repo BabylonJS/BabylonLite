@@ -460,7 +460,7 @@ The exact layout is computed by `computeUboLayout()` from the merged UBO field l
 
 ### Pipeline Caching
 
-`getOrCreatePbrPipeline` uses `createPipelineCache` from `../pipeline-cache.js`. Cache key: `pbr:${features}:${format}:${msaa}`. The `PbrPipelineVariant` contains: `features`, `pipeline`, `sceneBGL`, `meshBGL`, `shadowBGL`, `refCount`. Variants are reference-counted via `releasePbrPipelineVariant()`.
+`getOrCreatePbrPipeline` keeps a per-`PbrShaderBindings` `Map<targetSignatureKey(sig), GPURenderPipeline>`. Bind-group layouts are stable across signatures (only the pipeline depends on `sig`), so meshBGs validate against any pipeline produced for the same `(features, features2)` bindings instance.
 
 ### Shader Template (`pbr-template.ts`)
 
@@ -609,7 +609,7 @@ BRDF evaluation (GGX NDF + Smith-GGX geometry + Schlick Fresnel) for the primary
 - **`pbr-material.ts`**: Imports `Texture2D` from texture-2d, `MeshGroupBuilder` from renderable.
 - **`pbr-flags.ts`**: Imports `PbrLightExtension` from light types. No other dependencies (pure constants).
 - **`pbr-template.ts`**: Imports `ShaderTemplate`, `UboField`, `VertexAttribute`, `Varying`, `BindingDecl` from fragment-types.
-- **`pbr-pipeline.ts`**: Imports `PbrMaterialProps` from pbr-material, `ComposedShader` from shader-composer, `createPipelineCache` from pipeline-cache, feature flags from pbr-flags.
+- **`pbr-pipeline.ts`**: Imports `PbrMaterialProps` from pbr-material, `ComposedShader` from shader-composer, feature flags from pbr-flags.
 - **`pbr-renderable.ts`**: Imports pipeline functions, template creator, shader composer, fragment factories (dynamic), engine/scene/mesh/light types, resource pool helpers.
 - **`pbr-single-rebuild.ts`**: Imports `_createPbrMeshUBO` from pbr-renderable, pipeline helpers, feature flags, resource pool.
 - **`pbr-multilight-wgsl.ts`**: No imports (pure WGSL string constants).

@@ -214,8 +214,4 @@ export interface ComposedShader {
     readonly materialUboSpec?: UboSpec;
     /** Sorted fragment IDs joined with "|" — used as part of pipeline cache key */
     readonly fragmentKey: string;
-    /** Per-fragment UBO pack info: fragment ID → float offset in mesh UBO */
-    readonly fragmentUboOffsets: ReadonlyMap<string, number>;
-    /** Per-fragment binding info: fragment ID → starting binding index in group 1 */
-    readonly fragmentBindingOffsets: ReadonlyMap<string, number>;
 }
