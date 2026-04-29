@@ -169,7 +169,8 @@ describe("composeShader", () => {
         expect(result.vertexWGSL).toContain("struct VertexOutput");
         expect(result.fragmentWGSL).toContain("struct FragmentInput");
         expect(result.meshUboSpec.totalBytes).toBe(64); // just world mat4
-        expect(result.sceneUboSpec.totalBytes).toBe(64); // just viewProj mat4
+        expect(result.vertexWGSL).toContain("viewProjection: mat4x4<f32>");
+        expect(result.fragmentWGSL).toContain("@group(0) @binding(0) var<uniform> scene: SceneUniforms");
     });
 
     it("generates correct fragment key from sorted fragment IDs", () => {
@@ -193,17 +194,11 @@ describe("composeShader", () => {
         expect(result.meshUboSpec.offsets.get("ccRefraction")).toBe(80);
     });
 
-    it("appends fragment scene UBO fields", () => {
-        const frag: ShaderFragment = {
-            id: "ibl",
-            sceneUboFields: [
-                { name: "shCoeff0", type: "vec4<f32>" },
-                { name: "shCoeff1", type: "vec4<f32>" },
-            ],
-        };
+    it("uses the canonical scene UBO layout for all fragments", () => {
+        const frag: ShaderFragment = { id: "ibl" };
         const result = composeShader(makeTemplate(), [frag]);
-        expect(result.sceneUboSpec.totalBytes).toBe(96); // 64 (viewProj) + 16 + 16
-        expect(result.sceneUboSpec.offsets.get("shCoeff0")).toBe(64);
+        expect(result.vertexWGSL).toContain("vSphericalL00");
+        expect(result.fragmentWGSL).toContain("vFogColor");
     });
 
     it("injects fragment slot code into the template", () => {
