@@ -24,7 +24,7 @@ const _scratchByTask = new WeakMap<RenderPassTask, Float32Array>();
 
 /** Write the canonical SceneUniforms struct to the task's scene UBO.
  *  No dirty-tracking: we just write every frame because the per-task UBO
- *  is small (416 bytes) and writeBuffer batches well.
+ *  is small (352 bytes) and writeBuffer batches well.
  *
  *  Note: light/env data is written even for std-only scenes (those fields
  *  stay zero — std shaders simply don't reference them). This keeps a
@@ -48,9 +48,9 @@ export function writePassSceneUBO(task: RenderPassTask, eng: EngineContextIntern
 
     // SCENE_UBO float offsets (see shaders/scene-uniforms.wgsl):
     //   viewProjection  = 0    view             = 16   vEyePosition    = 32
-    //   envRotationY    = 52   vSphericalL00    = 56   exposureLinear  = 92
-    //   contrast        = 93   lodGenerationScale = 94 vFogInfos       = 96
-    //   vFogColor       = 100
+    //   envRotationY    = 36   vSphericalL00    = 40   exposureLinear  = 76
+    //   contrast        = 77   lodGenerationScale = 78 vFogInfos       = 80
+    //   vFogColor       = 84
     data.set(viewProj, 0);
     // Y-flip for offscreen passes — negate row 1 of the projection (the multiplied
     // view*proj matrix). Row 1 of a column-major mat4 lives at indices 1,5,9,13.
@@ -68,31 +68,28 @@ export function writePassSceneUBO(task: RenderPassTask, eng: EngineContextIntern
     // Fog (std uses; pbr ignores).
     const fog = scene.fog;
     if (fog) {
-        data[96] = fog.mode;
-        data[97] = fog.start;
-        data[98] = fog.end;
-        data[99] = fog.density;
-        data[100] = fog.color[0]!;
-        data[101] = fog.color[1]!;
-        data[102] = fog.color[2]!;
+        data[80] = fog.mode;
+        data[81] = fog.start;
+        data[82] = fog.end;
+        data[83] = fog.density;
+        data[84] = fog.color[0]!;
+        data[85] = fog.color[1]!;
+        data[86] = fog.color[2]!;
     }
 
     // Light data is no longer written to the SCENE_UBO. PBR + Standard both
     // read all lights exclusively from the shared lights UBO (render/lights-ubo.ts).
-    // The lightDirection/lightIntensity/lightDiffuseColor/etc fields in
-    // shaders/scene-uniforms.wgsl are now unread (kept padding-only — slated
-    // for removal in a follow-up to drop SCENE_UBO from 416 → 352 bytes).
     // Environment / IBL.
     const envTextures = scene._envTextures;
-    data[52] = scene.envRotationY ?? 0;
+    data[36] = scene.envRotationY ?? 0;
     if (envTextures?.sphericalHarmonics) {
-        data.set(envTextures.sphericalHarmonics, 56);
+        data.set(envTextures.sphericalHarmonics, 40);
     }
 
     // Image processing.
-    data[92] = scene.imageProcessing.exposure;
-    data[93] = scene.imageProcessing.contrast;
-    data[94] = envTextures?.lodGenerationScale ?? 0.8;
+    data[76] = scene.imageProcessing.exposure;
+    data[77] = scene.imageProcessing.contrast;
+    data[78] = envTextures?.lodGenerationScale ?? 0.8;
 
     eng.device.queue.writeBuffer(task._sceneUBO, 0, data as Float32Array<ArrayBuffer>);
 }
