@@ -79,6 +79,7 @@ let directRoughness = max(roughness, AA_factor_x);
 let directAlphaG = directRoughness * directRoughness + 0.0005;
 var shadowFactors = array<f32, ${MAX_LIGHTS}>(${new Array(MAX_LIGHTS).fill("1.0").join(", ")});
 let lc = min(lights.count, ${MAX_LIGHTS}u);
+/*AS*/
 // First-light aliases — kept at directLightBlock scope so the AD slot below
 // (clearcoat / sheen / subsurface) sees the same single-light variable names
 // it was originally written against. Multi-light direct contributions
