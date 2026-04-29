@@ -10,7 +10,6 @@ import type { SceneContext } from "../../scene/scene.js";
 import type { PbrMaterialProps } from "./pbr-material.js";
 import { PBR_HAS_SKELETON_8, PBR_HAS_SPECULAR_AA, PBR_HAS_RECEIVE_SHADOWS, PBR_HAS_GAMMA_ALBEDO, PBR_HAS_THIN_INSTANCES, PBR_HAS_INSTANCE_COLOR } from "./pbr-pipeline.js";
 import {
-    getLightTypeFeatureBits,
     _getPbrExts,
     PBR_HAS_NORMAL_MAP,
     PBR_HAS_COTANGENT_NORMAL,
@@ -61,7 +60,6 @@ export function computeMeshPbrFeatures(mesh: Mesh, scene: SceneContext, ctx: Pbr
         (hasAlphaBlend ? PBR_HAS_ALPHA_BLEND : 0) |
         (mat.specGlossTexture ? PBR_HAS_SPEC_GLOSS : 0) |
         (mat.doubleSided ? PBR_HAS_DOUBLE_SIDED : 0);
-    features |= getLightTypeFeatureBits();
     if ((mat.occlusionStrength ?? 1.0) > 0) {
         features |= PBR_HAS_OCCLUSION;
     }

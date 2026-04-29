@@ -36,21 +36,9 @@ return F0 + (F90 - F0) * (t2 * t2 * t);
 }
 `;
 
-export interface PbrLightConfig {
-    /** WGSL: compute L, NdotL, lightAtten from N + scene data */
-    readonly lightVectorCode: string;
-    /** WGSL: compute directDiffuse from surfaceAlbedo, NdotL, lightColor, etc. */
-    readonly directDiffuseCode: string;
-    /** WGSL: geometric AA for specular (empty string if not needed) */
-    readonly geometricAACode: string;
-}
-
 export interface PbrTemplateConfig {
-    /** Light configuration (null = no direct light). Used for single-light path
-     *  (scenes without shadows, e.g. clearcoat/sheen scenes). */
-    readonly light?: PbrLightConfig | null;
     /** When true, generates a multi-light loop + lights UBO binding.
-     *  Overrides `light`. Used for scenes with shadow generators. */
+     *  Always true for PBR scenes that have at least one light. */
     readonly hasMultiLight?: boolean;
     /** Pre-built WGSL for multi-light (structs + computePbrLight). Passed from
      *  dynamically imported fragments/multilight-wgsl.ts to keep it out of non-shadow bundles. */
@@ -93,8 +81,6 @@ export interface PbrTemplateConfig {
     readonly anisoBrdfFunctions?: string;
     /** Anisotropy WGSL: T/B computation block (dynamically imported). */
     readonly anisoTBBlock?: string;
-    /** Anisotropy WGSL: direct lighting D/G replacement (dynamically imported). */
-    readonly anisoDirectDG?: string;
     /** Optional extension config for advanced features (UV transforms, UV2, vertex colors).
      *  When undefined, base template defaults to master-like behavior (no feature strings). */
     readonly ext?: PbrTemplateExt;
@@ -106,7 +92,6 @@ export interface PbrTemplateConfig {
  */
 export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
     const {
-        light = null,
         hasMultiLight = false,
         multiLightWGSL = "",
         multiLightLoop = "",
@@ -127,7 +112,6 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
         hasAnisotropy = false,
         anisoBrdfFunctions = "",
         anisoTBBlock = "",
-        anisoDirectDG = "",
         ext,
     } = config;
     const hasNormal = normalMode === "tangent";
@@ -344,33 +328,13 @@ var AA_factor_y = 0.0;
             : `var AA_factor_x = 0.0;
 var AA_factor_y = 0.0;`;
 
-    // Direct lighting block
-    let directLightBlock: string;
-    if (hasMultiLight) {
-        directLightBlock = multiLightLoop;
-    } else if (light) {
-        const geomAA = hasSpecularAA || hasAnyNormal ? light.geometricAACode : "";
-        const dgBlock = hasAnisotropy
-            ? anisoDirectDG
-            : `let D = distributionGGX(NdotH, directAlphaG);
-let G = geometrySmithGGX(NdotL, NdotV, directAlphaG);`;
-        directLightBlock = `var directAlphaG = alphaG;
-${light.lightVectorCode}
-let H = normalize(V + L);
-let NdotH = clamp(dot(N, H), 0.0000001, 1.0);
-let VdotH = saturate(dot(V, H));
-${geomAA}
-${dgBlock}
-let coloredFresnel = fresnelSchlick(VdotH, colorF0, colorF90);
-let lightColor = scene.lightDiffuseColor * scene.lightIntensity;
-${light.directDiffuseCode}
-var directSpecular = coloredFresnel * D * G * NdotL * lightColor * lightAtten * material.directIntensity;
-/*AD*/`;
-    } else {
-        directLightBlock = `var directDiffuse = vec3<f32>(0.0);
+    // Direct lighting block — single unified path that loops over the lights UBO.
+    // Works for any light count (1..MAX_LIGHTS); empty count yields zero contribution.
+    const directLightBlock: string = hasMultiLight
+        ? multiLightLoop
+        : `var directDiffuse = vec3<f32>(0.0);
 var directSpecular = vec3<f32>(0.0);
 /*BL*/`;
-    }
 
     // Tonemap: BJS TONEMAPPING_STANDARD (exponential) by default; caller-supplied
     // ACES WGSL (from pbr-aces-wgsl.ts) is used when provided.

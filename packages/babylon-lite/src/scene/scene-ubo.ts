@@ -17,7 +17,6 @@ import type { Camera } from "../camera/camera.js";
 import type { RenderPassTask } from "../frame-graph/render-pass-task.js";
 
 import { getViewProjectionMatrix, getViewMatrix, getCameraPosition } from "../camera/camera.js";
-import { _getPbrLightExtension } from "../material/pbr/pbr-flags.js";
 import { SCENE_UBO_BYTES } from "../shader/scene-uniforms.js";
 
 /** Per-task scratch buffer cache to avoid per-frame allocation. */
@@ -78,13 +77,11 @@ export function writePassSceneUBO(task: RenderPassTask, eng: EngineContextIntern
         data[102] = fog.color[2]!;
     }
 
-    // Light slot 0 (PBR uses; std uses its own lights UBO independently).
-    const ext = _getPbrLightExtension();
-    const light0 = scene.lights[0];
-    if (ext && light0) {
-        ext.writeSceneUbo(data, light0);
-    }
-
+    // Light data is no longer written to the SCENE_UBO. PBR + Standard both
+    // read all lights exclusively from the shared lights UBO (render/lights-ubo.ts).
+    // The lightDirection/lightIntensity/lightDiffuseColor/etc fields in
+    // shaders/scene-uniforms.wgsl are now unread (kept padding-only — slated
+    // for removal in a follow-up to drop SCENE_UBO from 416 → 352 bytes).
     // Environment / IBL.
     const envTextures = scene._envTextures;
     data[52] = scene.envRotationY ?? 0;

@@ -4,7 +4,6 @@
  *  already resolved by the caller. Nothing is snapshotted at module load. */
 
 import type { ShaderFragment, ComposedShader } from "../../shader/fragment-types.js";
-import type { PbrLightConfig } from "./pbr-template.js";
 import type { PbrShadowLightSlot } from "./fragments/pbr-shadow-fragment.js";
 import { composeShader } from "../../shader/shader-composer.js";
 import { createPbrTemplate } from "./pbr-template.js";
@@ -41,7 +40,6 @@ import {
 
 export interface PbrComposerDeps {
     readonly hasMultiLight: boolean;
-    readonly lightConfig: PbrLightConfig | null;
     readonly multiLightWGSL: string;
     readonly multiLightLoop: string;
     readonly acesHelpers: string;
@@ -61,7 +59,6 @@ export function createPbrComposer(deps: PbrComposerDeps): PbrComposeFn {
     const cache = new Map<string, ComposedShader>();
     const {
         hasMultiLight,
-        lightConfig,
         multiLightWGSL,
         multiLightLoop,
         acesHelpers,
@@ -111,7 +108,6 @@ export function createPbrComposer(deps: PbrComposerDeps): PbrComposeFn {
                 : undefined;
 
         const template = createPbrTemplate({
-            light: hasMultiLight ? null : lightConfig,
             hasMultiLight,
             multiLightWGSL,
             multiLightLoop,
@@ -133,7 +129,6 @@ export function createPbrComposer(deps: PbrComposerDeps): PbrComposeFn {
             hasAnisotropy: hasAniso,
             anisoBrdfFunctions: hasAniso && anisoExt ? anisoExt.ANISO_BRDF_FUNCTIONS : "",
             anisoTBBlock: hasAniso && anisoExt ? anisoExt.makeAnisotropyTBBlock(hasNormal) : "",
-            anisoDirectDG: hasAniso && anisoExt ? anisoExt.ANISO_DIRECT_DG : "",
             ext,
         });
 

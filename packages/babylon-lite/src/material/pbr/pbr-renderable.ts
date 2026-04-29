@@ -17,7 +17,6 @@ import type { EnvironmentTextures } from "../../loader-env/load-env.js";
 
 import type { Renderable, SceneUniformUpdater, MeshGroupBuildResult } from "../../render/renderable.js";
 import type { ShaderFragment } from "../../shader/fragment-types.js";
-import type { PbrLightConfig } from "./pbr-template.js";
 import { acquireTexture, releaseTexture, clearSamplerCache } from "../../resource/gpu-pool.js";
 import { createUniformBuffer } from "../../resource/gpu-buffers.js";
 import {
@@ -33,21 +32,12 @@ import {
     PBR_HAS_THIN_INSTANCES,
     PBR_HAS_INSTANCE_COLOR,
 } from "./pbr-pipeline.js";
-import { _getPbrLightExtension, _registerPbrExt, _getPbrExts } from "./pbr-flags.js";
+import { _registerPbrExt, _getPbrExts } from "./pbr-flags.js";
 import { createPbrComposer } from "./pbr-compose.js";
 import { computeMeshPbrFeatures } from "./pbr-mesh-features.js";
 import type { ShadowGenerator } from "../../shadow/shadow-generator.js";
 import type { ThinInstanceData } from "../../mesh/thin-instance.js";
 import type { PbrShadowLightSlot } from "./fragments/pbr-shadow-fragment.js";
-
-/** Convert a PbrLightExtension to PbrLightConfig for the template. */
-function lightExtToConfig(ext: { emitLightVector(): string; emitDirectDiffuse(): string; emitGeometricAA(): string }): PbrLightConfig {
-    return {
-        lightVectorCode: ext.emitLightVector(),
-        directDiffuseCode: ext.emitDirectDiffuse(),
-        geometricAACode: ext.emitGeometricAA(),
-    };
-}
 
 /** Build PBR Renderable(s) + a SceneUniformUpdater from PBR meshes. */
 export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], envTextures: EnvironmentTextures | undefined): Promise<MeshGroupBuildResult> {
@@ -64,18 +54,10 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         }
     }
     const hasSomeShadows = shadowLights.length > 0;
-    // Multi-light path: any time there are multiple lights OR any light casts shadows.
+    // Unified light path: load multi-light infrastructure whenever the scene has any light.
     // The shadow fragment itself is only attached when meshes have PBR_HAS_RECEIVE_SHADOWS;
     // the multi-light loop's default `shadowFactors = 1.0` leaves unlit meshes untouched.
-    const hasMultiLight = scene.lights.length > 1 || hasSomeShadows;
-
-    // Register PBR extensions for all lights.
-    for (const light of scene.lights) {
-        const li = light as LightBaseInternal;
-        if (li._registerPbr) {
-            await li._registerPbr();
-        }
-    }
+    const hasAnyLight = scene.lights.length > 0;
 
     // ── Single O(N) scan over meshes for all scene-wide feature flags ──
     // Flags are plain locals (not an object return) so terser can mangle their names.
@@ -140,7 +122,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         | ((engine: EngineContextInternal, buffer: GPUBuffer, lights: readonly import("../../light/types.js").LightBase[], scratch: Float32Array) => void)
         | undefined;
     let _LIGHTS_UBO_SIZE = 0;
-    if (hasMultiLight) {
+    if (hasAnyLight) {
         const [lightsUboMod, wgslMod] = await Promise.all([import("../../render/lights-ubo.js"), import("./fragments/multilight-wgsl.js")]);
         _writeLightsUBO = lightsUboMod.writeLightsUBO;
         _refreshLightsUBO = lightsUboMod.refreshLightsUBO;
@@ -230,10 +212,6 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         _syncThinInstanceBuffers = gpuMod.syncThinInstanceBuffers;
     }
 
-    // ── Build light config from registered extension ──
-    const lightExt = _getPbrLightExtension();
-    const lightConfig: PbrLightConfig | null = lightExt ? lightExtToConfig(lightExt) : null;
-
     // ACES tonemap WGSL is dynamically imported only when requested (keeps standard-tonemap bundles lean).
     // Must be loaded before the composer is created so deps are fully resolved.
     let _acesHelpers = "";
@@ -246,8 +224,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     }
 
     const composePbr = createPbrComposer({
-        hasMultiLight,
-        lightConfig,
+        hasMultiLight: hasAnyLight,
         multiLightWGSL: _multiLightWGSL,
         multiLightLoop: _multiLightLoop,
         acesHelpers: _acesHelpers,
@@ -260,10 +237,10 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         createThinInstanceFragment: _createThinInstanceFragment,
     });
 
-    // Multi-light UBO (created once per scene; refreshed by the lights-only updater below).
+    // Lights UBO (created once per scene; refreshed by the lights-only updater below).
     let lightsUBOBuffer: GPUBuffer | undefined;
     let lightsUBOScratch: Float32Array | undefined;
-    if (hasMultiLight && _writeLightsUBO) {
+    if (hasAnyLight && _writeLightsUBO) {
         lightsUBOBuffer = _writeLightsUBO(engine, scene.lights);
         lightsUBOScratch = new Float32Array(_LIGHTS_UBO_SIZE / 4);
     }

@@ -1,7 +1,6 @@
-/** PBR feature flag constants + light extension registry.
- *  Tiny shared module imported by both pbr-pipeline and light extensions. */
+/** PBR feature flag constants + extension registry.
+ *  Tiny shared module imported by both pbr-pipeline and PBR fragments. */
 
-import type { PbrLightExtension } from "../../light/types.js";
 import type { ShaderFragment } from "../../shader/fragment-types.js";
 import type { Texture2D } from "../../texture/texture-2d.js";
 
@@ -18,7 +17,6 @@ export const PBR_HAS_COTANGENT_NORMAL = 1 << 9;
 export const PBR_HAS_METALLIC_REFLECTANCE_MAP = 1 << 10;
 export const PBR_HAS_REFLECTANCE_MAP = 1 << 11;
 export const PBR_HAS_USE_ALPHA_ONLY_MR = 1 << 12;
-const PBR_LIGHT_TYPE_SHIFT = 13;
 export const PBR_HAS_OCCLUSION = 1 << 15;
 export const PBR_HAS_SKELETON_8 = 1 << 16;
 export const PBR_HAS_SPECULAR_AA = 1 << 17;
@@ -67,18 +65,6 @@ export const PBR2_HAS_UV2 = 1 << 12;
 /** Material has a sheen texture with a KHR_texture_transform. Sheen owns its
  *  own `sheenUVm`/`sheenUVt` UBO fields and applies txfUV locally. */
 export const PBR2_HAS_SHEEN_UV_TX = 1 << 13;
-
-let _lightExt: PbrLightExtension | null = null;
-/** @internal */ export function _setPbrLightExtension(ext: PbrLightExtension): void {
-    _lightExt = ext;
-}
-/** @internal */ export function _getPbrLightExtension(): PbrLightExtension | null {
-    return _lightExt;
-}
-const _lightTagToType: Record<string, number> = { hemispheric: 1, directional: 2, point: 3 };
-/** @internal */ export function getLightTypeFeatureBits(): number {
-    return (_lightTagToType[_lightExt?.tag ?? ""] ?? 0) << PBR_LIGHT_TYPE_SHIFT;
-}
 
 // ─── Unified PBR Extension Registry ─────────────────────────────────
 /** @internal Bind-group phase, matching composer slot layout:
