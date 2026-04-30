@@ -120,8 +120,9 @@ export function createRenderPassTask(config: RenderPassTaskConfig, engine: Engin
     };
 
     const sceneBGL = getSceneBindGroupLayout(eng);
-    const sceneUBO = createEmptyUniformBuffer(eng, SCENE_UBO_BYTES);
+    const sceneUBO = createEmptyUniformBuffer(eng, SCENE_UBO_BYTES, `${config.name}-scene-ubo`);
     const sceneBG = eng.device.createBindGroup({
+        label: `${config.name}-scene-bg`,
         layout: sceneBGL,
         entries: [{ binding: 0, resource: { buffer: sceneUBO } }],
     });
@@ -320,6 +321,7 @@ function buildRenderPassDescriptor(task: RenderPassTask, swapchain: boolean): vo
     task._colorAttachment = colorAttachment;
     task._depthAttachment = depthAttachment;
     task._renderPassDescriptor = {
+        label: task.name,
         colorAttachments: colorAttachment ? [colorAttachment] : [],
         depthStencilAttachment: depthAttachment ?? undefined,
     };
@@ -402,6 +404,7 @@ function executePass(task: RenderPassTask): number {
     // be replayed standalone (executeBundles inherits no inherited state).
     if (task._lastVersion !== scene._renderableVersion || task._lastVis !== _vis || !task._opaqueBundle) {
         const be = eng.device.createRenderBundleEncoder({
+            label: `${task.name}-opaque`,
             colorFormats: [rt.descriptor.colorFormat],
             depthStencilFormat: rt.descriptor.depthStencilFormat,
             sampleCount: rt.descriptor.sampleCount ?? 1,

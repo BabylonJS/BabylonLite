@@ -234,7 +234,7 @@ function renderFrame(engine: EngineContextInternal, delta: number): void {
         return;
     }
 
-    const encoder = engine.device.createCommandEncoder();
+    const encoder = engine.device.createCommandEncoder({ label: "frame" });
     engine._currentEncoder = encoder;
     engine._currentDelta = delta;
     engine._swapchainView = engine.context.getCurrentTexture().createView();
