@@ -78,7 +78,7 @@ export interface RenderPassTask extends Task {
 
     /** Cached descriptor + color attachment (color view is patched per-frame in
      *  swapchain mode; clearColor is patched live every frame). */
-    _renderPassDescriptor: GPURenderPassDescriptor | null;
+    _renderPassDescriptor: GPURenderPassDescriptor;
     _colorAttachment: GPURenderPassColorAttachment | null;
     _depthAttachment: GPURenderPassDepthStencilAttachment | null;
 
@@ -140,7 +140,7 @@ export function createRenderPassTask(config: RenderPassTaskConfig, engine: Engin
         _opaqueBundle: null,
         _lastVersion: -1,
         _lastVis: 0,
-        _renderPassDescriptor: null,
+        _renderPassDescriptor: { colorAttachments: [] },
         _colorAttachment: null,
         _depthAttachment: null,
         _targetSignature: targetSignature,
@@ -181,7 +181,6 @@ export function createRenderPassTask(config: RenderPassTaskConfig, engine: Engin
         },
         dispose(): void {
             disposeRenderTarget(task._config.rt);
-            task._renderPassDescriptor = null;
             task._colorAttachment = null;
             task._depthAttachment = null;
             task._opaqueBindings.length = 0;
@@ -257,13 +256,14 @@ function sortTransparentBindings(task: RenderPassTask): void {
     const cy = w[13]!;
     const cz = w[14]!;
     for (const b of arr) {
+        b._sortDistance = 0;
         const wc = b.renderable._worldCenter;
         if (wc) {
             const [wx, wy, wz] = wc;
             b._sortDistance = (wx - cx) ** 2 + (wy - cy) ** 2 + (wz - cz) ** 2;
         }
     }
-    arr.sort((a, b) => (b._sortDistance ?? 0) - (a._sortDistance ?? 0) || a.renderable.order - b.renderable.order);
+    arr.sort((a, b) => b._sortDistance! - a._sortDistance! || a.renderable.order - b.renderable.order);
 }
 
 /** (Re)bucket task._renderables into bound lists. */
@@ -341,31 +341,16 @@ function patchPerFrame(task: RenderPassTask, eng: EngineContextInternal, swapcha
         att.loadOp = c.clr !== false ? "clear" : "load";
         if (swapchain) {
             const swapView = eng._swapchainView;
-            const msaaView = c.rt._colorView;
-            if (msaaView) {
-                att.view = msaaView;
-                if (swapView) {
-                    att.resolveTarget = swapView;
-                }
-            } else if (swapView) {
+            if (c.rt.descriptor.sampleCount > 1) {
+                att.resolveTarget = swapView;
+            } else {
                 att.view = swapView;
             }
-        }
-    }
-    const dsa = task._depthAttachment;
-    if (dsa) {
-        const loadOp: GPULoadOp = c.clr !== false ? "clear" : "load";
-        dsa.depthLoadOp = loadOp;
-        if (dsa.stencilLoadOp !== undefined) {
-            dsa.stencilLoadOp = loadOp;
         }
     }
 }
 
 function executePass(task: RenderPassTask): number {
-    if (!task._renderPassDescriptor) {
-        return 0;
-    }
     const eng = task.engine as EngineContextInternal;
     const encoder = eng._currentEncoder;
     if (!encoder) {
@@ -384,18 +369,16 @@ function executePass(task: RenderPassTask): number {
 
     const pass = encoder.beginRenderPass(task._renderPassDescriptor);
     const v = camera?.viewport;
-    let x = 0;
-    let y = 0;
-    let w = rt._width;
-    let h = rt._height;
     if (v) {
-        x = Math.floor(v.x * w);
-        y = Math.floor((1 - v.y - v.height) * h);
-        w = Math.ceil((v.x + v.width) * w) - x;
-        h = Math.ceil((1 - v.y) * h) - y;
+        const rw = rt._width;
+        const rh = rt._height;
+        const x = Math.floor(v.x * rw);
+        const y = Math.floor((1 - v.y - v.height) * rh);
+        const w = Math.ceil((v.x + v.width) * rw) - x;
+        const h = Math.ceil((1 - v.y) * rh) - y;
+        pass.setViewport(x, y, w, h, 0, 1);
+        pass.setScissorRect(x, y, w, h);
     }
-    pass.setViewport(x, y, w, h, 0, 1);
-    pass.setScissorRect(x, y, w, h);
     // Scene bind group (group 0) is task-owned and identical for every draw in this pass.
     pass.setBindGroup(0, task._sceneBG);
 

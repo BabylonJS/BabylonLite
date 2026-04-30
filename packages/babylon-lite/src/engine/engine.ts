@@ -57,8 +57,8 @@ export interface EngineContextInternal extends EngineContext {
     /** Encoder being filled this frame. Set by `renderFrame` before each context's
      *  `_update`/`_record`; consumed by frame-graph tasks and pre-passes. */
     _currentEncoder: GPUCommandEncoder | null;
-    /** Swapchain view acquired once per frame. Consumed by scene-render tasks. */
-    _swapchainView: GPUTextureView | null;
+    /** Swapchain view acquired once per frame before contexts record. */
+    _swapchainView: GPUTextureView;
     /** Frame delta in ms (read by scenes that don't override fixedDeltaMs). */
     _currentDelta: number;
 }
@@ -148,7 +148,7 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
         _renderFn: null,
         _renderingContexts: [],
         _currentEncoder: null,
-        _swapchainView: null,
+        _swapchainView: undefined!,
         _currentDelta: 0,
     };
 
@@ -252,5 +252,4 @@ function renderFrame(engine: EngineContextInternal, delta: number): void {
     engine.drawCallCount = drawCalls;
 
     engine._currentEncoder = null;
-    engine._swapchainView = null;
 }

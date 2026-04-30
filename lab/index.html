@@ -4104,6 +4104,18 @@
                 if (pct > 0)     return "#d29922";   // amber
                 return "#3fb950";                    // green
             }
+            function perfRegVerdict(e) {
+                return e.verdict || (e.avgDeltaPct > 0 ? "slower" : "faster");
+            }
+            function perfRegColor(e, limit) {
+                var verdict = perfRegVerdict(e);
+                if (verdict === "inconclusive") return "#8b949e";
+                if (verdict === "faster") return "#3fb950";
+                return deltaColor(e.avgDeltaPct, limit);
+            }
+            function perfRegLabel(e) {
+                return perfRegVerdict(e) === "inconclusive" ? "inconclusive" : fmtDelta(e.avgDeltaPct);
+            }
             function renderPerfRegGrid() {
                 var grid = document.getElementById("perfreg-grid");
                 if (!grid) return;
@@ -4126,18 +4138,21 @@
                 var shown = 0;
                 keys.forEach(function(key){
                     var e = manifest.scenes[key];
-                    if (window._perfRegFilterRegressionsOnly && e.avgDeltaPct <= limit) return;
+                    var verdict = perfRegVerdict(e);
+                    if (window._perfRegFilterRegressionsOnly && (verdict !== "slower" || e.avgDeltaPct <= limit)) return;
                     shown++;
                     var card = document.createElement("div");
                     card.className = "perf-scene-card";
-                    var color = deltaColor(e.avgDeltaPct, limit);
+                    var color = perfRegColor(e, limit);
+                    var runs = e.runs ? e.runs.map(function(r, i) { return "#" + (i + 1) + " " + fmtDelta(r.avgDeltaPct); }).join(", ") : "";
                     card.innerHTML =
                         '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">' +
                         '  <div style="font-weight:600">#' + e.id + ' ' + e.name + '</div>' +
-                        '  <div style="font-size:18px;font-weight:700;color:' + color + '">' + fmtDelta(e.avgDeltaPct) + '</div>' +
+                        '  <div style="font-size:18px;font-weight:700;color:' + color + '">' + perfRegLabel(e) + '</div>' +
                         '</div>' +
                         '<table style="width:100%;font-size:12px;color:#8b949e">' +
                         '  <tr><th></th><th style="text-align:right">current</th><th style="text-align:right">baseline</th><th style="text-align:right">Δ</th></tr>' +
+                        '  <tr><td>result</td><td colspan="3" style="text-align:right;color:' + color + '">' + verdict + (runs ? " (" + runs + ")" : "") + '</td></tr>' +
                         '  <tr><td>avg</td><td style="text-align:right;color:#c9d1d9">' + e.current.avgMs + 'ms</td><td style="text-align:right">' + e.baseline.avgMs + 'ms</td><td style="text-align:right;color:' + color + '">' + fmtDelta(e.avgDeltaPct) + '</td></tr>' +
                         '  <tr><td>p95</td><td style="text-align:right;color:#c9d1d9">' + e.current.p95Ms + 'ms</td><td style="text-align:right">' + e.baseline.p95Ms + 'ms</td><td style="text-align:right;color:' + deltaColor(e.p95DeltaPct, limit) + '">' + fmtDelta(e.p95DeltaPct) + '</td></tr>' +
                         '  <tr><td>median</td><td style="text-align:right;color:#c9d1d9">' + e.current.medianMs + 'ms</td><td style="text-align:right">' + e.baseline.medianMs + 'ms</td><td style="text-align:right;color:' + deltaColor(e.medianDeltaPct, limit) + '">' + fmtDelta(e.medianDeltaPct) + '</td></tr>' +

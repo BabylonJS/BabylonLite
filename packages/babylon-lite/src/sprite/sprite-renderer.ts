@@ -339,7 +339,7 @@ function spriteRendererRecord(rr: SpriteRendererInternal): number {
     }
     const eng = rr._engine;
     const encoder = eng._currentEncoder!;
-    const swapView = eng._swapchainView!;
+    const swapView = eng._swapchainView;
 
     // Open a render pass directly on the swapchain. Sprite rendering doesn't
     // need depth, so no depth attachment is provided. When MSAA is on we

@@ -18,11 +18,12 @@
  *   pnpm build:bundle-scenes          — builds current bundles
  *   pnpm build:perf-baseline          — builds baseline bundles from last release
  *
- * Env:  PERF_REGRESSION_PCT=5   — allowed % regression (default: 5)
- *       PERF_FRAMES=300          — frames to render per measurement run (default: 300)
- *       PERF_RUNS=5              — measurement runs per version, takes median (default: 6)
+ * Env:  PERF_REGRESSION_PCT=5    — allowed % regression (default: 5)
+ *       PERF_FRAMES=300           — frames to render per measurement run (default: 800)
+ *       PERF_RUNS=5               — measurement runs per version, takes median (default: 6)
+ *       PERF_COMPARE_RUNS=3       — current-vs-baseline comparisons per scene (default: 3)
  *       PERF_WARMUP=60            — warmup frames per run before measurement (default: 60)
- *       PERF_SCENES=1,5,9        — run only specific scenes (default: all)
+ *       PERF_SCENES=1,5,9         — run only specific scenes (default: all)
  *
  * Run:  npx playwright test --config playwright.perf.config.ts tests/perf/perf-regression.spec.ts
  */
@@ -51,6 +52,16 @@ interface PerfResult {
     frameCount: number;
 }
 
+type RegressionVerdict = "slower" | "faster" | "inconclusive";
+
+interface RegressionRun {
+    current: PerfResult;
+    baseline: PerfResult;
+    avgDeltaPct: number;
+    p95DeltaPct: number;
+    medianDeltaPct: number;
+}
+
 const CONFIG_PATH = resolve(__dirname, "../../scene-config.json");
 const allScenes: SceneConfigEntry[] = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 
@@ -62,6 +73,7 @@ const BASELINE_DIR = resolve(__dirname, "../../lab/public/bundle-baseline");
 const hasBaseline = existsSync(BASELINE_DIR);
 
 const RUNS_PER_SCENE = Number(process.env.PERF_RUNS) || 6;
+const COMPARE_RUNS = Math.max(1, Number(process.env.PERF_COMPARE_RUNS) || 3);
 
 // Manifest written for the lab's "Perf Regression" tab: current Lite vs upstream Lite baseline.
 const MANIFEST_PATH = resolve(__dirname, "../../lab/public/perf-regression-manifest.json");
@@ -73,12 +85,15 @@ interface RegressionEntry {
     avgDeltaPct: number;
     p95DeltaPct: number;
     medianDeltaPct: number;
+    verdict: RegressionVerdict;
+    runs: RegressionRun[];
 }
 interface RegressionManifest {
     generatedAt: string;
     regressionPct: number;
     frameCount: number;
     runsPerScene: number;
+    compareRuns: number;
     scenes: Record<string, RegressionEntry>;
 }
 const manifest: RegressionManifest = {
@@ -86,6 +101,7 @@ const manifest: RegressionManifest = {
     regressionPct: REGRESSION_PCT,
     frameCount: FRAME_COUNT,
     runsPerScene: RUNS_PER_SCENE,
+    compareRuns: COMPARE_RUNS,
     scenes: {},
 };
 
@@ -158,6 +174,34 @@ const PERF_INIT_SCRIPT = `
 
 function round3(v: number): number {
     return Math.round(v * 1000) / 1000;
+}
+
+function fmtDelta(pct: number): string {
+    return `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
+}
+
+function makeRegressionRun(current: PerfResult, baseline: PerfResult): RegressionRun {
+    return {
+        current,
+        baseline,
+        avgDeltaPct: round3(baseline.avgMs > 0 ? ((current.avgMs - baseline.avgMs) / baseline.avgMs) * 100 : 0),
+        p95DeltaPct: round3(baseline.p95Ms > 0 ? ((current.p95Ms - baseline.p95Ms) / baseline.p95Ms) * 100 : 0),
+        medianDeltaPct: round3(baseline.medianMs > 0 ? ((current.medianMs - baseline.medianMs) / baseline.medianMs) * 100 : 0),
+    };
+}
+
+function reportedRun(runs: RegressionRun[]): RegressionRun {
+    const median = [...runs].sort((a, b) => a.avgDeltaPct - b.avgDeltaPct)[Math.floor(runs.length / 2)];
+    if (!median) {
+        throw new Error("No perf regression runs were recorded");
+    }
+    return median;
+}
+
+function regressionVerdict(runs: RegressionRun[]): RegressionVerdict {
+    if (runs.every((r) => r.avgDeltaPct > 0)) return "slower";
+    if (runs.every((r) => r.avgDeltaPct < 0)) return "faster";
+    return "inconclusive";
 }
 
 /**
@@ -303,56 +347,66 @@ if (!hasBaseline) {
                 const currentUrl = `/bundle-scene${scene.id}.html`;
                 const baselineUrl = `/bundle-baseline-scene${scene.id}.html`;
 
-                let baseline: PerfResult;
-                let current: PerfResult;
-
+                const runs: RegressionRun[] = [];
                 try {
-                    // Measure baseline first (conservative: gives baseline more warm-up)
-                    baseline = await measurePage(context, baselineUrl, RUNS_PER_SCENE);
-                } catch (e) {
+                    for (let i = 0; i < COMPARE_RUNS; i++) {
+                        // Measure baseline first (conservative: gives baseline more warm-up)
+                        const baseline = await measurePage(context, baselineUrl, RUNS_PER_SCENE).catch((e: Error) =>
+                            skipWithWarning(`[NOT A PERFORMANCE ISSUE] Baseline scene failed to load/render: ${e.message}`, testName)
+                        );
+                        const current = await measurePage(context, currentUrl, RUNS_PER_SCENE).catch((e: Error) =>
+                            skipWithWarning(`[NOT A PERFORMANCE ISSUE] Current scene failed to load/render: ${e.message}`, testName)
+                        );
+
+                        const run = makeRegressionRun(current, baseline);
+                        runs.push(run);
+                        console.log(
+                            `  ${scene.name} run ${i + 1}/${COMPARE_RUNS}: ` +
+                                `current ${run.current.avgMs}ms / baseline ${run.baseline.avgMs}ms | ` +
+                                `delta: ${fmtDelta(run.avgDeltaPct)} | ` +
+                                `p95: ${run.current.p95Ms}ms / ${run.baseline.p95Ms}ms (${fmtDelta(run.p95DeltaPct)}) | ` +
+                                `median: ${run.current.medianMs}ms / ${run.baseline.medianMs}ms`
+                        );
+                    }
+                } finally {
                     await context.close();
-                    skipWithWarning(`[NOT A PERFORMANCE ISSUE] Baseline scene failed to load/render: ${(e as Error).message}`, testName);
                 }
 
-                try {
-                    current = await measurePage(context, currentUrl, RUNS_PER_SCENE);
-                } catch (e) {
-                    await context.close();
-                    skipWithWarning(`[NOT A PERFORMANCE ISSUE] Current scene failed to load/render: ${(e as Error).message}`, testName);
-                }
-
-                await context.close();
-
-                const avgDeltaPct = baseline.avgMs > 0 ? ((current.avgMs - baseline.avgMs) / baseline.avgMs) * 100 : 0;
-                const p95DeltaPct = baseline.p95Ms > 0 ? ((current.p95Ms - baseline.p95Ms) / baseline.p95Ms) * 100 : 0;
-                const medianDeltaPct = baseline.medianMs > 0 ? ((current.medianMs - baseline.medianMs) / baseline.medianMs) * 100 : 0;
+                const verdict = regressionVerdict(runs);
+                const reported = reportedRun(runs);
+                const runSummary = runs.map((run, i) => `#${i + 1} ${fmtDelta(run.avgDeltaPct)}`).join(", ");
 
                 manifest.scenes[`scene${scene.id}`] = {
                     id: scene.id,
                     name: scene.name,
-                    current,
-                    baseline,
-                    avgDeltaPct: round3(avgDeltaPct),
-                    p95DeltaPct: round3(p95DeltaPct),
-                    medianDeltaPct: round3(medianDeltaPct),
+                    current: reported.current,
+                    baseline: reported.baseline,
+                    avgDeltaPct: reported.avgDeltaPct,
+                    p95DeltaPct: reported.p95DeltaPct,
+                    medianDeltaPct: reported.medianDeltaPct,
+                    verdict,
+                    runs,
                 };
                 // Persist incrementally so partial runs are visible.
                 persistManifest();
 
                 console.log(
                     `  ${scene.name}: ` +
-                        `current ${current.avgMs}ms / baseline ${baseline.avgMs}ms | ` +
-                        `delta: ${avgDeltaPct > 0 ? "+" : ""}${avgDeltaPct.toFixed(1)}% | ` +
-                        `p95: ${current.p95Ms}ms / ${baseline.p95Ms}ms (${p95DeltaPct > 0 ? "+" : ""}${p95DeltaPct.toFixed(1)}%) | ` +
-                        `median: ${current.medianMs}ms / ${baseline.medianMs}ms`
+                        `${verdict} (${runSummary}) | ` +
+                        `reported current ${reported.current.avgMs}ms / baseline ${reported.baseline.avgMs}ms | ` +
+                        `delta: ${fmtDelta(reported.avgDeltaPct)} | ` +
+                        `p95: ${reported.current.p95Ms}ms / ${reported.baseline.p95Ms}ms (${fmtDelta(reported.p95DeltaPct)}) | ` +
+                        `median: ${reported.current.medianMs}ms / ${reported.baseline.medianMs}ms`
                 );
 
                 // Only assert on trimmed mean — p95 is too noisy at sub-ms frame times
                 // (a single GC pause creates 30%+ swings). p95 is still logged for visibility.
-                expect(
-                    avgDeltaPct,
-                    `Avg ${current.avgMs}ms vs baseline ${baseline.avgMs}ms (+${avgDeltaPct.toFixed(1)}%, limit: +${REGRESSION_PCT}%) | p95: ${current.p95Ms}ms vs ${baseline.p95Ms}ms (+${p95DeltaPct.toFixed(1)}%) | median: ${current.medianMs}ms vs ${baseline.medianMs}ms`
-                ).toBeLessThanOrEqual(REGRESSION_PCT);
+                if (verdict === "slower") {
+                    expect(
+                        reported.avgDeltaPct,
+                        `Avg ${reported.current.avgMs}ms vs baseline ${reported.baseline.avgMs}ms (${fmtDelta(reported.avgDeltaPct)}, limit: +${REGRESSION_PCT}%) | runs: ${runSummary} | p95: ${reported.current.p95Ms}ms vs ${reported.baseline.p95Ms}ms (${fmtDelta(reported.p95DeltaPct)}) | median: ${reported.current.medianMs}ms vs ${reported.baseline.medianMs}ms`
+                    ).toBeLessThanOrEqual(REGRESSION_PCT);
+                }
             });
         }
     });
