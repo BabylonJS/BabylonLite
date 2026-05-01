@@ -1,4 +1,5 @@
-import type { EngineContext, EngineContextInternal } from "../engine/engine.js";
+import { registerRenderingContext, unregisterRenderingContext } from "../engine/engine.js";
+import type { EngineContext, EngineContextInternal, RenderingContext } from "../engine/engine.js";
 import type { RenderTarget, RenderTargetSignature } from "../engine/render-target.js";
 import { buildRenderTarget, createRenderTarget, disposeRenderTarget, targetSignatureKey } from "../engine/render-target.js";
 import type { SceneContext, SceneContextInternal } from "../scene/scene-core.js";
@@ -60,7 +61,7 @@ interface EffectWrapperInternal extends EffectWrapper {
 export interface EffectRenderTaskConfig {
     name: string;
     effect: EffectWrapper;
-    target?: "swapchain" | RenderTarget;
+    target: RenderTarget;
     clear?: boolean;
     clearColor?: GPUColorDict;
 }
@@ -72,10 +73,46 @@ export interface EffectRenderTask extends Task {
 }
 
 interface EffectRenderTaskInternal extends EffectRenderTask {
-    _ownsTarget: boolean;
     _targetSignature: RenderTargetSignature;
     _renderPassDescriptor: GPURenderPassDescriptor;
     _colorAttachment: GPURenderPassColorAttachment;
+}
+
+// ─── Direct swapchain renderer (no scene / frame graph required) ─────────────
+
+/** Options for `createEffectRenderer`. */
+export interface EffectRendererOptions {
+    /** Label for GPU resources. Defaults to the effect's own name. */
+    name?: string;
+    /** Whether to clear the swapchain before drawing. Defaults to `true`. */
+    clear?: boolean;
+    /** Clear colour. Defaults to opaque black. */
+    clearColor?: GPUColorDict;
+}
+
+/**
+ * `EffectRenderer` — a fullscreen-effect `RenderingContext` that draws
+ * directly to the swapchain without a `SceneContext` or frame-graph task.
+ * Use `registerEffectRenderer` / `unregisterEffectRenderer` to attach it to
+ * an engine, then call `startEngine` as usual.
+ *
+ * For offscreen render-to-texture workflows (effect result consumed by a
+ * scene material) continue to use `createEffectRenderTask` inside a scene
+ * frame graph.
+ */
+export interface EffectRenderer extends RenderingContext {
+    readonly name: string;
+}
+
+interface EffectRendererInternal extends EffectRenderer {
+    _engine: EngineContextInternal;
+    _effect: EffectWrapperInternal;
+    _clear: boolean;
+    _rt: RenderTarget;
+    _targetSignature: RenderTargetSignature;
+    _renderPassDescriptor: GPURenderPassDescriptor;
+    _colorAttachment: GPURenderPassColorAttachment;
+    _disposed: boolean;
 }
 
 export function createEffectWrapper(engine: EngineContext, options: EffectWrapperOptions): EffectWrapper {
@@ -129,16 +166,7 @@ export function setEffectTexture(wrapper: EffectWrapper, bindingNameOrIndex: str
 export function createEffectRenderTask(config: EffectRenderTaskConfig, engine: EngineContext, scene: SceneContext): EffectRenderTask {
     const eng = engine as EngineContextInternal;
     const sc = scene as SceneContextInternal;
-    const ownsTarget = config.target == null || config.target === "swapchain";
-    const rt: RenderTarget = ownsTarget
-        ? createRenderTarget({
-              label: `${config.name}-swapchain`,
-              colorFormat: eng.format,
-              sampleCount: eng.msaaSamples,
-              size: "canvas",
-              resolveToSwapchain: true,
-          })
-        : (config.target as RenderTarget);
+    const rt = config.target;
     config.clearColor ??= { r: 0, g: 0, b: 0, a: 1 };
     const sampleCount = rt.descriptor.sampleCount ?? 1;
     const targetSignature: RenderTargetSignature = {
@@ -156,7 +184,6 @@ export function createEffectRenderTask(config: EffectRenderTaskConfig, engine: E
         engine: eng,
         scene: sc,
         _rt: rt,
-        _ownsTarget: ownsTarget,
         _targetSignature: targetSignature,
         _renderPassDescriptor: { label: config.name, colorAttachments: [colorAttachment] },
         _colorAttachment: colorAttachment,
@@ -183,9 +210,6 @@ export function createEffectRenderTask(config: EffectRenderTaskConfig, engine: E
             return 1;
         },
         dispose(): void {
-            if (task._ownsTarget) {
-                disposeRenderTarget(rt);
-            }
             task._renderPassDescriptor = { colorAttachments: [] };
         },
     };
@@ -206,6 +230,106 @@ export function disposeEffectWrapper(wrapper: EffectWrapper): void {
     internal._pipelineLayout = null;
     internal._bindGroup = null;
     internal._bindGroupDirty = true;
+}
+
+/**
+ * Create an `EffectRenderer` that draws `effect` as a fullscreen pass to the
+ * swapchain each frame. The renderer owns a swapchain `RenderTarget` and
+ * implements `RenderingContext` directly — no `SceneContext` is needed.
+ *
+ * Call `registerEffectRenderer` to start rendering, `unregisterEffectRenderer`
+ * to pause, and `disposeEffectRenderer` to free GPU resources.
+ */
+export function createEffectRenderer(engine: EngineContext, effect: EffectWrapper, options?: EffectRendererOptions): EffectRenderer {
+    const eng = engine as EngineContextInternal;
+    const ew = effect as EffectWrapperInternal;
+    const name = options?.name ?? effect.name;
+    const clear = options?.clear !== false;
+    const clearColor: GPUColorDict = options?.clearColor ?? { r: 0, g: 0, b: 0, a: 1 };
+
+    const rt = createRenderTarget({
+        label: `${name}-swapchain`,
+        colorFormat: eng.format,
+        sampleCount: eng.msaaSamples,
+        size: "canvas",
+        resolveToSwapchain: true,
+    });
+
+    const targetSignature: RenderTargetSignature = {
+        colorFormat: rt.descriptor.colorFormat,
+        sampleCount: rt.descriptor.sampleCount ?? 1,
+    };
+
+    const colorAttachment: GPURenderPassColorAttachment = {
+        view: undefined!,
+        loadOp: "clear",
+        storeOp: "store",
+    };
+    const renderPassDescriptor: GPURenderPassDescriptor = { label: name, colorAttachments: [colorAttachment] };
+
+    const er: EffectRendererInternal = {
+        name,
+        clearColor,
+        _drawCallsPre: 0,
+        _engine: eng,
+        _effect: ew,
+        _clear: clear,
+        _rt: rt,
+        _targetSignature: targetSignature,
+        _renderPassDescriptor: renderPassDescriptor,
+        _colorAttachment: colorAttachment,
+        _disposed: false,
+        _update(): void {},
+        _record(): number {
+            if (er._disposed) {
+                return 0;
+            }
+            ensureRtCanvasSize(er._rt, er._engine);
+            applyColorAttachmentState(er._colorAttachment, er._rt, er._engine, er._clear, er.clearColor);
+            const encoder = er._engine._currentEncoder;
+            if (!encoder) {
+                return 0;
+            }
+            const pipeline = getEffectPipeline(er._effect, er._targetSignature);
+            const bindGroup = getEffectBindGroup(er._effect);
+            const pass = encoder.beginRenderPass(er._renderPassDescriptor);
+            pass.setPipeline(pipeline);
+            if (bindGroup) {
+                pass.setBindGroup(0, bindGroup);
+            }
+            pass.draw(3);
+            pass.end();
+            return 1;
+        },
+        _resize(): void {
+            if (er._disposed) {
+                return;
+            }
+            buildRenderTarget(er._rt, er._engine);
+        },
+    };
+    return er;
+}
+
+/** Register the effect renderer with its engine. Idempotent — a second call is a no-op. */
+export function registerEffectRenderer(er: EffectRenderer): void {
+    registerRenderingContext((er as EffectRendererInternal)._engine, er);
+}
+
+/** Unregister the effect renderer from its engine. No-op if not registered. */
+export function unregisterEffectRenderer(er: EffectRenderer): void {
+    unregisterRenderingContext((er as EffectRendererInternal)._engine, er);
+}
+
+/** Unregister and free all GPU resources owned by the renderer. */
+export function disposeEffectRenderer(er: EffectRenderer): void {
+    const internal = er as EffectRendererInternal;
+    if (internal._disposed) {
+        return;
+    }
+    unregisterEffectRenderer(er);
+    disposeRenderTarget(internal._rt);
+    internal._disposed = true;
 }
 
 function createBindingSlots(wrapper: EffectWrapperInternal): void {
@@ -230,11 +354,9 @@ function createBindingSlots(wrapper: EffectWrapperInternal): void {
     }
 }
 
-function patchColorAttachment(task: EffectRenderTaskInternal, eng: EngineContextInternal): void {
-    const rt = task._rt;
-    const att = task._colorAttachment;
-    att.clearValue = task._config.clearColor!;
-    att.loadOp = task._config.clear === false ? "load" : "clear";
+function applyColorAttachmentState(att: GPURenderPassColorAttachment, rt: RenderTarget, eng: EngineContextInternal, clear: boolean, clearColor: GPUColorDict): void {
+    att.clearValue = clearColor;
+    att.loadOp = clear ? "clear" : "load";
     if (rt.descriptor.resolveToSwapchain === true) {
         if ((rt.descriptor.sampleCount ?? 1) > 1) {
             att.view = rt._colorView!;
@@ -249,14 +371,22 @@ function patchColorAttachment(task: EffectRenderTaskInternal, eng: EngineContext
     }
 }
 
+function patchColorAttachment(task: EffectRenderTaskInternal, eng: EngineContextInternal): void {
+    applyColorAttachmentState(task._colorAttachment, task._rt, eng, task._config.clear !== false, task._config.clearColor!);
+}
+
+function ensureRtCanvasSize(rt: RenderTarget, eng: EngineContextInternal): void {
+    if (rt.descriptor.size !== "canvas") {
+        return;
+    }
+    if (rt._width === eng.canvas.width && rt._height === eng.canvas.height) {
+        return;
+    }
+    buildRenderTarget(rt, eng);
+}
+
 function ensureTargetSize(task: EffectRenderTaskInternal, eng: EngineContextInternal): void {
-    if (task._rt.descriptor.size !== "canvas") {
-        return;
-    }
-    if (task._rt._width === eng.canvas.width && task._rt._height === eng.canvas.height) {
-        return;
-    }
-    buildRenderTarget(task._rt, eng);
+    ensureRtCanvasSize(task._rt, eng);
 }
 
 function getEffectPipeline(wrapper: EffectWrapperInternal, targetSignature: RenderTargetSignature): GPURenderPipeline {

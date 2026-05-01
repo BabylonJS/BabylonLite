@@ -23,6 +23,8 @@ export { createRenderTargetTexture } from "./texture/rtt.js";
 // ─── Fullscreen Effects ─────────────────────────────────────────────
 export { createEffectWrapper, setEffectUniforms, setEffectTexture, createEffectRenderTask, disposeEffectWrapper } from "./effect/effect-renderer.js";
 export type { EffectBindingKind, EffectBindingLayout, EffectWrapperOptions, EffectWrapper, EffectRenderTaskConfig, EffectRenderTask } from "./effect/effect-renderer.js";
+export { createEffectRenderer, registerEffectRenderer, unregisterEffectRenderer, disposeEffectRenderer } from "./effect/effect-renderer.js";
+export type { EffectRendererOptions, EffectRenderer } from "./effect/effect-renderer.js";
 
 // ─── Camera ──────────────────────────────────────────────────────────
 export { createArcRotateCamera } from "./camera/arc-rotate.js";

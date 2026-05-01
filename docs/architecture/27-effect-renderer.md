@@ -3,16 +3,18 @@
 
 ## Purpose
 
-The effect renderer module provides a Lite-native equivalent of Babylon.js `EffectRenderer` / `EffectWrapper` for fullscreen shader work. It is intentionally WebGPU/WGSL-first and frame-graph-native:
+The effect renderer module provides a Lite-native equivalent of Babylon.js `EffectRenderer` / `EffectWrapper` for fullscreen shader work. It is intentionally WebGPU/WGSL-first and keeps the simplest swapchain path out of the scene frame graph:
 
 - effects are pure-state wrapper handles;
 - behaviour is exposed through standalone functions;
+- uniforms, textures, and samplers are declared explicitly through `EffectBindingLayout`;
 - fullscreen geometry is the standard single triangle generated from `@builtin(vertex_index)`;
-- render work is scheduled as a `Task` in the existing `FrameGraph`;
-- targets are either the swapchain or an existing `RenderTarget`;
+- swapchain-only effects register as a direct engine rendering context, so no `SceneContext` or default scene `RenderPassTask` is needed;
+- offscreen render-to-texture effects are scheduled as a `Task` in the existing scene `FrameGraph`;
+- frame-graph task targets are existing `RenderTarget`s;
 - user-facing resources remain Lite handles (`Texture2D`, `RenderTarget`), never raw WebGPU handles.
 
-This module is meant for post-processes, procedural fullscreen passes, copy/blit utilities, and future replacement of ad hoc fullscreen passes.
+This module is meant for post-processes, procedural fullscreen passes, render-to-texture effects, copy/blit utilities, and future replacement of ad hoc fullscreen passes.
 
 ## Public API Surface (types, functions, constants — full signatures)
 
@@ -43,10 +45,29 @@ export interface EffectWrapper {
     readonly options: EffectWrapperOptions;
 }
 
+// ─── Direct swapchain renderer (no SceneContext / frame graph) ───────
+
+export interface EffectRendererOptions {
+    name?: string;
+    clear?: boolean;
+    clearColor?: GPUColorDict;
+}
+
+export interface EffectRenderer extends RenderingContext {
+    readonly name: string;
+}
+
+export function createEffectRenderer(engine: EngineContext, effect: EffectWrapper, options?: EffectRendererOptions): EffectRenderer;
+export function registerEffectRenderer(er: EffectRenderer): void;
+export function unregisterEffectRenderer(er: EffectRenderer): void;
+export function disposeEffectRenderer(er: EffectRenderer): void;
+
+// ─── Frame-graph task (use for offscreen RTT workflows) ──────────────
+
 export interface EffectRenderTaskConfig {
     name: string;
     effect: EffectWrapper;
-    target?: "swapchain" | RenderTarget;
+    target: RenderTarget;
     clear?: boolean;
     clearColor?: GPUColorDict;
 }
@@ -117,7 +138,7 @@ Pipeline state:
 - draw count: `3`;
 - no vertex/index buffers;
 - no depth/stencil attachment;
-- color target format and sample count come from the task target;
+- color target format and sample count come from the renderer/task target;
 - blend is `options.blend` or disabled;
 - culling is off.
 
@@ -139,22 +160,36 @@ If a custom `vertexWGSL` is supplied, it must provide an `@vertex` entry point n
 
 ## State Machine / Lifecycle
 
-1. `createEffectWrapper(engine, options)` returns a pure-state wrapper. It validates binding declarations and creates GPU shader/layout objects lazily.
-2. User code calls `setEffectUniforms` and/or `setEffectTexture` at setup time or per frame.
-3. `createEffectRenderTask(config, engine, scene)` creates a frame-graph task. If `target` is `"swapchain"` or omitted, the task creates an internal swapchain `RenderTarget`; otherwise it uses the provided `RenderTarget`.
-4. The task's `record()` builds the render target and cached render-pass descriptor.
-5. Each `execute()` patches swapchain views/clear state, gets the wrapper pipeline for the target signature, gets/rebuilds the bind group, and encodes one draw call.
-6. `disposeEffectWrapper(wrapper)` destroys wrapper-owned uniform buffers and clears GPU references. The task disposes only its internally-created swapchain target; caller-provided render targets remain caller-owned.
+### Swapchain-only path (`EffectRenderer`)
+
+1. `createEffectWrapper(engine, options)` returns a pure-state wrapper. Shader/layout objects are created lazily on first use.
+2. User code calls `setEffectUniforms` and/or `setEffectTexture`.
+3. `createEffectRenderer(engine, effect, options?)` creates an `EffectRenderer` that implements `RenderingContext` directly. It owns an internal swapchain `RenderTarget` and no `SceneContext` is needed.
+4. `registerEffectRenderer(er)` registers the renderer with the engine.
+5. `startEngine(engine)` starts the render loop. Each frame: `_record()` rebuilds the RT if the canvas resized, patches swapchain views, encodes one draw call.
+6. `disposeEffectRenderer(er)` unregisters and frees the swapchain `RenderTarget`.
+7. `disposeEffectWrapper(wrapper)` destroys wrapper-owned uniform buffers and clears GPU references.
+
+### Offscreen RTT path (`createEffectRenderTask`)
+
+1. `createEffectWrapper(engine, options)` — same as above.
+2. `createRenderTargetTexture(engine, descriptor)` returns `{ rt, texture }` for the offscreen target.
+3. `createEffectRenderTask(config, engine, scene)` creates a frame-graph `Task`. If `target` is a `RenderTarget`, the task renders into it; the `Texture2D` from step 2 can then be bound to a scene material.
+4. `addTaskAtStart(scene, task)` (or `addTask`) schedules the pass before the scene's default render pass.
+5. `registerScene` / `startEngine` as normal.
+6. `disposeEffectWrapper(wrapper)` when done.
 
 ## Babylon.js Equivalence Map
 
 | Babylon.js | Babylon Lite |
 | --- | --- |
 | `EffectWrapper` | `EffectWrapper` pure-state handle |
-| `EffectRenderer.render(wrapper, outputTexture?)` | `createEffectRenderTask({ effect, target })` scheduled in `FrameGraph` |
+| `EffectRenderer.render(wrapper)` (swapchain) | `createEffectRenderer(engine, effect)` + `registerEffectRenderer` — no scene needed |
+| `EffectRenderer.render(wrapper, outputTexture)` (RTT) | `createEffectRenderTask({ effect, target: rt })` scheduled in `FrameGraph` |
 | fullscreen quad/index buffer | vertex-index fullscreen triangle |
 | `onApplyObservable` | user calls `setEffectUniforms` / `setEffectTexture` before the pass executes |
-| current framebuffer / RTT | `"swapchain"` / `RenderTarget` |
+| current framebuffer / RTT | direct `EffectRenderer` / frame-graph `RenderTarget` task |
+| `effect.setTexture("name", texture)` | `setEffectTexture(wrapper, "name", texture2D)` |
 
 The API intentionally does not implement Babylon.js shader-store lookup, GLSL include processing, observables, raw render-target wrappers, or WebGL compatibility.
 
@@ -169,9 +204,11 @@ The API intentionally does not implement Babylon.js shader-store lookup, GLSL in
 
 ## Test Specification
 
-- Scene 74 renders a deterministic fullscreen procedural effect through Babylon.js `EffectRenderer` and Babylon Lite's effect task.
-- The parity test captures/uses `reference/scene74-effect-renderer/babylon-ref-golden.png`, screenshots `lab/scene74.html`, and asserts full-image MAD against `scene-config.json`.
-- Bundle-size accounting gets a new scene-specific `maxRawKB` entry only; existing ceilings are untouched.
+- Scene 74 renders a deterministic fullscreen procedural effect through Babylon.js `EffectRenderer` and Babylon Lite's direct effect renderer.
+- Scene 75 renders an effect into a `RenderTarget` and maps that texture onto a sphere, matching the Babylon.js playground-style RTT workflow.
+- Scene 76 binds a `Texture2D` through `setEffectTexture()` and samples it with an associated sampler binding through the direct effect renderer.
+- The parity tests capture/use the `reference/scene74-effect-renderer`, `reference/scene75-effect-rtt-sphere`, and `reference/scene76-effect-texture` goldens, then assert full-image MAD against `scene-config.json`.
+- Bundle-size accounting uses scene-specific `maxRawKB` entries for the new effect scenes only; existing ceilings are untouched.
 
 ## File Manifest
 
@@ -184,3 +221,17 @@ The API intentionally does not implement Babylon.js shader-store lookup, GLSL in
 - `tests/parity/scenes/scene74-effect-renderer.spec.ts`
 - `reference/scene74-effect-renderer/babylon-ref-golden.png`
 - `lab/public/thumbnails/scene74.png`
+- `lab/src/bjs/scene75.ts`
+- `lab/babylon-ref-scene75.html`
+- `lab/src/lite/scene75.ts`
+- `lab/scene75.html`
+- `tests/parity/scenes/scene75-effect-rtt-sphere.spec.ts`
+- `reference/scene75-effect-rtt-sphere/babylon-ref-golden.png`
+- `lab/public/thumbnails/scene75.png`
+- `lab/src/bjs/scene76.ts`
+- `lab/babylon-ref-scene76.html`
+- `lab/src/lite/scene76.ts`
+- `lab/scene76.html`
+- `tests/parity/scenes/scene76-effect-texture.spec.ts`
+- `reference/scene76-effect-texture/babylon-ref-golden.png`
+- `lab/public/thumbnails/scene76.png`

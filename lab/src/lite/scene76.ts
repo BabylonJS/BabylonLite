@@ -1,4 +1,4 @@
-import { addTask, createEffectRenderTask, createEffectWrapper, createEngine, createSceneContext, createSolidTexture2D, registerScene, setEffectTexture, startEngine } from "babylon-lite";
+import { createEffectRenderer, createEffectWrapper, createEngine, createSolidTexture2D, registerEffectRenderer, setEffectTexture, startEngine } from "babylon-lite";
 
 const FRAGMENT_WGSL = `@group(0) @binding(0) var inputTexture:texture_2d<f32>;
 @group(0) @binding(1) var inputSampler:sampler;
@@ -8,7 +8,6 @@ async function main(): Promise<void> {
     const initStart = performance.now();
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
     const engine = await createEngine(canvas);
-    const scene = createSceneContext(engine);
 
     const inputTexture = createSolidTexture2D(engine, 64 / 255, 188 / 255, 1, 1);
     const effect = createEffectWrapper(engine, {
@@ -21,22 +20,13 @@ async function main(): Promise<void> {
     });
     setEffectTexture(effect, "inputTexture", inputTexture);
 
-    addTask(
-        scene,
-        createEffectRenderTask(
-            {
-                name: "scene76-effect-texture",
-                effect,
-                target: "swapchain",
-                clear: true,
-                clearColor: { r: 0, g: 0, b: 0, a: 1 },
-            },
-            engine,
-            scene
-        )
-    );
+    const renderer = createEffectRenderer(engine, effect, {
+        name: "scene76-effect-texture",
+        clear: true,
+        clearColor: { r: 0, g: 0, b: 0, a: 1 },
+    });
+    registerEffectRenderer(renderer);
 
-    await registerScene(engine, scene);
     await startEngine(engine);
 
     canvas.dataset.drawCalls = String(engine.drawCallCount);
