@@ -36,10 +36,10 @@ import type { SceneContext, SceneContextInternal } from "../scene/scene-core.js"
 import type { Material, MaterialInternal } from "../material/material.js";
 import type { RenderTarget } from "../engine/render-target.js";
 import { buildRenderTarget, disposeRenderTarget } from "../engine/render-target.js";
+import { getViewProjectionMatrix, getViewMatrix, getCameraPosition } from "../camera/camera.js";
 import { getSceneBindGroupLayout } from "../render/scene-helpers.js";
 import { createEmptyUniformBuffer } from "../resource/gpu-buffers.js";
 import { SCENE_UBO_BYTES } from "../shader/scene-uniforms-size.js";
-import { writePassSceneUBO } from "../scene/scene-ubo.js";
 import type { Task } from "./task.js";
 
 export interface RenderPassTaskConfig {
@@ -55,6 +55,8 @@ export interface RenderPassTaskConfig {
     clr?: boolean;
     /** Per-pass camera override. Null/undefined uses `scene.camera`. */
     cam?: Camera | null;
+    /** Use canvas dimensions, not render-target dimensions, for this pass's scene UBO aspect. */
+    cs?: boolean;
 }
 
 export interface RenderPassTask extends Task {
@@ -90,6 +92,8 @@ export interface RenderPassTask extends Task {
      *  frame by `writePassSceneUBO`. Destroyed in `dispose()`. */
     _sceneUBO: GPUBuffer;
     _sceneBG: GPUBindGroup;
+    _suData: Float32Array;
+    _su: unknown[];
 
     /** Add a mesh to this pass with an optional per-pass material override.
      *  Resolved at `record()` time via `material._buildGroup._rebuildSingle`,
@@ -128,7 +132,6 @@ export function createRenderPassTask(config: RenderPassTaskConfig, engine: Engin
         layout: sceneBGL,
         entries: [{ binding: 0, resource: { buffer: sceneUBO } }],
     });
-
     const task: RenderPassTask = {
         name: config.name,
         _config: config,
@@ -149,6 +152,8 @@ export function createRenderPassTask(config: RenderPassTaskConfig, engine: Engin
         _sampleCount: sampleCount,
         _sceneUBO: sceneUBO,
         _sceneBG: sceneBG,
+        _suData: new Float32Array(SCENE_UBO_BYTES / 4),
+        _su: [null, null, NaN, NaN, NaN, NaN, NaN],
         _pendingMeshes: [],
         addToPass(mesh, opts) {
             const material = opts?.material ?? mesh.material;
@@ -356,9 +361,6 @@ function patchPerFrame(task: RenderPassTask, eng: EngineContextInternal, swapcha
 function executePass(task: RenderPassTask): number {
     const eng = task.engine as EngineContextInternal;
     const encoder = eng._currentEncoder;
-    if (!encoder) {
-        return 0;
-    }
     const rt = task._config.rt;
     const scene = task.scene;
     const camera = task._config.cam ?? scene.camera;
@@ -409,6 +411,81 @@ function executePass(task: RenderPassTask): number {
     draws += drawList(pass, task._transparentBindings, eng);
     pass.end();
     return draws;
+}
+
+/** Write the canonical SceneUniforms struct to the task-owned scene UBO.
+ *  Bails before touching scratch/GPU when all inputs are unchanged. */
+function writePassSceneUBO(task: RenderPassTask, eng: EngineContextInternal, scene: SceneContextInternal, camera: Camera | null): void {
+    if (!camera) {
+        return;
+    }
+
+    const v = camera.viewport;
+    const rt = task._config.rt;
+    const aspect = (task._config.cs ? eng.canvas.width / eng.canvas.height : rt._width / rt._height) * (v ? v.width / v.height : 1);
+    const fog = scene.fog;
+    const envTextures = scene._envTextures;
+    const img = scene.imageProcessing;
+    const envRotationY = scene.envRotationY || 0;
+    const wv = camera.worldMatrixVersion;
+    const s = task._su;
+    if (s[0] === camera && s[1] === fog && s[2] === wv && s[3] === aspect && s[4] === envRotationY && s[5] === img.exposure && s[6] === img.contrast) {
+        return;
+    }
+    s[0] = camera;
+    s[1] = fog;
+    s[2] = wv;
+    s[3] = aspect;
+    s[4] = envRotationY;
+    s[5] = img.exposure;
+    s[6] = img.contrast;
+
+    const data = task._suData;
+    data.fill(0);
+
+    const viewProj = getViewProjectionMatrix(camera, aspect);
+    const viewMat = getViewMatrix(camera);
+    const camPos = getCameraPosition(camera);
+
+    // SCENE_UBO float offsets (see shaders/scene-uniforms.wgsl):
+    //   viewProjection  = 0    view             = 16   vEyePosition    = 32
+    //   envRotationY    = 36   vSphericalL00    = 40   exposureLinear  = 76
+    //   contrast        = 77   lodGenerationScale = 78 vFogInfos       = 80
+    //   vFogColor       = 84
+    data.set(viewProj, 0);
+    // Y-flip for offscreen passes — negate row 1 of the projection (the multiplied
+    // view*proj matrix). Row 1 of a column-major mat4 lives at indices 1,5,9,13.
+    if (task._targetSignature.flipY) {
+        data[1] = -data[1]!;
+        data[5] = -data[5]!;
+        data[9] = -data[9]!;
+        data[13] = -data[13]!;
+    }
+    data.set(viewMat, 16);
+    data[32] = camPos.x;
+    data[33] = camPos.y;
+    data[34] = camPos.z;
+
+    if (fog) {
+        data[80] = fog.mode;
+        data[81] = fog.start;
+        data[82] = fog.end;
+        data[83] = fog.density;
+        data[84] = fog.color[0]!;
+        data[85] = fog.color[1]!;
+        data[86] = fog.color[2]!;
+    }
+
+    data[36] = envRotationY;
+    if (envTextures?.sphericalHarmonics) {
+        data.set(envTextures.sphericalHarmonics, 40);
+    }
+
+    data[76] = img.exposure;
+    data[77] = img.contrast;
+    data[78] = envTextures?.lodGenerationScale ?? 0.8;
+
+    eng.device.queue.writeBuffer(task._sceneUBO, 0, data as Float32Array<ArrayBuffer>);
 }
 
 function updateBindingUBOs(list: readonly DrawBinding[]): void {

@@ -56,7 +56,7 @@ export interface EngineContextInternal extends EngineContext {
     // ─── Per-frame transient state ─────────────────────────────────────
     /** Encoder being filled this frame. Set by `renderFrame` before each context's
      *  `_update`/`_record`; consumed by frame-graph tasks and pre-passes. */
-    _currentEncoder: GPUCommandEncoder | null;
+    _currentEncoder: GPUCommandEncoder;
     /** Swapchain view acquired once per frame before contexts record. */
     _swapchainView: GPUTextureView;
     /** Frame delta in ms (read by scenes that don't override fixedDeltaMs). */
@@ -147,7 +147,7 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
         _animFrameId: 0,
         _renderFn: null,
         _renderingContexts: [],
-        _currentEncoder: null,
+        _currentEncoder: undefined!,
         _swapchainView: undefined!,
         _currentDelta: 0,
     };
@@ -247,9 +247,7 @@ function renderFrame(engine: EngineContextInternal, delta: number): void {
         drawCalls += s._record();
     }
 
-    const finalEncoder = engine._currentEncoder!;
+    const finalEncoder = engine._currentEncoder;
     engine.device.queue.submit([finalEncoder.finish()]);
     engine.drawCallCount = drawCalls;
-
-    engine._currentEncoder = null;
 }
