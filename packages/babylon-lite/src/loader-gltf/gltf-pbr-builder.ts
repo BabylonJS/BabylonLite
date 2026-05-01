@@ -4,7 +4,7 @@
 
 import type { EngineContextInternal } from "../engine/engine.js";
 import type { Texture2D } from "../texture/texture-2d.js";
-import type { PbrMaterialProps, PbrMaterialPropsInternal } from "../material/pbr/pbr-material.js";
+import type { PbrMaterialPropsInternal } from "../material/pbr/pbr-material.js";
 import { pbrGroupBuilder } from "../material/pbr/pbr-material.js";
 import type { GltfMaterialData, GltfMatExtCtx } from "./gltf-material.js";
 import type { GltfFeature } from "./gltf-feature.js";
@@ -56,7 +56,7 @@ export function assemblePbrProps(
     ormTexture: Texture2D,
     normalTexture: Texture2D | undefined,
     emissiveTexture: Texture2D | undefined,
-    extLayers: Partial<PbrMaterialProps> | undefined
+    extLayers: Partial<PbrMaterialPropsInternal> | undefined
 ): PbrMaterialPropsInternal {
     const ef = mat.emissiveFactor;
     const defaultFactor = (ef[0] === 1 && ef[1] === 1 && ef[2] === 1) || (ef[0] === 0 && ef[1] === 0 && ef[2] === 0);
@@ -117,12 +117,12 @@ export function buildDefaultPbrTextures(
 }
 
 /** Run all material-layer features and merge their fragments. */
-export async function runMatExts(mat: GltfMaterialData, exts: GltfFeature[], ctx: GltfMatExtCtx): Promise<Partial<PbrMaterialProps> | undefined> {
+export async function runMatExts(mat: GltfMaterialData, exts: GltfFeature[], ctx: GltfMatExtCtx): Promise<Partial<PbrMaterialPropsInternal> | undefined> {
     if (exts.length === 0) {
         return undefined;
     }
     const fragments = await Promise.all(exts.map((ext) => ext.applyMaterial!(mat, ctx)));
-    let layers: Partial<PbrMaterialProps> | undefined;
+    let layers: Partial<PbrMaterialPropsInternal> | undefined;
     for (const f of fragments) {
         if (f) {
             layers ??= {};

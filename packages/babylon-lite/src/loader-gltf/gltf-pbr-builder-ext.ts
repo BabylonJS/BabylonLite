@@ -7,7 +7,7 @@
 import type { EngineContextInternal } from "../engine/engine.js";
 import type { Texture2D } from "../texture/texture-2d.js";
 import { cloneTexture2D } from "../texture/texture-2d.js";
-import type { PbrMaterialProps, PbrMaterialPropsInternal } from "../material/pbr/pbr-material.js";
+import type { PbrMaterialPropsInternal } from "../material/pbr/pbr-material.js";
 import { pbrGroupBuilder } from "../material/pbr/pbr-material.js";
 import type { GltfMaterialData } from "./gltf-material.js";
 import { linearToSrgbByte } from "../color/color.js";
@@ -87,7 +87,7 @@ export function buildDefaultPbrTexturesExt(
 }
 
 /** Slow-path assembly: adds occlusionTexCoord and occlusionTexture props. */
-export function assemblePbrPropsExt(mat: GltfMaterialData, tex: PbrTexturesExt, extLayers: Partial<PbrMaterialProps> | undefined): PbrMaterialPropsInternal {
+export function assemblePbrPropsExt(mat: GltfMaterialData, tex: PbrTexturesExt, extLayers: Partial<PbrMaterialPropsInternal> | undefined): PbrMaterialPropsInternal {
     const ef = mat.emissiveFactor;
     const defaultFactor = (ef[0] === 1 && ef[1] === 1 && ef[2] === 1) || (ef[0] === 0 && ef[1] === 0 && ef[2] === 0);
     // Precompute UV-transform presence so the renderer doesn't scan 5 textures

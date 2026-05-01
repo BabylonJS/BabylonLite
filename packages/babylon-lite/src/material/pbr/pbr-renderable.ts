@@ -10,7 +10,7 @@ import type { SceneContextInternal } from "../../scene/scene.js";
 import type { Mesh } from "../../mesh/mesh.js";
 import type { MeshInternal } from "../../mesh/mesh.js";
 import type { LightBaseInternal } from "../../light/types.js";
-import type { PbrMaterialProps } from "./pbr-material.js";
+import type { PbrMaterialPropsInternal } from "./pbr-material.js";
 import { collectPbrBoundTextures } from "./pbr-material.js";
 import type { EnvironmentTextures } from "../../loader-env/load-env.js";
 
@@ -140,9 +140,9 @@ export async function buildPbrRenderables(
     let hasAnyVertexColor = false;
     for (let i = 0; i < meshes.length; i++) {
         const m = meshes[i]!;
-        const mat = m.material as PbrMaterialProps & { _hasReflExt?: boolean; _hasUvTx?: boolean };
+        const mat = m.material as PbrMaterialPropsInternal & { _hasReflExt?: boolean };
         const mi = m as import("../../mesh/mesh.js").MeshInternal;
-        hasSkybox ||= !!mat.skyboxMode;
+        hasSkybox ||= mat.mode === "skybox";
         hasMetallicReflectance ||= !!(mat.metallicReflectanceTexture || mat.reflectanceTexture || mat._hasReflExt);
         hasClearcoat ||= !!mat.clearCoat?.isEnabled;
         hasSheen ||= !!mat.sheen?.isEnabled;
@@ -153,8 +153,8 @@ export async function buildPbrRenderables(
         hasSomeSkeletons ||= !!m.skeleton;
         hasSomeMorphs ||= !!m.morphTargets;
         hasSomeThinInstances ||= !!m.thinInstances;
-        hasAnyUnlit ||= !!mat.unlit;
-        hasAnyShadowOnly ||= !!mat.shadowOnly;
+        hasAnyUnlit ||= mat.mode === "unlit";
+        hasAnyShadowOnly ||= mat.mode === "shadowOnly";
         hasAnyUvTransform ||= !!mat._hasUvTx;
         // UV2 only counts when occlusion samples texcoord 1 (matches pbr-mesh-features.ts).
         hasAnyUv2 ||= !!mi._gpu.uv2Buffer && mat.occlusionTexCoord === 1;
@@ -346,7 +346,7 @@ export async function buildPbrRenderables(
     const shadowBGCache = new Map<GPUBindGroupLayout, GPUBindGroup>();
     for (const mesh of meshes) {
         const gpu = (mesh as MeshInternal)._gpu;
-        const mat = mesh.material as PbrMaterialProps;
+        const mat = mesh.material as PbrMaterialPropsInternal;
         const { features, features2 } = computeMeshPbrFeatures(mesh, scene, featureCtx);
 
         const composed = composePbr(features, features2);
@@ -493,7 +493,7 @@ export async function buildPbrRenderables(
     function updatePacketUBOs(list: PbrDrawPacket[]) {
         updateWorldMatrixUBOs(engine, list);
         for (const dp of list) {
-            const mat = dp.mesh.material as PbrMaterialProps;
+            const mat = dp.mesh.material as PbrMaterialPropsInternal;
             if (!(mat as any)._uboDirty) {
                 continue;
             }
@@ -554,7 +554,7 @@ export async function buildPbrRenderables(
     return { renderables, updater, _sceneBGL: sceneBGL, _sceneBG: sceneBindGroup };
 }
 
-function createMeshUBO(engine: EngineContextInternal, world: Mat4, composed: ComposedShader, _material: PbrMaterialProps): GPUBuffer {
+function createMeshUBO(engine: EngineContextInternal, world: Mat4, composed: ComposedShader, _material: PbrMaterialPropsInternal): GPUBuffer {
     const data = new Float32Array(composed.meshUboSpec.totalBytes / 4);
     data.set(world, 0);
     return createUniformBuffer(engine, data);
@@ -565,7 +565,7 @@ function createMeshUBO(engine: EngineContextInternal, world: Mat4, composed: Com
  *  writers — each PBR fragment module's writer is registered by
  *  buildPbrRenderables right after the dynamic import, avoiding
  *  module-level side effects. */
-function writeMaterialData(data: Float32Array, material: PbrMaterialProps, spec: import("../../shader/fragment-types.js").UboSpec): void {
+function writeMaterialData(data: Float32Array, material: PbrMaterialPropsInternal, spec: import("../../shader/fragment-types.js").UboSpec): void {
     data[0] = material.environmentIntensity ?? 1.0;
     data[1] = material.directIntensity ?? 1.0;
     data[2] = material.reflectance ?? 0.04;
@@ -587,7 +587,7 @@ function writeMaterialData(data: Float32Array, material: PbrMaterialProps, spec:
 }
 
 /** Create a material UBO from the ComposedShader's materialUboSpec. */
-function createMaterialUBO(engine: EngineContextInternal, material: PbrMaterialProps, composed: ComposedShader): GPUBuffer {
+function createMaterialUBO(engine: EngineContextInternal, material: PbrMaterialPropsInternal, composed: ComposedShader): GPUBuffer {
     const spec = composed.materialUboSpec!;
     const data = new Float32Array(spec.totalBytes / 4);
     writeMaterialData(data, material, spec);

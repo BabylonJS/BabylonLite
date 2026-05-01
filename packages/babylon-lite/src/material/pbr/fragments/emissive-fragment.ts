@@ -8,7 +8,7 @@
  */
 
 import type { ShaderFragment } from "../../../shader/fragment-types.js";
-import type { PbrMaterialProps } from "../pbr-material.js";
+import type { PbrMaterialPropsInternal } from "../pbr-material.js";
 import type { PbrExt } from "../pbr-flags.js";
 import { PBR_HAS_EMISSIVE_COLOR, PBR_HAS_EMISSIVE } from "../pbr-flags.js";
 
@@ -34,7 +34,7 @@ export function createEmissiveColorFragment(hasEmissiveTexture: boolean): Shader
 }
 
 /** Write the emissive-color material-UBO slice. */
-export function writeEmissiveUBO(data: Float32Array, material: PbrMaterialProps, offsets: ReadonlyMap<string, number>): void {
+export function writeEmissiveUBO(data: Float32Array, material: PbrMaterialPropsInternal, offsets: ReadonlyMap<string, number>): void {
     if (!material.emissiveColor || !offsets.has("emissiveColor")) {
         return;
     }

@@ -30,11 +30,11 @@ export function createUnlitFragment(hasIbl: boolean): ShaderFragment {
 
 /** Write the unlit material-UBO slice. */
 export function writeUnlitUBO(data: Float32Array, material: PbrMaterialProps, offsets: ReadonlyMap<string, number>): void {
-    if (!material.unlit || !offsets.has("unlitColor")) {
+    if (material.mode !== "unlit" || !offsets.has("unlitColor")) {
         return;
     }
     const off = offsets.get("unlitColor")! / 4;
-    const tint = material.unlitColor ?? [1, 1, 1];
+    const tint = material.color ?? [1, 1, 1];
     data[off] = tint[0]!;
     data[off + 1] = tint[1]!;
     data[off + 2] = tint[2]!;
@@ -44,7 +44,7 @@ export const unlitExt: PbrExt = {
     id: "unlit",
     phase: "fragment",
     detect(mat) {
-        return (mat as PbrMaterialProps).unlit ? { f: 0, f2: PBR2_HAS_UNLIT } : { f: 0, f2: 0 };
+        return (mat as PbrMaterialProps).mode === "unlit" ? { f: 0, f2: PBR2_HAS_UNLIT } : { f: 0, f2: 0 };
     },
     frag(ctx) {
         if (!(ctx.features2 & PBR2_HAS_UNLIT)) {

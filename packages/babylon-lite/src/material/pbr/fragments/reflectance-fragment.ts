@@ -9,7 +9,7 @@
  */
 
 import type { ShaderFragment, BindingDecl } from "../../../shader/fragment-types.js";
-import type { PbrMaterialProps } from "../pbr-material.js";
+import type { PbrMaterialPropsInternal } from "../pbr-material.js";
 import type { PbrExt } from "../pbr-flags.js";
 import { PBR_HAS_METALLIC_REFLECTANCE_MAP, PBR_HAS_REFLECTANCE_MAP, PBR_HAS_USE_ALPHA_ONLY_MR, PBR2_HAS_REFLECTANCE_FACTORS, PBR2_HAS_UV2 } from "../pbr-flags.js";
 
@@ -21,7 +21,7 @@ const STAGE_FRAGMENT = 0x2;
  *  Gated by the presence of the `occlusionStrength` field in the UBO spec,
  *  which is added only when a metallic-reflectance or reflectance texture
  *  is in use. */
-export function writeReflectanceUBO(data: Float32Array, material: PbrMaterialProps, offsets: ReadonlyMap<string, number>): void {
+export function writeReflectanceUBO(data: Float32Array, material: PbrMaterialPropsInternal, offsets: ReadonlyMap<string, number>): void {
     if (!offsets.has("occlusionStrength")) {
         return;
     }
@@ -117,7 +117,7 @@ export const reflectanceExt: PbrExt = {
     id: "reflectance",
     phase: "fragment",
     detect(mat) {
-        const m = mat as PbrMaterialProps;
+        const m = mat as PbrMaterialPropsInternal;
         let f = 0;
         let f2 = 0;
         if (m.metallicReflectanceTexture) {
@@ -154,7 +154,7 @@ export const reflectanceExt: PbrExt = {
         if ((ctx.features & (PBR_HAS_METALLIC_REFLECTANCE_MAP | PBR_HAS_REFLECTANCE_MAP)) === 0) {
             return b;
         }
-        const m = ctx.material as PbrMaterialProps;
+        const m = ctx.material as PbrMaterialPropsInternal;
         if (m.metallicReflectanceTexture) {
             entries.push({ binding: b++, resource: m.metallicReflectanceTexture.view });
             entries.push({ binding: b++, resource: m.metallicReflectanceTexture.sampler });
@@ -166,7 +166,7 @@ export const reflectanceExt: PbrExt = {
         return b;
     },
     textures(mat, t) {
-        const m = mat as PbrMaterialProps;
+        const m = mat as PbrMaterialPropsInternal;
         if (m.metallicReflectanceTexture) {
             t.push(m.metallicReflectanceTexture);
         }

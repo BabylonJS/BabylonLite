@@ -2,7 +2,7 @@
  * Subsurface Fragment
  *
  * Adds translucency — light passing through thin surfaces.
- * Only bundled when a scene uses PbrMaterialProps.subsurface.
+ * Only bundled when a scene uses PbrMaterialPropsInternal.subsurface.
  *
  * Math follows BJS PBRSubSurfaceConfiguration:
  *  - Burley transmittance BRDF: exp-based approximation
@@ -12,7 +12,7 @@
  */
 
 import type { ShaderFragment } from "../../../shader/fragment-types.js";
-import type { PbrMaterialProps, SubSurfaceProps } from "../pbr-material.js";
+import type { PbrMaterialPropsInternal, SubSurfaceProps } from "../pbr-material.js";
 import type { Texture2D } from "../../../texture/texture-2d.js";
 import type { PbrExt } from "../pbr-flags.js";
 import { PBR_HAS_SUBSURFACE, PBR_HAS_THICKNESS_MAP, PBR2_HAS_THICKNESS_GLTF_CHANNEL } from "../pbr-flags.js";
@@ -160,7 +160,7 @@ export const subsurfaceExt: PbrExt = {
     id: "subsurface",
     phase: "fragment",
     detect(mat) {
-        const m = mat as PbrMaterialProps;
+        const m = mat as PbrMaterialPropsInternal;
         if (!m.subsurface?.translucency) {
             return { f: 0, f2: 0 };
         }
@@ -181,14 +181,14 @@ export const subsurfaceExt: PbrExt = {
         return createSubsurfaceFragment((ctx.features & PBR_HAS_THICKNESS_MAP) !== 0, ctx.hasIbl, (ctx.features2 & PBR2_HAS_THICKNESS_GLTF_CHANNEL) !== 0);
     },
     writeUbo(data, mat, offsets) {
-        const m = mat as PbrMaterialProps;
+        const m = mat as PbrMaterialPropsInternal;
         if (m.subsurface?.translucency && offsets.has("subsurfaceParams")) {
             writeSubsurfaceUBO(data, m.subsurface as SubSurfaceProps, offsets);
         }
     },
     bind(ctx, entries, b) {
         if ((ctx.features & PBR_HAS_THICKNESS_MAP) !== 0) {
-            const tex = (ctx.material as PbrMaterialProps).subsurface?.thickness?.texture as Texture2D | undefined;
+            const tex = (ctx.material as PbrMaterialPropsInternal).subsurface?.thickness?.texture as Texture2D | undefined;
             if (tex) {
                 entries.push({ binding: b++, resource: tex.view });
                 entries.push({ binding: b++, resource: tex.sampler });
@@ -197,7 +197,7 @@ export const subsurfaceExt: PbrExt = {
         return b;
     },
     textures(mat, out) {
-        const t = (mat as PbrMaterialProps).subsurface?.thickness?.texture;
+        const t = (mat as PbrMaterialPropsInternal).subsurface?.thickness?.texture;
         if (t) {
             out.push(t);
         }

@@ -39,15 +39,17 @@ export function createShadowOnlyFragment(): ShaderFragment {
     }
     const bc = `
 // shadow-only override: invisible everywhere except where shadow falls.
-// alpha = saturate((1 - shadowFactor) * falloff) * opacity
+// alpha = saturate((1 - shadowFactor) * falloff)
 //   - shadowFactor: from the shadow generator's ESM/PCF sample (0 = full shadow, 1 = no shadow)
 //   - falloff: steepens the alpha curve at edges (1.0 = natural ESM falloff)
-//   - opacity: caps the maximum alpha at the shadow's darkest point (1.0 = fully opaque)
+// The PBR template multiplies this by the inherited 'material.materialAlpha' (the common
+// 'alpha' field) before producing the final output, so callers cap the maximum shadow
+// strength via 'alpha' on the material rather than via a mode-specific knob here.
 {
     var so_shadowMin = 1.0;
 ${unrolled.join("\n")}
     color = material.shadowOnlyColor;
-    alpha = saturate((1.0 - so_shadowMin) * material.shadowOnlyFalloff) * material.shadowOnlyOpacity;
+    alpha = saturate((1.0 - so_shadowMin) * material.shadowOnlyFalloff);
 }
 `;
 
@@ -58,7 +60,6 @@ ${unrolled.join("\n")}
         // to throw if a future caller uses shadowOnly on a non-receiving mesh.
         uboFields: [
             { name: "shadowOnlyColor", type: "vec3<f32>" },
-            { name: "shadowOnlyOpacity", type: "f32" },
             { name: "shadowOnlyFalloff", type: "f32" },
         ],
         fragmentSlots: {
@@ -69,21 +70,18 @@ ${unrolled.join("\n")}
 
 /** Write the shadow-only material-UBO slice. */
 export function writeShadowOnlyUBO(data: Float32Array, material: PbrMaterialProps, offsets: ReadonlyMap<string, number>): void {
-    if (!material.shadowOnly) {
+    if (material.mode !== "shadowOnly") {
         return;
     }
     if (offsets.has("shadowOnlyColor")) {
         const off = offsets.get("shadowOnlyColor")! / 4;
-        const tint = material.shadowOnlyColor ?? [0, 0, 0];
+        const tint = material.color ?? [0, 0, 0];
         data[off] = tint[0]!;
         data[off + 1] = tint[1]!;
         data[off + 2] = tint[2]!;
     }
-    if (offsets.has("shadowOnlyOpacity")) {
-        data[offsets.get("shadowOnlyOpacity")! / 4] = material.shadowOnlyOpacity ?? 1.0;
-    }
     if (offsets.has("shadowOnlyFalloff")) {
-        data[offsets.get("shadowOnlyFalloff")! / 4] = material.shadowOnlyFalloff ?? 1.0;
+        data[offsets.get("shadowOnlyFalloff")! / 4] = material.falloff ?? 1.0;
     }
 }
 
@@ -91,7 +89,7 @@ export const shadowOnlyExt: PbrExt = {
     id: "shadow-only",
     phase: "fragment",
     detect(mat) {
-        return (mat as PbrMaterialProps).shadowOnly ? { f: 0, f2: PBR2_HAS_SHADOW_ONLY } : { f: 0, f2: 0 };
+        return (mat as PbrMaterialProps).mode === "shadowOnly" ? { f: 0, f2: PBR2_HAS_SHADOW_ONLY } : { f: 0, f2: 0 };
     },
     frag(ctx) {
         if (!(ctx.features2 & PBR2_HAS_SHADOW_ONLY)) {

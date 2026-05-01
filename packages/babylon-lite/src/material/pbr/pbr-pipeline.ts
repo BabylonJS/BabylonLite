@@ -4,7 +4,7 @@
  *  Pipelines cached per (fragmentKey, features, format, msaaSamples) tuple.
  *  The ComposedShader provides WGSL source, BGL descriptors, and vertex layouts. */
 
-import type { PbrMaterialProps } from "./pbr-material.js";
+import type { PbrMaterialProps, PbrMaterialPropsInternal } from "./pbr-material.js";
 import type { EnvironmentTextures } from "../../loader-env/load-env.js";
 import type { ComposedShader } from "../../shader/fragment-types.js";
 import type { EngineContextInternal } from "../../engine/engine.js";
@@ -12,6 +12,7 @@ import { createPipelineCache, releaseVariant } from "../pipeline-cache.js";
 import type { PipelineCache } from "../pipeline-cache.js";
 import { _getPbrLightExtension, _getPbrExtsSorted, PBR2_HAS_UV2 } from "./pbr-flags.js";
 import { PBR_HAS_NORMAL_MAP, PBR_HAS_EMISSIVE, PBR_HAS_SPEC_GLOSS, PBR_HAS_DOUBLE_SIDED, PBR_HAS_COTANGENT_NORMAL, PBR_HAS_ALPHA_BLEND } from "./pbr-flags.js";
+import { getDefaultBaseColorTexture, getDefaultOrmTexture } from "./pbr-default-textures.js";
 export * from "./pbr-flags.js";
 
 // ─── Pipeline Variant ───────────────────────────────────────────────
@@ -179,20 +180,23 @@ export function createPbrMeshBindGroup(
             b = ext.bind(ctx, entries, b);
         }
     }
-    // Base bindings (matching composer order: baseColor, normal, ORM, emissive, specGloss)
-    addTex(material.baseColorTexture!);
+    // Base bindings (matching composer order: baseColor, normal, ORM, emissive, specGloss).
+    // baseColor and ORM fall back to engine-cached 1×1 defaults so material modes that don't
+    // sample these channels (e.g. "shadowOnly", "skybox") don't have to provide them.
+    const mat = material as PbrMaterialPropsInternal;
+    addTex(mat.baseColorTexture ?? getDefaultBaseColorTexture(engine));
     if (hasAnyNormal) {
-        addTex(material.normalTexture!);
+        addTex(mat.normalTexture!);
     }
-    addTex(material.ormTexture!);
-    if ((features2 & PBR2_HAS_UV2) !== 0 && material.occlusionTexture) {
-        addTex(material.occlusionTexture);
+    addTex(mat.ormTexture ?? getDefaultOrmTexture(engine));
+    if ((features2 & PBR2_HAS_UV2) !== 0 && mat.occlusionTexture) {
+        addTex(mat.occlusionTexture);
     }
     if (hasEmissive) {
-        addTex(material.emissiveTexture!);
+        addTex(mat.emissiveTexture!);
     }
     if (hasSpecGloss) {
-        addTex(material.specGlossTexture!);
+        addTex(mat.specGlossTexture!);
     }
     // Lights UBO (after base texture bindings, before fragment bindings — matches composer order)
     if (lightsUBO) {

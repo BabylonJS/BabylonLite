@@ -23,7 +23,7 @@
  */
 
 import type { ShaderFragment } from "../../../shader/fragment-types.js";
-import type { PbrMaterialProps, SubSurfaceProps } from "../pbr-material.js";
+import type { PbrMaterialPropsInternal, SubSurfaceProps } from "../pbr-material.js";
 import type { PbrExt } from "../pbr-flags.js";
 import { PBR2_HAS_REFRACTION, PBR2_HAS_VOLUME } from "../pbr-flags.js";
 
@@ -90,7 +90,7 @@ export function createRefractionFragment(hasVolume: boolean): ShaderFragment {
 }
 
 /** Write refraction UBO data. */
-function writeRefractionUBO(data: Float32Array, mat: PbrMaterialProps, offsets: ReadonlyMap<string, number>): void {
+function writeRefractionUBO(data: Float32Array, mat: PbrMaterialPropsInternal, offsets: ReadonlyMap<string, number>): void {
     const ss = mat.subsurface as SubSurfaceProps | undefined;
     const refr = ss?.refraction;
     if (!refr) {
@@ -126,7 +126,7 @@ export const refractionExt: PbrExt = {
     id: "refraction",
     phase: "fragment",
     detect(mat) {
-        const m = mat as PbrMaterialProps;
+        const m = mat as PbrMaterialPropsInternal;
         const ss = m.subsurface as SubSurfaceProps | undefined;
         const refr = ss?.refraction;
         if (!refr || (refr.intensity ?? 0) <= 0) {
@@ -146,7 +146,7 @@ export const refractionExt: PbrExt = {
     },
     writeUbo(data, mat, offsets) {
         if (offsets.has("refractionParams")) {
-            writeRefractionUBO(data, mat as PbrMaterialProps, offsets);
+            writeRefractionUBO(data, mat as PbrMaterialPropsInternal, offsets);
         }
     },
 };

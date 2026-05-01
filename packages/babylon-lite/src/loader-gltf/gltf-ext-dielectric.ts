@@ -32,7 +32,7 @@
  *  PR 1 wires the data only — the PBR refraction shader path lands in PR 2.
  *  Until then, transmissive materials render as opaque. */
 import type { GltfFeature } from "./gltf-feature.js";
-import type { PbrMaterialProps, RefractionProps } from "../material/pbr/pbr-material.js";
+import type { PbrMaterialPropsInternal, RefractionProps } from "../material/pbr/pbr-material.js";
 
 const ext: GltfFeature = {
     id: "KHR_materials_dielectric",
@@ -56,8 +56,8 @@ const ext: GltfFeature = {
             ctx.texture(eTx?.transmissionTexture, false),
         ]);
 
-        const out: Partial<PbrMaterialProps> = {};
-        const subsurface: NonNullable<PbrMaterialProps["subsurface"]> = {};
+        const out: Partial<PbrMaterialPropsInternal> = {};
+        const subsurface: NonNullable<PbrMaterialPropsInternal["subsurface"]> = {};
 
         if (eIor) {
             const ior: number = typeof eIor.ior === "number" ? eIor.ior : 1.5;

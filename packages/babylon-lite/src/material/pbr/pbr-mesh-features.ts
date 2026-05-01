@@ -7,7 +7,7 @@
 
 import type { Mesh } from "../../mesh/mesh.js";
 import type { SceneContext } from "../../scene/scene.js";
-import type { PbrMaterialProps } from "./pbr-material.js";
+import type { PbrMaterialPropsInternal } from "./pbr-material.js";
 import { PBR_HAS_SKELETON_8, PBR_HAS_SPECULAR_AA, PBR_HAS_RECEIVE_SHADOWS, PBR_HAS_GAMMA_ALBEDO, PBR_HAS_THIN_INSTANCES, PBR_HAS_INSTANCE_COLOR } from "./pbr-pipeline.js";
 import {
     getLightTypeFeatureBits,
@@ -40,7 +40,7 @@ export interface PbrFeatureCtx {
 
 /** Compute the `(features, features2)` bit pair for a single PBR mesh. */
 export function computeMeshPbrFeatures(mesh: Mesh, scene: SceneContext, ctx: PbrFeatureCtx): { features: number; features2: number } {
-    const mat = mesh.material as PbrMaterialProps;
+    const mat = mesh.material as PbrMaterialPropsInternal;
     const mi = mesh as import("../../mesh/mesh.js").MeshInternal;
     const hasTangents = !!mi._gpu.tangentBuffer;
     const hasSkeleton = !!mesh.skeleton;
@@ -83,7 +83,7 @@ export function computeMeshPbrFeatures(mesh: Mesh, scene: SceneContext, ctx: Pbr
     if (mat.anisotropy?.isEnabled) {
         features |= PBR_HAS_ANISOTROPY;
     }
-    if (mat.skyboxMode) {
+    if (mat.mode === "skybox") {
         features |= PBR_HAS_SKYBOX;
     }
     // Unified PBR extensions contribute their own feature bits.

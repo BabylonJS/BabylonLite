@@ -1,9 +1,10 @@
 /** PBR material auto-dirty tracking. Dynamically imported by enableMaterialTracking(). */
 
-import type { PbrMaterialProps, SheenProps } from "../pbr/pbr-material.js";
+import type { PbrMaterialProps, PbrMaterialPropsInternal, SheenProps } from "../pbr/pbr-material.js";
 import { trackScalar, trackSubProps, observableColor3 } from "./tracking-primitives.js";
 
-export function installPbrTracking(mat: PbrMaterialProps): void {
+export function installPbrTracking(matIn: PbrMaterialProps): void {
+    const mat = matIn as PbrMaterialPropsInternal;
     for (const key of ["alpha", "environmentIntensity", "directIntensity", "reflectance", "occlusionStrength", "metallicF0Factor"]) {
         if ((mat as any)[key] !== undefined) {
             trackScalar(mat, key);

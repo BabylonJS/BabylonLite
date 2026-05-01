@@ -87,11 +87,9 @@ async function main(): Promise<void> {
     // roughness=0.3 (microSurface=0.7), no direct lighting, double-sided
     const skybox = createBox(engine, 20);
     skybox.material = createPbrMaterial({
-        baseColorTexture: createSolidTexture2D(engine, 1, 1, 1),
-        ormTexture: createSolidTexture2D(engine, 1.0, 0.3, 1.0), // occ=1, rough=0.3, metal=1 → F0=(1,1,1)
-        directIntensity: 0,
+        mode: "skybox",
+        environmentIntensity: 1.0,
         doubleSided: true,
-        skyboxMode: true,
     });
     addToScene(scene, skybox);
 

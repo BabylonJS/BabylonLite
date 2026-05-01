@@ -325,6 +325,7 @@ export function createPcfDirectionalShadowGenerator(
             frustumEdgeFalloff: 0,
             orthoMinZ,
             orthoMaxZ,
+            frustumSize: 0,
         },
         _version: 0,
     };

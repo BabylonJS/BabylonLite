@@ -221,6 +221,7 @@ export function createPcfShadowGenerator(engine: EngineContext, light: SpotLight
             frustumEdgeFalloff: 0,
             orthoMinZ: near,
             orthoMaxZ: far,
+            frustumSize: 0,
         },
         _version: 0,
     };

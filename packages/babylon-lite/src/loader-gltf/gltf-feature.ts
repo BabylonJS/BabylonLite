@@ -19,7 +19,7 @@ import type { AssetContainer } from "../asset-container.js";
 import type { Mesh, MeshInternal } from "../mesh/mesh.js";
 import type { GltfMatExtCtx, GltfMaterialData } from "./gltf-material.js";
 import type { GltfMeshData } from "./load-gltf.js";
-import type { PbrMaterialProps } from "../material/pbr/pbr-material.js";
+import type { PbrMaterialPropsInternal } from "../material/pbr/pbr-material.js";
 import type { Texture2D } from "../texture/texture-2d.js";
 import type { TextureWrapFn } from "./gltf-pbr-builder.js";
 
@@ -59,8 +59,12 @@ export interface GltfFeature {
     /** Pre-extract hook: runs before mesh extraction. Returns a map of glTF
      *  primitive objects to pre-decoded attribute/index data. Used by e.g. Draco. */
     preMesh?(json: unknown, binChunk: DataView): Promise<Map<unknown, DecodedPrimitive>>;
-    /** Material-layer hook: contributes a partial PbrMaterialProps per material. */
-    applyMaterial?(mat: GltfMaterialData, ctx: GltfMatExtCtx): Promise<Partial<PbrMaterialProps> | null>;
+    /** Material-layer hook: contributes a partial PbrMaterialProps per material. The fragments
+     *  produced by features are merged via `Object.assign`, then the result is consumed as a
+     *  `PbrMaterialProps`. The internal type is used here so a feature can contribute fields
+     *  that belong to any variant (e.g. `mode: "unlit"` from KHR_materials_unlit) without
+     *  needing the fragment itself to satisfy a specific variant. */
+    applyMaterial?(mat: GltfMaterialData, ctx: GltfMatExtCtx): Promise<Partial<PbrMaterialPropsInternal> | null>;
     /** Texture-wrap hook: given a textureInfo and an already-uploaded Texture2D,
      *  returns either the same Texture2D or a fresh wrapper carrying extra
      *  per-texture state (e.g. KHR_texture_transform patches `uScale/vScale/

@@ -4,7 +4,7 @@
  *  a material-UBO slice. */
 
 import type { Texture2D } from "../../../texture/texture-2d.js";
-import type { PbrMaterialProps } from "../pbr-material.js";
+import type { PbrMaterialPropsInternal } from "../pbr-material.js";
 import type { PbrExt } from "../pbr-flags.js";
 
 function writeOne(data: Float32Array, offsets: ReadonlyMap<string, number>, texName: string, tex: Texture2D | null | undefined): void {
@@ -43,7 +43,7 @@ export const uvTransformExt: PbrExt = {
     id: "uv-transform",
     phase: "fragment",
     writeUbo(data: Float32Array, material: unknown, offsets: ReadonlyMap<string, number>): void {
-        const m = material as PbrMaterialProps;
+        const m = material as PbrMaterialPropsInternal;
         writeOne(data, offsets, "baseColor", m.baseColorTexture);
         writeOne(data, offsets, "normal", m.normalTexture);
         writeOne(data, offsets, "orm", m.ormTexture);

@@ -15,7 +15,7 @@
  *  appears.
  */
 import type { GltfFeature } from "./gltf-feature.js";
-import type { PbrMaterialProps } from "../material/pbr/pbr-material.js";
+import type { PbrMaterialPropsInternal } from "../material/pbr/pbr-material.js";
 
 const ext: GltfFeature = {
     id: "KHR_materials_pbrSpecularGlossiness",
@@ -25,7 +25,7 @@ const ext: GltfFeature = {
             return null;
         }
         const [diffuse, specGloss] = await Promise.all([ctx.texture(sg.diffuseTexture, true), ctx.texture(sg.specularGlossinessTexture, true)]);
-        const out: Partial<PbrMaterialProps> = {};
+        const out: Partial<PbrMaterialPropsInternal> = {};
         if (diffuse) {
             out.baseColorTexture = diffuse;
         }

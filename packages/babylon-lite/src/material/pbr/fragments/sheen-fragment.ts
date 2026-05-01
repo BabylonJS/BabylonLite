@@ -2,7 +2,7 @@
  * Sheen Fragment
  *
  * Adds a soft velvet-like sheen layer (fabric, cloth).
- * Only bundled when a scene uses PbrMaterialProps.sheen.
+ * Only bundled when a scene uses PbrMaterialPropsInternal.sheen.
  *
  * Math follows BJS PBRSheenConfiguration:
  *  - Charlie NDF (sheen distribution)
@@ -12,7 +12,7 @@
  */
 
 import type { ShaderFragment, BindingDecl, UboField } from "../../../shader/fragment-types.js";
-import type { PbrMaterialProps, SheenProps } from "../pbr-material.js";
+import type { PbrMaterialPropsInternal, SheenProps } from "../pbr-material.js";
 import type { PbrExt } from "../pbr-flags.js";
 import { PBR_HAS_SHEEN, PBR_HAS_SHEEN_TEXTURE, PBR_HAS_SHEEN_ALBEDO_SCALING, PBR2_HAS_SHEEN_UV_TX } from "../pbr-flags.js";
 
@@ -160,7 +160,7 @@ sheenRoughnessAdjusted *= sheenMapData.a;
 }
 
 /** Write the sheen material-UBO slice (sheenParams, sheenParams2, optional UV transform). */
-export function writeSheenUBO(data: Float32Array, material: PbrMaterialProps, offsets: ReadonlyMap<string, number>): void {
+export function writeSheenUBO(data: Float32Array, material: PbrMaterialPropsInternal, offsets: ReadonlyMap<string, number>): void {
     const sh = material.sheen as SheenProps | undefined;
     if (!sh?.isEnabled || !offsets.has("sheenParams")) {
         return;
@@ -211,7 +211,7 @@ export const sheenExt: PbrExt = {
     id: "sheen",
     phase: "base-tex",
     detect(mat) {
-        const sh = (mat as PbrMaterialProps).sheen as SheenProps | undefined;
+        const sh = (mat as PbrMaterialPropsInternal).sheen as SheenProps | undefined;
         if (!sh?.isEnabled) {
             return { f: 0, f2: 0 };
         }
@@ -244,7 +244,7 @@ export const sheenExt: PbrExt = {
         if ((ctx.features & PBR_HAS_SHEEN_TEXTURE) === 0) {
             return b;
         }
-        const sh = (ctx.material as PbrMaterialProps).sheen as SheenProps | undefined;
+        const sh = (ctx.material as PbrMaterialPropsInternal).sheen as SheenProps | undefined;
         if (sh?.texture) {
             entries.push({ binding: b++, resource: sh.texture.view });
             entries.push({ binding: b++, resource: sh.texture.sampler });
@@ -252,7 +252,7 @@ export const sheenExt: PbrExt = {
         return b;
     },
     textures(mat, out) {
-        const sh = (mat as PbrMaterialProps).sheen;
+        const sh = (mat as PbrMaterialPropsInternal).sheen;
         if (sh?.texture) {
             out.push(sh.texture);
         }

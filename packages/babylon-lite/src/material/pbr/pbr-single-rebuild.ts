@@ -7,7 +7,7 @@ import type { SceneContext, SceneContextInternal } from "../../scene/scene.js";
 import type { EngineContextInternal } from "../../engine/engine.js";
 import type { Mesh } from "../../mesh/mesh.js";
 import type { MeshInternal } from "../../mesh/mesh.js";
-import type { PbrMaterialProps } from "./pbr-material.js";
+import type { PbrMaterialPropsInternal } from "./pbr-material.js";
 import { collectPbrBoundTextures } from "./pbr-material.js";
 import type { Renderable } from "../../render/renderable.js";
 import type { ShadowGenerator } from "../../shadow/shadow-generator.js";
@@ -22,7 +22,7 @@ import { computeMeshPbrFeatures } from "./pbr-mesh-features.js";
 export function buildSinglePbrRenderable(scene: SceneContext, mesh: Mesh): Renderable {
     const engine = scene.engine as EngineContextInternal;
     const device = engine.device;
-    const mat = mesh.material as PbrMaterialProps;
+    const mat = mesh.material as PbrMaterialPropsInternal;
     const envTextures = (scene as SceneContextInternal)._envTextures;
     const sceneBGL = (scene as SceneContextInternal)._pbrSceneBGL!;
     const sceneBindGroup = (scene as SceneContextInternal)._pbrSceneBG!;

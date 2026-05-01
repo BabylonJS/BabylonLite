@@ -1,7 +1,17 @@
 /** PBR Material — user-facing props + factory.
  *
  *  Same role as StandardMaterialProps for the standard pipeline.
- *  Users can create a PbrMaterialProps manually or let loadGltf() build one. */
+ *  Users can create a PbrMaterialProps manually or let loadGltf() build one.
+ *
+ *  The material is a discriminated union over the `mode` field:
+ *    - omit `mode` (or `"lit"`)  → full PBR shading (default)
+ *    - `mode: "unlit"`            → bypass lighting, output baseColor * tint
+ *    - `mode: "shadowOnly"`       → invisible except where shadow falls
+ *    - `mode: "skybox"`           → render the IBL cubemap using the view direction
+ *
+ *  Each mode exposes only the properties relevant to it. Cross-cutting flags
+ *  (alpha, alphaBlend, doubleSided) are available on all modes via `PbrMaterialPropsCommon`.
+ */
 
 import type { Texture2D } from "../../texture/texture-2d.js";
 import type { MeshGroupBuilder } from "../../render/renderable.js";
@@ -18,7 +28,19 @@ export const pbrGroupBuilder: MeshGroupBuilder & { _loadRebuildSingle?: () => Pr
 // Lazy loader for the single-mesh rebuild function — loaded only when a material swap happens
 pbrGroupBuilder._loadRebuildSingle = () => import("./pbr-single-rebuild.js");
 
-export interface PbrMaterialProps {
+/** Cross-cutting flags available on every shading mode. */
+export interface PbrMaterialPropsCommon {
+    /** Whether material is double-sided (disables back-face culling). */
+    doubleSided?: boolean;
+    /** Overall material alpha (0=fully transparent, 1=opaque). Default 1.0. */
+    alpha?: number;
+    /** Enable alpha blending (glTF alphaMode "BLEND"). Enables radianceOverAlpha + specularOverAlpha. */
+    alphaBlend?: boolean;
+}
+
+/** Default LIT shading (full PBR). Internal building block — composed into PbrMaterialProps via
+ *  `{ mode?: "lit" } & PbrMaterialPropsLit`. */
+interface PbrMaterialPropsLit extends PbrMaterialPropsCommon {
     baseColorTexture?: Texture2D;
     normalTexture?: Texture2D;
     /** Normal map scale (glTF normalTexture.scale). Default 1.0. */
@@ -31,12 +53,6 @@ export interface PbrMaterialProps {
     emissiveColor?: [number, number, number];
     /** KHR_materials_pbrSpecularGlossiness: RGB=specular, A=glossiness. */
     specGlossTexture?: Texture2D;
-    /** Whether material is double-sided (disables back-face culling). */
-    doubleSided?: boolean;
-    /** Overall material alpha (0=fully transparent, 1=opaque). Default 1.0. */
-    alpha?: number;
-    /** Enable alpha blending (glTF alphaMode "BLEND"). Enables radianceOverAlpha + specularOverAlpha. */
-    alphaBlend?: boolean;
     /** Scale factor for environment/IBL contribution. Default 1.0. */
     environmentIntensity?: number;
     /** Scale factor for direct light contribution. Default 1.0. */
@@ -85,42 +101,66 @@ export interface PbrMaterialProps {
     /** Subsurface configuration. Presence of nested sub-features (translucency, scattering)
      *  enables them — no isEnabled booleans needed. Tree-shakable — only bundled when used. */
     subsurface?: SubSurfaceProps;
-    /** When true, the material samples the environment cubemap using the view direction
-     *  (camera→fragment) instead of the reflected view direction. Used for PBR skybox boxes
-     *  where the mesh surrounds the camera and should display the environment directly.
-     *  Also zeroes SH irradiance — skybox is pure cubemap + BRDF only. */
-    skyboxMode?: boolean;
-    /** When true, the material is unlit — the base color is output directly,
-     *  bypassing all lighting, IBL, tonemap, and shading calculations.
-     *  Matches `KHR_materials_unlit` glTF extension. Alpha handling is preserved. */
-    unlit?: boolean;
-    /** Linear-RGB tint applied to baseColor when `unlit` is true (i.e. glTF
-     *  `baseColorFactor`). When omitted or [1,1,1], no tint is applied.
-     *  Only bundled/bound when the unlit extension is active. */
-    unlitColor?: [number, number, number];
-    /** When true, the material is a shadow-only receiver: the surface is invisible
-     *  except where a shadow is cast on it, where it appears in `shadowOnlyColor` (or
-     *  black when omitted). Mirrors BJS `BackgroundMaterial.shadowOnly`. Requires
-     *  `receiveShadows` on the mesh and at least one shadow-casting light in the scene.
-     *  Implies alpha-blended rendering. */
-    shadowOnly?: boolean;
-    /** Linear-RGB color shown where the shadow falls when `shadowOnly` is true.
-     *  Defaults to black (`[0, 0, 0]`). */
-    shadowOnlyColor?: [number, number, number];
-    /** Maximum opacity at the darkest part of the shadow (when `shadowOnly` is true).
-     *  Range [0, 1]. Default 1.0 (fully opaque at full shadow). Lower values produce
-     *  a lighter, more transparent shadow. Mirrors the `shadowLevel` parameter on BJS
-     *  `BackgroundMaterial.shadowOnly`. */
-    shadowOnlyOpacity?: number;
-    /** Falloff sharpness for the shadow's soft edges (when `shadowOnly` is true).
-     *  Default 1.0 (the natural ESM/PCF falloff from the shadow generator). Higher
-     *  values steepen the falloff (saturating closer to the model silhouette), giving
-     *  crisper visible edges. Mathematically: `alpha = saturate((1 - shadowFactor) * falloff) * opacity`. */
-    shadowOnlyFalloff?: number;
 }
 
-/** @internal Extended PbrMaterialProps with internal build group. */
-export interface PbrMaterialPropsInternal extends PbrMaterialProps {
+/** UNLIT shading (KHR_materials_unlit). Outputs baseColor * color directly, no lighting. */
+interface PbrMaterialPropsUnlit extends PbrMaterialPropsCommon {
+    baseColorTexture?: Texture2D;
+    /** Linear-RGB tint applied to the baseColor texture (i.e. glTF `baseColorFactor`).
+     *  Default `[1, 1, 1]` (no tint). */
+    color?: [number, number, number];
+    /** When true, the albedo texture is in sRGB/gamma space and the shader applies
+     *  pow(baseColor, 2.2) for sRGB→linear conversion. Default false. */
+    gammaAlbedo?: boolean;
+}
+
+/** SHADOW-ONLY receiver. Surface is invisible except where a shadow falls on it.
+ *  Mirrors BJS `BackgroundMaterial.shadowOnly`. Requires `receiveShadows` on the mesh
+ *  and at least one shadow-casting light in the scene.
+ *
+ *  To produce a lighter (less-than-fully-opaque) shadow at the darkest point, set the
+ *  inherited `alpha` field — the PBR template multiplies it through to the final output.
+ *  Mode-specific knobs (`color`, `falloff`) cover what `alpha` cannot. */
+interface PbrMaterialPropsShadowOnly extends PbrMaterialPropsCommon {
+    /** Linear-RGB color shown where shadow falls. Default `[0, 0, 0]` (black). */
+    color?: [number, number, number];
+    /** Falloff sharpness for the shadow's soft edges. Default 1.0 (the natural ESM/PCF
+     *  falloff from the shadow generator). Higher values steepen the falloff (saturating
+     *  closer to the model silhouette), giving crisper visible edges.
+     *  Math: `alpha = saturate((1 - shadowFactor) * falloff)`, then multiplied by the
+     *  inherited `alpha` field by the PBR template. */
+    falloff?: number;
+}
+
+/** SKYBOX mode. Renders the IBL cubemap using the view direction (camera→fragment)
+ *  instead of the reflected view direction. Used for boxes that surround the camera
+ *  to display the environment directly. Also zeroes SH irradiance — pure cubemap + BRDF. */
+interface PbrMaterialPropsSkybox extends PbrMaterialPropsCommon {
+    /** Scale factor for environment/IBL contribution. Default 1.0. */
+    environmentIntensity?: number;
+}
+
+/** Discriminated union over the `mode` field.
+ *
+ *  - omit `mode` (or `"lit"`)  → full PBR shading (default)
+ *  - `mode: "unlit"`            → bypass lighting, output baseColor * color
+ *  - `mode: "shadowOnly"`       → invisible except where shadow falls
+ *  - `mode: "skybox"`           → render the IBL cubemap using the view direction
+ *
+ *  Each mode exposes only the properties relevant to it. Cross-cutting flags
+ *  (alpha, alphaBlend, doubleSided) are available on every variant. */
+export type PbrMaterialProps =
+    | ({ mode?: "lit" } & PbrMaterialPropsLit)
+    | ({ mode: "unlit" } & PbrMaterialPropsUnlit)
+    | ({ mode: "shadowOnly" } & PbrMaterialPropsShadowOnly)
+    | ({ mode: "skybox" } & PbrMaterialPropsSkybox);
+
+/** @internal Implementation-side type composed by intersecting every variant's shape, plus the
+ *  `mode` discriminator and a few engine-private fields. Pipeline/renderable code uses this so
+ *  it can read any variant's fields without narrowing on `mode` for every access. The public
+ *  `PbrMaterialProps` discriminated union remains the source of truth for the API surface. */
+export interface PbrMaterialPropsInternal extends PbrMaterialPropsLit, PbrMaterialPropsUnlit, PbrMaterialPropsShadowOnly, PbrMaterialPropsSkybox {
+    mode?: "lit" | "unlit" | "shadowOnly" | "skybox";
     readonly _buildGroup: MeshGroupBuilder;
     /** Set to true when a UBO-relevant property changes. Cleared by the renderer after upload. */
     _uboDirty?: boolean;
@@ -261,33 +301,34 @@ export interface SubSurfaceProps {
 }
 
 /** Create a PbrMaterialProps with optional overrides. */
-export function createPbrMaterial(props?: Partial<PbrMaterialProps>): PbrMaterialProps {
+export function createPbrMaterial(props?: PbrMaterialProps): PbrMaterialProps {
     return {
-        ...props,
+        ...(props as object),
         _buildGroup: pbrGroupBuilder,
-    } as PbrMaterialProps;
+    } as unknown as PbrMaterialProps;
 }
 
 /** Collect all non-null textures referenced by a PBR material (for acquire/release). */
 export function collectPbrBoundTextures(mat: PbrMaterialProps): Texture2D[] {
     const t: Texture2D[] = [];
-    if (mat.baseColorTexture) {
-        t.push(mat.baseColorTexture);
+    const m = mat as PbrMaterialPropsInternal;
+    if (m.baseColorTexture) {
+        t.push(m.baseColorTexture);
     }
-    if (mat.normalTexture) {
-        t.push(mat.normalTexture);
+    if (m.normalTexture) {
+        t.push(m.normalTexture);
     }
-    if (mat.ormTexture) {
-        t.push(mat.ormTexture);
+    if (m.ormTexture) {
+        t.push(m.ormTexture);
     }
-    if (mat.occlusionTexture) {
-        t.push(mat.occlusionTexture);
+    if (m.occlusionTexture) {
+        t.push(m.occlusionTexture);
     }
-    if (mat.emissiveTexture) {
-        t.push(mat.emissiveTexture);
+    if (m.emissiveTexture) {
+        t.push(m.emissiveTexture);
     }
-    if (mat.specGlossTexture) {
-        t.push(mat.specGlossTexture);
+    if (m.specGlossTexture) {
+        t.push(m.specGlossTexture);
     }
     for (const ext of _getPbrExts().values()) {
         ext.textures?.(mat, t);

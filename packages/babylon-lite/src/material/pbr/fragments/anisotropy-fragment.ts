@@ -6,7 +6,7 @@
  * non-anisotropy PBR bundles lean.
  */
 
-import type { PbrMaterialProps } from "../pbr-material.js";
+import type { PbrMaterialPropsInternal } from "../pbr-material.js";
 import type { PbrExt } from "../pbr-flags.js";
 
 export const ANISO_BRDF_FUNCTIONS = `
@@ -90,7 +90,7 @@ export const anisotropyExt: PbrExt = {
     id: "anisotropy",
     phase: "fragment",
     writeUbo(data: Float32Array, material: unknown, offsets: ReadonlyMap<string, number>): void {
-        const aniso = (material as PbrMaterialProps).anisotropy;
+        const aniso = (material as PbrMaterialPropsInternal).anisotropy;
         if (!aniso?.isEnabled || !offsets.has("anisotropyParams")) {
             return;
         }
