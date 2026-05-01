@@ -6,7 +6,7 @@
  *   - `record()` builds the cached render-pass descriptor and the bucketed
  *     `DrawBinding` lists from `_renderables` (opaque / transmissive /
  *     transparent), then sorts opaque + transmissive by `order`.
- *   - `execute(encoder)` per-frame: patches the descriptor (swapchain view +
+ *   - `execute()` per-frame: patches the descriptor (swapchain view +
  *     loadOp + clearColor), updates per-binding UBOs, runs/uses the cached
  *     opaque render bundle, then direct-draws transmissive + transparent.
  *
@@ -18,12 +18,11 @@
  *     `_renderableVersion` changes between frames (mesh add/remove, material swap).
  *
  * Swapchain mode is detected by `rt.descriptor.resolveToSwapchain`.
- * In that mode, the render target itself allocates nothing — color uses the
- * engine's shared MSAA texture (or the swap view directly when MSAA is off)
- * and depth uses the engine's shared depth texture. The swap view is acquired
- * per-frame and patched into the descriptor at execute time. `clr: false`
- * switches color + depth `loadOp` to `"load"` so multiple scenes can share
- * the swapchain in one frame (e.g., a 3D scene + a UI overlay scene).
+ * In that mode, the render target owns MSAA/depth textures as needed; the
+ * swap view is acquired per-frame and patched into the descriptor as either
+ * the resolve target or the direct color attachment. `clr: false` switches
+ * color + depth `loadOp` to `"load"` so multiple scenes can share the
+ * swapchain in one frame (e.g., a 3D scene + a UI overlay scene).
  */
 
 import type { EngineContext, EngineContextInternal } from "../engine/engine.js";
@@ -106,8 +105,7 @@ export interface RenderPassTask extends Task {
 /** Create a render pass task. GPU resources (target textures + descriptor)
  *  are not allocated until `record()` runs (via `frameGraph.build()`).
  *
- *  Swapchain-targeted tasks use the engine's shared MSAA + depth textures
- *  and acquire the swap view per-frame at execute time. */
+ *  Swapchain-targeted tasks acquire the swap view per-frame at execute time. */
 export function createRenderPassTask(config: RenderPassTaskConfig, engine: EngineContext, scene: SceneContext): RenderPassTask {
     const eng = engine as EngineContextInternal;
     const sc = scene as SceneContextInternal;
@@ -496,8 +494,7 @@ function updateBindingUBOs(list: readonly DrawBinding[]): void {
     }
 }
 
-/** Iterate DrawBindings, deduping setPipeline.
- *  Bindings with no `pipeline` (set internally by `draw()`) reset the dedup state. */
+/** Iterate DrawBindings, deduping setPipeline. */
 function drawList(enc: GPURenderPassEncoder | GPURenderBundleEncoder, list: readonly DrawBinding[], engine: EngineContextInternal): number {
     let lp: GPURenderPipeline | null = null;
     let draws = 0;
@@ -506,14 +503,11 @@ function drawList(enc: GPURenderPassEncoder | GPURenderBundleEncoder, list: read
         if (mesh && mesh.visible === false) {
             continue;
         }
-        if (b.pipeline && b.pipeline !== lp) {
+        if (b.pipeline !== lp) {
             enc.setPipeline(b.pipeline);
             lp = b.pipeline;
         }
         draws += b.draw(enc, engine);
-        if (!b.pipeline) {
-            lp = null;
-        }
     }
     return draws;
 }

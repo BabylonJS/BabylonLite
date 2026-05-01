@@ -36,7 +36,7 @@ export interface RenderingContext {
      *  `engine._currentDelta`. */
     _update(): void;
     /** Drive this context's GPU work — typically delegates to
-     *  `frameGraph.execute(engine._currentEncoder)`. Returns draw-call count. */
+     *  `frameGraph.execute()`. Returns draw-call count. */
     _record(): number;
     /** Optional. Called by the engine when the canvas backing-store size changes.
      *  Implementations should rebuild any canvas-sized GPU resources (e.g. ask
