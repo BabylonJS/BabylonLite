@@ -61,6 +61,7 @@ export interface EngineContextInternal extends EngineContext {
     _swapchainView: GPUTextureView;
     /** Frame delta in ms (read by scenes that don't override fixedDeltaMs). */
     _currentDelta: number;
+    _cbs: GPUCommandBuffer[];
 }
 
 /** @internal Return true if `context` is already registered with `engine`. */
@@ -150,6 +151,7 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
         _currentEncoder: undefined!,
         _swapchainView: undefined!,
         _currentDelta: 0,
+        _cbs: [],
     };
 
     return engine;
@@ -248,6 +250,7 @@ function renderFrame(engine: EngineContextInternal, delta: number): void {
     }
 
     const finalEncoder = engine._currentEncoder;
-    engine.device.queue.submit([finalEncoder.finish()]);
+    engine._cbs[0] = finalEncoder.finish();
+    engine.device.queue.submit(engine._cbs);
     engine.drawCallCount = drawCalls;
 }

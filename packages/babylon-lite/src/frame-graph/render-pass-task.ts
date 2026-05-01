@@ -36,7 +36,7 @@ import type { SceneContext, SceneContextInternal } from "../scene/scene-core.js"
 import type { Material, MaterialInternal } from "../material/material.js";
 import type { RenderTarget } from "../engine/render-target.js";
 import { buildRenderTarget, disposeRenderTarget } from "../engine/render-target.js";
-import { getViewProjectionMatrix, getViewMatrix, getCameraPosition } from "../camera/camera.js";
+import { getViewProjectionMatrix, getViewMatrix } from "../camera/camera.js";
 import { getSceneBindGroupLayout } from "../render/scene-helpers.js";
 import { createEmptyUniformBuffer } from "../resource/gpu-buffers.js";
 import { SCENE_UBO_BYTES } from "../shader/scene-uniforms-size.js";
@@ -74,7 +74,7 @@ export interface RenderPassTask extends Task {
 
     /** Cached opaque render bundle. Invalidated by renderable list mutations
      *  (`_lastVersion`) and visibility changes (`_lastVis`). */
-    _opaqueBundle: GPURenderBundle | null;
+    _opaqueBundles: GPURenderBundle[];
     _lastVersion: number;
     _lastVis: number;
 
@@ -142,7 +142,7 @@ export function createRenderPassTask(config: RenderPassTaskConfig, engine: Engin
         _opaqueBindings: [],
         _transmissiveBindings: [],
         _transparentBindings: [],
-        _opaqueBundle: null,
+        _opaqueBundles: [],
         _lastVersion: -1,
         _lastVis: 0,
         _renderPassDescriptor: { colorAttachments: [] },
@@ -195,7 +195,7 @@ export function createRenderPassTask(config: RenderPassTaskConfig, engine: Engin
             task._transmissiveBindings.length = 0;
             task._transparentBindings.length = 0;
             task._renderables.length = 0;
-            task._opaqueBundle = null;
+            task._opaqueBundles.length = 0;
             task._sceneUBO.destroy();
         },
     };
@@ -220,7 +220,7 @@ export function removeMeshFromTask(task: RenderPassTask, mesh: object): void {
         }
     }
     if (removed) {
-        task._opaqueBundle = null;
+        task._opaqueBundles.length = 0;
         task._lastVersion = -1;
     }
 }
@@ -292,7 +292,7 @@ function buildBindings(task: RenderPassTask, eng: EngineContextInternal): void {
     }
     task._opaqueBindings.sort((a, b) => a.renderable.order - b.renderable.order);
     task._transmissiveBindings.sort((a, b) => a.renderable.order - b.renderable.order);
-    task._opaqueBundle = null;
+    task._opaqueBundles.length = 0;
     task._lastVersion = task.scene._renderableVersion;
 }
 
@@ -390,7 +390,7 @@ function executePass(task: RenderPassTask): number {
     // Opaque: cached render bundle. Invalidated by scene mutation (_renderableVersion)
     // or visibility version (_vis). The bundle records group(0) at its start so it can
     // be replayed standalone (executeBundles inherits no inherited state).
-    if (task._lastVersion !== scene._renderableVersion || task._lastVis !== _vis || !task._opaqueBundle) {
+    if (task._lastVersion !== scene._renderableVersion || task._lastVis !== _vis || task._opaqueBundles.length === 0) {
         const be = eng.device.createRenderBundleEncoder({
             label: `${task.name}-opaque`,
             colorFormats: [rt.descriptor.colorFormat],
@@ -399,12 +399,12 @@ function executePass(task: RenderPassTask): number {
         });
         be.setBindGroup(0, task._sceneBG);
         drawList(be, task._opaqueBindings, eng);
-        task._opaqueBundle = be.finish();
+        task._opaqueBundles[0] = be.finish();
         task._lastVersion = scene._renderableVersion;
         task._lastVis = _vis;
     }
     let draws = task._opaqueBindings.length;
-    pass.executeBundles([task._opaqueBundle]);
+    pass.executeBundles(task._opaqueBundles);
     // executeBundles invalidates pass bind-group state — rebind group 0 before further draws.
     pass.setBindGroup(0, task._sceneBG);
     draws += drawList(pass, task._transmissiveBindings, eng);
@@ -445,7 +445,7 @@ function writePassSceneUBO(task: RenderPassTask, eng: EngineContextInternal, sce
 
     const viewProj = getViewProjectionMatrix(camera, aspect);
     const viewMat = getViewMatrix(camera);
-    const camPos = getCameraPosition(camera);
+    const wm = camera.worldMatrix;
 
     // SCENE_UBO float offsets (see shaders/scene-uniforms.wgsl):
     //   viewProjection  = 0    view             = 16   vEyePosition    = 32
@@ -462,9 +462,9 @@ function writePassSceneUBO(task: RenderPassTask, eng: EngineContextInternal, sce
         data[13] = -data[13]!;
     }
     data.set(viewMat, 16);
-    data[32] = camPos.x;
-    data[33] = camPos.y;
-    data[34] = camPos.z;
+    data[32] = wm[12]!;
+    data[33] = wm[13]!;
+    data[34] = wm[14]!;
 
     if (fog) {
         data[80] = fog.mode;
