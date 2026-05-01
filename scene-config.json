@@ -534,5 +534,14 @@
         "maxRawKB": 50,
         "description": "EffectRenderer-style WGSL pass renders a 512×512 green offscreen texture, then an unlit sphere displays that render target as its base-color texture.",
         "tags": ["procedural", "effect", "rtt"]
+    },
+    {
+        "id": 76,
+        "slug": "scene76-effect-texture",
+        "name": "Scene 76 — Effect Texture",
+        "maxMad": 0.05,
+        "maxRawKB": 25,
+        "description": "EffectWrapper fullscreen pass samples a Texture2D bound through setEffectTexture, proving texture and sampler bindings work without scene geometry.",
+        "tags": ["procedural", "effect", "texture"]
     }
 ]
