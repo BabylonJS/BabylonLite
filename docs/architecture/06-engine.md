@@ -40,6 +40,7 @@ interface EngineContextInternal extends EngineContext {
   readonly device: GPUDevice;
   readonly context: GPUCanvasContext;
   readonly format: GPUTextureFormat;
+  readonly alphaMode: GPUCanvasAlphaMode;
   _renderingContexts: RenderingContext[];
   _currentEncoder: GPUCommandEncoder;
   _swapchainView: GPUTextureView;
@@ -55,7 +56,7 @@ interface EngineContextInternal extends EngineContext {
 1. **Adapter request**: `navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })` — throws if WebGPU unavailable.
 2. **Device request**: `adapter.requestDevice({ requiredFeatures })` — optionally enables `float32-filterable` if supported.
 3. **Canvas context**: `canvas.getContext('webgpu')` — throws if context unavailable.
-4. **Swap chain configure**: `context.configure({ device, format, alphaMode: 'opaque' })` where `format = navigator.gpu.getPreferredCanvasFormat()`.
+4. **Swap chain configure**: `context.configure({ device, format, alphaMode })` where `format = navigator.gpu.getPreferredCanvasFormat()` and `alphaMode = options?.alphaMode ?? "opaque"`.
 5. **MSAA**: Defaults to `msaaSamples = 4`, or `1` when requested.
 6. **Rendering contexts**: Initializes an empty `_renderingContexts` list. Scenes and other renderers register themselves with the engine.
 

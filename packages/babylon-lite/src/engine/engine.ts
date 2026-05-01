@@ -48,6 +48,7 @@ export interface RenderingContext {
 export interface EngineContextInternal extends EngineContext {
     readonly device: GPUDevice;
     readonly context: GPUCanvasContext;
+    readonly alphaMode: GPUCanvasAlphaMode;
     _animFrameId: number;
     _renderFn: ((now: number) => void) | null;
     /** Registered rendering contexts in render order (first clears; subsequent overlay). */
@@ -102,6 +103,11 @@ export interface RenderTargetSize {
  */
 export interface EngineOptions {
     msaaSamples?: 1 | 4;
+    /**
+     * WebGPU canvas alpha mode. Use "premultiplied" to enable canvas transparency (clear color
+     * with alpha < 1 will let HTML content underneath show through). Defaults to "opaque".
+     */
+    alphaMode?: GPUCanvasAlphaMode;
 }
 
 /** Create the Babylon Lite engine. Acquires GPU adapter + device, configures swapchain. */
@@ -127,7 +133,8 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
     }
 
     const format = navigator.gpu.getPreferredCanvasFormat();
-    context.configure({ device, format, alphaMode: "opaque" });
+    const alphaMode: GPUCanvasAlphaMode = options?.alphaMode ?? "opaque";
+    context.configure({ device, format, alphaMode });
 
     const versionToLog = `Babylon Lite v${VERSION}`;
     // eslint-disable-next-line no-console
@@ -142,6 +149,7 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
         device,
         context,
         format,
+        alphaMode,
         canvas,
         msaaSamples,
         drawCallCount: 0,
