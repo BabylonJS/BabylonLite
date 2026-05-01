@@ -169,6 +169,7 @@ export function createEffectRenderTask(config: EffectRenderTaskConfig, engine: E
             if (!encoder) {
                 return 0;
             }
+            ensureTargetSize(task, eng);
             patchColorAttachment(task, eng);
             const pipeline = getEffectPipeline(config.effect as EffectWrapperInternal, task._targetSignature);
             const bindGroup = getEffectBindGroup(config.effect as EffectWrapperInternal);
@@ -246,6 +247,16 @@ function patchColorAttachment(task: EffectRenderTaskInternal, eng: EngineContext
         att.view = rt._colorView!;
         att.resolveTarget = undefined;
     }
+}
+
+function ensureTargetSize(task: EffectRenderTaskInternal, eng: EngineContextInternal): void {
+    if (task._rt.descriptor.size !== "canvas") {
+        return;
+    }
+    if (task._rt._width === eng.canvas.width && task._rt._height === eng.canvas.height) {
+        return;
+    }
+    buildRenderTarget(task._rt, eng);
 }
 
 function getEffectPipeline(wrapper: EffectWrapperInternal, targetSignature: RenderTargetSignature): GPURenderPipeline {
