@@ -525,5 +525,14 @@
         "maxRawKB": 20,
         "description": "EffectRenderer-style fullscreen procedural pass: radial glow, diagonal gradient, crisp rings, and grid rendered without scene geometry.",
         "tags": ["procedural", "effect"]
+    },
+    {
+        "id": 75,
+        "slug": "scene75-effect-rtt-sphere",
+        "name": "Scene 75 — Effect RTT Sphere",
+        "maxMad": 0.05,
+        "maxRawKB": 50,
+        "description": "EffectRenderer-style WGSL pass renders a 512×512 green offscreen texture, then an unlit sphere displays that render target as its base-color texture.",
+        "tags": ["procedural", "effect", "rtt"]
     }
 ]
