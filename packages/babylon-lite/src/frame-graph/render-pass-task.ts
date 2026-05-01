@@ -340,7 +340,7 @@ function patchPerFrame(task: RenderPassTask, eng: EngineContextInternal, swapcha
         // Read the live scene clearColor for auto-filled tasks: scenes commonly do
         // `scene.clearColor = {...}` (assignment, not mutation), so the original
         // reference captured at task-creation goes stale.
-        att.clearValue = c.clrColor!;
+        att.clearValue = task._autoFromScene ? task.scene.clearColor : c.clrColor!;
         att.loadOp = c.clr !== false ? "clear" : "load";
         if (swapchain) {
             const swapView = eng._swapchainView;
