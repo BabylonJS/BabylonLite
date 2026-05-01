@@ -566,8 +566,13 @@ function createMeshUBO(engine: EngineContextInternal, world: Mat4, composed: Com
  *  buildPbrRenderables right after the dynamic import, avoiding
  *  module-level side effects. */
 function writeMaterialData(data: Float32Array, material: PbrMaterialPropsInternal, spec: import("../../shader/fragment-types.js").UboSpec): void {
-    data[0] = material.environmentIntensity ?? 1.0;
-    data[1] = material.directIntensity ?? 1.0;
+    // Shadow-only materials override `color` and `alpha` in the BC slot; we don't want the
+    // PBR template's post-BC `luminanceOverAlpha` boost (which sums `finalRadianceScaled` and
+    // `finalSpecularScaled` into the alpha) to leak env IBL or direct-light contribution into
+    // an otherwise-transparent disc. Forcing both intensities to 0 zeroes those terms.
+    const isShadowOnly = material.mode === "shadowOnly";
+    data[0] = isShadowOnly ? 0 : (material.environmentIntensity ?? 1.0);
+    data[1] = isShadowOnly ? 0 : (material.directIntensity ?? 1.0);
     data[2] = material.reflectance ?? 0.04;
     data[3] = material.alpha ?? 1.0;
     if (spec.offsets.has("metallicFactor")) {
