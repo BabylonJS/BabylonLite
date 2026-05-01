@@ -98,6 +98,25 @@ export interface PbrMaterialProps {
      *  `baseColorFactor`). When omitted or [1,1,1], no tint is applied.
      *  Only bundled/bound when the unlit extension is active. */
     unlitColor?: [number, number, number];
+    /** When true, the material is a shadow-only receiver: the surface is invisible
+     *  except where a shadow is cast on it, where it appears in `shadowOnlyColor` (or
+     *  black when omitted). Mirrors BJS `BackgroundMaterial.shadowOnly`. Requires
+     *  `receiveShadows` on the mesh and at least one shadow-casting light in the scene.
+     *  Implies alpha-blended rendering. */
+    shadowOnly?: boolean;
+    /** Linear-RGB color shown where the shadow falls when `shadowOnly` is true.
+     *  Defaults to black (`[0, 0, 0]`). */
+    shadowOnlyColor?: [number, number, number];
+    /** Maximum opacity at the darkest part of the shadow (when `shadowOnly` is true).
+     *  Range [0, 1]. Default 1.0 (fully opaque at full shadow). Lower values produce
+     *  a lighter, more transparent shadow. Mirrors the `shadowLevel` parameter on BJS
+     *  `BackgroundMaterial.shadowOnly`. */
+    shadowOnlyOpacity?: number;
+    /** Falloff sharpness for the shadow's soft edges (when `shadowOnly` is true).
+     *  Default 1.0 (the natural ESM/PCF falloff from the shadow generator). Higher
+     *  values steepen the falloff (saturating closer to the model silhouette), giving
+     *  crisper visible edges. Mathematically: `alpha = saturate((1 - shadowFactor) * falloff) * opacity`. */
+    shadowOnlyFalloff?: number;
 }
 
 /** @internal Extended PbrMaterialProps with internal build group. */

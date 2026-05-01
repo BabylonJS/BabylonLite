@@ -18,6 +18,7 @@ export interface ShadowCaster {
     positionBuffer: GPUBuffer;
     indexBuffer: GPUBuffer;
     indexCount: number;
+    indexFormat: GPUIndexFormat;
     worldMatrix: Float32Array;
     meshUBO: GPUBuffer;
     bindGroup: GPUBindGroup;
@@ -41,6 +42,7 @@ export function buildCasters(engine: EngineContextInternal, meshes: Mesh[], mesh
             positionBuffer: gpu.positionBuffer,
             indexBuffer: gpu.indexBuffer,
             indexCount: gpu.indexCount,
+            indexFormat: gpu.indexFormat,
             worldMatrix,
             meshUBO,
             bindGroup,
@@ -168,7 +170,7 @@ export function drawCasters(pass: GPURenderPassEncoder, casters: ShadowCaster[])
     for (let i = 0; i < casters.length; i++) {
         const c = casters[i]!;
         pass.setVertexBuffer(0, c.positionBuffer);
-        pass.setIndexBuffer(c.indexBuffer, "uint32");
+        pass.setIndexBuffer(c.indexBuffer, c.indexFormat);
         pass.setBindGroup(1, c.bindGroup);
         pass.drawIndexed(c.indexCount);
     }

@@ -134,6 +134,7 @@ export async function buildPbrRenderables(
     let hasSomeMorphs = false;
     let hasSomeThinInstances = false;
     let hasAnyUnlit = false;
+    let hasAnyShadowOnly = false;
     let hasAnyUvTransform = false;
     let hasAnyUv2 = false;
     let hasAnyVertexColor = false;
@@ -153,6 +154,7 @@ export async function buildPbrRenderables(
         hasSomeMorphs ||= !!m.morphTargets;
         hasSomeThinInstances ||= !!m.thinInstances;
         hasAnyUnlit ||= !!mat.unlit;
+        hasAnyShadowOnly ||= !!mat.shadowOnly;
         hasAnyUvTransform ||= !!mat._hasUvTx;
         // UV2 only counts when occlusion samples texcoord 1 (matches pbr-mesh-features.ts).
         hasAnyUv2 ||= !!mi._gpu.uv2Buffer && mat.occlusionTexCoord === 1;
@@ -229,6 +231,10 @@ export async function buildPbrRenderables(
     if (hasAnyUnlit) {
         const mod = await import("./fragments/unlit-fragment.js");
         _registerPbrExt(mod.unlitExt);
+    }
+    if (hasAnyShadowOnly) {
+        const mod = await import("./fragments/shadow-only-fragment.js");
+        _registerPbrExt(mod.shadowOnlyExt);
     }
     if (hasSomeSkeletons) {
         const mod = await import("./fragments/skeleton-fragment.js");

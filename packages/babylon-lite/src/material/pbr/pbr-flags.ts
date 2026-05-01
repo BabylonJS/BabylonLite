@@ -67,6 +67,10 @@ export const PBR2_HAS_UV2 = 1 << 12;
 /** Material has a sheen texture with a KHR_texture_transform. Sheen owns its
  *  own `sheenUVm`/`sheenUVt` UBO fields and applies txfUV locally. */
 export const PBR2_HAS_SHEEN_UV_TX = 1 << 13;
+/** Material is a shadow-only receiver — output alpha tracks the shadow term so
+ *  the surface is invisible where unshadowed and visible (in `shadowOnlyColor`)
+ *  where shadow falls. Mirrors BJS `BackgroundMaterial.shadowOnly`. */
+export const PBR2_HAS_SHADOW_ONLY = 1 << 14;
 
 let _lightExt: PbrLightExtension | null = null;
 /** @internal */ export function _setPbrLightExtension(ext: PbrLightExtension): void {

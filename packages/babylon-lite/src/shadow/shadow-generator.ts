@@ -50,6 +50,16 @@ export interface ShadowGeneratorConfig {
     orthoMinZ?: number;
     /** Ortho projection max Z — typically camera.farPlane. Default 10000. */
     orthoMaxZ?: number;
+    /** Override the auto-fit X/Y orthographic frustum half-width with a fixed value (in light space).
+     *  When set, the frustum is centered on the casters' AABB midpoint in light space and uses
+     *  `frustumSize` as the half-extent on both axes. When unset, the frustum is auto-fit to caster
+     *  AABBs (default behavior).
+     *
+     *  Mirrors BJS `DirectionalLight.shadowFrustumSize` (paired with `autoUpdateExtends = false`).
+     *  Use this when the caster is small relative to the desired shadow extent — e.g. a thin model
+     *  on a wide receiver plane — so the existing ESM blur can spread the model's silhouette into
+     *  a soft drop-shadow over the full frustum area. */
+    frustumSize?: number;
 }
 
 export type { ShadowCaster as ShadowCasterMesh } from "./shadow-base.js";
@@ -82,8 +92,17 @@ export interface ShadowGenerator {
  * Matches Babylon.js DirectionalLight._setDefaultAutoExtendShadowProjectionMatrix:
  *   - X/Y bounds from caster world AABBs transformed to light space (expanded by shadowOrthoScale=0.1)
  *   - Z bounds from camera near/far (orthoMinZ, orthoMaxZ)
+ *
+ * When `frustumSize` is provided, X/Y bounds are fixed to ±frustumSize centered on the casters'
+ * midpoint in light space (mirrors BJS `shadowFrustumSize` + `autoUpdateExtends = false`).
  */
-function computeDirectionalLightMatrix(light: DirectionalLight, casterMeshes: Mesh[], orthoMinZ: number, orthoMaxZ: number): { viewProj: Float32Array; near: number; far: number } {
+function computeDirectionalLightMatrix(
+    light: DirectionalLight,
+    casterMeshes: Mesh[],
+    orthoMinZ: number,
+    orthoMaxZ: number,
+    frustumSize?: number
+): { viewProj: Float32Array; near: number; far: number } {
     const view = buildLightViewMatrix(light.direction.x, light.direction.y, light.direction.z, light.position.x, light.position.y, light.position.z);
 
     // Transform each caster's world AABB corners to light space for X/Y bounds
@@ -120,13 +139,25 @@ function computeDirectionalLightMatrix(light: DirectionalLight, casterMeshes: Me
         }
     }
 
-    // Expand by shadowOrthoScale (default 0.1) — matches Babylon
-    const sx = (lMaxX - lMinX) * 0.1;
-    const sy = (lMaxY - lMinY) * 0.1;
-    lMinX -= sx;
-    lMaxX += sx;
-    lMinY -= sy;
-    lMaxY += sy;
+    if (frustumSize !== undefined) {
+        // Fixed-size frustum: keep X/Y centered on the caster AABB midpoint, override the
+        // half-extent on both axes. The auto-fit bounds above produced (lMinX..lMaxX) etc.
+        // The center in light space is the midpoint; replace the extent.
+        const cxLight = (lMinX + lMaxX) / 2;
+        const cyLight = (lMinY + lMaxY) / 2;
+        lMinX = cxLight - frustumSize;
+        lMaxX = cxLight + frustumSize;
+        lMinY = cyLight - frustumSize;
+        lMaxY = cyLight + frustumSize;
+    } else {
+        // Expand by shadowOrthoScale (default 0.1) — matches Babylon
+        const sx = (lMaxX - lMinX) * 0.1;
+        const sy = (lMaxY - lMinY) * 0.1;
+        lMinX -= sx;
+        lMaxX += sx;
+        lMinY -= sy;
+        lMaxY += sy;
+    }
 
     // Z bounds from camera near/far (matching Babylon's default behavior)
     const near = orthoMinZ;
@@ -156,6 +187,7 @@ export function createShadowGenerator(engine: EngineContext, light: DirectionalL
     const frustumEdgeFalloff = cfg.frustumEdgeFalloff ?? 0;
     const orthoMinZ = cfg.orthoMinZ ?? 1;
     const orthoMaxZ = cfg.orthoMaxZ ?? 10000;
+    const frustumSize = cfg.frustumSize;
     const blurSize = mapSize / blurScale;
 
     const config: Required<ShadowGeneratorConfig> = {
@@ -167,9 +199,10 @@ export function createShadowGenerator(engine: EngineContext, light: DirectionalL
         frustumEdgeFalloff,
         orthoMinZ,
         orthoMaxZ,
+        frustumSize: frustumSize ?? 0,
     };
 
-    const { viewProj } = computeDirectionalLightMatrix(light, casterMeshes, orthoMinZ, orthoMaxZ);
+    const { viewProj } = computeDirectionalLightMatrix(light, casterMeshes, orthoMinZ, orthoMaxZ, frustumSize);
 
     // Shadow params UBO — depthValues = (0, 1) for WebGPU DirectionalLight (isNDCHalfZRange)
     const shadowParamsUBO = createShadowParamsUBO(eng, bias, depthScale);
@@ -298,7 +331,7 @@ export function createShadowGenerator(engine: EngineContext, light: DirectionalL
             return 0;
         }
         if (lightChanged) {
-            const updated = computeDirectionalLightMatrix(light, casterMeshes, orthoMinZ, orthoMaxZ);
+            const updated = computeDirectionalLightMatrix(light, casterMeshes, orthoMinZ, orthoMaxZ, frustumSize);
             updateShadowLightMatrix(eng, sg, depthSceneUBO, updated.viewProj, shadowUboData);
         }
         dirtyTracker.commit(light, casters);
