@@ -8,6 +8,8 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 
+const SCENE_CLEAR_COLOR = new Color4(51 / 255, 51 / 255, 76 / 255, 1.0);
+
 const FRAGMENT_SHADER = `
 precision lowp float;
 varying vec2 vUV;
@@ -32,7 +34,7 @@ void main(void) {
     await engine.initAsync();
 
     const scene = new Scene(engine);
-    scene.clearColor = new Color4(0.2, 0.2, 0.3, 1.0);
+    scene.clearColor = SCENE_CLEAR_COLOR;
 
     const sphere = MeshBuilder.CreateSphere("sphere", { diameter: 2, segments: 32 }, scene);
     const material = new PBRMaterial("mat", scene);

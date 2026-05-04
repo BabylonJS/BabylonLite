@@ -17,11 +17,14 @@ import {
 const FRAGMENT_WGSL = `@group(0) @binding(0) var<uniform> params:vec4<f32>;
 @fragment fn effectFragment(input:EffectVertexOutput)->@location(0) vec4<f32>{let toto=params.x/params.x;if(toto==1.0){return vec4<f32>(0.0,1.0,0.0,1.0);}if(toto>=0.999999&&toto<1.0){return vec4<f32>(0.0,0.0,1.0,1.0);}return vec4<f32>(1.0,0.0,0.0,1.0);}`;
 
+const SCENE_CLEAR_COLOR = { r: 51 / 255, g: 51 / 255, b: 76 / 255, a: 1 };
+
 async function main(): Promise<void> {
     const initStart = performance.now();
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
     const engine = await createEngine(canvas);
     const scene = createSceneContext(engine);
+    scene.clearColor = SCENE_CLEAR_COLOR;
 
     const { rt, texture } = createRenderTargetTexture(engine, {
         label: "scene75-effect-rtt",
