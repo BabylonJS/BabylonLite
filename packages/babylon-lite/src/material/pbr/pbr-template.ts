@@ -36,24 +36,16 @@ return F0 + (F90 - F0) * (t2 * t2 * t);
 }
 `;
 
-export interface PbrLightConfig {
-    /** Scene UBO fields for light data */
-    readonly sceneUboFields: readonly UboField[];
-    /** WGSL: compute L, NdotL, lightAtten from N + scene data */
-    readonly lightVectorCode: string;
-    /** WGSL: compute directDiffuse from surfaceAlbedo, NdotL, lightColor, etc. */
-    readonly directDiffuseCode: string;
-    /** WGSL: geometric AA for specular (empty string if not needed) */
-    readonly geometricAACode: string;
-}
-
 export interface PbrTemplateConfig {
-    /** Light configuration (null = no direct light). Used for single-light path
-     *  (scenes without shadows, e.g. clearcoat/sheen scenes). */
-    readonly light?: PbrLightConfig | null;
+    /** When true, generates a non-looping single-light direct block + lights UBO binding. */
+    readonly hasSingleLight?: boolean;
     /** When true, generates a multi-light loop + lights UBO binding.
-     *  Overrides `light`. Used for scenes with shadow generators. */
+     *  Used for multiple lights or shadow receivers. */
     readonly hasMultiLight?: boolean;
+    /** Pre-built WGSL for the single-light UBO structs. */
+    readonly singleLightWGSL?: string;
+    /** Pre-built WGSL for the single-light direct lighting block. */
+    readonly singleLightBlock?: string;
     /** Pre-built WGSL for multi-light (structs + computePbrLight). Passed from
      *  dynamically imported fragments/multilight-wgsl.ts to keep it out of non-shadow bundles. */
     readonly multiLightWGSL?: string;
@@ -95,55 +87,9 @@ export interface PbrTemplateConfig {
     readonly anisoBrdfFunctions?: string;
     /** Anisotropy WGSL: T/B computation block (dynamically imported). */
     readonly anisoTBBlock?: string;
-    /** Anisotropy WGSL: direct lighting D/G replacement (dynamically imported). */
-    readonly anisoDirectDG?: string;
     /** Optional extension config for advanced features (UV transforms, UV2, vertex colors).
      *  When undefined, base template defaults to master-like behavior (no feature strings). */
     readonly ext?: PbrTemplateExt;
-}
-
-/**
- * Return the scene UBO field list used by the PBR base template.
- * Cheap list-building only — no WGSL assembly. Exposed so callers that only
- * need the UBO layout (e.g. scene UBO spec computation) can avoid paying the
- * full createPbrTemplate cost.
- */
-export function getPbrBaseSceneUboFields(light: PbrLightConfig | null, hasMultiLight: boolean, hasIbl: boolean): readonly UboField[] {
-    // When hasMultiLight, light data comes from the lights UBO — scene UBO fields
-    // are kept as reserved padding for layout compatibility with background shaders.
-    const lightUboFields: readonly UboField[] =
-        hasMultiLight || !light
-            ? [
-                  { name: "lightDirection", type: "vec3<f32>" },
-                  { name: "lightIntensity", type: "f32" },
-                  { name: "lightDiffuseColor", type: "vec3<f32>" },
-                  { name: "_pad1", type: "f32" },
-                  { name: "lightGroundColor", type: "vec3<f32>" },
-              ]
-            : light.sceneUboFields;
-
-    // SH coefficients are included in the base template (not the IBL fragment)
-    // because the scene UBO writer uses fixed offsets for SH data.
-    const SH_NAMES = ["L00", "L1_1", "L10", "L11", "L2_2", "L2_1", "L20", "L21", "L22"] as const;
-    const shFields: UboField[] = hasIbl
-        ? SH_NAMES.flatMap((n, i) => [
-              { name: `vSpherical${n}`, type: "vec3<f32>" as const },
-              { name: `_shPad${i}`, type: "f32" as const },
-          ])
-        : [];
-
-    return [
-        { name: "viewProj", type: "mat4x4<f32>" },
-        { name: "cameraPosition", type: "vec3<f32>" },
-        { name: "_pad0", type: "f32" },
-        ...lightUboFields,
-        { name: "envRotationY", type: "f32" },
-        ...shFields,
-        { name: "exposureLinear", type: "f32" },
-        { name: "contrast", type: "f32" },
-        { name: "lodGenerationScale", type: "f32" },
-        { name: "_imgPad1", type: "f32" },
-    ];
 }
 
 /**
@@ -152,8 +98,10 @@ export function getPbrBaseSceneUboFields(light: PbrLightConfig | null, hasMultiL
  */
 export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
     const {
-        light = null,
+        hasSingleLight = false,
         hasMultiLight = false,
+        singleLightWGSL = "",
+        singleLightBlock = "",
         multiLightWGSL = "",
         multiLightLoop = "",
         normalMode = "none",
@@ -170,11 +118,9 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
         hasOcclusion = false,
         hasEmissiveColor = false,
         hasReflectanceExt = false,
-        hasIbl = false,
         hasAnisotropy = false,
         anisoBrdfFunctions = "",
         anisoTBBlock = "",
-        anisoDirectDG = "",
         ext,
     } = config;
     const hasNormal = normalMode === "tangent";
@@ -236,9 +182,6 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
         { name: sampler, type: { kind: "sampler", samplerType: "sampler" }, visibility: STAGE_FRAGMENT },
     ];
 
-    // ── Base scene UBO fields ───────────────────────────────────
-    const baseSceneUboFields: readonly UboField[] = getPbrBaseSceneUboFields(hasMultiLight || !light ? null : light, hasMultiLight, hasIbl);
-
     // ── Base bindings (always-present textures) ─────────────────
     const baseBindings: BindingDecl[] = [...tex2d("baseColorTexture", "baseColorSampler")];
     if (hasAnyNormal) {
@@ -254,7 +197,7 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
     if (hasSpecGloss) {
         baseBindings.push(...tex2d("specGlossTexture", "specGlossSampler"));
     }
-    if (hasMultiLight) {
+    if (hasSingleLight || hasMultiLight) {
         baseBindings.push({ name: "lights", type: { kind: "uniform-buffer" }, visibility: STAGE_FRAGMENT });
     }
 
@@ -276,7 +219,6 @@ out.worldBitangent = (finalWorld * vec4<f32>(B_local, 0.0)).xyz;`
         : "";
 
     const vertexTemplate = `/*SU*/
-@group(0) @binding(0) var<uniform> scene: SceneUniforms;
 /*MU*/
 @group(1) @binding(0) var<uniform> mesh: MeshUniforms;
 /*VH*/
@@ -291,7 +233,7 @@ var finalWorld = mesh.world;
 /*VW*/
 let worldPos4 = finalWorld * vec4<f32>(${posVar}, 1.0);
 out.worldPos = worldPos4.xyz;
-out.clipPos = scene.viewProj * worldPos4;
+out.clipPos = scene.viewProjection * worldPos4;
 out.worldNormal = (finalWorld * vec4<f32>(normalize(${normVar}), 0.0)).xyz;
 ${tangentBlock}
 out.uv = uv;
@@ -395,33 +337,15 @@ var AA_factor_y = 0.0;
             : `var AA_factor_x = 0.0;
 var AA_factor_y = 0.0;`;
 
-    // Direct lighting block
-    let directLightBlock: string;
-    if (hasMultiLight) {
-        directLightBlock = multiLightLoop;
-    } else if (light) {
-        const geomAA = hasSpecularAA || hasAnyNormal ? light.geometricAACode : "";
-        const dgBlock = hasAnisotropy
-            ? anisoDirectDG
-            : `let D = distributionGGX(NdotH, directAlphaG);
-let G = geometrySmithGGX(NdotL, NdotV, directAlphaG);`;
-        directLightBlock = `var directAlphaG = alphaG;
-${light.lightVectorCode}
-let H = normalize(V + L);
-let NdotH = clamp(dot(N, H), 0.0000001, 1.0);
-let VdotH = saturate(dot(V, H));
-${geomAA}
-${dgBlock}
-let coloredFresnel = fresnelSchlick(VdotH, colorF0, colorF90);
-let lightColor = scene.lightDiffuseColor * scene.lightIntensity;
-${light.directDiffuseCode}
-var directSpecular = coloredFresnel * D * G * NdotL * lightColor * lightAtten * material.directIntensity;
-/*AD*/`;
-    } else {
-        directLightBlock = `var directDiffuse = vec3<f32>(0.0);
+    // Direct lighting block — use the compact non-looping shader for one non-shadow light,
+    // and the generic multi-light loop for multiple lights or shadow receivers.
+    const directLightBlock: string = hasMultiLight
+        ? multiLightLoop
+        : hasSingleLight
+          ? singleLightBlock
+          : `var directDiffuse = vec3<f32>(0.0);
 var directSpecular = vec3<f32>(0.0);
 /*BL*/`;
-    }
 
     // Tonemap: BJS TONEMAPPING_STANDARD (exponential) by default; caller-supplied
     // ACES WGSL (from pbr-aces-wgsl.ts) is used when provided.
@@ -449,7 +373,7 @@ return vec4<f32>(color, finalAlpha);`
         : `@fragment fn main(input: FragmentInput) -> @location(0) vec4<f32> {`;
     const doubleSidedFlip = hasDoubleSided ? `if (!frontFacing) { N = -N; }` : "";
 
-    const multiLightDecls = hasMultiLight ? multiLightWGSL : "";
+    const lightDecls = hasMultiLight ? multiLightWGSL : hasSingleLight ? singleLightWGSL : "";
 
     const anisoBrdfBlock = hasAnisotropy ? anisoBrdfFunctions : "";
 
@@ -459,7 +383,6 @@ return vec4<f32>(color, finalAlpha);`
     const ormUV = ext?.uvForOrm ?? "input.uv";
 
     const fragmentTemplate = `/*SU*/
-@group(0) @binding(0) var<uniform> scene: SceneUniforms;
 /*MU*/
 @group(1) @binding(0) var<uniform> mesh: MeshUniforms;
 /*HF*/
@@ -468,7 +391,7 @@ return vec4<f32>(color, finalAlpha);`
 ${BRDF_FUNCTIONS}
 ${acesBlock}
 ${anisoBrdfBlock}
-${multiLightDecls}
+${lightDecls}
 ${fragmentHelpers}
 ${doubleSidedEntry}
 ${fragmentPrelude}/*SV*/
@@ -483,7 +406,7 @@ ${normalBlock}
 ${doubleSidedFlip}
 ${anisotropyTBBlock}
 /*AC*/
-let V = normalize(scene.cameraPosition - input.worldPos);
+let V = normalize(scene.vEyePosition.xyz - input.worldPos);
 let NdotVUnclamped = dot(N, V);
 let NdotV = abs(NdotVUnclamped) + 0.0000001;
 ${f0Default}
@@ -510,7 +433,6 @@ ${alphaBlock}
         fragmentTemplate,
         baseMeshUboFields,
         baseMaterialUboFields,
-        baseSceneUboFields,
         baseVertexAttributes,
         baseVaryings,
         baseBindings,

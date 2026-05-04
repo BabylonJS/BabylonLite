@@ -1,6 +1,6 @@
 import type { Vec3, Mat4 } from "../math/types.js";
 import type { SceneNode } from "../scene/scene-node.js";
-import { mat4PerspectiveLH, mat4Multiply } from "../math/mat4.js";
+import { mat4MultiplyInto, mat4PerspectiveLHToRef } from "../math/mat4.js";
 
 /** Minimal camera contract — any camera that can provide view/projection matrices.
  *  Both ArcRotateCamera and FreeCamera implement this interface.
@@ -9,6 +9,7 @@ export interface Camera {
     fov: number;
     nearPlane: number;
     farPlane: number;
+    viewport?: NormalizedViewport;
     children: SceneNode[];
     readonly worldMatrix: Mat4;
     readonly worldMatrixVersion: number;
@@ -23,6 +24,14 @@ export interface Camera {
     _vpCache?: Float32Array;
     _vpVer?: number;
     _vpAspect?: number;
+}
+
+/** Babylon-compatible normalized camera viewport. x/y/width/height are fractions of the render target. */
+export interface NormalizedViewport {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
 }
 
 /** Compute the view matrix for a camera. Cached per worldMatrixVersion. */
@@ -65,8 +74,7 @@ export function getProjectionMatrix(camera: Camera, aspectRatio: number): Mat4 {
     if (!camera._projCache) {
         camera._projCache = new Float32Array(16);
     }
-    const p = mat4PerspectiveLH(camera.fov, aspectRatio, camera.nearPlane, camera.farPlane);
-    camera._projCache.set(p);
+    mat4PerspectiveLHToRef(camera._projCache, camera.fov, aspectRatio, camera.nearPlane, camera.farPlane);
     camera._projVer = ver;
     camera._projAspect = aspectRatio;
     return camera._projCache as unknown as Mat4;
@@ -81,8 +89,7 @@ export function getViewProjectionMatrix(camera: Camera, aspectRatio: number): Ma
     if (!camera._vpCache) {
         camera._vpCache = new Float32Array(16);
     }
-    const vp = mat4Multiply(getProjectionMatrix(camera, aspectRatio), getViewMatrix(camera));
-    camera._vpCache.set(vp);
+    mat4MultiplyInto(camera._vpCache, 0, getProjectionMatrix(camera, aspectRatio), 0, getViewMatrix(camera), 0);
     camera._vpVer = ver;
     camera._vpAspect = aspectRatio;
     return camera._vpCache as unknown as Mat4;
@@ -92,4 +99,9 @@ export function getViewProjectionMatrix(camera: Camera, aspectRatio: number): Ma
 export function getCameraPosition(camera: Camera): Vec3 {
     const w = camera.worldMatrix;
     return { x: w[12]!, y: w[13]!, z: w[14]! };
+}
+
+export function getEffectiveAspectRatio(camera: Camera | null | undefined, targetWidth: number, targetHeight: number): number {
+    const v = camera?.viewport;
+    return (targetWidth / targetHeight) * (v ? v.width / v.height : 1);
 }

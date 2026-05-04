@@ -117,15 +117,6 @@ export function createStandardTemplate(config: StandardTemplateConfig): ShaderTe
     // ── Base UBO fields (mesh = world matrix only) ──────────────
     const baseMeshUboFields: UboField[] = [{ name: "world", type: "mat4x4<f32>" }];
 
-    // ── Scene UBO fields ────────────────────────────────────────
-    const baseSceneUboFields: UboField[] = [
-        { name: "viewProjection", type: "mat4x4<f32>" },
-        { name: "view", type: "mat4x4<f32>" },
-        { name: "vEyePosition", type: "vec4<f32>" },
-        { name: "vFogInfos", type: "vec4<f32>" },
-        { name: "vFogColor", type: "vec4<f32>" },
-    ];
-
     // ── Base bindings (group 1, starting after mesh UBO at 0) ───
     // Order: lights, material, diffuse*, shadow/UV*, emissive*, bump*, specular*, ambient*, lightmap*, opacity*, reflection*
     // The shadow/UV UBO is placed AFTER diffuse so its auto-assigned binding index
@@ -164,7 +155,6 @@ export function createStandardTemplate(config: StandardTemplateConfig): ShaderTe
     const vertexUboStructs = hasShadow || needsUV ? `struct uvParamsUniforms { uvScaleOffset: vec4<f32>, }` : "";
 
     const vertexTemplate = `/*SU*/
-@group(0) @binding(0) var<uniform> scene: SceneUniforms;
 /*MU*/
 @group(1) @binding(0) var<uniform> mesh: MeshUniforms;
 ${vertexUboStructs}
@@ -281,7 +271,6 @@ var color = vec4<f32>(finalDiffuse * baseAmbientColor + finalSpecular + reflecti
     }
 
     const fragmentTemplate = `/*SU*/
-@group(0) @binding(0) var<uniform> scene: SceneUniforms;
 ${lightsStructs}
 ${materialStruct}
 /*MU*/
@@ -316,7 +305,6 @@ return color;
         vertexTemplate,
         fragmentTemplate,
         baseMeshUboFields,
-        baseSceneUboFields,
         baseVertexAttributes,
         baseVaryings,
         baseBindings,

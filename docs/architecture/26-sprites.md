@@ -209,14 +209,15 @@ import chunks, no `axisLock?: 'none'|'y'|Vec3` flag.
 things implement `RenderingContext` and can be registered with an
 engine: a `SceneContext` (via `registerScene(engine, scene)`) and a
 `SpriteRenderer` (via `registerSpriteRenderer(sr)`). `startEngine(engine)`
-walks `engine._renderingContexts` once per frame, calling each
-context's `_update` (pre-pass / shadow / UBO work — may submit work
-into the encoder) and then opening one shared render pass into which
-each context's `_record` writes its draws. The first registered context
-clears; subsequent contexts use `loadOp: "load"` automatically. Pure-2D
-experiences (Lottie/Rive-class apps) create one or more `SpriteRenderer`s
-and register them on the engine — they never touch `SceneContext`.
-HUD-on-3D apps register a `SceneContext` first, construct a separate
+walks `engine._renderingContexts` once per frame. The engine owns the
+command encoder and swapchain view for the frame; each context runs
+`_update()` and `_record()` against that current frame state. A
+`SceneContext` records through its `FrameGraph` (normally the default
+swapchain `RenderPassTask`), while a `SpriteRenderer` opens its own
+sprite pass directly on the swapchain. Pure-2D experiences
+(Lottie/Rive-class apps) create one or more `SpriteRenderer`s and
+register them on the engine — they never touch `SceneContext`. HUD-on-3D
+apps register a `SceneContext` first, construct a separate
 `SpriteRenderer` for the HUD layers, register it after the scene so it
 draws on top, and tie its disposal to the scene via
 `onSceneDispose(scene, () => disposeSpriteRenderer(hud))`. Depth-hosted
@@ -227,12 +228,10 @@ inside the scene's 3D pass.**
 
 The `SceneContext` shape, the `addToScene` switch body (gaining one new
 `"sprite-2d-layer"` branch that dynamic-imports the depth-hosted
-renderable builder), and the existing 3D render code are otherwise
-unchanged. The future render-graph work will replace
-`engine._renderingContexts` with a real graph; both `SceneContext` and
-`SpriteRenderer` already conform to the `RenderingContext` shape that
-graph nodes will need, so the migration is a list-to-graph swap with no
-public-API change.
+renderable builder), and the default frame graph are otherwise
+unchanged. The sprite module does not add a second scene type or an
+implicit HUD layer list to `SceneContext`; composition remains explicit
+at the engine-registration level.
 
 ### Rejected alternatives
 
@@ -251,11 +250,10 @@ export interface RenderingContext {
     _drawCallsPre: number;
     /** Clear color used when this context is the first active one in a frame. */
     clearColor: GPUColorDict;
-    /** Per-frame update: beforeRender hooks, shadow + pre-passes, UBO updates.
-     *  May submit work into `encoder` and return a new one if it submitted. */
-    _update(encoder: GPUCommandEncoder, delta: number): GPUCommandEncoder;
-    /** Record main-pass draws into `pass`. Returns draw-call count. */
-    _record(pass: GPURenderPassEncoder): number;
+    /** Per-frame update: beforeRender hooks, shadow + pre-passes, UBO updates. */
+    _update(): void;
+    /** Record frame work using the engine's current encoder/swapchain view. Returns draw-call count. */
+    _record(): number;
 }
 
 /** @internal Inside EngineContextInternal: */
@@ -270,12 +268,11 @@ export function startEngine(engine: EngineContext): Promise<void>;
 
 `startEngine` resolves on the first frame after registration completes
 successfully. Per-frame the engine acquires the swap-chain view +
-creates one command encoder, then for each context calls
-`_update(encoder, delta)` (which may submit work and return a new
-encoder), then opens **one shared `GPURenderPass`** — first context
-sets `loadOp: "clear"` with its `clearColor`; all subsequent contexts
-flip to `loadOp: "load"` automatically — and calls `_record(pass)` on
-each. There is no per-frame `if (is2D)` branch; the loop just iterates.
+creates one command encoder, then stores them on the internal engine
+state for the current frame. It calls `_update()` and `_record()` on
+each registered context in order. Scene contexts execute their frame
+graph tasks; sprite renderers record a sprite-only swapchain pass. There
+is no per-frame `if (is2D)` branch; the loop just iterates.
 
 ### The `SpriteRenderer`
 
@@ -1656,29 +1653,26 @@ overlays are entirely caller-managed.
 startEngine(engine) per-frame:
   1. Acquire swap-chain view + create command encoder.
   2. For each context c in engine._renderingContexts (in registration order):
-       a. Pre-pass updates: c._update(encoder, deltaMs)
+       a. Pre-pass updates: c._update()
             Scene context:
               - Run scene._beforeRender hooks: clip ticks; anchor projection writes positionPx.
-              - Run uniform updaters (camera basis / VP / Sprite3DSceneUBO if present).
-              - For each Sprite2D renderable in scene._renderables: write dirty instance ranges.
+              - Run pre-pass renderables and scene uniform updaters.
             SpriteRenderer:
               - For each dirty layer: writeBuffer dirty range; update layer UBO.
-       b. Begin pass keyed by (sampleCount, hasDepth, format).
-            - First context in the list uses loadOp: "clear" (with its clearValue).
-            - Subsequent contexts use loadOp: "load".
-       c. Record draws: c._record(pass)
+       b. Record draws: c._record()
             Scene context:
-              - Draw prepasses (shadow maps, ...).
-              - Draw renderables sorted by `order`:
+              - Execute its frame graph. The default swapchain RenderPassTask
+                buckets and draws renderables sorted by `order`:
                   * meshes opaque (order 0)
                   * Sprite2D depth-hosted cutout / `"test-write"` (order 100)
                   * meshes transparent
                   * Sprite2D depth-hosted blended / `"test"` (order 200)
                   * billboards (order 200)
             SpriteRenderer:
-              - For each layer in this.layers (registration order):
-                  bind pipeline + groups; pass.draw(6, count).
-       d. End pass.
+              - Open a sprite-only swapchain pass, resolving through a transient
+                MSAA color attachment when the engine uses MSAA.
+              - For each layer in this.layers (sorted by layer.order):
+                  bind pipeline + groups; drawIndexed(6, count).
   3. Submit command buffer.
 ```
 

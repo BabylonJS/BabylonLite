@@ -29,10 +29,6 @@ export function createPointLight(position: [number, number, number], intensity =
             intensity,
             range: Number.MAX_VALUE,
 
-            _registerPbr: async () => {
-                const { registerPointPbrLight } = await import("./point-pbr.js");
-                registerPointPbrLight();
-            },
             _writeStandardLightUbo: (data: Float32Array, offset: number) => {
                 const o = offset;
                 const w = light.worldMatrix;

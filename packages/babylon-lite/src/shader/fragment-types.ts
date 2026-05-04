@@ -87,12 +87,13 @@ export interface BindingDecl {
  *   HOOK_HELPERS        → HF
  *   HOOK_SV     → SV
  *   HOOK_MF      → MF
+ *   HOOK_AFTER_SHADOWS  → AS
  *   HOOK_AFTER_DIRECT   → AD
  *   HOOK_NO_LIGHT_VARS  → BL
  *   HOOK_AI      → AI
  *   HOOK_NI  → NI
  */
-export type FragmentSlot = "HF" | "SV" | "AT" | "AC" | "MF" | "BL" | "AD" | "AI" | "NI" | "BC" | "BA";
+export type FragmentSlot = "HF" | "SV" | "AT" | "AC" | "MF" | "BL" | "AS" | "AD" | "AI" | "NI" | "BC" | "BA";
 
 // ── Vertex injection points ─────────────────────────────────────
 
@@ -151,11 +152,6 @@ export interface ShaderFragment {
 
     /** Code injected at named fragment slots */
     readonly fragmentSlots?: Partial<Record<FragmentSlot, string>>;
-
-    // ── Scene UBO ──
-
-    /** Fields appended to SceneUniforms (e.g. SH coefficients for IBL) */
-    readonly sceneUboFields?: readonly UboField[];
 }
 
 // ── Shader template ─────────────────────────────────────────────
@@ -175,8 +171,6 @@ export interface ShaderTemplate {
     readonly fragmentTemplate: string;
     /** Base mesh UBO fields (e.g. world matrix for PBR, or mesh+lights+material for Standard) */
     readonly baseMeshUboFields: readonly UboField[];
-    /** Base scene UBO fields (e.g. viewProj, cameraPosition) */
-    readonly baseSceneUboFields: readonly UboField[];
     /** Base vertex attributes (e.g. position, normal) */
     readonly baseVertexAttributes: readonly VertexAttribute[];
     /** Base varyings (e.g. worldPos, worldNormal, uv) */
@@ -219,12 +213,6 @@ export interface ComposedShader {
     readonly meshUboSpec: UboSpec;
     /** Material UBO spec (present when template provides baseMaterialUboFields) */
     readonly materialUboSpec?: UboSpec;
-    /** Scene UBO spec */
-    readonly sceneUboSpec: UboSpec;
     /** Sorted fragment IDs joined with "|" — used as part of pipeline cache key */
     readonly fragmentKey: string;
-    /** Per-fragment UBO pack info: fragment ID → float offset in mesh UBO */
-    readonly fragmentUboOffsets: ReadonlyMap<string, number>;
-    /** Per-fragment binding info: fragment ID → starting binding index in group 1 */
-    readonly fragmentBindingOffsets: ReadonlyMap<string, number>;
 }

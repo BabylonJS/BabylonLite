@@ -116,6 +116,8 @@ interface SpriteRendererInternal extends SpriteRenderer {
     _targetWidth: number;
     _targetHeight: number;
     _disposed: boolean;
+    /** Cached MSAA color attachment when `engine.msaaSamples > 1`. */
+    _msaaTarget?: { texture: GPUTexture; view: GPUTextureView; width: number; height: number };
 }
 
 /**
@@ -212,18 +214,17 @@ export function createSpriteRenderer(engine: EngineContext, opts: SpriteRenderer
         layers: opts.layers.slice(),
         clearColor: opts.clearValue ?? { r: 0, g: 0, b: 0, a: 1 },
         _drawCallsPre: 0,
-        _update(encoder: GPUCommandEncoder, _deltaMs: number): GPUCommandEncoder {
-            spriteRendererUpdate(rr, encoder);
-            return encoder;
+        _update(): void {
+            spriteRendererUpdate(rr);
         },
-        _record(pass: GPURenderPassEncoder): number {
-            return spriteRendererRecord(rr, pass);
+        _record(): number {
+            return spriteRendererRecord(rr);
         },
     };
 
     // Pre-warm pipelines currently in use, so the first frame doesn't pay compile cost.
     for (const layer of rr.layers) {
-        getOrCreateSpritePipeline(rr._engine, rr._pipelineCache, layer.blendMode, false);
+        getOrCreateSpritePipeline(rr._engine, rr._pipelineCache, rr._engine.format, rr._engine.msaaSamples === 1 ? 1 : 4, layer.blendMode, false);
     }
 
     return rr;
@@ -236,7 +237,7 @@ export function createSpriteRenderer(engine: EngineContext, opts: SpriteRenderer
  * then walks every visible non-empty layer and runs `ensureLayerGpu` + `uploadLayer`.
  * No GPU draw work here — only buffer uploads via `writeBuffer`.
  */
-function spriteRendererUpdate(rr: SpriteRendererInternal, _encoder: GPUCommandEncoder): void {
+function spriteRendererUpdate(rr: SpriteRendererInternal): void {
     if (rr._disposed) {
         return;
     }
@@ -272,10 +273,39 @@ function spriteRendererUpdate(rr: SpriteRendererInternal, _encoder: GPUCommandEn
  * Returns one draw call per visible non-empty layer (1000 sprites in a layer = 1 draw
  * call thanks to instancing).
  */
-function spriteRendererRecord(rr: SpriteRendererInternal, pass: GPURenderPassEncoder): number {
+function spriteRendererRecord(rr: SpriteRendererInternal): number {
     if (rr._disposed) {
         return 0;
     }
+    const eng = rr._engine;
+    const encoder = eng._currentEncoder;
+    const swapView = eng._swapchainView;
+
+    // Open a render pass directly on the swapchain. Sprite rendering doesn't
+    // need depth, so no depth attachment is provided. When MSAA is on we
+    // allocate (and cache) a transient color attachment that resolves to the
+    // swapchain view; for sampleCount=1 we render straight to the swapchain.
+    let colorView: GPUTextureView;
+    let resolveTarget: GPUTextureView | undefined;
+    if (eng.msaaSamples === 1) {
+        colorView = swapView;
+        resolveTarget = undefined;
+    } else {
+        const msaa = ensureSpriteMsaaTarget(rr);
+        colorView = msaa;
+        resolveTarget = swapView;
+    }
+    const pass = encoder.beginRenderPass({
+        colorAttachments: [
+            {
+                view: colorView,
+                resolveTarget,
+                clearValue: rr.clearColor,
+                loadOp: "clear",
+                storeOp: "store",
+            },
+        ],
+    });
     let drawCalls = 0;
 
     for (const layer of rr.layers) {
@@ -289,8 +319,9 @@ function spriteRendererRecord(rr: SpriteRendererInternal, pass: GPURenderPassEnc
         // Cache on the `LayerGpu` so `_record` does no Map lookup or hash-key compute
         // in the steady state; refresh if the engine's pipeline-defining GPU state changes.
         let entry = lg.pipelineEntry;
-        if (!entry || !isSpritePipelineEntryCurrent(rr._engine, entry)) {
-            entry = getOrCreateSpritePipeline(rr._engine, rr._pipelineCache, layer.blendMode, false);
+        const sampleCount = rr._engine.msaaSamples === 1 ? 1 : 4;
+        if (!entry || !isSpritePipelineEntryCurrent(rr._engine, entry, rr._engine.format, sampleCount, false)) {
+            entry = getOrCreateSpritePipeline(rr._engine, rr._pipelineCache, rr._engine.format, sampleCount, layer.blendMode, false);
             lg.pipelineEntry = entry;
             lg.bindGroup = null;
             lg.renderBundle = null;
@@ -301,7 +332,6 @@ function spriteRendererRecord(rr: SpriteRendererInternal, pass: GPURenderPassEnc
         if (lg.renderBundle == null || lg.bundleCount !== layer.count) {
             const be = rr._engine.device.createRenderBundleEncoder({
                 colorFormats: [rr._engine.format],
-                depthStencilFormat: "depth24plus-stencil8",
                 sampleCount: rr._engine.msaaSamples,
             });
             be.setIndexBuffer(rr._indexBuffer, "uint16");
@@ -316,7 +346,34 @@ function spriteRendererRecord(rr: SpriteRendererInternal, pass: GPURenderPassEnc
         drawCalls++;
     }
 
+    pass.end();
     return drawCalls;
+}
+
+/** Allocate / refresh the sprite renderer's transient MSAA color attachment.
+ *  Called only when `engine.msaaSamples > 1` since sampleCount=1 renders
+ *  straight into the swapchain. The texture is canvas-sized; rebuilt on
+ *  resize (when canvas dims change vs the cached size). */
+function ensureSpriteMsaaTarget(rr: SpriteRendererInternal): GPUTextureView {
+    const eng = rr._engine;
+    const w = eng.canvas.width;
+    const h = eng.canvas.height;
+    const cached = rr._msaaTarget;
+    if (cached && cached.width === w && cached.height === h) {
+        return cached.view;
+    }
+    if (cached) {
+        cached.texture.destroy();
+    }
+    const texture = eng.device.createTexture({
+        size: { width: w, height: h, depthOrArrayLayers: 1 },
+        format: eng.format,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        sampleCount: eng.msaaSamples,
+    });
+    const view = texture.createView();
+    rr._msaaTarget = { texture, view, width: w, height: h };
+    return view;
 }
 
 /** Push the renderer onto its engine's `_renderingContexts`. Idempotent — a second call is a no-op. */
@@ -348,6 +405,10 @@ export function disposeSpriteRenderer(sr: SpriteRenderer): void {
     }
     rr._layerGpu.clear();
     rr._indexBuffer.destroy();
+    if (rr._msaaTarget) {
+        rr._msaaTarget.texture.destroy();
+        rr._msaaTarget = undefined;
+    }
     clearSpritePipelineCache(rr._pipelineCache);
     rr.layers.length = 0;
 }

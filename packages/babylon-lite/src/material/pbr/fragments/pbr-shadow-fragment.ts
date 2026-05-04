@@ -18,5 +18,10 @@ export type PbrShadowLightSlot = ShadowLightSlot;
  * The shadow factor for each light is stored in shadowFactors[lightIndex].
  */
 export function createPbrShadowFragment(shadowLights: PbrShadowLightSlot[] = [{ lightIndex: 0, shadowType: "esm" }]): ShaderFragment {
-    return createShadowFragment("pbr-shadow", shadowLights);
+    const fragment = createShadowFragment("pbr-shadow", shadowLights);
+    const shadowCode = fragment.fragmentSlots?.AD;
+    return {
+        ...fragment,
+        fragmentSlots: shadowCode ? { AS: shadowCode } : undefined,
+    };
 }

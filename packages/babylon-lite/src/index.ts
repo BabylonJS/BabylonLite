@@ -16,6 +16,25 @@ export {
     unregisterScene,
 } from "./scene/scene.js";
 
+// ─── Frame graph ─────────────────────────────────────────────────────
+// Scene-owned ordered list of tasks. The default scene pass is a
+// RenderPassTask, and user tasks can render offscreen RTTs, overlays, etc.
+export { getFrameGraph } from "./scene/scene.js";
+export type { FrameGraph } from "./frame-graph/frame-graph.js";
+export { addTask, addTaskAtStart, addTaskBefore } from "./frame-graph/frame-graph-actions.js";
+export type { Task } from "./frame-graph/task.js";
+export type { RenderPassTask, RenderPassTaskConfig } from "./frame-graph/render-pass-task.js";
+export { createRenderPassTask, removeMeshFromTask } from "./frame-graph/render-pass-task.js";
+export type { RenderTarget, RenderTargetDescriptor } from "./engine/render-target.js";
+export { createRenderTarget } from "./engine/render-target.js";
+export { createRenderTargetTexture } from "./texture/rtt.js";
+
+// ─── Fullscreen Effects ─────────────────────────────────────────────
+export { createEffectWrapper, setEffectUniforms, setEffectTexture, createEffectRenderTask, disposeEffectWrapper } from "./effect/effect-renderer.js";
+export type { EffectBindingKind, EffectBindingLayout, EffectWrapperOptions, EffectWrapper, EffectRenderTaskConfig, EffectRenderTask } from "./effect/effect-renderer.js";
+export { createEffectRenderer, registerEffectRenderer, unregisterEffectRenderer, disposeEffectRenderer } from "./effect/effect-renderer.js";
+export type { EffectRendererOptions, EffectRenderer } from "./effect/effect-renderer.js";
+
 // ─── Camera ──────────────────────────────────────────────────────────
 export { createArcRotateCamera } from "./camera/arc-rotate.js";
 export { attachControl } from "./camera/arc-rotate-controls.js";
@@ -100,13 +119,17 @@ export type { ThinInstanceData } from "./mesh/thin-instance.js";
 // ─── Types ───────────────────────────────────────────────────────────
 export type { SceneContext, ImageProcessingConfig } from "./scene/scene.js";
 export type { ArcRotateCamera } from "./camera/arc-rotate.js";
-export type { Camera } from "./camera/camera.js";
+export type { Camera, NormalizedViewport } from "./camera/camera.js";
 export { getViewMatrix, getProjectionMatrix, getViewProjectionMatrix, getCameraPosition } from "./camera/camera.js";
+export { getEffectiveAspectRatio } from "./camera/camera.js";
+export { resolveCameraViewport } from "./camera/viewport.js";
+export type { PixelViewport } from "./camera/viewport.js";
 export type { FreeCamera } from "./camera/free-camera.js";
 export type { Mesh, MeshGPU } from "./mesh/mesh.js";
 export { ObservableVec3 } from "./math/observable-vec3.js";
 export { ObservableQuat } from "./math/observable-quat.js";
 export type { StandardMaterialProps, FogConfig } from "./material/standard/standard-material.js";
+export type { Material } from "./material/material.js";
 export type {
     PbrMaterialProps,
     ClearCoatProps,
@@ -147,7 +170,8 @@ export { getPickedNormal, getPickedUV } from "./picking/picking-helpers.js";
 
 // ─── Low-level (for advanced/custom rendering) ──────────────────────
 export type { EnvironmentTextures } from "./loader-env/load-env.js";
-export type { Renderable, PrePassRenderable, SceneUniformUpdater } from "./render/renderable.js";
+export type { Renderable, PrePassRenderable, SceneUniformUpdater, DrawBinding } from "./render/renderable.js";
+export type { RenderTargetSignature } from "./engine/render-target.js";
 
 // ─── Sprites (2D) ────────────────────────────────────────────────────
 export type { SpriteAtlas, SpriteFrame, SpriteSampling, GridAtlasOptions, LoadAtlasOptions } from "./sprite/shared/sprite-atlas.js";

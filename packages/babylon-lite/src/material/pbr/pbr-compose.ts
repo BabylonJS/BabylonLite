@@ -4,7 +4,6 @@
  *  already resolved by the caller. Nothing is snapshotted at module load. */
 
 import type { ShaderFragment, ComposedShader } from "../../shader/fragment-types.js";
-import type { PbrLightConfig } from "./pbr-template.js";
 import type { PbrShadowLightSlot } from "./fragments/pbr-shadow-fragment.js";
 import { composeShader } from "../../shader/shader-composer.js";
 import { createPbrTemplate } from "./pbr-template.js";
@@ -40,8 +39,10 @@ import {
 } from "./pbr-flags.js";
 
 export interface PbrComposerDeps {
+    readonly hasSingleLight: boolean;
     readonly hasMultiLight: boolean;
-    readonly lightConfig: PbrLightConfig | null;
+    readonly singleLightWGSL: string;
+    readonly singleLightBlock: string;
     readonly multiLightWGSL: string;
     readonly multiLightLoop: string;
     readonly acesHelpers: string;
@@ -60,8 +61,10 @@ export type PbrComposeFn = (features: number, features2?: number) => ComposedSha
 export function createPbrComposer(deps: PbrComposerDeps): PbrComposeFn {
     const cache = new Map<string, ComposedShader>();
     const {
+        hasSingleLight,
         hasMultiLight,
-        lightConfig,
+        singleLightWGSL,
+        singleLightBlock,
         multiLightWGSL,
         multiLightLoop,
         acesHelpers,
@@ -111,8 +114,10 @@ export function createPbrComposer(deps: PbrComposerDeps): PbrComposeFn {
                 : undefined;
 
         const template = createPbrTemplate({
-            light: hasMultiLight ? null : lightConfig,
+            hasSingleLight,
             hasMultiLight,
+            singleLightWGSL,
+            singleLightBlock,
             multiLightWGSL,
             multiLightLoop,
             normalMode: hasNormal ? "tangent" : hasCotangent ? "cotangent" : "none",
@@ -133,7 +138,6 @@ export function createPbrComposer(deps: PbrComposerDeps): PbrComposeFn {
             hasAnisotropy: hasAniso,
             anisoBrdfFunctions: hasAniso && anisoExt ? anisoExt.ANISO_BRDF_FUNCTIONS : "",
             anisoTBBlock: hasAniso && anisoExt ? anisoExt.makeAnisotropyTBBlock(hasNormal) : "",
-            anisoDirectDG: hasAniso && anisoExt ? anisoExt.ANISO_DIRECT_DG : "",
             ext,
         });
 

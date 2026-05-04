@@ -27,7 +27,7 @@
  * Run:  npx playwright test --config playwright.perf.config.ts tests/perf/perf-regression.spec.ts
  */
 import { test, expect } from "@playwright/test";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
 import { resolve } from "path";
 import type { BrowserContext, Page } from "@playwright/test";
 
@@ -62,6 +62,52 @@ const BASELINE_DIR = resolve(__dirname, "../../lab/public/bundle-baseline");
 const hasBaseline = existsSync(BASELINE_DIR);
 
 const RUNS_PER_SCENE = Number(process.env.PERF_RUNS) || 6;
+
+// Manifest written for the lab's "Perf Regression" tab: current Lite vs upstream Lite baseline.
+const MANIFEST_PATH = resolve(__dirname, "../../lab/public/perf-regression-manifest.json");
+interface RegressionEntry {
+    id: number;
+    name: string;
+    current: PerfResult;
+    baseline: PerfResult;
+    avgDeltaPct: number;
+    p95DeltaPct: number;
+    medianDeltaPct: number;
+}
+interface RegressionManifest {
+    generatedAt: string;
+    regressionPct: number;
+    frameCount: number;
+    runsPerScene: number;
+    scenes: Record<string, RegressionEntry>;
+}
+const manifest: RegressionManifest = {
+    generatedAt: new Date().toISOString(),
+    regressionPct: REGRESSION_PCT,
+    frameCount: FRAME_COUNT,
+    runsPerScene: RUNS_PER_SCENE,
+    scenes: {},
+};
+
+function persistManifest(): void {
+    mkdirSync(resolve(MANIFEST_PATH, ".."), { recursive: true });
+    // Merge with existing on disk so concurrent/recycled workers don't clobber each other's scenes.
+    let merged: RegressionManifest = manifest;
+    if (existsSync(MANIFEST_PATH)) {
+        try {
+            const prior = JSON.parse(readFileSync(MANIFEST_PATH, "utf8")) as RegressionManifest;
+            if (prior && prior.scenes) {
+                merged = {
+                    ...manifest,
+                    scenes: { ...prior.scenes, ...manifest.scenes },
+                };
+            }
+        } catch {
+            // ignore corrupt prior manifest
+        }
+    }
+    writeFileSync(MANIFEST_PATH, JSON.stringify(merged, null, 2) + "\n");
+}
 
 // ── Runtime injection script ──────────────────────────────────────
 // Injected before any page JS runs. Captures the engine's render
@@ -237,6 +283,12 @@ if (!hasBaseline) {
     }
 
     test.describe("Performance: Current vs Stable", () => {
+        test.afterAll(() => {
+            if (Object.keys(manifest.scenes).length === 0) return;
+            persistManifest();
+            console.log(`\n✓ Wrote perf-regression-manifest.json (${Object.keys(manifest.scenes).length} scenes)`);
+            console.log(`  ${MANIFEST_PATH}`);
+        });
         for (const scene of SCENES) {
             const testName = `${scene.name} — current ≤ ${REGRESSION_PCT}% slower than baseline`;
             test(testName, async ({ browser }) => {
@@ -273,6 +325,19 @@ if (!hasBaseline) {
 
                 const avgDeltaPct = baseline.avgMs > 0 ? ((current.avgMs - baseline.avgMs) / baseline.avgMs) * 100 : 0;
                 const p95DeltaPct = baseline.p95Ms > 0 ? ((current.p95Ms - baseline.p95Ms) / baseline.p95Ms) * 100 : 0;
+                const medianDeltaPct = baseline.medianMs > 0 ? ((current.medianMs - baseline.medianMs) / baseline.medianMs) * 100 : 0;
+
+                manifest.scenes[`scene${scene.id}`] = {
+                    id: scene.id,
+                    name: scene.name,
+                    current,
+                    baseline,
+                    avgDeltaPct: round3(avgDeltaPct),
+                    p95DeltaPct: round3(p95DeltaPct),
+                    medianDeltaPct: round3(medianDeltaPct),
+                };
+                // Persist incrementally so partial runs are visible.
+                persistManifest();
 
                 console.log(
                     `  ${scene.name}: ` +

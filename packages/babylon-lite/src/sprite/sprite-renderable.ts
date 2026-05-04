@@ -18,7 +18,8 @@
 
 import type { EngineContextInternal } from "../engine/engine.js";
 import { getRenderTargetSize } from "../engine/engine.js";
-import type { Renderable } from "../render/renderable.js";
+import type { RenderTargetSignature } from "../engine/render-target.js";
+import type { DrawBinding, Renderable } from "../render/renderable.js";
 import { createEmptyUniformBuffer, createMappedBuffer } from "../resource/gpu-buffers.js";
 import type { Sprite2DLayer } from "./sprite-2d.js";
 import {
@@ -98,11 +99,8 @@ export function buildSpriteRenderable(engine: EngineContextInternal, layer: Spri
         _lastUbo: new Float32Array(LAYER_UBO_BYTES / 4),
         _scratchUbo: new Float32Array(LAYER_UBO_BYTES / 4),
         _disposed: false,
-        updateUBOs() {
-            uploadLayer(renderable);
-        },
-        draw(pass) {
-            return drawLayer(renderable, pass);
+        bind(engine, target) {
+            return bindLayer(renderable, engine as EngineContextInternal, target);
         },
     };
 
@@ -110,6 +108,31 @@ export function buildSpriteRenderable(engine: EngineContextInternal, layer: Spri
         renderable,
         dispose() {
             disposeRenderable(renderable);
+        },
+    };
+}
+
+/** Resolve this sprite layer against a render-pass target and return the per-frame draw binding. */
+function bindLayer(r: SpriteRenderableInternal, engine: EngineContextInternal, target: RenderTargetSignature): DrawBinding {
+    if (!target.depthStencilFormat) {
+        throw new Error("Depth-hosted Sprite2DLayer requires a depth-stencil render target.");
+    }
+    const sampleCount = target.sampleCount === 1 ? 1 : 4;
+    const depthWrite = r._layer.depth === "test-write";
+    let entry = r._pipelineEntry;
+    if (!entry || !isSpritePipelineEntryCurrent(engine, entry, target.colorFormat, sampleCount, true, depthWrite)) {
+        entry = getOrCreateSpritePipeline(engine, r._pipelineCache, target.colorFormat, sampleCount, r._layer.blendMode, true, depthWrite);
+        r._pipelineEntry = entry;
+        r._bindGroup = null;
+    }
+    return {
+        renderable: r,
+        pipeline: entry.pipeline,
+        updateUBOs() {
+            uploadLayer(r);
+        },
+        draw(pass) {
+            return drawLayer(r, entry, pass);
         },
     };
 }
@@ -132,21 +155,14 @@ function uploadLayer(r: SpriteRenderableInternal): void {
 }
 
 /** Issue the indexed instanced draw for this depth-hosted sprite layer. */
-function drawLayer(r: SpriteRenderableInternal, pass: GPURenderPassEncoder | GPURenderBundleEncoder): number {
+function drawLayer(r: SpriteRenderableInternal, entry: SpritePipelineEntry, pass: GPURenderPassEncoder | GPURenderBundleEncoder): number {
     if (r._disposed || !r._layer.visible || r._layer.count === 0) {
         return 0;
-    }
-    let entry = r._pipelineEntry;
-    if (!entry || !isSpritePipelineEntryCurrent(r._engine, entry)) {
-        entry = getOrCreateSpritePipeline(r._engine, r._pipelineCache, r._layer.blendMode, true);
-        r._pipelineEntry = entry;
-        r._bindGroup = null;
     }
     if (!r._bindGroup) {
         r._bindGroup = createSpriteLayerBindGroup(r._engine, entry, r._layer, r._uniformBuffer);
     }
-    pass.setPipeline(entry.pipeline);
-    pass.setBindGroup(0, r._bindGroup);
+    pass.setBindGroup(entry.spriteBindGroupIndex, r._bindGroup);
     pass.setIndexBuffer(r._indexBuffer, "uint16");
     pass.setVertexBuffer(0, r._instanceBuffer);
     pass.drawIndexed(6, r._layer.count, 0, 0, 0);

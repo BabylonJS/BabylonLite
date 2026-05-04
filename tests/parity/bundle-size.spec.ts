@@ -92,7 +92,10 @@ for (const scene of SCENES) {
         // scene-core (it is a real 3D scene, not pure-2D).
         if (scene.slug === "scene53-depth-hosted-sprites") {
             const files = jsPayloads.map((p) => p.url.split("/").pop()!);
-            expect(files.some((f) => /sprite-renderable/.test(f)), `scene53 depth-hosted MUST load sprite-renderable.js; loaded: ${files.join(", ")}`).toBe(true);
+            expect(
+                files.some((f) => /sprite-renderable/.test(f)),
+                `scene53 depth-hosted MUST load sprite-renderable.js; loaded: ${files.join(", ")}`
+            ).toBe(true);
         }
 
         // Mesh-only / non-sprite 3D scenes must NOT pull in any sprite code.

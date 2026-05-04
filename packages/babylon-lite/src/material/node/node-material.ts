@@ -15,9 +15,9 @@
 import type { EngineContext, EngineContextInternal } from "../../engine/engine.js";
 import type { Texture2D } from "../../texture/texture-2d.js";
 import type { MeshGroupBuilder, MeshGroupBuildResult } from "../../render/renderable.js";
-import { fetchSnippetSource, parseNodeMaterialSource, findBlockByClassName } from "./node-parser.js";
+import { parseNodeMaterialSource, findBlockByClassName } from "./node-parser.js";
 import { loadGraphEmitters, emitGraph } from "./node-emitter.js";
-import type { NodeBuildState, NodeGraph, NodeValueType } from "./node-types.js";
+import type { BlockEmitter, NodeBuildState, NodeGraph, NodeValueType } from "./node-types.js";
 import { compileNodePipeline, type NodeCompileResult } from "./node-pipeline.js";
 
 // ─── Public API types ───────────────────────────────────────────────
@@ -52,6 +52,8 @@ export interface ParseNodeMaterialOptions {
     readonly hasSkeleton?: boolean;
     /** When true, InstancesBlock wires per-instance attributes. Default false. */
     readonly hasInstances?: boolean;
+    /** Optional graph-specific block loader. Avoids the full default registry when callers know the exact block set. */
+    readonly blockLoader?: (className: string) => Promise<BlockEmitter>;
 }
 
 // ─── Internal shape (what the renderable + updater read) ────────────
@@ -87,10 +89,14 @@ interface UniformSlot {
 
 export async function parseNodeMaterialFromSnippet(engine: EngineContext, snippetId: string, options: ParseNodeMaterialOptions = {}): Promise<NodeMaterial> {
     const source =
-        options.json !== undefined ? (typeof options.json === "string" ? JSON.parse(options.json) : options.json) : await fetchSnippetSource(snippetId, options.snippetServer);
+        options.json !== undefined
+            ? typeof options.json === "string"
+                ? JSON.parse(options.json)
+                : options.json
+            : await (await import("./node-snippet.js")).fetchSnippetSource(snippetId, options.snippetServer);
 
     const graph = parseNodeMaterialSource(source);
-    const emitters = await loadGraphEmitters(graph);
+    const emitters = await loadGraphEmitters(graph, options.blockLoader);
 
     const fragRoot = findBlockByClassName(graph, "FragmentOutputBlock");
     if (!fragRoot) {
@@ -115,6 +121,7 @@ export async function parseNodeMaterialFromSnippet(engine: EngineContext, snippe
         hasSkeleton: options.hasSkeleton ?? false,
         hasInstances: options.hasInstances ?? false,
     });
+    await resolvePbrMrHelpers(state);
 
     // Dynamic import: env IBL helpers in node-env.ts are only loaded when the
     // graph emitted state.usesEnv. Scenes without ReflectionBlock+PBR-MR never
@@ -240,7 +247,16 @@ export async function parseNodeMaterialFromSnippet(engine: EngineContext, snippe
 
     const _buildGroup: MeshGroupBuilder = async (scene, meshes): Promise<MeshGroupBuildResult> => {
         const { buildNodeMeshRenderables } = await import("./node-renderable.js");
-        return buildNodeMeshRenderables(scene, meshes);
+        const result = buildNodeMeshRenderables(scene, meshes);
+        // NME doesn't support per-mesh material rebuilds (no per-pass override / material swap
+        // currently; the NME node graph baked into the pipeline is fixed at build time).
+        // Provide a no-op rebuildSingle that throws so callers can detect unsupported usage.
+        return {
+            ...result,
+            rebuildSingle: () => {
+                throw new Error("NodeMaterial does not currently support per-mesh material rebuild (per-pass override / material swap).");
+            },
+        };
     };
 
     const material: NodeMaterialInternal = {
@@ -260,6 +276,34 @@ export async function parseNodeMaterialFromSnippet(engine: EngineContext, snippe
         _envHelpers: envHelpers,
     };
     return material;
+}
+
+function isCorePbrMrRequest(request: import("./node-types.js").NodePbrMrHelperRequest): boolean {
+    return (
+        !request.useClearcoat &&
+        !request.useSheen &&
+        !request.useRefraction &&
+        !request.useSubsurface &&
+        !request.useAnisotropy &&
+        !request.useShAlbedoScaling &&
+        !request.useCcBump &&
+        !request.useCcTint &&
+        !request.useSpecularAA &&
+        !request.remapClearcoatF0
+    );
+}
+
+async function resolvePbrMrHelpers(state: NodeBuildState): Promise<void> {
+    if (state.pbrMrHelperRequests.length === 0) {
+        return;
+    }
+    if (state.pbrMrHelperRequests.some((request) => !isCorePbrMrRequest(request))) {
+        throw new Error("NodeMaterial: advanced PBR-MR helper request must be emitted by the full PBR-MR block");
+    }
+    const core = await import("./blocks/pbr-mr-helper-core.js");
+    for (const request of state.pbrMrHelperRequests) {
+        state.fragment.helpers.set(request.key, core.buildPbrMrHelperCore(request));
+    }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────

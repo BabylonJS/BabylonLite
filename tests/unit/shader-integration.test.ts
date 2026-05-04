@@ -103,8 +103,8 @@ describe("PBR template + fragments integration", () => {
         expect(result.fragmentWGSL).toContain("vSphericalL00");
         // 4 IBL bindings in group 1
         expect(result.meshBGLDescriptor.entries.length).toBeGreaterThanOrEqual(5); // mesh UBO + base textures + 4 IBL
-        // Scene UBO should include SH coefficients
-        expect(result.sceneUboSpec.offsets.has("vSphericalL00")).toBe(true);
+        // Scene UBO should include canonical SH coefficients
+        expect(result.vertexWGSL).toContain("vSphericalL00");
     });
 
     it("composes PBR + skeleton (4-bone)", () => {
