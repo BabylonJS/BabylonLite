@@ -30,10 +30,6 @@ export function createHemisphericLight(direction: [number, number, number] = [0,
             diffuseColor: [1, 1, 1] as [number, number, number],
             groundColor: [0, 0, 0] as [number, number, number],
 
-            _registerPbr: async () => {
-                const { registerHemisphericPbrLight } = await import("./hemispheric-pbr.js");
-                registerHemisphericPbrLight();
-            },
             _writeStandardLightUbo: (data: Float32Array, offset: number) => {
                 const o = offset;
                 const w = light.worldMatrix;

@@ -16,7 +16,11 @@ import { createUniformBuffer } from "../resource/gpu-buffers.js";
 import depthFragSrc from "../../shaders/shadow-depth.fragment.wgsl?raw";
 import skinnedVert4Src from "../../shaders/shadow-skinned-4.vertex.wgsl?raw";
 import skinnedVert8Src from "../../shaders/shadow-skinned-8.vertex.wgsl?raw";
-import { WGSL_SCENE_UNIFORMS_SHADOW } from "../shader/wgsl-helpers.js";
+
+/** Shadow-pass UBO: just the light's view-projection matrix (64 bytes). Mirrors
+ *  the constant of the same name in `shadow-generator.ts`. Duplicated rather than
+ *  exported so this dynamic-imported module stays self-contained. */
+const SHADOW_LIGHT_VIEW_WGSL = `struct SceneUniforms { viewProjection: mat4x4<f32> }\n@group(0) @binding(0) var<uniform> scene: SceneUniforms;\n`;
 
 /** Per-mesh skinned depth state: pipeline + bind group + buffers for one skinned caster. */
 export interface SkinnedShadowCaster {
@@ -41,7 +45,7 @@ function buildSkinnedDepthCaster(
 ): SkinnedShadowCaster {
     const device = eng.device;
     const has8Bones = !!skel.joints1Buffer;
-    const vertCode = WGSL_SCENE_UNIFORMS_SHADOW + (has8Bones ? skinnedVert8Src : skinnedVert4Src);
+    const vertCode = SHADOW_LIGHT_VIEW_WGSL + (has8Bones ? skinnedVert8Src : skinnedVert4Src);
 
     // Per-mesh bind group layout: mesh UBO + shadow params UBO + bone texture (rgba32float).
     const meshBglEntries: GPUBindGroupLayoutEntry[] = [

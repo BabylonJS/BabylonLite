@@ -45,9 +45,6 @@ export function createSpotLight(position: [number, number, number], direction: [
             intensity,
             range: Number.MAX_VALUE,
 
-            _registerPbr: async () => {
-                // PBR multi-light not yet implemented; no-op for now
-            },
             _writeStandardLightUbo: (data: Float32Array, offset: number) => {
                 const o = offset;
                 const w = light.worldMatrix;

@@ -1,96 +1,85 @@
-// Scene 52: Skinned Shadow Casting
-// Demonstrates that the directional shadow generator can render skinned
-// (animated) caster meshes. The Alien.gltf model from scene 5 provides a
-// skinned glTF mesh; a flat ground beneath it receives the cast shadow.
-// Animation is deterministic via `?seekTime=…` (matches scene 5 / scene 11).
+// Scene 52 — RTT with per-pass material override.
+//
+// Two meshes A (sphere) and B (box) are added to the main pass with the standard pipeline.
+// A second render pass R1 renders mesh A *only*, with its own camera AND a different
+// (green) material, into an offscreen 512x512 color texture. That texture is wired as
+// mesh B's diffuseTexture, so the box on screen displays whatever R1 rendered.
+//
+// Demonstrates: addToPass, addTaskAtStart, createRenderTargetTexture,
+// per-pass material override, and that one Renderable per (mesh, material) is shared
+// across multiple passes.
+//
+// Note: id 52 — id 50 is reserved by a co-worker.
 
-import { addToScene, attachControl, createArcRotateCamera, createDirectionalLight, createEngine, createGround, createPbrMaterial, createSceneContext, createShadowGenerator, createSolidTexture2D, goToFrame, loadGltf, onBeforeRender, pauseAnimation, registerScene, startEngine } from "babylon-lite";
-import type { Mesh, TransformNode } from "babylon-lite";
+import {
+    addToScene,
+    startEngine,
+    registerScene,
+    createEngine,
+    createSceneContext,
+    createArcRotateCamera,
+    createFreeCamera,
+    createHemisphericLight,
+    createSphere,
+    createBox,
+    createStandardMaterial,
+    attachControl,
+    addTaskAtStart,
+    createRenderPassTask,
+    createRenderTargetTexture,
+} from "babylon-lite";
 
 async function main(): Promise<void> {
     const __initStart = performance.now();
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
     const engine = await createEngine(canvas);
     const scene = createSceneContext(engine);
-    scene.clearColor = { r: 0.2, g: 0.2, b: 0.3, a: 1.0 };
 
-    const cam = createArcRotateCamera(Math.PI / 2, Math.PI / 2.6, 2.5, { x: 0, y: 0.4, z: 0 });
-    cam.nearPlane = 0.1;
-    cam.farPlane = 100;
-    scene.camera = cam;
-    attachControl(cam, canvas, scene);
+    // Main camera — orbit around the two meshes
+    const mainCam = createArcRotateCamera(-Math.PI / 2, Math.PI / 2.5, 8, { x: 1.5, y: 0, z: 0 });
+    mainCam.nearPlane = 0.1;
+    mainCam.farPlane = 100;
+    scene.camera = mainCam;
+    attachControl(mainCam, canvas, scene);
 
-    // Directional light from above-front. Add it FIRST so it registers as the PBR
-    // single-light extension before any other light type — the multi-light
-    // writeSceneUbo path expects scene.lights[0] to match the registered ext.
-    const light = createDirectionalLight([-0.5, -1, -0.5]);
-    light.position.set(2, 4, 2);
-    light.intensity = 1.0;
-    addToScene(scene, light);
+    addToScene(scene, createHemisphericLight([0, 1, 0]));
 
-    // Load the same Alien.gltf used by scene 5 — already proven skinned + animated.
-    // The model's local origin sits at chest height (boundMin.y ≈ -0.66, boundMax.y ≈ +0.19),
-    // so without a translation the alien would be mostly buried by the ground plane below.
-    // glTF asset containers always put the root TransformNode at entities[0] (see
-    // packages/babylon-lite/src/loader-gltf/load-gltf.ts).
-    const alien = await loadGltf(engine, "https://playground.babylonjs.com/scenes/Alien/Alien.gltf");
-    // Lift the asset so its feet sit just above the ground plane at y=0.
-    (alien.entities[0] as TransformNode).position.y = 0.7;
-    addToScene(scene, alien);
-
-    // Find the skinned mesh in the loaded asset so we can register it as a shadow caster.
-    const skinnedCasters: Mesh[] = scene.meshes.filter((m) => !!m.skeleton);
-
-    // Flat ground that receives the alien's shadow.
-    const ground = createGround(engine, { width: 6, height: 6 });
-    ground.material = createPbrMaterial({
-        baseColorTexture: createSolidTexture2D(engine, 0.6, 0.55, 0.5),
-        ormTexture: createSolidTexture2D(engine, 1.0, 0.9, 0.0),
-    });
-    ground.receiveShadows = true;
-    addToScene(scene, ground);
-
-    // Shadow generator with skinned casters — exercises the new skinning depth path.
-    light.shadowGenerator = await createShadowGenerator(engine, light, skinnedCasters, {
-        mapSize: 1024,
-        depthScale: 30,
-        bias: 0.00005,
-        blurScale: 2,
-        darkness: 0,
-        orthoMinZ: cam.nearPlane,
-        orthoMaxZ: cam.farPlane,
-        frustumSize: 1.5,
+    // R1 render target — eagerly allocated so we can wire its color view as B's diffuseTexture
+    // BEFORE the frame graph is built. Fixed 512x512 (RTT size is independent of canvas).
+    const { rt: r1RT, texture: r1Tex } = createRenderTargetTexture(engine, {
+        label: "r1",
+        colorFormat: engine.format,
+        depthStencilFormat: "depth24plus-stencil8",
+        sampleCount: 1,
+        size: { width: 512, height: 512 },
     });
 
-    // Fixed timestep for deterministic animation (matches BJS useConstantAnimationDeltaTime).
-    scene.fixedDeltaMs = 16.0;
+    // Mesh A — sphere with red main material
+    const meshA = createSphere(engine);
+    const matA_R0 = createStandardMaterial();
+    matA_R0.diffuseColor = [1, 0.2, 0.2];
+    meshA.material = matA_R0;
+    addToScene(scene, meshA);
 
-    // Freeze at frame 300 only for parity tests (triggered by ?freeze) — same pattern as scene 5.
-    const params = new URLSearchParams(window.location.search);
-    const shouldFreeze = params.has("freeze");
-    const seekTimeParam = parseFloat(params.get("seekTime") || "");
-    let frameCount = 0;
-    let seekDone = false;
-    onBeforeRender(scene, () => {
-        frameCount++;
-        canvas.dataset.frameCount = String(frameCount);
+    // Mesh B — box with diffuseTexture = R1's color attachment
+    const meshB = createBox(engine, 2);
+    meshB.position.x = 3;
+    const matB = createStandardMaterial();
+    matB.diffuseTexture = r1Tex;
+    meshB.material = matB;
+    addToScene(scene, meshB);
 
-        if (!isNaN(seekTimeParam) && seekTimeParam > 0 && frameCount === 10 && !seekDone) {
-            const seekFrame = seekTimeParam * 60;
-            for (const g of scene.animationGroups) {
-                goToFrame(g, seekFrame);
-            }
-            seekDone = true;
-            canvas.dataset.animationFrozen = "true";
-        }
+    // R1 task — its own camera, only mesh A, runs BEFORE main so its texture is ready.
+    const r1Cam = createFreeCamera({ x: 0, y: 0, z: -3 }, { x: 0, y: 0, z: 0 });
+    r1Cam.nearPlane = 0.1;
+    r1Cam.farPlane = 100;
+    const r1Task = createRenderPassTask({ name: "r1", rt: r1RT, clrColor: { r: 0.1, g: 0.1, b: 0.3, a: 1 }, cam: r1Cam, cs: true }, engine, scene);
+    addTaskAtStart(scene, r1Task);
 
-        if (shouldFreeze && !seekDone && frameCount === 300) {
-            for (const g of scene.animationGroups) {
-                pauseAnimation(g);
-            }
-            canvas.dataset.animationFrozen = "true";
-        }
-    });
+    // Override material for A in R1 — green sphere on a blue background.
+    const matA_R1 = createStandardMaterial();
+    matA_R1.diffuseColor = [0.2, 1, 0.2];
+    r1Task.addToPass(meshA, { material: matA_R1 });
 
     await registerScene(engine, scene);
     await startEngine(engine);

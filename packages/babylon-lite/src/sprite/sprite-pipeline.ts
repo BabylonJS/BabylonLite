@@ -174,7 +174,7 @@ function getShaderModule(engine: EngineContextInternal, cache: SpritePipelineCac
     return cache._shaderModule;
 }
 
-function buildSpritePipeline(engine: EngineContextInternal, cache: SpritePipelineCache, blendMode: SpriteBlendMode, hasDepth: boolean): SpritePipelineEntry {
+function buildSpritePipeline(engine: EngineContextInternal, cache: SpritePipelineCache, blendMode: SpriteBlendMode, _hasDepth: boolean): SpritePipelineEntry {
     const device = engine.device;
     const bindGroupLayout = device.createBindGroupLayout({
         entries: [
@@ -210,11 +210,6 @@ function buildSpritePipeline(engine: EngineContextInternal, cache: SpritePipelin
             targets: [{ format: engine.format, blend: getBlendModeEntry(blendMode).descriptor, writeMask: GPUColorWrite.ALL }],
         },
         primitive: { topology: "triangle-list", cullMode: "none" },
-        depthStencil: {
-            format: "depth24plus-stencil8",
-            depthCompare: hasDepth ? "less-equal" : "always",
-            depthWriteEnabled: false,
-        },
         multisample: { count: engine.msaaSamples },
     });
 

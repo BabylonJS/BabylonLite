@@ -1,58 +1,40 @@
 /** Standard mesh renderable — builds Renderables from Mesh + StandardMaterial.
  *
- *  Uses the dynamic pipeline system: each mesh's material features produce a
- *  pipeline key, and meshes are grouped by key to minimise state changes. */
+ *  `buildStandardMeshRenderables` does shared per-scene setup (registers a
+ *  `_stdCtxByScene` ctx + builds the unified scene-uniform updater), then
+ *  delegates per-mesh work to `buildSingleStandardRenderable`. The same
+ *  single-mesh function is reused by the material-swap path. */
 
 import type { EngineContext } from "../../engine/engine.js";
 import type { EngineContextInternal } from "../../engine/engine.js";
 import type { SceneContext, SceneContextInternal } from "../../scene/scene.js";
 import type { Mesh } from "../../mesh/mesh.js";
 import type { MeshInternal } from "../../mesh/mesh.js";
-import type { Renderable, SceneUniformUpdater } from "../../render/renderable.js";
+import type { Renderable, SceneUniformUpdater, MeshGroupBuildResult } from "../../render/renderable.js";
 import type { LightBase } from "../../light/types.js";
 import { collectStdBoundTextures } from "./standard-material.js";
-import { updateSceneUniforms } from "../scene-uniforms.js";
 import type { StandardMaterialProps } from "./standard-material.js";
-import type { PbrMaterialProps } from "../pbr/pbr-material.js";
-import { getViewProjectionMatrix, getViewMatrix, getCameraPosition, getEffectiveAspectRatio } from "../../camera/camera.js";
 import { acquireTexture, releaseTexture, clearSamplerCache } from "../../resource/gpu-pool.js";
+import { createUniformBuffer } from "../../resource/gpu-buffers.js";
 import {
     computeFeatures,
-    getOrCreatePipeline,
-    createDynamicMeshGPU,
+    getOrCreateStandardBindings,
+    getOrCreateStandardPipeline,
+    createStandardMeshBindGroup,
     writeLightsUBO,
     refreshLightsUBO,
-    releaseStandardPipelineVariant,
     clearStandardPipelineCache,
     getLightsUboSize,
-    NEEDS_UV,
-    NEEDS_UV2,
-    RECEIVE_SHADOWS,
-    THIN_INSTANCES,
-    THIN_INSTANCE_COLOR,
-    HAS_OPACITY_TEXTURE,
-    _getStdExts,
     writeStdMaterialData,
 } from "./standard-pipeline.js";
+import { NEEDS_UV, NEEDS_UV2, RECEIVE_SHADOWS, THIN_INSTANCES, THIN_INSTANCE_COLOR, HAS_OPACITY_TEXTURE, _getStdExts } from "./standard-flags.js";
 import { computeLightsVersion } from "../../render/lights-ubo.js";
 import type { ShaderFragment } from "../../shader/fragment-types.js";
-import type { PipelineVariant, DynamicMeshGPU } from "./standard-pipeline.js";
 import type { ShadowGenerator } from "../../shadow/shadow-generator.js";
 
-// Scratch buffer for material UBO dirty comparison (24 floats = 96 bytes)
+/** Scratch buffer for material UBO writes (24 floats = 96 bytes). Reused across
+ *  every Standard renderable since `updateUBOs()` is single-threaded per frame. */
 const _stdMatScratch = new Float32Array(24);
-
-interface MeshPacket {
-    mesh: Mesh;
-    gpu: DynamicMeshGPU;
-    _lastMaterial: StandardMaterialProps | PbrMaterialProps;
-    _lastWorldVersion: number;
-}
-
-interface PipelineGroup {
-    variant: PipelineVariant;
-    packets: MeshPacket[];
-}
 
 /** Thin instance GPU sync callback type — loaded dynamically only when needed. */
 type ThinInstanceSync = (engine: EngineContextInternal, ti: any, pass: GPURenderPassEncoder | GPURenderBundleEncoder, slot: number, hasColor: boolean) => number;
@@ -65,12 +47,14 @@ export interface StdFragmentFactories {
 }
 
 /** Build Renderable(s) + a SceneUniformUpdater for a set of standard meshes.
- *  Groups meshes by feature bitmask to minimise pipeline state changes. */
-export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[], factories: StdFragmentFactories): { renderables: Renderable[]; updater: SceneUniformUpdater } {
+ *  The `rebuildSingle` closure is reused later (via `_rebuildSingle` on the group
+ *  builder) for material swaps + per-pass material overrides. */
+export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[], factories: StdFragmentFactories): MeshGroupBuildResult {
     const engine = scene.engine as EngineContextInternal;
     const device = engine.device;
+    const { tiSync, tiFragment, shadowFragment } = factories;
 
-    // Collect per-light shadow info
+    // Collect per-light shadow info.
     const shadowLights: { lightIndex: number; shadowType: "esm" | "pcf"; gen: ShadowGenerator }[] = [];
     for (let i = 0; i < scene.lights.length; i++) {
         const sg = scene.lights[i]!.shadowGenerator;
@@ -79,42 +63,20 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
         }
     }
     const hasSomeShadows = shadowLights.length > 0;
-    // Shadow bind group cache — within this build, all receiving meshes share the
-    // same shadow generators, so keying by variant.shadowBGL alone is correct.
+
+    // All receiving meshes in this build share the same shadow generators,
+    // so keying the shadow BG by `bindings.shadowBGL` alone is correct.
     const shadowBGCache = new Map<GPUBindGroupLayout, GPUBindGroup>();
+    /** Indexed by light bitmask (≤ 16 entries for MAX_LIGHTS=4). */
+    const lightsUBOByMask: GPUBuffer[] = [];
+    /** Parallel to lightsUBOByMask — lights present in each bitmask. */
+    const lightsForMask: LightBase[][] = [];
 
-    // Per-mesh light filtering: bitmask cache (MAX_LIGHTS=4 → at most 16 entries).
-    // When no light has filtering, all meshes hit the same bitmask → one shared UBO.
-    const lightsUBOs: GPUBuffer[] = [];
-    const lightsForMask: LightBase[][] = []; // parallel to lightsUBOs — lights per bitmask
-    const allLights = scene.lights;
-
-    function getLightsBuffer(id: string | undefined): GPUBuffer {
-        let m = 0;
-        for (let i = 0; i < allLights.length; i++) {
-            const l = allLights[i]!,
-                inc = l.includedOnlyMeshIds;
-            if (!id || (inc?.size ? inc.has(id) : !l.excludedMeshIds?.has(id))) {
-                m |= 1 << i;
-            }
-        }
-        if (!lightsUBOs[m]) {
-            const filtered = allLights.filter((_, i) => (m >> i) & 1);
-            lightsForMask[m] = filtered;
-            lightsUBOs[m] = writeLightsUBO(engine, filtered);
-        }
-        return lightsUBOs[m]!;
-    }
-
-    const { tiSync, tiFragment: tiFragmentFactory, shadowFragment: shadowFragmentFactory } = factories;
-
-    const exts = _getStdExts();
-
-    // Group meshes by feature bitmask
-    const groups = new Map<number, PipelineGroup>();
-
-    for (const mesh of meshes) {
-        const mat = mesh.material as StandardMaterialProps;
+    // Closure used both for the initial per-mesh build below AND for later
+    // material-swap / per-pass-override rebuilds (set on standardGroupBuilder._rebuildSingle).
+    const rebuildSingle = (s: SceneContext, mesh: Mesh, materialOverride?: unknown): Renderable => {
+        const mat = (materialOverride ?? mesh.material) as StandardMaterialProps;
+        const isOverride = materialOverride != null;
         let features = computeFeatures(mat, mesh.receiveShadows);
         if (mesh.thinInstances) {
             features |= THIN_INSTANCES;
@@ -122,206 +84,195 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
         if (mesh.thinInstances?.colors) {
             features |= THIN_INSTANCE_COLOR;
         }
-        let group = groups.get(features);
-        if (!group) {
-            // Build fragments for this feature set
-            const frags: ShaderFragment[] = [];
-            for (const ext of exts.values()) {
-                if (features & ext.feature) {
-                    const f = ext.frag(features);
-                    if (f) {
-                        frags.push(f);
-                    }
+
+        // Build per-feature fragment list (deduped via pipeline cache).
+        const frags: ShaderFragment[] = [];
+        for (const ext of _getStdExts().values()) {
+            if (features & ext.feature) {
+                const f = ext.frag(features);
+                if (f) {
+                    frags.push(f);
                 }
             }
-            if (features & RECEIVE_SHADOWS && shadowFragmentFactory && hasSomeShadows) {
-                const slots = shadowLights.map((sl) => ({ lightIndex: sl.lightIndex, shadowType: sl.shadowType }));
-                frags.push(shadowFragmentFactory(slots));
+        }
+        if (features & RECEIVE_SHADOWS && shadowFragment && hasSomeShadows) {
+            const slots = shadowLights.map((sl) => ({ lightIndex: sl.lightIndex, shadowType: sl.shadowType }));
+            frags.push(shadowFragment(slots));
+        }
+        if (features & THIN_INSTANCES && tiFragment) {
+            const hasColor = !!(features & THIN_INSTANCE_COLOR);
+            const tiFrag = tiFragment(hasColor);
+            if (hasColor) {
+                // Standard applies instance color to final color (BC), not to baseColor (AT) like PBR.
+                const { fragmentSlots: _fragmentSlots, ...rest } = tiFrag;
+                frags.push({
+                    ...rest,
+                    fragmentSlots: {
+                        BC: `color = vec4<f32>(color.rgb * input.vInstanceColor.rgb, color.a * input.vInstanceColor.a);`,
+                    },
+                });
+            } else {
+                frags.push(tiFrag);
             }
-            if (features & THIN_INSTANCES && tiFragmentFactory) {
-                const hasColor = !!(features & THIN_INSTANCE_COLOR);
-                const tiFrag = tiFragmentFactory(hasColor);
-                if (hasColor) {
-                    // Standard applies instance color to final color (BC),
-                    // not to baseColor (AT) like PBR. Strip the fragment slot
-                    // and let the template handle it.
-                    const { fragmentSlots: _fragmentSlots, ...rest } = tiFrag;
-                    frags.push({
-                        ...rest,
-                        fragmentSlots: {
-                            BC: `color = vec4<f32>(color.rgb * input.vInstanceColor.rgb, color.a * input.vInstanceColor.a);`,
-                        },
-                    });
-                } else {
-                    frags.push(tiFrag);
+        }
+        const bindings = getOrCreateStandardBindings(engine, features, frags);
+
+        // Per-mesh light filtering: bitmask cache (MAX_LIGHTS=4 → at most 16 entries).
+        let mask = 0;
+        for (let i = 0; i < s.lights.length; i++) {
+            const l = s.lights[i]!;
+            const inc = l.includedOnlyMeshIds;
+            if (!mesh.id || (inc?.size ? inc.has(mesh.id) : !l.excludedMeshIds?.has(mesh.id))) {
+                mask |= 1 << i;
+            }
+        }
+        if (!lightsUBOByMask[mask]) {
+            const filtered = s.lights.filter((_, i) => (mask >> i) & 1);
+            lightsForMask[mask] = filtered;
+            lightsUBOByMask[mask] = writeLightsUBO(engine, filtered);
+        }
+        const lightsBuffer = lightsUBOByMask[mask]!;
+
+        const meshShadowGens = mesh.receiveShadows ? shadowLights.map((sl) => sl.gen) : [];
+
+        const meshUBO = createUniformBuffer(engine, mesh.worldMatrix);
+        const textureLevel = (features & NEEDS_UV) !== 0 ? 1.0 : 0;
+        const matData = new Float32Array(24);
+        writeStdMaterialData(matData, mat, textureLevel);
+        const materialUBO = createUniformBuffer(engine, matData);
+        const meshBindGroup = createStandardMeshBindGroup(engine, bindings, meshUBO, materialUBO, lightsBuffer, mat);
+
+        // Shadow bind group (group 2) — shared across receiving meshes via shadowBGCache.
+        let shadowBindGroup: GPUBindGroup | null = null;
+        if (meshShadowGens.length > 0 && bindings.shadowBGL) {
+            let cached = shadowBGCache.get(bindings.shadowBGL);
+            if (!cached) {
+                const entries: GPUBindGroupEntry[] = [];
+                let b = 0;
+                for (const sg of meshShadowGens) {
+                    entries.push({ binding: b++, resource: sg.blurredTexture.createView() });
+                    entries.push({ binding: b++, resource: sg.blurredSampler });
+                    entries.push({ binding: b++, resource: { buffer: sg.shadowUBO } });
                 }
+                cached = device.createBindGroup({ layout: bindings.shadowBGL, entries });
+                shadowBGCache.set(bindings.shadowBGL, cached);
             }
-            const variant = getOrCreatePipeline(engine, engine.format, engine.msaaSamples, features, frags);
-            group = { variant, packets: [] };
-            groups.set(features, group);
+            shadowBindGroup = cached;
         }
 
-        const worldMatrix = mesh.worldMatrix;
-        const meshShadowGens = mesh.receiveShadows ? shadowLights.map((sl) => sl.gen) : [];
-        const lightsBuffer = getLightsBuffer(mesh.id);
-        const gpu = createDynamicMeshGPU(engine, group.variant, {
-            worldMatrix,
-            material: mat,
-            lightsBuffer,
-            shadowGenerators: meshShadowGens,
-            shadowBGCache,
-        });
-        group.packets.push({ mesh, gpu, _lastMaterial: mat, _lastWorldVersion: mesh.worldMatrixVersion });
+        const needsUV = (features & NEEDS_UV) !== 0;
+        const needsUV2 = (features & NEEDS_UV2) !== 0;
+        const hasShadow = (features & RECEIVE_SHADOWS) !== 0;
+        const hasOpacityTexture = (features & HAS_OPACITY_TEXTURE) !== 0;
+        const hasThinInstances = (features & THIN_INSTANCES) !== 0;
+        const hasInstanceColor = (features & THIN_INSTANCE_COLOR) !== 0;
+        const isTransparent = hasOpacityTexture || mat.alpha < 1;
 
         const boundTextures = collectStdBoundTextures(mat);
         for (const t of boundTextures) {
             acquireTexture(t);
         }
-        const variant = group.variant;
-        (scene as SceneContextInternal)._meshDisposables.set(mesh, [
+        (s as SceneContextInternal)._meshDisposables.set(mesh, [
             () => {
                 for (const t of boundTextures) {
                     releaseTexture(t);
                 }
             },
-            () => releaseStandardPipelineVariant(variant),
         ]);
-    }
 
-    // Create one Renderable per pipeline group
-    const renderables: Renderable[] = [];
-    // All standard variants share the same _sharedSceneUBO — track it once to avoid duplicate writes
-    let sharedSceneUBO: GPUBuffer | null = null;
+        let _lastWorldVersion = mesh.worldMatrixVersion;
+        const updateUBOs = (): void => {
+            if (mesh.worldMatrixVersion !== _lastWorldVersion) {
+                device.queue.writeBuffer(meshUBO, 0, mesh.worldMatrix as unknown as Float32Array<ArrayBuffer>);
+                _lastWorldVersion = mesh.worldMatrixVersion;
+            }
+            const m = mat as any;
+            if (m._uboDirty) {
+                m._uboDirty = false;
+                _stdMatScratch.fill(0);
+                writeStdMaterialData(_stdMatScratch, mat, textureLevel);
+                device.queue.writeBuffer(materialUBO, 0, _stdMatScratch.buffer, 0, 96);
+            }
+        };
 
-    for (const [, group] of groups) {
-        const { variant, packets } = group;
-        const needsUV = (variant.features & NEEDS_UV) !== 0;
-        const needsUV2 = (variant.features & NEEDS_UV2) !== 0;
-        const hasShadow = (variant.features & RECEIVE_SHADOWS) !== 0;
+        const draw = (pass: GPURenderPassEncoder | GPURenderBundleEncoder): number => {
+            // For per-pass material overrides, skip the mesh.material === mat guard
+            // because the override material is intentionally not the mesh's current one.
+            if (!isOverride && mesh.material !== mat) {
+                return 0;
+            }
+            const g = (mesh as MeshInternal)._gpu;
+            let slot = 0;
+            pass.setVertexBuffer(slot++, g.positionBuffer);
+            pass.setVertexBuffer(slot++, g.normalBuffer);
+            if (needsUV) {
+                pass.setVertexBuffer(slot++, g.uvBuffer);
+            }
+            if (needsUV2 && g.uv2Buffer) {
+                pass.setVertexBuffer(slot++, g.uv2Buffer);
+            }
 
-        if (!sharedSceneUBO) {
-            sharedSceneUBO = variant.sceneUBO;
-        }
+            const ti = hasThinInstances ? mesh.thinInstances : null;
+            if (ti && tiSync) {
+                slot = tiSync(engine, ti, pass, slot, hasInstanceColor);
+            }
 
-        const isTransparent = (variant.features & HAS_OPACITY_TEXTURE) !== 0 || (packets.length > 0 && (packets[0]!.mesh.material as StandardMaterialProps).alpha < 1);
-        const hasThinInstances = (variant.features & THIN_INSTANCES) !== 0;
-        const hasInstanceColor = (variant.features & THIN_INSTANCE_COLOR) !== 0;
+            pass.setIndexBuffer(g.indexBuffer, g.indexFormat);
+            pass.setBindGroup(1, meshBindGroup);
+            if (hasShadow && shadowBindGroup) {
+                pass.setBindGroup(2, shadowBindGroup);
+            }
+            if (ti && ti.count > 0) {
+                pass.drawIndexed(g.indexCount, ti.count);
+            } else {
+                pass.drawIndexed(g.indexCount);
+            }
+            return 1;
+        };
 
-        renderables.push({
-            order: isTransparent ? 200 : 100,
+        const r: Renderable = {
+            order: mesh.renderOrder ?? (isTransparent ? 200 : 100),
             isTransparent,
-            _pipeline: variant.pipeline,
-            _sceneBG: variant.sceneBG,
-            updateUBOs() {
-                for (const pkt of packets) {
-                    if (pkt.mesh.worldMatrixVersion !== pkt._lastWorldVersion) {
-                        device.queue.writeBuffer(pkt.gpu.meshUBO, 0, pkt.mesh.worldMatrix as unknown as Float32Array<ArrayBuffer>);
-                        pkt._lastWorldVersion = pkt.mesh.worldMatrixVersion;
-                    }
-                    const mat = pkt.mesh.material as any;
-                    if (mat._uboDirty) {
-                        mat._uboDirty = false;
-                        _stdMatScratch.fill(0);
-                        writeStdMaterialData(_stdMatScratch, mat, pkt.gpu.textureLevel);
-                        device.queue.writeBuffer(pkt.gpu.materialUBO, 0, _stdMatScratch.buffer, 0, 96);
-                    }
-                }
+            mesh,
+            bind(eng, sig) {
+                return {
+                    renderable: r,
+                    pipeline: getOrCreateStandardPipeline(eng as EngineContextInternal, sig, bindings),
+                    updateUBOs,
+                    draw,
+                };
             },
-            draw(pass: GPURenderPassEncoder | GPURenderBundleEncoder) {
-                // Pipeline + sceneBG are set by engine.drawList via _pipeline/_sceneBG.
-                let draws = 0;
-                for (const pkt of packets) {
-                    if (pkt.mesh.material !== pkt._lastMaterial) {
-                        continue;
-                    }
-                    const g = (pkt.mesh as MeshInternal)._gpu;
-                    let slot = 0;
-                    pass.setVertexBuffer(slot++, g.positionBuffer);
-                    pass.setVertexBuffer(slot++, g.normalBuffer);
-                    if (needsUV) {
-                        pass.setVertexBuffer(slot++, g.uvBuffer);
-                    }
-                    if (needsUV2 && g.uv2Buffer) {
-                        pass.setVertexBuffer(slot++, g.uv2Buffer);
-                    }
+        };
+        return r;
+    };
 
-                    const ti = hasThinInstances ? pkt.mesh.thinInstances : null;
-                    if (ti && tiSync) {
-                        slot = tiSync(engine, ti, pass, slot, hasInstanceColor);
-                    }
+    const renderables = meshes.map((m) => rebuildSingle(scene, m));
 
-                    pass.setIndexBuffer(g.indexBuffer, g.indexFormat);
-                    pass.setBindGroup(1, pkt.gpu.meshBG);
-                    if (hasShadow && pkt.gpu.shadowBG) {
-                        pass.setBindGroup(2, pkt.gpu.shadowBG);
-                    }
-                    if (ti && ti.count > 0) {
-                        pass.drawIndexed(g.indexCount, ti.count);
-                    } else {
-                        pass.drawIndexed(g.indexCount);
-                    }
-                    draws++;
-                }
-                return draws;
-            },
-        });
-    }
-
-    // Pre-allocated scratch buffer for light UBO refresh
+    // Pre-allocated scratch buffer for light UBO refresh.
     const lightsScratch = new Float32Array(getLightsUboSize() / 4);
-    // Per-mask light version tracking — skip refresh when lights haven't changed
     const lightsVersions: number[] = [];
-    // Scene UBO dirty tracking
-    let _lastCamVersion = -1;
-    let _lastAspect = -1;
-    let _lastFog: typeof scene.fog = null;
 
-    // Scene uniform updater — writes shared scene UBO once + refreshes light UBOs
+    // Per-frame light UBO refresh — scene UBO is now written by the active
+    // RenderPassTask via writePassSceneUBO.
     const updater: SceneUniformUpdater = {
-        update(engine: EngineContext) {
-            if (!scene.camera || !sharedSceneUBO) {
-                return;
-            }
-            const aspect = getEffectiveAspectRatio(scene.camera, engine.canvas.width, engine.canvas.height);
-            const camVer = scene.camera.worldMatrixVersion;
-            // Only rewrite scene UBO if camera or fog changed
-            if (camVer !== _lastCamVersion || aspect !== _lastAspect || scene.fog !== _lastFog) {
-                _lastCamVersion = camVer;
-                _lastAspect = aspect;
-                _lastFog = scene.fog;
-                const viewProj = getViewProjectionMatrix(scene.camera, aspect);
-                const viewMat = getViewMatrix(scene.camera);
-                const camPos = getCameraPosition(scene.camera);
-                updateSceneUniforms(
-                    engine as EngineContextInternal,
-                    sharedSceneUBO,
-                    viewProj as Float32Array,
-                    viewMat as Float32Array,
-                    [camPos.x, camPos.y, camPos.z],
-                    scene.fog ?? undefined
-                );
-            }
-            // Refresh light UBOs only when light state has changed
-            for (let m = 0; m < lightsUBOs.length; m++) {
-                const buf = lightsUBOs[m];
+        update(eng: EngineContext) {
+            for (let m = 0; m < lightsUBOByMask.length; m++) {
+                const buf = lightsUBOByMask[m];
                 if (buf && lightsForMask[m]) {
                     const ver = computeLightsVersion(lightsForMask[m]!);
                     if (ver !== lightsVersions[m]) {
                         lightsVersions[m] = ver;
-                        refreshLightsUBO(engine as EngineContextInternal, buf, lightsForMask[m]!, lightsScratch);
+                        refreshLightsUBO(eng as EngineContextInternal, buf, lightsForMask[m]!, lightsScratch);
                     }
                 }
             }
         },
     };
 
-    // Stash first sceneUBO on scene so other deferred builders (e.g., skybox) can share it
-    (scene as SceneContextInternal)._standardSceneUBO = sharedSceneUBO!;
-
     (scene as SceneContextInternal)._disposables.push(
         () => clearStandardPipelineCache(),
         () => clearSamplerCache(engine)
     );
 
-    return { renderables, updater };
+    return { renderables, updater, rebuildSingle };
 }

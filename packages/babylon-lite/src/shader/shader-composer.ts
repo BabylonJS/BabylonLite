@@ -5,6 +5,7 @@
  */
 import type { BindingDecl, ComposedShader, FragmentSlot, ShaderFragment, ShaderTemplate, VertexAttribute, VertexSlot, Varying } from "./fragment-types.js";
 import { computeUboLayout } from "./ubo-layout.js";
+import { SCENE_UBO_WGSL } from "./scene-uniforms.js";
 
 const STAGE_VERTEX = 0x1;
 const STAGE_FRAGMENT = 0x2;
@@ -199,34 +200,13 @@ export function composeShader(template: ShaderTemplate, fragments: readonly Shad
     const hasMaterialUbo = !!(template.baseMaterialUboFields && template.baseMaterialUboFields.length > 0);
     const meshFields = [...template.baseMeshUboFields];
     const materialFields = hasMaterialUbo ? [...template.baseMaterialUboFields] : [];
-    const sceneFields = [...template.baseSceneUboFields];
-    const fragUboOffsets = new Map<string, number>();
     for (const f of sorted) {
         if (f.uboFields?.length) {
-            if (hasMaterialUbo) {
-                fragUboOffsets.set(f.id, materialFields.length);
-                materialFields.push(...f.uboFields);
-            } else {
-                fragUboOffsets.set(f.id, meshFields.length);
-                meshFields.push(...f.uboFields);
-            }
-        }
-        if (f.sceneUboFields?.length) {
-            sceneFields.push(...f.sceneUboFields);
+            (hasMaterialUbo ? materialFields : meshFields).push(...f.uboFields);
         }
     }
     const meshUboSpec = computeUboLayout(meshFields);
     const materialUboSpec = hasMaterialUbo ? computeUboLayout(materialFields) : undefined;
-    const sceneUboSpec = computeUboLayout(sceneFields);
-    const uboSpecForFragOffsets = hasMaterialUbo ? materialUboSpec! : meshUboSpec;
-    const fragFields = hasMaterialUbo ? materialFields : meshFields;
-    const fragmentUboOffsets = new Map<string, number>();
-    for (const [id, idx] of fragUboOffsets) {
-        const name = fragFields[idx]?.name;
-        if (name) {
-            fragmentUboOffsets.set(id, (uboSpecForFragOffsets.offsets.get(name) ?? 0) / 4);
-        }
-    }
 
     // Bindings
     const meshBGL: GPUBindGroupLayoutEntry[] = [{ binding: 0, visibility: STAGE_VERTEX | STAGE_FRAGMENT, buffer: { type: "uniform" } }];
@@ -236,18 +216,14 @@ export function composeShader(template: ShaderTemplate, fragments: readonly Shad
     const shadowBGL: GPUBindGroupLayoutEntry[] = [];
     const vDecls: string[] = [];
     const fDecls: string[] = [];
-    const fragBindOff = new Map<string, number>();
     let mb = hasMaterialUbo ? 2 : 1,
         sb = 0;
 
-    function addBinding(d: BindingDecl, fragId: string | null, _isVertex: boolean) {
+    function addBinding(d: BindingDecl, _isVertex: boolean) {
         const isShadow = d.group === "shadow";
         const b = isShadow ? sb++ : mb++;
         const g = isShadow ? 2 : 1;
         (isShadow ? shadowBGL : meshBGL).push(bglEntry(b, d));
-        if (fragId && !fragBindOff.has(fragId + (isShadow ? ":shadow" : ""))) {
-            fragBindOff.set(fragId + (isShadow ? ":shadow" : ""), b);
-        }
         const w = declWGSL(g, b, d);
         if (d.visibility & STAGE_VERTEX) {
             vDecls.push(w);
@@ -258,35 +234,34 @@ export function composeShader(template: ShaderTemplate, fragments: readonly Shad
     }
 
     for (const d of template.baseVertexBindings ?? []) {
-        addBinding(d, null, true);
+        addBinding(d, true);
     }
     for (const f of sorted) {
         for (const d of f.vertexBindings ?? []) {
-            addBinding(d, f.id, true);
+            addBinding(d, true);
         }
     }
     for (const d of template.baseBindings ?? []) {
-        addBinding(d, null, false);
+        addBinding(d, false);
     }
     for (const f of sorted) {
         for (const d of (f.bindings ?? []).filter((b) => (b.group ?? "mesh") === "mesh")) {
-            addBinding(d, f.id, false);
+            addBinding(d, false);
         }
     }
     for (const f of sorted) {
         for (const d of (f.bindings ?? []).filter((b) => b.group === "shadow")) {
-            addBinding(d, f.id, false);
+            addBinding(d, false);
         }
     }
 
     const fragKey = sorted.map((f) => f.id).join("|");
     const vParams = (vBuiltins.length ? vBuiltins.join("\n") + "\n" : "") + inputLines.join("\n");
-    const sceneStruct = `struct SceneUniforms {\n${sceneUboSpec.structBody}\n}`;
     const meshStruct = `struct MeshUniforms {\n${meshUboSpec.structBody}\n}`;
     const materialStruct = materialUboSpec ? `\nstruct MaterialUniforms {\n${materialUboSpec.structBody}\n}\n@group(1) @binding(1) var<uniform> material: MaterialUniforms;` : "";
 
     let vertexWGSL = template.vertexTemplate;
-    vertexWGSL = vertexWGSL.replace("/*SU*/", sceneStruct);
+    vertexWGSL = vertexWGSL.replace("/*SU*/", SCENE_UBO_WGSL);
     vertexWGSL = vertexWGSL.replace("/*MU*/", meshStruct);
     vertexWGSL = vertexWGSL.replace("/*VI*/", `struct VertexInput {\n${inputLines.join("\n")}\n}`);
     vertexWGSL = vertexWGSL.replace("/*VO*/", `struct VertexOutput {\n${varyBody}\n}`);
@@ -296,7 +271,7 @@ export function composeShader(template: ShaderTemplate, fragments: readonly Shad
     vertexWGSL = injectSlots(vertexWGSL, sorted, "vertexSlots");
 
     let fragmentWGSL = template.fragmentTemplate;
-    fragmentWGSL = fragmentWGSL.replace("/*SU*/", sceneStruct);
+    fragmentWGSL = fragmentWGSL.replace("/*SU*/", SCENE_UBO_WGSL);
     fragmentWGSL = fragmentWGSL.replace("/*MU*/", meshStruct + materialStruct);
     fragmentWGSL = fragmentWGSL.replace("/*FI*/", `struct FragmentInput {\n${varyBody}\n}`);
     fragmentWGSL = fragmentWGSL.replace("/*HF*/", helpers.join("\n"));
@@ -311,9 +286,6 @@ export function composeShader(template: ShaderTemplate, fragments: readonly Shad
         vertexBufferLayouts: layouts,
         meshUboSpec,
         materialUboSpec,
-        sceneUboSpec,
         fragmentKey: fragKey,
-        fragmentUboOffsets,
-        fragmentBindingOffsets: fragBindOff,
     };
 }

@@ -1,5 +1,5 @@
 /**
- * Scene 52 — Skinned Shadow Casting Parity Test
+ * Scene 53 — Skinned Shadow Casting Parity Test
  *
  * Validates that the directional shadow generator can render skinned (animated)
  * caster meshes. Both the golden reference (Babylon.js) and the Babylon Lite
@@ -10,17 +10,17 @@ import { test, expect } from "@playwright/test";
 import * as path from "path";
 import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
 
-const sceneConfig = getSceneConfig(52);
-const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene52-skinned-shadow");
+const sceneConfig = getSceneConfig(53);
+const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene53-skinned-shadow");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test.skip(!!sceneConfig.skipParity, "Scene 52 skipped via skipParity in scene-config.json");
+test.skip(!!sceneConfig.skipParity, "Scene 53 skipped via skipParity in scene-config.json");
 
-test("Scene 52 — Skinned Shadow Casting matches Babylon.js reference", async ({ page }, testInfo) => {
+test("Scene 53 — Skinned Shadow Casting matches Babylon.js reference", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
-    await captureGolden(browser, { sceneId: 52, seekTime: 2 });
+    await captureGolden(browser, { sceneId: 53, seekTime: 2 });
 
-    await page.goto("/scene52.html?seekTime=2");
+    await page.goto("/scene53.html?seekTime=2");
 
     // Wait for canvas ready, then for the seek-frame freeze signal.
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 30_000 });

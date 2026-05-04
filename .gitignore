@@ -2,6 +2,7 @@ node_modules/
 dist/
 *.tsbuildinfo
 .vite/
+.playwright-cli/
 *.py
 our-render*
 our-*
@@ -29,6 +30,7 @@ lab/public/bundle-baseline/
 lab/bundle-baseline-scene*.html
 lab/public/vendor/
 lab/public/perf-manifest.json
+lab/public/perf-regression-manifest.json
 test-results/
 .bundle-size-tmp/
 .env.local

@@ -10,12 +10,37 @@ import {
 } from "../../packages/babylon-lite/src/engine/engine";
 import { createSceneContext, disposeScene, registerScene, unregisterScene } from "../../packages/babylon-lite/src/scene/scene";
 
+const gpuGlobals = globalThis as typeof globalThis & {
+    GPUShaderStage?: { VERTEX: number; FRAGMENT: number };
+    GPUBufferUsage?: { UNIFORM: number; COPY_DST: number };
+    GPUTextureUsage?: { RENDER_ATTACHMENT: number; TEXTURE_BINDING: number };
+};
+
+gpuGlobals.GPUShaderStage ??= { VERTEX: 0x1, FRAGMENT: 0x2 };
+gpuGlobals.GPUBufferUsage ??= { UNIFORM: 0x40, COPY_DST: 0x8 };
+gpuGlobals.GPUTextureUsage ??= { RENDER_ATTACHMENT: 0x10, TEXTURE_BINDING: 0x4 };
+
 function makeMockEngine(): EngineContext {
+    const device = {
+        createBindGroupLayout: (descriptor: GPUBindGroupLayoutDescriptor) => descriptor as unknown as GPUBindGroupLayout,
+        createBuffer: (descriptor: GPUBufferDescriptor) => ({ descriptor, destroy: () => undefined }) as unknown as GPUBuffer,
+        createBindGroup: (descriptor: GPUBindGroupDescriptor) => descriptor as unknown as GPUBindGroup,
+        createTexture: (descriptor: GPUTextureDescriptor) =>
+            ({
+                descriptor,
+                createView: () => ({}) as GPUTextureView,
+                destroy: () => undefined,
+            }) as unknown as GPUTexture,
+        queue: {
+            writeBuffer: () => undefined,
+        },
+    } as unknown as GPUDevice;
+
     return {
         canvas: {} as HTMLCanvasElement,
         msaaSamples: 4,
         drawCallCount: 0,
-        device: {} as GPUDevice,
+        device,
         context: {} as GPUCanvasContext,
         format: "bgra8unorm",
         _targets: {

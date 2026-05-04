@@ -14,7 +14,7 @@
 
 import type { EngineContextInternal } from "../../engine/engine.js";
 import { getSceneBindGroupLayout } from "../../render/scene-helpers.js";
-import { createStandardPipelineDescriptor } from "../../render/scene-helpers.js";
+import { createDefaultPipelineDescriptor } from "../../render/scene-helpers.js";
 import { computeUboLayout } from "../../shader/ubo-layout.js";
 import { MAX_LIGHTS, LIGHT_ENTRY_FLOATS } from "../../light/types.js";
 import type { NodeBuildState } from "./node-types.js";
@@ -401,7 +401,7 @@ export function compileNodePipeline(state: NodeBuildState, vertexBody: string, f
 
     const fragTarget: GPUColorTargetState = blend ? { format, blend } : { format };
     const pipeline = device.createRenderPipeline({
-        ...createStandardPipelineDescriptor({
+        ...createDefaultPipelineDescriptor({
             label: "node-material",
             engine,
             bgls: [sceneBGL, meshBGL],

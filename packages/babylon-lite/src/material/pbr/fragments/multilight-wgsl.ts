@@ -19,11 +19,12 @@ lights: array<LightEntry, ${MAX_LIGHTS}>,
 }
 
 export const COMPUTE_PBR_LIGHT = `
-struct PbrLightResult { L: vec3<f32>, NdotL: f32, atten: f32, color: vec3<f32>, isHemi: bool };
+struct PbrLightResult { L: vec3<f32>, NdotL: f32, atten: f32, color: vec3<f32>, specColor: vec3<f32>, isHemi: bool };
 fn computePbrLight(entry: LightEntry, N: vec3<f32>, worldPos: vec3<f32>) -> PbrLightResult {
 var r: PbrLightResult;
 let t = u32(entry.vLightData.w);
 r.isHemi = t == 3u;
+r.specColor = entry.vLightDiffuse.rgb;
 if (t == 3u) {
 r.L = normalize(entry.vLightData.xyz);
 r.NdotL = dot(N, r.L) * 0.5 + 0.5;
@@ -77,27 +78,42 @@ var directSpecular = vec3<f32>(0.0);
 let directRoughness = max(roughness, AA_factor_x);
 let directAlphaG = directRoughness * directRoughness + 0.0005;
 var shadowFactors = array<f32, ${MAX_LIGHTS}>(${new Array(MAX_LIGHTS).fill("1.0").join(", ")});
-/*AD*/
 let lc = min(lights.count, ${MAX_LIGHTS}u);
+/*AS*/
+// First-light aliases — kept at directLightBlock scope so the AD slot below
+// (clearcoat / sheen / subsurface) sees the same single-light variable names
+// it was originally written against. Multi-light direct contributions
+// for those ancillary BRDFs are not yet supported (single-light parity only).
+let entry0 = lights.lights[0];
+let pl0 = computePbrLight(entry0, N, input.worldPos);
+let L = pl0.L;
+let NdotL = pl0.NdotL;
+let lightColor = pl0.specColor;
+let lightAtten = pl0.atten * shadowFactors[0];
+let H = normalize(V + L);
+let NdotH = clamp(dot(N, H), 0.0000001, 1.0);
+let VdotH = saturate(dot(V, H));
 for (var li = 0u; li < lc; li++) {
-let entry = lights.lights[li];
-let pl = computePbrLight(entry, N, input.worldPos);
+var pl: PbrLightResult;
+if (li == 0u) { pl = pl0; } else { pl = computePbrLight(lights.lights[li], N, input.worldPos); }
 let sf = shadowFactors[li];
 if (pl.isHemi) {
 directDiffuse += pl.color * surfaceAlbedo * material.directIntensity * sf;
 } else {
 directDiffuse += surfaceAlbedo * (1.0 / PI) * pl.NdotL * pl.color * pl.atten * material.directIntensity * sf;
 }
-let specNdotL = max(dot(N, pl.L), 0.0);
-if (specNdotL > 0.0 && pl.atten > 0.0) {
-let H = normalize(V + pl.L);
-let NdotH = clamp(dot(N, H), 0.0000001, 1.0);
-let VdotH = saturate(dot(V, H));
-let D = distributionGGX(NdotH, directAlphaG);
-let G = geometrySmithGGX(specNdotL, NdotV, directAlphaG);
-let coloredFresnel = fresnelSchlick(VdotH, colorF0, colorF90);
-directSpecular += coloredFresnel * D * G * specNdotL * pl.color * pl.atten * material.directIntensity * sf;
+// Specular uses pl.NdotL (hemispheric 0.5+0.5*dot for hemi, max(dot,0) for others)
+// and pl.specColor (un-mixed light diffuse — matches single-light fast path
+// and Std's LIGHTING_FN which uses vLightSpecular for the specular bounce).
+if (pl.NdotL > 0.0 && pl.atten > 0.0) {
+let specH = normalize(V + pl.L);
+let specNdotH = clamp(dot(N, specH), 0.0000001, 1.0);
+let specVdotH = saturate(dot(V, specH));
+let D = distributionGGX(specNdotH, directAlphaG);
+let G = geometrySmithGGX(pl.NdotL, NdotV, directAlphaG);
+let coloredFresnel = fresnelSchlick(specVdotH, colorF0, colorF90);
+directSpecular += coloredFresnel * D * G * pl.NdotL * pl.specColor * pl.atten * material.directIntensity * sf;
 }
 }
-/*BL*/`;
+/*AD*/`;
 }

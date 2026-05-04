@@ -3,18 +3,14 @@
  *  Pipeline creation is handled by standard-pipeline.ts (dynamic permutation system).
  *  This module owns the shared types and the scene UBO update function.
  *
- *  Scene UBO (group 0, binding 0): 176 bytes = 44 floats
- *    viewProjection: mat4x4 (16 floats)
- *    view: mat4x4 (16 floats)
- *    vEyePosition: vec4 (4 floats)
- *    vFogInfos: vec4 (4 floats) — x=mode, y=start, z=end, w=density
- *    vFogColor: vec4 (4 floats) — rgb + pad
+ *  Scene UBO uses the canonical SCENE_UBO layout (shared with PBR).
  */
 
 import type { Texture2D } from "../../texture/texture-2d.js";
 import type { EngineContextInternal } from "../../engine/engine.js";
 import type { MeshGroupBuilder } from "../../render/renderable.js";
-import { _getStdExts } from "./standard-pipeline.js";
+import type { Material, MaterialInternal } from "../material.js";
+import { _getStdExts, _registerStdExt } from "./standard-flags.js";
 
 // ─── Standard Group Builder ──────────────────────────────────────────
 
@@ -35,15 +31,13 @@ const _STD_MAT_EXTS: ReadonlyArray<readonly [keyof StandardMaterialProps, () => 
     ["reflectionCubeTexture", () => import("./fragments/std-cube-reflection-fragment.js"), "stdCubeReflectionExt"],
 ];
 
-export const standardGroupBuilder: MeshGroupBuilder & { _loadRebuildSingle?: () => Promise<any> } = async (scene, meshes) => {
+export const standardGroupBuilder: MeshGroupBuilder = async (scene, meshes) => {
     const hasTI = meshes.some((m) => !!m.thinInstances);
     const hasShadow = meshes.some((m) => m.receiveShadows) && scene.lights.some((l: { shadowGenerator?: unknown }) => !!l.shadowGenerator);
 
     let tiSync: ((engine: EngineContextInternal, ti: any, pass: GPURenderPassEncoder | GPURenderBundleEncoder, slot: number, hasColor: boolean) => number) | undefined;
     let tiFragment: any;
     let shadowFragment: any;
-
-    const { _registerStdExt } = await import("./standard-pipeline.js");
 
     const imports: Promise<any>[] = [];
     if (hasTI) {
@@ -72,20 +66,21 @@ export const standardGroupBuilder: MeshGroupBuilder & { _loadRebuildSingle?: () 
         await Promise.all(imports);
     }
 
-    const { buildStandardMeshRenderables } = await import("./standard-renderable.js");
-    return buildStandardMeshRenderables(scene, meshes, {
+    const renderableMod = await import("./standard-renderable.js");
+    const result = renderableMod.buildStandardMeshRenderables(scene, meshes, {
         tiSync,
         tiFragment,
         shadowFragment,
     });
+    // Wire the per-mesh rebuild closure used by material swap + per-pass override.
+    standardGroupBuilder._rebuildSingle = result.rebuildSingle;
+    return result;
 };
-// Lazy loader for the single-mesh rebuild function — loaded only when a material swap happens
-standardGroupBuilder._loadRebuildSingle = () => import("./standard-single-rebuild.js");
 
 // ─── Shared Types ────────────────────────────────────────────────────
 
 /** StandardMaterial properties — plain data. */
-export interface StandardMaterialProps {
+export interface StandardMaterialProps extends Material {
     diffuseColor: [number, number, number];
     alpha: number;
     specularColor: [number, number, number];
@@ -141,6 +136,9 @@ export interface StandardMaterialProps {
     /** When true, skip all lighting and output emissive * diffuse * baseColor. Default false. */
     disableLighting: boolean;
 }
+
+/** @internal Extended StandardMaterialProps with internal build group. */
+export interface StandardMaterialPropsInternal extends StandardMaterialProps, MaterialInternal {}
 
 /** Fog configuration — plain data. */
 export interface FogConfig {

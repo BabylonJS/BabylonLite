@@ -16,20 +16,22 @@
 import type { Texture2D } from "../../texture/texture-2d.js";
 import type { MeshGroupBuilder } from "../../render/renderable.js";
 import type { SceneContextInternal } from "../../scene/scene.js";
+import type { Material, MaterialInternal } from "../material.js";
 import { _getPbrExts } from "./pbr-flags.js";
 
 /** Lazy-imports the PBR renderable builder and builds the pipeline.
  *  Thin instances are handled by the fragment composer automatically. */
-export const pbrGroupBuilder: MeshGroupBuilder & { _loadRebuildSingle?: () => Promise<any> } = async (scene, meshes) => {
+export const pbrGroupBuilder: MeshGroupBuilder = async (scene, meshes) => {
     const envTex = (scene as SceneContextInternal)._envTextures;
-    const { buildPbrRenderables } = await import("./pbr-renderable.js");
-    return buildPbrRenderables(scene, meshes, envTex);
+    const renderableMod = await import("./pbr-renderable.js");
+    const result = await renderableMod.buildPbrRenderables(scene, meshes, envTex);
+    // Wire the per-mesh rebuild closure used by material swap + per-pass override.
+    pbrGroupBuilder._rebuildSingle = result.rebuildSingle;
+    return result;
 };
-// Lazy loader for the single-mesh rebuild function — loaded only when a material swap happens
-pbrGroupBuilder._loadRebuildSingle = () => import("./pbr-single-rebuild.js");
 
 /** Cross-cutting flags available on every shading mode. */
-export interface PbrMaterialPropsCommon {
+export interface PbrMaterialPropsCommon extends Material {
     /** Whether material is double-sided (disables back-face culling). */
     doubleSided?: boolean;
     /** Overall material alpha (0=fully transparent, 1=opaque). Default 1.0. */
@@ -158,12 +160,12 @@ export type PbrMaterialProps =
 /** @internal Implementation-side type composed by intersecting every variant's shape, plus the
  *  `mode` discriminator and a few engine-private fields. Pipeline/renderable code uses this so
  *  it can read any variant's fields without narrowing on `mode` for every access. The public
- *  `PbrMaterialProps` discriminated union remains the source of truth for the API surface. */
-export interface PbrMaterialPropsInternal extends PbrMaterialPropsLit, PbrMaterialPropsUnlit, PbrMaterialPropsShadowOnly, PbrMaterialPropsSkybox {
+ *  `PbrMaterialProps` discriminated union remains the source of truth for the API surface.
+ *
+ *  Inherits `_buildGroup` + `_uboDirty` from {@link MaterialInternal} so the renderer can
+ *  dispatch group / single-mesh builds polymorphically and skip redundant UBO uploads. */
+export interface PbrMaterialPropsInternal extends PbrMaterialPropsLit, PbrMaterialPropsUnlit, PbrMaterialPropsShadowOnly, PbrMaterialPropsSkybox, MaterialInternal {
     mode?: "lit" | "unlit" | "shadowOnly" | "skybox";
-    readonly _buildGroup: MeshGroupBuilder;
-    /** Set to true when a UBO-relevant property changes. Cleared by the renderer after upload. */
-    _uboDirty?: boolean;
     /** @internal True when any of the material's textures carries `_hasTx=true`
      *  (KHR_texture_transform). Stamped once by the glTF loader's slow path
      *  so the renderer doesn't re-scan 5 textures per mesh. */
