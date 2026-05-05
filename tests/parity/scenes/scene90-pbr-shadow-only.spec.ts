@@ -1,5 +1,5 @@
 /**
- * Scene 39 — PBR Shadow-Only Receiver Parity Test
+ * Scene 90 — PBR Shadow-Only Receiver Parity Test
  *
  * Validates the new `mode: "shadowOnly"` PBR material variant combined with
  * the new `frustumSize` override on `createShadowGenerator`. The Babylon Lite
@@ -16,17 +16,17 @@ import { test, expect } from "@playwright/test";
 import * as path from "path";
 import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
 
-const sceneConfig = getSceneConfig(39);
-const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene39-pbr-shadow-only");
+const sceneConfig = getSceneConfig(90);
+const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene90-pbr-shadow-only");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test.skip(!!sceneConfig.skipParity, "Scene 39 skipped via skipParity in scene-config.json");
+test.skip(!!sceneConfig.skipParity, "Scene 90 skipped via skipParity in scene-config.json");
 
-test("Scene 39 — PBR Shadow-Only Receiver matches Babylon.js reference", async ({ page }, testInfo) => {
+test("Scene 90 — PBR Shadow-Only Receiver matches Babylon.js reference", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
-    await captureGolden(browser, { sceneId: 39 });
+    await captureGolden(browser, { sceneId: 90 });
 
-    await page.goto("/scene39.html");
+    await page.goto("/scene90.html");
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 30_000 });
     await page.waitForTimeout(1000);
 

@@ -1,4 +1,4 @@
-// Scene 39: PBR Shadow-Only Receiver
+// Scene 90: PBR Shadow-Only Receiver
 // Demonstrates `mode: "shadowOnly"` on a wide PBR ground plane combined with
 // `frustumSize` on the directional shadow generator. The ground is invisible
 // except where the sphere's shadow lands on it, producing a soft drop shadow

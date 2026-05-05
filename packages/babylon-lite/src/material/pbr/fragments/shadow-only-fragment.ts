@@ -68,11 +68,20 @@ ${unrolled.join("\n")}
     };
 }
 
-/** Write the shadow-only material-UBO slice. */
+/** Write the shadow-only material-UBO slice.
+ *
+ *  Also zeroes the core `environmentIntensity` (offset 0) and `directIntensity` (offset 1)
+ *  for shadow-only materials so the PBR template's post-BC `luminanceOverAlpha` boost (which
+ *  sums `finalRadianceScaled` and `finalSpecularScaled` into the alpha) doesn't leak env IBL
+ *  or direct-light contribution into an otherwise-transparent disc. We do it here rather than
+ *  in `writeMaterialData` so the static PBR core stays free of mode-specific branches —
+ *  scenes without a shadow-only material never load this code. */
 export function writeShadowOnlyUBO(data: Float32Array, material: PbrMaterialProps, offsets: ReadonlyMap<string, number>): void {
     if (material.mode !== "shadowOnly") {
         return;
     }
+    data[0] = 0;
+    data[1] = 0;
     if (offsets.has("shadowOnlyColor")) {
         const off = offsets.get("shadowOnlyColor")! / 4;
         const tint = material.color ?? [0, 0, 0];

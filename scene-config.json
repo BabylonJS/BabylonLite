@@ -351,16 +351,6 @@
         "tags": ["std", "procedural"]
     },
     {
-        "id": 39,
-        "slug": "scene39-pbr-shadow-only",
-        "name": "Scene 39 — PBR Shadow-Only Receiver",
-        "maxMad": 0.5,
-        "maxRawKB": 80,
-        "description": "Wide invisible PBR ground plane (mode: \"shadowOnly\") catching the soft drop shadow of a small static sphere. DirectionalLight uses the new `frustumSize` override so the ESM blur spreads the silhouette over the full frustum. BJS oracle: BackgroundMaterial.shadowOnly + DirectionalLight.shadowFrustumSize.",
-        "tags": ["pbr", "procedural", "shadows", "shadow-only"],
-        "skipPerf": true
-    },
-    {
         "id": 40,
         "slug": "scene40-physics",
         "name": "Scene 40 — Physics",
@@ -398,16 +388,6 @@
         "maxRawKB": 21,
         "description": "25×10 grid of radial-gradient sprites with anti-aliased edges, rendered via the premultiplied sprite codepath. BJS SpriteRenderer with ALPHA_PREMULTIPLIED blendMode + pre-baked premultiplied atlas as the parity oracle.",
         "tags": ["sprites", "2d", "premultiplied"],
-        "skipPerf": true
-    },
-    {
-        "id": 53,
-        "slug": "scene53-skinned-shadow",
-        "name": "Scene 53 — Skinned Shadow Casting",
-        "maxMad": 0.5,
-        "maxRawKB": 130,
-        "description": "Alien.gltf (same skinned rig as scene 5) casting a shadow onto a flat PBR ground via the directional shadow generator. Exercises the new skinned depth pipeline (4-bone path) and per-caster bone-texture bind groups. Animation deterministic via ?seekTime=2.",
-        "tags": ["pbr", "gltf", "skeleton", "shadows"],
         "skipPerf": true
     },
     {
@@ -563,5 +543,25 @@
         "maxRawKB": 25,
         "description": "EffectWrapper fullscreen pass samples a Texture2D bound through setEffectTexture, proving texture and sampler bindings work without scene geometry.",
         "tags": ["procedural", "effect", "texture"]
+    },
+    {
+        "id": 90,
+        "slug": "scene90-pbr-shadow-only",
+        "name": "Scene 90 — PBR Shadow-Only Receiver",
+        "maxMad": 0.5,
+        "maxRawKB": 80,
+        "description": "Wide invisible PBR ground plane (mode: \"shadowOnly\") catching the soft drop shadow of a small static sphere. DirectionalLight uses the new `frustumSize` override so the ESM blur spreads the silhouette over the full frustum. BJS oracle: BackgroundMaterial.shadowOnly + DirectionalLight.shadowFrustumSize.",
+        "tags": ["pbr", "procedural", "shadows", "shadow-only"],
+        "skipPerf": true
+    },
+    {
+        "id": 91,
+        "slug": "scene91-skinned-shadow",
+        "name": "Scene 91 — Skinned Shadow Casting",
+        "maxMad": 0.5,
+        "maxRawKB": 130,
+        "description": "Alien.gltf (same skinned rig as scene 5) casting a shadow onto a flat PBR ground via the directional shadow generator. Exercises the new skinned depth pipeline (4-bone path) and per-caster bone-texture bind groups. Animation deterministic via ?seekTime=2.",
+        "tags": ["pbr", "gltf", "skeleton", "shadows"],
+        "skipPerf": true
     }
 ]

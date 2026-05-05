@@ -14,7 +14,6 @@ import type { EngineContextInternal } from "../../engine/engine.js";
 import type { RenderTargetSignature } from "../../engine/render-target.js";
 import { _getPbrExtsSorted, PBR2_HAS_UV2 } from "./pbr-flags.js";
 import { PBR_HAS_NORMAL_MAP, PBR_HAS_EMISSIVE, PBR_HAS_SPEC_GLOSS, PBR_HAS_DOUBLE_SIDED, PBR_HAS_COTANGENT_NORMAL, PBR_HAS_ALPHA_BLEND } from "./pbr-flags.js";
-import { getDefaultBaseColorTexture, getDefaultOrmTexture } from "./pbr-default-textures.js";
 import { targetSignatureKey } from "../../engine/render-target.js";
 import { getSceneBindGroupLayout } from "../../render/scene-helpers.js";
 export * from "./pbr-flags.js";
@@ -169,14 +168,15 @@ export function createPbrMeshBindGroup(
         }
     }
     // Base bindings (matching composer order: baseColor, normal, ORM, emissive, specGloss).
-    // baseColor and ORM fall back to engine-cached 1×1 defaults so material modes that don't
-    // sample these channels (e.g. "shadowOnly", "skybox") don't have to provide them.
+    // For modes that don't sample baseColor / ORM (shadow-only, skybox), `buildPbrRenderables`
+    // pre-populates these fields with engine-cached 1×1 fallback textures via a dynamic-import
+    // of `pbr-default-textures` — keeping this hot path free of any default-texture import.
     const mat = material as PbrMaterialPropsInternal;
-    addTex(mat.baseColorTexture ?? getDefaultBaseColorTexture(engine));
+    addTex(mat.baseColorTexture!);
     if (hasAnyNormal) {
         addTex(mat.normalTexture!);
     }
-    addTex(mat.ormTexture ?? getDefaultOrmTexture(engine));
+    addTex(mat.ormTexture!);
     if ((features2 & PBR2_HAS_UV2) !== 0 && mat.occlusionTexture) {
         addTex(mat.occlusionTexture);
     }

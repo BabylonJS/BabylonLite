@@ -1,4 +1,4 @@
-// Scene 39 BJS reference — PBR Shadow-Only Receiver mirror.
+// Scene 90 BJS reference — PBR Shadow-Only Receiver mirror.
 // BJS analogue of the lite scene: BackgroundMaterial.shadowOnly on the ground,
 // DirectionalLight with autoUpdateExtends=false + shadowFrustumSize for the
 // fixed ortho frustum, ESM blur shadow generator.

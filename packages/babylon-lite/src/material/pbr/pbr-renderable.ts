@@ -180,9 +180,16 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         const mod = await import("./fragments/unlit-fragment.js");
         _registerPbrExt(mod.unlitExt);
     }
-    if (hasAnyShadowOnly) {
-        const mod = await import("./fragments/shadow-only-fragment.js");
-        _registerPbrExt(mod.shadowOnlyExt);
+    // Shadow-only + skybox both need fallback baseColor/ORM textures (the binding layout
+    // requires them even when the active mode doesn't sample them). Both paths share the
+    // dynamic-imported defaults module, so consolidate the gate to keep the static bundle lean.
+    if (hasAnyShadowOnly || hasSkybox) {
+        const mod = await import("./pbr-default-textures.js");
+        mod.populatePbrDefaultTextures(engine, meshes);
+        if (hasAnyShadowOnly) {
+            const ext = await import("./fragments/shadow-only-fragment.js");
+            _registerPbrExt(ext.shadowOnlyExt);
+        }
     }
     if (hasSomeSkeletons) {
         const mod = await import("./fragments/skeleton-fragment.js");
@@ -455,15 +462,11 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
  *  Core fields only; per-extension slices are contributed by registered
  *  writers — each PBR fragment module's writer is registered by
  *  buildPbrRenderables right after the dynamic import, avoiding
- *  module-level side effects. */
+ *  module-level side effects. (E.g. shadow-only's writer zeroes out
+ *  `environmentIntensity`/`directIntensity` after this runs.) */
 function writeMaterialData(data: Float32Array, material: PbrMaterialPropsInternal, spec: import("../../shader/fragment-types.js").UboSpec): void {
-    // Shadow-only materials override `color` and `alpha` in the BC slot; we don't want the
-    // PBR template's post-BC `luminanceOverAlpha` boost (which sums `finalRadianceScaled` and
-    // `finalSpecularScaled` into the alpha) to leak env IBL or direct-light contribution into
-    // an otherwise-transparent disc. Forcing both intensities to 0 zeroes those terms.
-    const isShadowOnly = material.mode === "shadowOnly";
-    data[0] = isShadowOnly ? 0 : (material.environmentIntensity ?? 1.0);
-    data[1] = isShadowOnly ? 0 : (material.directIntensity ?? 1.0);
+    data[0] = material.environmentIntensity ?? 1.0;
+    data[1] = material.directIntensity ?? 1.0;
     data[2] = material.reflectance ?? 0.04;
     data[3] = material.alpha ?? 1.0;
     if (spec.offsets.has("metallicFactor")) {

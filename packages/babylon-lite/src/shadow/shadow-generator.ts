@@ -17,10 +17,10 @@
  */
 
 import type { DirectionalLight } from "../light/directional-light.js";
-import type { Mesh, MeshInternal } from "../mesh/mesh.js";
+import type { Mesh } from "../mesh/mesh.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { EngineContextInternal } from "../engine/engine.js";
-import type { SkinnedShadowCaster, drawSkinnedShadowCasters, syncSkinnedShadowCasterMatrices } from "./shadow-skinned-caster.js";
+import type { SkinnedShadowHandle } from "./shadow-skinned-caster.js";
 import { getBilinearSampler } from "../resource/gpu-pool.js";
 import { createUniformBuffer } from "../resource/gpu-buffers.js";
 import {
@@ -211,19 +211,15 @@ export async function createShadowGenerator(engine: EngineContext, light: Direct
     // Shadow params UBO — depthValues = (0, 1) for WebGPU DirectionalLight (isNDCHalfZRange)
     const shadowParamsUBO = createShadowParamsUBO(eng, bias, depthScale);
 
-    // Split casters: skinned meshes need a different depth pipeline (skinning vertex stage)
-    // and per-frame re-rendering as bones move. Static meshes share a single depth pipeline.
-    const staticCasterMeshes: Mesh[] = [];
-    const skinnedCasterMeshes: MeshInternal[] = [];
-    for (const m of casterMeshes) {
-        if (m.skeleton?.boneTexture) {
-            skinnedCasterMeshes.push(m as MeshInternal);
-        } else {
-            staticCasterMeshes.push(m);
-        }
-    }
-
     // --- Shadow depth infra (BGLs, scene UBO/BG, casters, pipeline) ---
+    // Skinned casters need a different depth pipeline (skinning vertex stage) and per-frame
+    // re-rendering as bones move. All of that work lives in `shadow-skinned-caster.ts`,
+    // dynamic-imported only when needed so static-only scenes (the common case) never pay
+    // for skinned-caster code or shaders. We split the caster list here so the static
+    // depth-infra builder only handles non-skinned meshes.
+    const hasAnySkinned = casterMeshes.some((m) => m.skeleton?.boneTexture);
+    const staticCasterMeshes: Mesh[] = hasAnySkinned ? casterMeshes.filter((m) => !m.skeleton?.boneTexture) : casterMeshes;
+
     const { depthMeshBGL, depthSceneBGL, depthSceneUBO, depthPipeline, depthSceneBG, casters } = createShadowDepthInfra(eng, {
         label: "shadow",
         viewProj,
@@ -235,19 +231,10 @@ export async function createShadowGenerator(engine: EngineContext, light: Direct
         extraMeshBglEntries: [{ binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }],
     });
 
-    // Skinned casters share the depthSceneBGL/BG (same scene UBO) but need per-mesh skinning
-    // pipelines (different vertex stage with bone-texture sampling) and bind groups (each has
-    // its own bone texture). The whole skinned-caster module — including its WGSL imports — is
-    // dynamic-imported only when at least one caster is skinned, so scenes with only static
-    // casters (the common case) never pull any of that code into their bundle.
-    const skinnedCasters: SkinnedShadowCaster[] = [];
-    let _drawSkinned: typeof drawSkinnedShadowCasters | null = null;
-    let _syncSkinned: typeof syncSkinnedShadowCasterMatrices | null = null;
-    if (skinnedCasterMeshes.length > 0) {
+    let skinned: SkinnedShadowHandle | null = null;
+    if (hasAnySkinned) {
         const mod = await import("./shadow-skinned-caster.js");
-        _drawSkinned = mod.drawSkinnedShadowCasters;
-        _syncSkinned = mod.syncSkinnedShadowCasterMatrices;
-        skinnedCasters.push(...mod.buildSkinnedDepthCasters(eng, skinnedCasterMeshes, depthSceneBGL, shadowParamsUBO));
+        skinned = await mod.createSkinnedShadowHandle(eng, casterMeshes, depthSceneBGL, shadowParamsUBO);
     }
 
     // --- Textures ---
@@ -361,9 +348,8 @@ export async function createShadowGenerator(engine: EngineContext, light: Direct
         // only watches mesh worldMatrixVersion + light) won't detect changes. Treat the presence
         // of any skinned caster as "always dirty" — we can refine to a per-skeleton version
         // counter later if the cost matters.
-        const hasSkinned = skinnedCasters.length > 0;
         const { dirty, lightChanged } = dirtyTracker.check(light, casters);
-        if (!dirty && !hasSkinned) {
+        if (!dirty && !skinned) {
             return 0;
         }
         if (lightChanged) {
@@ -373,11 +359,7 @@ export async function createShadowGenerator(engine: EngineContext, light: Direct
         dirtyTracker.commit(light, casters);
 
         syncCasterMatrices(eng, casters);
-        // Sync skinned caster mesh UBOs (world matrix). Bone textures are managed by the
-        // skeleton updater and are already current by the time renderShadowMap runs.
-        // Helper is captured by the dynamic-import in createShadowGenerator and is only
-        // non-null when at least one skinned caster is present.
-        _syncSkinned?.(device, skinnedCasters);
+        skinned?.sync(device);
 
         // Pass 1: Shadow depth
         const dp = encoder.beginRenderPass({
@@ -397,15 +379,11 @@ export async function createShadowGenerator(engine: EngineContext, light: Direct
             },
         });
         dp.setBindGroup(0, depthSceneBG);
-        // Static casters: shared depth pipeline, position-only vertex.
         if (casters.length > 0) {
             dp.setPipeline(depthPipeline);
             drawCasters(dp, casters);
         }
-        // Skinned casters: per-caster pipeline + bind group + extra vertex buffers (joints,
-        // weights, and joints1/weights1 for 8-bone meshes). Bones are sampled from the
-        // per-caster bone texture. Helper is loaded lazily — see _pendingInit above.
-        _drawSkinned?.(dp, skinnedCasters);
+        skinned?.draw(dp);
         dp.end();
 
         // Pass 2: Blur H
@@ -440,7 +418,7 @@ export async function createShadowGenerator(engine: EngineContext, light: Direct
         bv.draw(3);
         bv.end();
 
-        return casters.length + skinnedCasters.length + 2; // depth draws + 2 blur passes
+        return casters.length + (skinned?.count ?? 0) + 2; // depth draws + 2 blur passes
     };
 
     return sg;
