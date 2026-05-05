@@ -154,7 +154,7 @@ _The `RenderingContext` interface, `_renderingContexts` list, `registerScene`/`u
 
 - HUD overlays use the same primitives as the pure-2D path: `createSpriteRenderer(engine, { layers, clear: false, clearValue? })` + `registerSpriteRenderer(sr)` after `registerScene(engine, scene)`.
 - `onSceneDispose(scene, cb)` exists as a general scene lifecycle helper; scene52 uses it to tie the caller-owned HUD renderer to `disposeScene(scene)`.
-- `addToScene` does **not** auto-route HUD layers to an internal `SpriteRenderer`. A `Sprite2DLayer { depth: "none" }` passed to `addToScene` throws and tells the caller to use `createSpriteRenderer`. This keeps `registerScene` zero-cost for non-HUD scenes and keeps HUD lifecycle explicit and caller-owned.
+- `addToScene` does **not** auto-route HUD layers to an internal `SpriteRenderer`. If a `Sprite2DLayer { depth: "none" }` is added to a scene, deferred scene registration rejects it and tells the caller to use `createSpriteRenderer`. This keeps `registerScene` zero-cost for non-HUD scenes and keeps HUD lifecycle explicit and caller-owned.
 
 **Visual proof:** lab scene `scene52-hud-on-3d` — rotating 3D scene + pure SpriteRenderer HUD overlay; HUD disposal is wired via `onSceneDispose`.
 
