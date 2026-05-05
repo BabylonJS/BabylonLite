@@ -162,6 +162,8 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
         _cbs: [],
     };
 
+    resizeEngine(engine);
+
     return engine;
 }
 
