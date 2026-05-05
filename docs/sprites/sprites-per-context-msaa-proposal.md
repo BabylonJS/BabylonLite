@@ -1,6 +1,6 @@
 # Sprites & MSAA — Proposal and Implementation
 
-> **Status**: Implemented (engine-wide variant) · **Scope**: Engine + Sprite Renderer · **Companion docs**: [pr1-pure-2d-sprites-scope.md](pr1-pure-2d-sprites-scope.md), [sprites-implementation-plan.md](sprites-implementation-plan.md)
+> **Status**: Implemented (direct SpriteRenderer pass variant) · **Scope**: Sprite Renderer + frame-graph-compatible engine loop · **Companion docs**: [pr1-pure-2d-sprites-scope.md](pr1-pure-2d-sprites-scope.md), [sprites-implementation-plan.md](sprites-implementation-plan.md)
 
 ## Problem
 
@@ -17,65 +17,44 @@ createSpriteRenderer(engine, { layers, sampleCount: 1 });
 
 This required two render-target sets in the engine (1× depth, 4× color+depth), lazy allocation, an ordering rule (MSAA-4 contexts before MSAA-1), and a doc note.
 
-## What actually shipped: engine-wide MSAA
+## What actually shipped: direct SpriteRenderer pass
 
-The architect chose a simpler design: **engine-wide** MSAA, set once at engine creation.
+The frame-graph engine loop now gives each registered `RenderingContext` access to the current command encoder and swapchain view. Scene contexts execute their frame graph. `SpriteRenderer` uses the same per-frame encoder/view but opens its own sprite-only render pass directly on the swapchain:
 
 ```ts
-// engine.ts (current)
-export interface EngineOptions {
-    msaaSamples?: 1 | 4; // WebGPU only permits 1 or 4; default 4
-}
-createEngine(canvas, { msaaSamples: 1 });
+const hud = createSpriteRenderer(engine, { layers: [hudLayer], clear: false });
+registerSpriteRenderer(hud); // after registerScene(engine, scene)
 ```
 
 **Consequences:**
 
-- One render-target set per engine. When `msaaSamples === 1`, no MSAA color texture is created at all (engine renders directly into the swapchain), and the depth buffer is allocated at sample count 1. Same lazy/zero-cost outcome as the proposal for the pure-2D case.
-- `SpriteRenderer` reads `eng.msaaSamples` and uses it for its pipeline cache. The `sampleCount` field on `SpriteRendererOptions` remains accepted-but-ignored (forward-compat for a future per-context world).
-- No ordering rule needed; no second pass needed.
-- Trade-off: a single canvas can't mix MSAA-4 3D meshes with MSAA-1 sprites. For the pure-2D PR1 surface this is fine; if we ever want mixed MSAA in one canvas we revisit the original proposal.
+- Scene passes still use the scene frame graph and `engine.msaaSamples` for their render targets.
+- `SpriteRenderer` always uses `sampleCount = 1`, the engine swapchain format, and no depth attachment. Its pipeline cache key includes the actual sample count it records with.
+- HUD overlays preserve the already-rendered scene with `clear: false` (`loadOp: "load"`). Pure-2D renderers use the default `clear: true`.
+- There is no `sampleCount` field on `SpriteRendererOptions`; callers choose only whether the direct sprite pass clears or loads the swapchain.
 
 ## How sprite scenes use it
 
-Scene 50 and Scene 51 (the parity oracles for straight-alpha and premultiplied sprites) read MSAA from a URL query parameter:
+Scene 50 and Scene 51 are pure SpriteRenderer scenes. They draw through the direct sampleCount=1 sprite pass regardless of the engine's scene MSAA setting.
 
-```ts
-// lab/src/lite/scene50.ts and scene51.ts
-const msaaParam = new URLSearchParams(window.location.search).get("msaa");
-const msaaSamples: 1 | 4 = msaaParam === "4" ? 4 : 1;
-const engine = await createEngine(canvas, { msaaSamples });
-```
+Scene 52 demonstrates the mixed HUD case: a normal scene frame graph renders and resolves first, then the HUD `SpriteRenderer` is registered after the scene with `clear: false` so it loads the resolved swapchain color and draws the 2D overlay at sampleCount=1.
 
-- **Default (lab demo, real-world use)**: MSAA 1 — full perf benefit.
-- **Parity tests**: navigate with `?msaa=4` so we match the BJS oracle (BJS's default WebGPU engine uses 4× MSAA, and we want the comparison to be apples-to-apples).
-
-```ts
-// tests/parity/scenes/scene50-sprite-grid.spec.ts
-await page.goto("/scene50.html?msaa=4");
-```
+Scene 53 demonstrates depth-hosted sprites. Those do not use `SpriteRenderer`; `addToScene` creates a scene renderable, so the sprites inherit the frame-graph target's color/depth attachments and sample count.
 
 ## Risks & mitigations
 
-- **Parity**: tests force `?msaa=4`, so MAD against BJS goldens is unchanged.
-- **Bundle size**: zero — `EngineOptions` already exists.
-- **Pipeline cache**: keyed on sample count, so MSAA-1 and MSAA-4 sprite pipelines coexist cleanly even if the same dev session opens both URLs.
-- **Mixed-MSAA canvases**: not supported. If/when needed, escalate back to the per-context proposal at the top of this doc.
+- **Parity**: pure-2D/HUD sprites render with the same direct sampleCount=1 path in lab and tests; depth-hosted sprites use the scene target and compare against BJS with the scene's MSAA behavior.
+- **Bundle size**: pure-2D scenes import `SpriteRenderer` only; depth-hosted support stays behind the `addToScene` dynamic import.
+- **Pipeline cache**: keyed on sample count, depth state, and depth-stencil format, so direct HUD pipelines and depth-hosted scene pipelines do not alias.
+- **Mixed scene/HUD canvases**: supported for the shipped case because the scene resolves into the swapchain before the HUD pass loads it. This is not a general per-context attachment system.
 
-## Future: HUD / GUI will hit this again
+## Future: off-screen HUD / GUI targets
 
-The engine-wide MSAA decision is the right call for the pure-2D sprite PR (each app picks one mode), but the moment we land HUD or GUI on top of a 3D scene we get the exact same problem **inside a single canvas**:
+The direct swapchain pass solves pure-2D and HUD-on-3D sprites. It does not solve off-screen HUD/GUI targets, render-to-texture UI, or a future requirement for arbitrary per-context color/depth attachments.
 
-- 3D scene wants MSAA 4 (geometric edges).
-- HUD / GUI wants MSAA 1 (text, icons, panels are axis-aligned bitmaps; crispness comes from the font atlas / SDF, not from sample coverage). HUD coverage is often a large fraction of the screen — this is real perf, not a micro-optimisation.
+If those arrive, we should revisit one of two designs:
 
-Engine-wide MSAA gives us only bad choices when both coexist:
+- Extend `SpriteRendererOptions` with explicit off-screen target/depth/resolve attachments.
+- Revisit the original per-context attachment proposal and let contexts declare the render target shape they need.
 
-1. **Force HUD to MSAA 4** — pay ~4× shading cost on HUD pixels for no visible benefit.
-2. **Force scene to MSAA 1** — kill 3D mesh quality.
-3. **HUD renders to its own offscreen MSAA-1 RT, then we composite it into the swapchain** after the 3D pass resolves. Works, but it's a second pass + a blit + the HUD owning its own RT lifecycle. Heavier than per-context MSAA.
-4. **Resurrect the per-context proposal at the top of this doc**: two depth targets in the engine, contexts pick their sample count, MSAA-4 contexts register first so the MSAA-1 HUD pass can `loadOp: "load"` the resolved swapchain.
-
-Related GUI-only constraint: GUI usually wants **no depth buffer at all** (z-order is draw order). Engine-wide config can't express that either; per-context naturally can, since each pass picks its own attachments.
-
-**Recommendation:** when HUD/GUI work starts, treat the per-context refactor as a prerequisite. The proposal at the top of this doc is the design we'd implement at that point.
+Until then, the shipped API deliberately keeps `SpriteRendererOptions` small: `layers`, `clear`, and `clearValue`.

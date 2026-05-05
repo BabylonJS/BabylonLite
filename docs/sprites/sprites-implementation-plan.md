@@ -50,20 +50,20 @@ export interface RenderingContext {
 
 **Public API (already exported from `index.ts`):** `registerScene(engine, scene)`, `unregisterScene(engine, scene)`, `startEngine(engine)` (no scene arg), `disposeScene(scene)` (also unregisters).
 
-**Per-frame loop:** engine walks `_renderingContexts`, calls `_update` on each (pre-pass / shadow work; may return a new encoder), then opens **one shared render pass** — first context clears, subsequent contexts use `loadOp: "load"` and always-resolve MSAA — and calls `_record` on each into that pass.
+**Per-frame loop:** engine walks `_renderingContexts`, calls `_update` and `_record` on each using the current command encoder and swapchain view. Scene contexts execute their frame graph; `SpriteRenderer` opens a direct sampleCount=1 sprite pass on the swapchain (`clear: false` uses `loadOp: "load"` for HUD overlays).
 
 **Tests:** all 65 pixel-parity tests pass. Bundle ceilings unchanged.
 
 ### Why this shape is better than our planned `EngineRenderer`
 
-| Our planned `EngineRenderer`                          | David's `RenderingContext` (shipped)                                                                       |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Single `render(encoder, dt)` method                   | Split into `_update(encoder, dt)` (pre-pass, owns encoder) + `_record(pass)` (records into shared pass)    |
-| Each renderer opens its own pass                      | All renderers share one pass per frame — lower overhead, no extra `beginRenderPass`/`end` per registration |
-| HUD on top via 2nd registration with `loadOp: "load"` | First registration clears; engine sets `loadOp: "load"` automatically on registrations 2+                  |
-| "Clear vs. load" is a registration concern            | "Clear vs. load" is the engine's concern, not the registration's                                           |
+| Our planned `EngineRenderer`                          | David's `RenderingContext` (shipped)                                                                    |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Single `render(encoder, dt)` method                   | Split into `_update()` + `_record()` on a registered `RenderingContext`                                 |
+| Each renderer opens its own pass                      | Scene contexts execute a frame graph; sprite renderers open only their own direct swapchain sprite pass |
+| HUD on top via 2nd registration with `loadOp: "load"` | HUD registers after the scene and sets `clear: false` on its `SpriteRenderer`                           |
+| "Clear vs. load" is a registration concern            | "Clear vs. load" is explicit per sprite renderer; frame graph tasks own scene pass load/clear state     |
 
-Sprites just implement `_update` (sprite UBO updates, atlas readiness) + `_record` (sprite draws). HUD-on-3D works because the sprite context is registered second; engine handles the rest.
+Sprites just implement `_update` (sprite UBO updates, atlas readiness) + `_record` (sprite draws). HUD-on-3D works because the sprite context is registered second and uses `clear: false`.
 
 ### Implications for the rest of the ladder
 
@@ -110,7 +110,7 @@ _The `RenderingContext` interface, `_renderingContexts` list, `registerScene`/`u
 
 **Scope:**
 
-- `Sprite2DLayer` type — `depth: "none"` only for now
+- `Sprite2DLayer` type + Index API. The pure-2D `SpriteRenderer` path accepts only `depth: "none"`; PR 3 adds the depth-enabled `addToScene` route.
 - `SpriteRenderer` + `SpriteRendererOptions`. **`SpriteRenderer` implements `RenderingContext` directly** — provides `_update`, `_record`, `_drawCallsPre`, `clearColor`.
 - `createSpriteRenderer(engine, opts)` / `registerSpriteRenderer(sr)` / `unregisterSpriteRenderer(sr)` / `disposeSpriteRenderer(sr)`
     - `registerSpriteRenderer` pushes onto the renderer's engine `_renderingContexts` (same list scenes use)
@@ -119,7 +119,7 @@ _The `RenderingContext` interface, `_renderingContexts` list, `registerScene`/`u
 - Module: `sprite-renderer.ts`
 - Public-API exports
 
-**No new engine surface.** All engine plumbing (`_renderingContexts`, shared pass, clear-vs-load) is already in master.
+**No new engine surface.** All engine plumbing (`_renderingContexts`, current encoder/swapchain view, context-driven record) is already in master.
 
 **Visual proof:** lab scene `scene50-sprite-grid` is the BJS-validated parity scene that covers PR 1. It exercises the full pure-2D path — atlas, layer, tints, rotation, flipX, and per-sprite size variation — against a BJS `SpriteManager` oracle.
 
@@ -139,11 +139,11 @@ _The `RenderingContext` interface, `_renderingContexts` list, `registerScene`/`u
 
 **As-shipped scope:**
 
-- HUD overlays use the same primitives as the pure-2D path: `createSpriteRenderer(engine, { layers, clearValue? })` + `registerSpriteRenderer(engine, sr)` after `registerScene(engine, scene)`.
+- HUD overlays use the same primitives as the pure-2D path: `createSpriteRenderer(engine, { layers, clear: false, clearValue? })` + `registerSpriteRenderer(sr)` after `registerScene(engine, scene)`.
 - A new public `onSceneDispose(scene, cb)` helper is added so callers can wire HUD disposal to the scene lifetime: `onSceneDispose(scene, () => disposeSpriteRenderer(hud))`. With this the HUD comes down on `disposeScene(scene)` automatically.
 - `addToScene` does **not** auto-route HUD layers to an internal `SpriteRenderer`. A `Sprite2DLayer { depth: "none" }` passed to `addToScene` throws and tells the caller to use `createSpriteRenderer`. This keeps `registerScene` zero-cost for non-HUD scenes (no scene/\* code references `SpriteRenderer`) and keeps HUD lifecycle explicit and caller-owned.
 
-**Visual proof:** lab scene `scene52-sprite-hud-on-3d` — rotating 3D scene + sprite HUD overlay; HUD disposed via `onSceneDispose`.
+**Visual proof:** lab scene `scene52-hud-on-3d` — rotating 3D scene + sprite HUD overlay; HUD disposed via `onSceneDispose`.
 
 **Tests:**
 
@@ -158,7 +158,7 @@ _The `RenderingContext` interface, `_renderingContexts` list, `registerScene`/`u
 
 **As-shipped scope:**
 
-- `Sprite2DLayer { depth: "test" | "test-write" }` added through `addToScene` dynamic-imports `sprite-renderable.ts` and inserts a `Renderable` into `scene._renderables` (`order = 200` for blended `"test"`, `order = 100` for opaque `"test-write"`).
+- `Sprite2DLayer { depth: "test" | "test-write" }` added through `addToScene` dynamic-imports `sprite-renderable.ts` and inserts a `Renderable` into `scene._renderables` (`order = 200` transparent direct draw for blended `"test"`; `order = 100` transmissive direct draw after cached opaque meshes for `"test-write"`).
 - No new render pass. No new pipeline-cache plumbing. The renderable participates in the existing scene 3D pass alongside meshes.
 - The composer emits `depthCompare: "less-equal"`, `depthWriteEnabled: true|false` driven by the `depth` value; the per-instance Z (slot [10]) is consumed by the depth test.
 
@@ -180,7 +180,7 @@ _The `RenderingContext` interface, `_renderingContexts` list, `registerScene`/`u
 - Reuse existing `_sprite3dSceneUBO` / `_anchoredSceneUBO` machinery already on `SceneContextInternal`
 - Variants: anchored to a transform vs. world-positioned
 
-**Visual proof:** new lab scene `scene53-billboards` — a field of camera-facing sprites that always face the camera.
+**Visual proof:** new lab scene `scene54-billboards` — a field of camera-facing sprites that always face the camera.
 
 **Tests:**
 
@@ -202,7 +202,7 @@ _The `RenderingContext` interface, `_renderingContexts` list, `registerScene`/`u
 - Hooks into existing engine pointer events
 - Returns `(layer, spriteIndex)` initially; `Sprite2DHandle` integration comes in PR 6
 
-**Visual proof:** new lab scene `scene54-sprite-picking` — click a sprite, log/highlight it.
+**Visual proof:** new lab scene `scene55-sprite-picking` — click a sprite, log/highlight it.
 
 **Tests:**
 
@@ -225,7 +225,7 @@ _The `RenderingContext` interface, `_renderingContexts` list, `registerScene`/`u
 - Parenting: handles can have a parent (mesh, transform node, another sprite handle)
 - PR 5's picking returns handles when the handle module is loaded, falls back to `(layer, index)` when not
 
-**Visual proof:** new lab scene `scene55-sprite-handles` — drag sprites around the screen using handles + picking; demonstrate parenting (sprite follows a moving 3D mesh).
+**Visual proof:** new lab scene `scene56-sprite-handles` — drag sprites around the screen using handles + picking; demonstrate parenting (sprite follows a moving 3D mesh).
 
 **Tests:**
 

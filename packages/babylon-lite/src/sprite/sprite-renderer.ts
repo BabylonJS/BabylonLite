@@ -4,16 +4,14 @@
  * `RenderingContext` directly, so it plugs into `engine._renderingContexts`
  * the same way a `SceneContext` does.
  *
- * PR 1 scope (intentionally minimal):
- *   - Pure-2D path only — no `SceneContext`, no camera, no lights.
- *   - One sprite-pipeline cache per renderer instance. PR 1 populates at
- *     most two keys (alpha + premultiplied), both with `hasDepth=0` and
- *     the engine's current format / MSAA sample count.
- *   - The renderer draws **into the engine's shared pass** — it does not
- *     own a render target. Off-screen / HUD-to-texture rendering and
- *     per-renderer MSAA / depth attachments are deferred to a later PR;
- *     the relevant fields will be re-added to `SpriteRendererOptions`
- *     when that work lands. See `docs/sprites/pr1-pure-2d-sprites-scope.md`.
+ * Scope:
+ *   - Pure-2D / HUD path only — all layers must use `depth: "none"`.
+ *   - One sprite-pipeline cache per renderer instance, keyed by format,
+ *     blend mode, and sample count. The direct HUD path always uses
+ *     `sampleCount=1` and `hasDepth=false`.
+ *   - The renderer opens a sprite-only swapchain pass using the engine's
+ *     current command encoder and swapchain view. Off-screen / HUD-to-texture
+ *     rendering is deferred until there is a concrete caller.
  */
 import { getRenderTargetSize, registerRenderingContext, unregisterRenderingContext } from "../engine/engine.js";
 import type { EngineContext, EngineContextInternal, RenderingContext } from "../engine/engine.js";
@@ -55,7 +53,7 @@ export interface SpriteRendererOptions {
  * adds only its discriminator tag and the mutable layer list.
  *
  * **Lifecycle.** A `SpriteRenderer` is independent of any `SceneContext` — it is
- * registered directly on the engine, draws into the engine's shared pass, and
+ * registered directly on the engine, opens its own sampleCount=1 swapchain pass, and
  * must be disposed by the caller. Two patterns:
  *
  *   1. **Standalone** (no scene, or one or more renderers alongside a scene):
@@ -124,7 +122,7 @@ interface SpriteRendererInternal extends SpriteRenderer {
 
 /**
  * Lazy GPU-resource provisioner for one layer. On first sight: allocates the per-instance
- * vertex buffer + the 64 B layer UBO and stashes a `LayerGpu` record in `_layerGpu`. On
+ * vertex buffer + the 48 B layer UBO and stashes a `LayerGpu` record in `_layerGpu`. On
  * subsequent calls where the layer's CPU `_capacity` outgrew the GPU buffer (after
  * `growCapacity` doubled the array): destroys + reallocates the instance buffer at the
  * new size and forces a full re-upload via `uploadedVersion = -1`. The bind group is
@@ -200,6 +198,7 @@ function compareLayers(a: Sprite2DLayer, b: Sprite2DLayer): number {
 
 /** Create a `SpriteRenderer` for `engine`, pre-warming pipelines for the layers' blend modes. */
 export function createSpriteRenderer(engine: EngineContext, opts: SpriteRendererOptions): SpriteRenderer {
+    assertSpriteRendererLayers(opts.layers);
     const eng = engine as EngineContextInternal;
     const indexBuffer = createMappedBuffer(eng, SHARED_SPRITE_INDEX_DATA, GPUBufferUsage.INDEX);
     const targetSize = getRenderTargetSize(eng);
@@ -233,8 +232,16 @@ export function createSpriteRenderer(engine: EngineContext, opts: SpriteRenderer
     return rr;
 }
 
+function assertSpriteRendererLayers(layers: readonly Sprite2DLayer[]): void {
+    for (const layer of layers) {
+        if (layer.depth !== "none") {
+            throw new Error('SpriteRenderer only supports Sprite2DLayer with depth: "none". Use addToScene(scene, layer) for depth-hosted sprites.');
+        }
+    }
+}
+
 /**
- * Per-frame **update** pass (called by the engine before the render pass opens).
+ * Per-frame **update** pass (called by the engine before this renderer records its pass).
  * Refreshes target dims (canvas may have resized), sorts `rr.layers` in place by
  * `order` (TimSort is O(n) on already-sorted input — effectively free in steady state),
  * then walks every visible non-empty layer and runs `ensureLayerGpu` + `uploadLayer`.
@@ -244,6 +251,7 @@ function spriteRendererUpdate(rr: SpriteRendererInternal): void {
     if (rr._disposed) {
         return;
     }
+    assertSpriteRendererLayers(rr.layers);
     const targetSize = getRenderTargetSize(rr._engine);
     rr._targetWidth = targetSize.width;
     rr._targetHeight = targetSize.height;
@@ -266,7 +274,7 @@ function spriteRendererUpdate(rr: SpriteRendererInternal): void {
 }
 
 /**
- * Per-frame **record** pass (called by the engine inside the open render pass).
+ * Per-frame **record** pass (called by the engine after `_update`).
  * For each visible non-empty layer: builds (or reuses) a `GPURenderBundle` that bakes
  * `setIndexBuffer` + `setPipeline` + `setBindGroup` + `setVertexBuffer` + `drawIndexed`,
  * then replays it via `pass.executeBundles([bundle])`. The bundle is the per-frame
@@ -280,6 +288,7 @@ function spriteRendererRecord(rr: SpriteRendererInternal): number {
     if (rr._disposed) {
         return 0;
     }
+    assertSpriteRendererLayers(rr.layers);
     const eng = rr._engine;
     const encoder = eng._currentEncoder;
     const swapView = eng._swapchainView;

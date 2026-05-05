@@ -2,7 +2,7 @@
  * Scene 50 — Sprite Grid Parity Test
  *
  * Compares Babylon Lite's sprite renderer rendering of a 25×10 sprite grid
- * against the Babylon.js SpriteManager rendering of the same grid (oracle).
+ * against the Babylon.js SpriteRenderer rendering of the same grid (oracle).
  * Golden is captured automatically from the BJS reference page on first run
  * (or when RECAPTURE_GOLDEN=1 is set).
  */
@@ -20,8 +20,7 @@ test("Scene 50 — Sprite Grid matches Babylon.js reference", async ({ page }, t
     const browser = page.context().browser()!;
     await captureGolden(browser, { sceneId: 50 });
 
-    // Force MSAA 4 to match BJS oracle's default; lab demo defaults to MSAA 1 for perf.
-    await page.goto("/scene50.html?msaa=4");
+    await page.goto("/scene50.html");
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 20_000 });
     await page.waitForTimeout(500);
 

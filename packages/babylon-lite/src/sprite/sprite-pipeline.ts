@@ -48,8 +48,8 @@ struct VIn {
 @location(3) iUvMax: vec2<f32>,
 @location(4) iRot: f32,
 @location(5) iColor: vec4<f32>,
-// Per-instance NDC depth (0 = near, 1 = far). Pure-2D HUD pipelines run
-// depthCompare: "always" so the value is ignored; depth-hosted pipelines
+// Per-instance NDC depth (0 = near, 1 = far). Pure-2D / HUD pipelines have
+// no depth attachment, so the value is ignored; depth-hosted pipelines
 // (depth: "test" | "test-write") use it to participate in the scene's depth attachment.
 @location(6) iZ: f32,
 };

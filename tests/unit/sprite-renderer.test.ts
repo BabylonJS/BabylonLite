@@ -146,6 +146,20 @@ describe("createSpriteRenderer", () => {
         });
         expect(sr.clearColor).toEqual({ r: 0.1, g: 0.2, b: 0.3, a: 1 });
     });
+
+    it("rejects depth-hosted layers before allocating renderer GPU resources", () => {
+        const { engine, counters } = makeMockEngine();
+        const layer = createSprite2DLayer(makeMockAtlas(), { depth: "test" });
+        expect(() => createSpriteRenderer(engine, { layers: [layer] })).toThrow(/depth: "none"/);
+        expect(counters.buffersCreated).toBe(0);
+    });
+
+    it("rejects depth-hosted layers pushed after creation", () => {
+        const { engine } = makeMockEngine();
+        const sr = createSpriteRenderer(engine, { layers: [createSprite2DLayer(makeMockAtlas())] });
+        sr.layers.push(createSprite2DLayer(makeMockAtlas(), { depth: "test-write" }));
+        expect(() => sr._update()).toThrow(/depth: "none"/);
+    });
 });
 
 describe("registerSpriteRenderer / unregisterSpriteRenderer", () => {

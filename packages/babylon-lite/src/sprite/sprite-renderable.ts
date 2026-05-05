@@ -79,12 +79,13 @@ export function buildSpriteRenderable(engine: EngineContextInternal, layer: Spri
     const instanceBuffer = createSpriteInstanceBuffer(engine.device, cap, "sprite-depth-hosted-instances");
 
     const isTransparent = layer.depth === "test";
+    const isDirectDepthWrite = layer.depth === "test-write";
     const renderable: SpriteRenderableInternal = {
-        // Order: opaque sprites blend with the depth buffer between opaque-mesh draws and
-        // transparent draws (typical mesh order is 100). Transparent sprites slot into
-        // _transparentRenderables and are sorted alongside transparent meshes.
+        // Depth-write sprite layers are mutable instanced batches, so route them through
+        // the direct-draw phase after cached opaque meshes and before transparent draws.
         order: isTransparent ? 200 : 100,
         isTransparent,
+        isTransmissive: isDirectDepthWrite,
         _engine: engine,
         _layer: layer,
         _indexBuffer: indexBuffer,
@@ -125,26 +126,16 @@ function bindLayer(r: SpriteRenderableInternal, engine: EngineContextInternal, t
         r._pipelineEntry = entry;
         r._bindGroup = null;
     }
-    const binding: DrawBinding = {
+    return {
         renderable: r,
         pipeline: entry.pipeline,
-        bundleVersion: getLayerRenderBundleVersion(r),
         updateUBOs() {
             uploadLayer(r);
-            binding.bundleVersion = getLayerRenderBundleVersion(r);
         },
         draw(pass) {
             return drawLayer(r, entry, pass);
         },
     };
-    return binding;
-}
-
-function getLayerRenderBundleVersion(r: SpriteRenderableInternal): number {
-    let version = r._layer.visible ? 1 : 0;
-    version = (version * 31 + r._layer.count) | 0;
-    version = (version * 31 + r._instanceBufferCapacity) | 0;
-    return version;
 }
 
 /** Sync per-instance vertex data and the per-layer UBO via the shared pipeline helpers. */

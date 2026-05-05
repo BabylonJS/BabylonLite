@@ -96,8 +96,9 @@ across both families and orthogonal to family.
   `SceneContext` followed by a separate `SpriteRenderer` for the HUD.
   Depth-hosted Sprite2D layers go through `addToScene` and are drawn
   inside the scene's 3D pass via the existing renderable system. The
-  engine has no notion of "2D vs 3D" — it just iterates registrations
-  and lets each one record into the shared per-frame render pass.
+  engine has no notion of "2D vs 3D" — it just iterates registrations;
+  scene contexts execute their frame graph, and sprite renderers open a
+  sprite-only swapchain pass.
 - **Extensions over hardcoding.** Anchoring is a tree-shakable
   `sprite-anchor.ts` add-on imported only when a scene actually uses
   world anchors. Billboard variants are independent dynamic-import
@@ -286,8 +287,9 @@ export interface SpriteRendererOptions {
     /** Layers to draw, in registration order. The renderer also re-sorts internally
      *  by `layer.order` each frame (TimSort is O(n) on already-sorted input). */
     layers: Sprite2DLayer[];
-    /** Default `{ r: 0, g: 0, b: 0, a: 1 }`. Used only when this renderer is
-     *  the first-registered context in the engine's render list each frame. */
+    /** Default true. Set false for HUD overlays so the sprite pass preserves existing scene color. */
+    clear?: boolean;
+    /** Default `{ r: 0, g: 0, b: 0, a: 1 }`. Used when `clear` is true. */
     clearValue?: GPUColorDict;
 }
 
@@ -304,15 +306,13 @@ export function unregisterSpriteRenderer(sr: SpriteRenderer): void;
 export function disposeSpriteRenderer(sr: SpriteRenderer): void;
 ```
 
-A `SpriteRenderer` does **not** own its color/depth attachments — it
-draws into the engine's shared per-frame render pass. MSAA sample count
-and color format are inherited from the engine. A HUD `SpriteRenderer`
-registered on a scene-using engine will run with the engine's MSAA
-setting (typically 4×) and read from the engine's depth attachment with
-`depthCompare: "always"` (so depth-test never fires for HUD layers; per-
-instance Z is written but ignored). A pure-2D engine that never opens a
-scene runs at MSAA = 1 by default and has no depth attachment, so its
-sprite pipelines are built without depth state at all.
+A `SpriteRenderer` does **not** own persistent color/depth attachments.
+During `_record` it opens a sprite-only render pass directly on the
+per-frame swapchain view using `sampleCount = 1`, the engine's swapchain
+format, and no depth attachment. `clear: false` makes the pass use
+`loadOp: "load"`, which is the HUD path after a 3D scene has already
+resolved into the swapchain. Per-instance Z is still written by the
+shared vertex layout, but it is ignored by these no-depth pipelines.
 
 Internally `SpriteRenderer._update`:
 
@@ -446,7 +446,7 @@ await registerScene(engine, scene);
 // in the 3D pass.
 const hud = createSprite2DLayer(hudAtlas, { depth: "none" });
 addSprite2DIndex(hud, { positionPx: [16, 16], sizePx: [200, 32], frame: "score" });
-const hudRenderer = createSpriteRenderer(engine, { layers: [hud] });
+const hudRenderer = createSpriteRenderer(engine, { layers: [hud], clear: false });
 registerSpriteRenderer(hudRenderer);
 // Tie HUD lifetime to the scene — disposeScene fires this and frees the GPU buffers.
 onSceneDispose(scene, () => disposeSpriteRenderer(hudRenderer));
@@ -605,9 +605,9 @@ export interface Sprite2DLayerOptions {
     pivot?: [number, number];
     /**
      * Depth participation:
-     *  - "none"        (default) → drawn by a `SpriteRenderer` registered on the engine. Pipeline runs `depthCompare: "always"`; per-instance Z is written but ignored. HUD overlays must use this mode and live on a `SpriteRenderer` (not on `addToScene`).
+     *  - "none"        (default) → drawn by a `SpriteRenderer` registered on the engine. Pipeline has no depth attachment; per-instance Z is written but ignored. HUD overlays must use this mode and live on a `SpriteRenderer` (not on `addToScene`).
      *  - "test"                  → drawn inside the scene's 3D pass via `addToScene` with `depthCompare: "less-equal"`, `depthWrite: false`. Sprites occlude behind 3D geometry but do not write depth.
-     *  - "test-write"            → drawn inside the scene's 3D pass via `addToScene` with `depthCompare: "less-equal"`, `depthWrite: true`. Sprites participate fully in the opaque queue (cast/receive depth).
+     *  - "test-write"            → drawn inside the scene's 3D pass via `addToScene` with `depthCompare: "less-equal"`, `depthWrite: true`. Sprites direct-draw after cached opaque meshes and before transparent renderables.
      *  Each value is a pipeline-cache key bit, baked at composition time. No runtime branch.
      *  Pure-2D engines (no scene) can only use `"none"` — they have no depth attachment.
      */
@@ -615,7 +615,7 @@ export interface Sprite2DLayerOptions {
     /**
      * Default per-instance NDC depth (`0` = near, `1` = far) for sprites added to this
      * layer when their `Sprite2DProps.z` is omitted. Only consumed by `depth: "test" |
-     * "test-write"` layers; HUD/pure-2D pipelines run `depthCompare: "always"` and ignore
+     * "test-write"` layers; HUD/pure-2D pipelines have no depth attachment and ignore
      * the per-instance Z attribute. Defaults to `0.5`. Mutating `layer.layerZ` after
      * sprites have been added does **not** retroactively change them — call
      * `updateSprite2DIndex(layer, idx, { z: … })` to move an existing sprite.
@@ -909,10 +909,9 @@ sprite's true size lives in `layer._savedSize` so a later `visible: true`
 **Per-instance Z, not per-layer.** A single layer can mix sprites at
 different depths — useful for depth-hosted layers where one sprite goes
 in front of a 3D object and another behind it. HUD/pure-2D layers still
-write the slot but pipelines for those layers run `depthCompare: "always"`,
-so the value is uploaded but never consulted on the GPU. The CPU upload
-path treats it like any other slot (per-sprite dirty range; no special
-case).
+write the slot, but their pipelines have no depth attachment, so the
+value is uploaded but never consulted on the GPU. The CPU upload path
+treats it like any other slot (per-sprite dirty range; no special case).
 
 #### Sprite2DLayer Layer UBO (48 B = 12 floats; std140-aligned)
 
@@ -1150,27 +1149,26 @@ loses one tick of animation in the captured image. All sprite families
 
 ### Shared Across All Layers
 
-| Setting       | Value                                                                                                                                                                                                                                                                     |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Topology      | `triangle-list`                                                                                                                                                                                                                                                           |
-| Index buffer  | shared 6-index Uint16 quad index buffer (one per `SpriteRenderer` and one per depth-hosted renderable)                                                                                                                                                                    |
-| Cull mode     | `none`                                                                                                                                                                                                                                                                    |
-| Front face    | `ccw`                                                                                                                                                                                                                                                                     |
-| Color target  | engine swap-chain format                                                                                                                                                                                                                                                  |
-| MSAA          | inherited from `engine.msaaSamples`. A `SpriteRenderer` on a pure-2D engine runs at MSAA = 1; a HUD `SpriteRenderer` registered on a scene-using engine runs at MSAA = 4 (the same as the scene); depth-hosted Sprite2D layers run at MSAA = 4 inside the scene's 3D pass |
-| Atlas sampler | per-atlas (`linear` or `nearest`), `clamp-to-edge`, no mipmaps default                                                                                                                                                                                                    |
+| Setting       | Value                                                                                                                                                                              |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Topology      | `triangle-list`                                                                                                                                                                    |
+| Index buffer  | shared 6-index Uint16 quad index buffer (one per `SpriteRenderer` and one per depth-hosted renderable)                                                                             |
+| Cull mode     | `none`                                                                                                                                                                             |
+| Front face    | `ccw`                                                                                                                                                                              |
+| Color target  | engine swap-chain format                                                                                                                                                           |
+| MSAA          | `SpriteRenderer` always records a direct swapchain pass with `sampleCount = 1`; depth-hosted Sprite2D layers inherit the scene render target's sample count inside the frame graph |
+| Atlas sampler | per-atlas (`linear` or `nearest`), `clamp-to-edge`, no mipmaps default                                                                                                             |
 
 ### Sprite2DLayer per-`depth` Pipeline State
 
-| Layer `depth`  | Drawn via                                                        | Depth attachment                                                        | Depth compare | Depth write | Per-instance Z slot [10]                        | Render order                                                   |
-| -------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------- | ----------- | ----------------------------------------------- | -------------------------------------------------------------- |
-| `"none"`       | A `SpriteRenderer` registered on the engine                      | none (pure-2D engine); read-only `always` (HUD on a scene-using engine) | `always`      | `false`     | written but ignored by the GPU                  | engine registration order; layer order within the renderer     |
-| `"test"`       | `addToScene` → `sprite-renderable.ts` (renderable `order = 200`) | engine depth attachment                                                 | `less-equal`  | `false`     | consumed; sprite is occluded behind 3D geometry | scene transparent queue (after opaque meshes)                  |
-| `"test-write"` | `addToScene` → `sprite-renderable.ts` (renderable `order = 100`) | engine depth attachment                                                 | `less-equal`  | `true`      | consumed; sprite both reads and writes depth    | scene opaque queue (interleaved with opaque meshes by `order`) |
+| Layer `depth`  | Drawn via                                                        | Depth attachment        | Depth compare | Depth write | Per-instance Z slot [10]                        | Render order                                                |
+| -------------- | ---------------------------------------------------------------- | ----------------------- | ------------- | ----------- | ----------------------------------------------- | ----------------------------------------------------------- |
+| `"none"`       | A `SpriteRenderer` registered on the engine                      | none                    | none          | `false`     | written but ignored by the GPU                  | engine registration order; layer order within the renderer  |
+| `"test"`       | `addToScene` → `sprite-renderable.ts` (renderable `order = 200`) | engine depth attachment | `less-equal`  | `false`     | consumed; sprite is occluded behind 3D geometry | scene transparent queue (after opaque meshes)               |
+| `"test-write"` | `addToScene` → `sprite-renderable.ts` (renderable `order = 100`) | engine depth attachment | `less-equal`  | `true`      | consumed; sprite both reads and writes depth    | direct-drawn after cached opaque meshes, before transparent |
 
-`depth` is part of the pipeline cache key alongside `(format, msaaSamples, blendMode)`. The composer emits the matching
-`depthStencil` descriptor block; for `"none"` layers reaching a HUD `SpriteRenderer` the renderer
-sets `depthCompare: "always"` and `depthWriteEnabled: false` so the same WGSL works on both code paths without a runtime branch. A pure-2D engine that never opens a scene has no depth attachment and its pipelines are built without a depth-stencil descriptor.
+The sprite pipeline cache key includes `(format, sampleCount, blendMode, hasDepth, depthWrite, depthStencilFormat)`. `SpriteRenderer`
+layers always request `hasDepth = false` and `sampleCount = 1`, so their pipelines are built without a depth-stencil descriptor. Depth-hosted layers request `hasDepth = true`, use the target depth-stencil format provided by the frame graph, and set `depthWrite` from the layer's `depth` mode.
 
 ### Bind Group Layouts
 
@@ -1458,7 +1456,7 @@ never a pipeline recompile. This matches how Lite handles mesh `alpha`.
 | Sprite2DLayer `depth: "none"`         | a `SpriteRenderer` registered on the engine              | engine `_renderingContexts` (after the scene context) | written to slot [10] but ignored by the GPU | per-blend | off         |
 | Sprite2DLayer `depth: "test"` blended | `addToScene` → `sprite-renderable.ts` (`order = 200`)    | scene transparent queue (after opaque meshes)         | consumed; per-instance depth test, no write | per-blend | off         |
 | Sprite2DLayer `depth: "test"` cutout  | `addToScene` → `sprite-renderable.ts` (`order = 200`)    | scene transparent queue (after opaque meshes)         | consumed; per-instance depth test, no write | none      | off         |
-| Sprite2DLayer `depth: "test-write"`   | `addToScene` → `sprite-renderable.ts` (`order = 100`)    | scene opaque queue (interleaved with opaque meshes)   | consumed; per-instance depth test + write   | none      | on          |
+| Sprite2DLayer `depth: "test-write"`   | `addToScene` → `sprite-renderable.ts` (`order = 100`)    | direct draw after cached opaque meshes                | consumed; per-instance depth test + write   | per-blend | on          |
 | Billboard blended                     | `addToScene` → `billboard-renderable.ts` (`order = 200`) | scene transparent queue                               | per-sprite view-Z (sort-indirection buffer) | per-blend | off         |
 | Billboard cutout                      | `addToScene` → `billboard-renderable.ts` (`order = 200`) | scene transparent queue                               | per-sprite view-Z (sort-indirection buffer) | none      | on          |
 
@@ -1669,8 +1667,8 @@ startEngine(engine) per-frame:
                   * Sprite2D depth-hosted blended / `"test"` (order 200)
                   * billboards (order 200)
             SpriteRenderer:
-              - Open a sprite-only swapchain pass, resolving through a transient
-                MSAA color attachment when the engine uses MSAA.
+              - Open a sprite-only sampleCount=1 pass directly on the
+                per-frame swapchain view with no depth attachment.
               - For each layer in this.layers (sorted by layer.order):
                   bind pipeline + groups; drawIndexed(6, count).
   3. Submit command buffer.

@@ -21,7 +21,7 @@ G.GPUShaderStage ??= { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 };
 G.GPUColorWrite ??= { ALL: 0xf };
 G.GPUTextureUsage ??= { RENDER_ATTACHMENT: 16, TEXTURE_BINDING: 4 };
 
-import { addSprite2DIndex, createSprite2DLayer, updateSprite2DIndex } from "../../packages/babylon-lite/src/sprite/sprite-2d";
+import { createSprite2DLayer } from "../../packages/babylon-lite/src/sprite/sprite-2d";
 import { addToScene, createSceneContext, disposeScene } from "../../packages/babylon-lite/src/scene/scene";
 import { registerScene } from "../../packages/babylon-lite/src/scene/scene-core";
 import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
@@ -134,39 +134,15 @@ describe("addToScene with Sprite2DLayer", () => {
         expect(scene._renderables[0]!.order).toBe(200);
     });
 
-    it("routes depth: 'test-write' into an opaque frame-graph renderable after registerScene", async () => {
+    it("routes depth: 'test-write' into a direct-draw depth-writing renderable after registerScene", async () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContextInternal;
         addToScene(scene, createSprite2DLayer(makeMockAtlas(), { depth: "test-write" }));
         await registerScene(engine, scene);
         expect(scene._renderables.length).toBe(1);
         expect(scene._renderables[0]!.isTransparent).toBe(false);
+        expect(scene._renderables[0]!.isTransmissive).toBe(true);
         expect(scene._renderables[0]!.order).toBe(100);
-    });
-
-    it("exposes a render-bundle version for depth-hosted sprite command changes", async () => {
-        const engine = makeMockEngine();
-        const scene = createSceneContext(engine) as SceneContextInternal;
-        const layer = createSprite2DLayer(makeMockAtlas(), { depth: "test-write" });
-        addToScene(scene, layer);
-        await registerScene(engine, scene);
-
-        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth24plus-stencil8", sampleCount: 4 });
-        expect(binding.bundleVersion).toBeTypeOf("number");
-
-        const emptyVersion = binding.bundleVersion;
-        addSprite2DIndex(layer, { positionPx: [10, 20], sizePx: [32, 32], frame: 0 });
-        binding.updateUBOs?.();
-        const oneSpriteVersion = binding.bundleVersion;
-        expect(oneSpriteVersion).not.toBe(emptyVersion);
-
-        updateSprite2DIndex(layer, 0, { positionPx: [30, 40] });
-        binding.updateUBOs?.();
-        expect(binding.bundleVersion).toBe(oneSpriteVersion);
-
-        layer.visible = false;
-        binding.updateUBOs?.();
-        expect(binding.bundleVersion).not.toBe(oneSpriteVersion);
     });
 
     it("uses the render target depth-stencil format for depth-hosted sprite pipelines", async () => {
