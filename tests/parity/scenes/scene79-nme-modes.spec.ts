@@ -10,7 +10,7 @@ test.skip(!!sceneConfig.skipParity, "Scene 79 skipped via skipParity in scene-co
 
 test("Scene 79 — NME conditions/curves/waves/random match Babylon.js reference", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
-    await captureGolden(browser, { sceneId: 79 });
+    await captureGolden(browser, { sceneId: 79, force: true });
 
     await page.goto("/scene79.html");
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 20_000 });
