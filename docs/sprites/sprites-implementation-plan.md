@@ -1,6 +1,6 @@
 # Sprites — Implementation Plan
 
-> **Status:** Approved by David. Awaiting first PR.
+> **Status:** Active plan. PRs 1-3 shipped; later sprite phases remain planned.
 > **Source spec:** [`architecture/26-sprites.md`](architecture/26-sprites.md)
 > **Engine/scene cross-cutting review (David-approved):** [`sprites-scene-engine-changes-review.md`](sprites-scene-engine-changes-review.md)
 
@@ -15,6 +15,16 @@ It also captures two strategic decisions made before the first PR:
 
 ---
 
+## Shipped rendering split
+
+Pure-2D and HUD sprites use `SpriteRenderer`, which records a direct swapchain pass with `sampleCount = 1`, no depth attachment, and optional `clear: false` for overlays. This avoids paying scene MSAA cost for texture-alpha sprite edges and keeps pure-2D scenes out of scene/frame-graph code.
+
+Depth-hosted sprites use `addToScene(scene, layer)` with `depth: "test" | "test-write"`. They become scene renderables and inherit the frame-graph pass target's color format, sample count, depth-stencil format, and target dimensions.
+
+The direct swapchain SpriteRenderer path intentionally does not expose off-screen target attachments. If render-to-texture HUD/GUI sprites become a concrete requirement, revisit either explicit `SpriteRendererOptions` target/depth/resolve attachments or a broader per-context attachment declaration.
+
+---
+
 ## Branching strategy
 
 - **`lite-2d` (current branch):** retain locally as a **read-only reference** for porting code. Do not push. Do not merge. Treat it as a working scrapyard.
@@ -24,7 +34,7 @@ It also captures two strategic decisions made before the first PR:
 
 ---
 
-## Pre-flight outcome — `fe94005` already implements PR 0
+## Pre-flight outcome: fe94005 already implements PR 0
 
 David's commit `fe94005 feat(engine): decouple engine from scene; multi-scene rendering via RenderingContext` lands the engine-side scaffold we'd planned for PR 0, with a slightly different (and better) shape than the `EngineRenderer` we proposed in the review doc.
 
@@ -112,9 +122,10 @@ _The `RenderingContext` interface, `_renderingContexts` list, `registerScene`/`u
 
 - `Sprite2DLayer` type + Index API. The pure-2D `SpriteRenderer` path accepts only `depth: "none"`; PR 3 adds the depth-enabled `addToScene` route.
 - `SpriteRenderer` + `SpriteRendererOptions`. **`SpriteRenderer` implements `RenderingContext` directly** — provides `_update`, `_record`, `_drawCallsPre`, `clearColor`.
-- `createSpriteRenderer(engine, opts)` / `registerSpriteRenderer(sr)` / `unregisterSpriteRenderer(sr)` / `disposeSpriteRenderer(sr)`
-    - `registerSpriteRenderer` pushes onto the renderer's engine `_renderingContexts` (same list scenes use)
-    - `unregisterSpriteRenderer` removes it
+- `createSpriteRenderer(engine, opts)` constructs a `SpriteRenderer`.
+- `registerSpriteRenderer(sr)` pushes onto the renderer's engine `_renderingContexts` (same list scenes use).
+- `unregisterSpriteRenderer(sr)` removes it.
+- `disposeSpriteRenderer(sr)` releases renderer-owned GPU resources.
 - WGSL pipeline + atlas/texture binding
 - Module: `sprite-renderer.ts`
 - Public-API exports
