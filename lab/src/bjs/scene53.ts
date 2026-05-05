@@ -13,8 +13,8 @@
 //        B: between front and back boxes
 //        C: behind the back box
 //
-// World-space Z mirrors Lite's per-instance Z values: closer-to-camera
-// sprites occlude meshes; further sprites are occluded.
+// The BJS sprite positions are world-space, but they are derived from Lite's
+// pixel-space centers and fixed NDC depths so the projected image is comparable.
 
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
@@ -47,9 +47,10 @@ import { getSpriteAtlasDataUrl, SPRITE_ATLAS_INFO } from "../_shared/sprite-atla
     await engine.initAsync();
 
     const scene = new Scene(engine);
-    scene.clearColor = new Color4(0, 0, 0, 1);
+    scene.clearColor = new Color4(0.2, 0.2, 0.3, 1.0);
 
     const cam = new ArcRotateCamera("cam", -Math.PI / 2, Math.PI / 2, 8, new Vector3(0, 0, 0), scene);
+    cam.fov = 0.8;
     cam.minZ = 1;
     cam.maxZ = 100;
 
@@ -71,26 +72,20 @@ import { getSpriteAtlasDataUrl, SPRITE_ATLAS_INFO } from "../_shared/sprite-atla
 
     // Three sprites at staggered camera-distances. BJS sprites default to
     // depth-test + depth-write, which matches Lite's `depth: "test-write"`.
-    const sprites = new SpriteManager("sprites", getSpriteAtlasDataUrl(), 4, { width: SPRITE_ATLAS_INFO.cellWidthPx, height: SPRITE_ATLAS_INFO.cellHeightPx }, scene);
+    const sprites = new SpriteManager("sprites", getSpriteAtlasDataUrl(), 4, { width: SPRITE_ATLAS_INFO.cellWidthPx, height: SPRITE_ATLAS_INFO.cellHeightPx }, scene, 0);
 
-    // A — yellow "0", world z=-3 (in front of both boxes).
     const a = new Sprite("a", sprites);
-    a.position = new Vector3(-2, 0, -3);
-    a.size = 1.5;
+    positionProjectedSprite(a, canvas, cam, 640 - 200, 360, 0.6, 180);
     a.cellIndex = 24;
     a.color = new Color4(1.0, 0.95, 0.4, 1.0);
 
-    // B — cyan "1", world z=0 (between front box at z=-2 and back box at z=2).
     const b = new Sprite("b", sprites);
-    b.position = new Vector3(0, 0, 0);
-    b.size = 1.5;
+    positionProjectedSprite(b, canvas, cam, 640, 360, 0.87, 180);
     b.cellIndex = 25;
     b.color = new Color4(0.4, 0.9, 1.0, 1.0);
 
-    // C — magenta "2", world z=3 (behind back box).
     const c = new Sprite("c", sprites);
-    c.position = new Vector3(2, 0, 3);
-    c.size = 1.5;
+    positionProjectedSprite(c, canvas, cam, 640 + 200, 360, 0.95, 180);
     c.cellIndex = 26;
     c.color = new Color4(1.0, 0.5, 0.9, 1.0);
 
@@ -112,3 +107,17 @@ import { getSpriteAtlasDataUrl, SPRITE_ATLAS_INFO } from "../_shared/sprite-atla
     // eslint-disable-next-line no-console
     console.error(err);
 });
+
+function positionProjectedSprite(sprite: Sprite, canvas: HTMLCanvasElement, camera: ArcRotateCamera, xPx: number, yPx: number, ndcZ: number, sizePx: number): void {
+    const near = camera.minZ;
+    const far = camera.maxZ;
+    const viewZ = (near * far) / (far - ndcZ * (far - near));
+    const aspect = canvas.width / canvas.height;
+    const focal = 1 / Math.tan(camera.fov / 2);
+    const ndcX = (xPx / canvas.width) * 2 - 1;
+    const ndcY = 1 - (yPx / canvas.height) * 2;
+
+    sprite.position = new Vector3((ndcX * viewZ * aspect) / focal, (ndcY * viewZ) / focal, viewZ - camera.radius);
+    sprite.width = (sizePx * 2 * viewZ * aspect) / (focal * canvas.width);
+    sprite.height = (sizePx * 2 * viewZ) / (focal * canvas.height);
+}

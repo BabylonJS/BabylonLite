@@ -1,21 +1,13 @@
 /**
- * Scene 52 — HUD on 3D Parity Test (Lite-self golden)
+ * Scene 52 — HUD on 3D Parity Test.
  *
- * No BJS oracle: the previous-branch BJS oracle relied on a HUD scaffolding
- * that no longer exists in route-C. Instead this test compares the current
- * Lite render against a committed Lite-self golden screenshot — i.e. it is
- * a regression detector, not a cross-renderer parity check.
- *
- * Workflow for first-time golden commits / intentional re-captures:
- *   1. Run `pnpm dev:lab` and open `/scene52.html`
- *   2. Capture the canvas at the same viewport (1280x720) and save to
- *      `reference/scene52-hud-on-3d/babylon-ref-golden.png`
- *   3. `git add` the file and re-run `pnpm test`
+ * Compares Babylon Lite's 3D scene + pure-2D HUD overlay against a Babylon.js
+ * reference scene that renders the same StandardMaterial sphere and the same
+ * pixel-space sprite HUD through BJS SpriteRenderer.
  */
 import { test, expect } from "@playwright/test";
-import * as fs from "fs";
 import * as path from "path";
-import { attachCompareArtifacts, compareImages, getSceneConfig } from "../compare-utils";
+import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
 
 const sceneConfig = getSceneConfig(52);
 const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene52-hud-on-3d");
@@ -23,15 +15,15 @@ const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
 test.skip(!!sceneConfig.skipParity, "Scene 52 skipped via skipParity in scene-config.json");
 
-test("Scene 52 — HUD on 3D matches Lite-self golden", async ({ page }, testInfo) => {
-    test.skip(!fs.existsSync(GOLDEN_REF), `Lite-self golden not committed yet at ${GOLDEN_REF}. Capture and commit it (see file header).`);
+test("Scene 52 — HUD on 3D matches Babylon.js reference", async ({ page }, testInfo) => {
+    const browser = page.context().browser()!;
+    await captureGolden(browser, { sceneId: 52, settleMs: 500 });
 
     await page.goto("/scene52.html");
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 20_000 });
     await page.waitForTimeout(500);
 
     const screenshotPath = path.join(REFERENCE_DIR, "test-actual.png");
-    fs.mkdirSync(REFERENCE_DIR, { recursive: true });
     await page.locator("canvas").screenshot({ path: screenshotPath });
 
     const full = compareImages(screenshotPath, GOLDEN_REF);

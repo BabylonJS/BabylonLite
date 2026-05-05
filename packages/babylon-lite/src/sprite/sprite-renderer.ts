@@ -43,6 +43,8 @@ const KIND = "sprite-renderer" as const;
 export interface SpriteRendererOptions {
     /** Layers to draw, in registration order. The renderer also re-sorts internally each frame. */
     layers: Sprite2DLayer[];
+    /** Default true. Set false for HUD overlays so the sprite pass preserves existing scene color. */
+    clear?: boolean;
     /** Default `{ r: 0, g: 0, b: 0, a: 1 }`. */
     clearValue?: GPUColorDict;
 }
@@ -116,8 +118,8 @@ interface SpriteRendererInternal extends SpriteRenderer {
     _targetWidth: number;
     _targetHeight: number;
     _disposed: boolean;
-    /** Cached MSAA color attachment when `engine.msaaSamples > 1`. */
-    _msaaTarget?: { texture: GPUTexture; view: GPUTextureView; width: number; height: number };
+    /** Whether this pass clears the swapchain before drawing. False for HUD overlays. */
+    _clear: boolean;
 }
 
 /**
@@ -211,6 +213,7 @@ export function createSpriteRenderer(engine: EngineContext, opts: SpriteRenderer
         _targetWidth: targetSize.width,
         _targetHeight: targetSize.height,
         _disposed: false,
+        _clear: opts.clear ?? true,
         layers: opts.layers.slice(),
         clearColor: opts.clearValue ?? { r: 0, g: 0, b: 0, a: 1 },
         _drawCallsPre: 0,
@@ -224,7 +227,7 @@ export function createSpriteRenderer(engine: EngineContext, opts: SpriteRenderer
 
     // Pre-warm pipelines currently in use, so the first frame doesn't pay compile cost.
     for (const layer of rr.layers) {
-        getOrCreateSpritePipeline(rr._engine, rr._pipelineCache, rr._engine.format, rr._engine.msaaSamples === 1 ? 1 : 4, layer.blendMode, false);
+        getOrCreateSpritePipeline(rr._engine, rr._pipelineCache, rr._engine.format, 1, layer.blendMode, false);
     }
 
     return rr;
@@ -281,27 +284,14 @@ function spriteRendererRecord(rr: SpriteRendererInternal): number {
     const encoder = eng._currentEncoder;
     const swapView = eng._swapchainView;
 
-    // Open a render pass directly on the swapchain. Sprite rendering doesn't
-    // need depth, so no depth attachment is provided. When MSAA is on we
-    // allocate (and cache) a transient color attachment that resolves to the
-    // swapchain view; for sampleCount=1 we render straight to the swapchain.
-    let colorView: GPUTextureView;
-    let resolveTarget: GPUTextureView | undefined;
-    if (eng.msaaSamples === 1) {
-        colorView = swapView;
-        resolveTarget = undefined;
-    } else {
-        const msaa = ensureSpriteMsaaTarget(rr);
-        colorView = msaa;
-        resolveTarget = swapView;
-    }
+    // Open a sampleCount=1 render pass directly on the swapchain. This keeps HUD
+    // sprites from resolving a fresh MSAA target over the already-rendered scene.
     const pass = encoder.beginRenderPass({
         colorAttachments: [
             {
-                view: colorView,
-                resolveTarget,
+                view: swapView,
                 clearValue: rr.clearColor,
-                loadOp: "clear",
+                loadOp: rr._clear ? "clear" : "load",
                 storeOp: "store",
             },
         ],
@@ -319,7 +309,7 @@ function spriteRendererRecord(rr: SpriteRendererInternal): number {
         // Cache on the `LayerGpu` so `_record` does no Map lookup or hash-key compute
         // in the steady state; refresh if the engine's pipeline-defining GPU state changes.
         let entry = lg.pipelineEntry;
-        const sampleCount = rr._engine.msaaSamples === 1 ? 1 : 4;
+        const sampleCount = 1;
         if (!entry || !isSpritePipelineEntryCurrent(rr._engine, entry, rr._engine.format, sampleCount, false)) {
             entry = getOrCreateSpritePipeline(rr._engine, rr._pipelineCache, rr._engine.format, sampleCount, layer.blendMode, false);
             lg.pipelineEntry = entry;
@@ -332,7 +322,7 @@ function spriteRendererRecord(rr: SpriteRendererInternal): number {
         if (lg.renderBundle == null || lg.bundleCount !== layer.count) {
             const be = rr._engine.device.createRenderBundleEncoder({
                 colorFormats: [rr._engine.format],
-                sampleCount: rr._engine.msaaSamples,
+                sampleCount,
             });
             be.setIndexBuffer(rr._indexBuffer, "uint16");
             be.setPipeline(entry.pipeline);
@@ -348,32 +338,6 @@ function spriteRendererRecord(rr: SpriteRendererInternal): number {
 
     pass.end();
     return drawCalls;
-}
-
-/** Allocate / refresh the sprite renderer's transient MSAA color attachment.
- *  Called only when `engine.msaaSamples > 1` since sampleCount=1 renders
- *  straight into the swapchain. The texture is canvas-sized; rebuilt on
- *  resize (when canvas dims change vs the cached size). */
-function ensureSpriteMsaaTarget(rr: SpriteRendererInternal): GPUTextureView {
-    const eng = rr._engine;
-    const w = eng.canvas.width;
-    const h = eng.canvas.height;
-    const cached = rr._msaaTarget;
-    if (cached && cached.width === w && cached.height === h) {
-        return cached.view;
-    }
-    if (cached) {
-        cached.texture.destroy();
-    }
-    const texture = eng.device.createTexture({
-        size: { width: w, height: h, depthOrArrayLayers: 1 },
-        format: eng.format,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT,
-        sampleCount: eng.msaaSamples,
-    });
-    const view = texture.createView();
-    rr._msaaTarget = { texture, view, width: w, height: h };
-    return view;
 }
 
 /** Push the renderer onto its engine's `_renderingContexts`. Idempotent — a second call is a no-op. */
@@ -405,10 +369,6 @@ export function disposeSpriteRenderer(sr: SpriteRenderer): void {
     }
     rr._layerGpu.clear();
     rr._indexBuffer.destroy();
-    if (rr._msaaTarget) {
-        rr._msaaTarget.texture.destroy();
-        rr._msaaTarget = undefined;
-    }
     clearSpritePipelineCache(rr._pipelineCache);
     rr.layers.length = 0;
 }

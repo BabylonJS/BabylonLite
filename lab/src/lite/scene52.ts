@@ -65,7 +65,7 @@ async function main(): Promise<void> {
     });
     const hud = createSprite2DLayer(atlas, { capacity: 16, blendMode: "alpha", depth: "none" });
     addHudSprites(hud, canvas);
-    const hudRenderer = createSpriteRenderer(engine, { layers: [hud] });
+    const hudRenderer = createSpriteRenderer(engine, { layers: [hud], clear: false });
     registerSpriteRenderer(hudRenderer);
     // Tie HUD disposal to the scene — `disposeScene` will fire this and free the GPU buffers.
     onSceneDispose(scene, () => disposeSpriteRenderer(hudRenderer));
