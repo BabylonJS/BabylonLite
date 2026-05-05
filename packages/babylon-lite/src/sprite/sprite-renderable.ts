@@ -41,6 +41,34 @@ interface SpriteDrawTarget {
     height: number;
 }
 
+// Shared sprite pipeline cache across every depth-hosted Sprite2DLayer renderable
+// in the process. Lazy-init on first acquire (per GUIDANCE §4 — module-level
+// `null` initializer + `getCache()`-style helper, never a top-level `new Map()`).
+// Refcounted so the cache (and its compiled GPUShaderModule + pipelines) is
+// released exactly when the last depth-hosted renderable is disposed; device
+// changes are handled inside `getOrCreateSpritePipeline` via
+// `ensureCacheMatchesEngine`. Pure 3D scenes never load this module so they pay
+// nothing; the SpriteRenderer (HUD) path uses its own per-renderer cache.
+let _sharedPipelineCache: SpritePipelineCache | null = null;
+let _sharedPipelineCacheRefs = 0;
+
+function acquireSharedPipelineCache(): SpritePipelineCache {
+    _sharedPipelineCache ??= createSpritePipelineCache();
+    _sharedPipelineCacheRefs++;
+    return _sharedPipelineCache;
+}
+
+function releaseSharedPipelineCache(): void {
+    if (_sharedPipelineCacheRefs === 0) {
+        return;
+    }
+    _sharedPipelineCacheRefs--;
+    if (_sharedPipelineCacheRefs === 0 && _sharedPipelineCache) {
+        clearSpritePipelineCache(_sharedPipelineCache);
+        _sharedPipelineCache = null;
+    }
+}
+
 interface SpriteRenderableInternal extends Renderable {
     _engine: EngineContextInternal;
     _layer: Sprite2DLayer;
@@ -94,7 +122,7 @@ export function buildSpriteRenderable(engine: EngineContextInternal, layer: Spri
         _uniformBuffer: uniformBuffer,
         _instanceBuffer: instanceBuffer,
         _instanceBufferCapacity: cap,
-        _pipelineCache: createSpritePipelineCache(),
+        _pipelineCache: acquireSharedPipelineCache(),
         _pipelineEntry: null,
         _bindGroups: new Map(),
         _uploadedVersion: -1,
@@ -181,7 +209,12 @@ function disposeRenderable(r: SpriteRenderableInternal): void {
     r._instanceBuffer.destroy();
     r._uniformBuffer.destroy();
     r._indexBuffer.destroy();
-    clearSpritePipelineCache(r._pipelineCache);
     r._bindGroups.clear();
     r._pipelineEntry = null;
+    // Drop the layer back-reference so a disposed renderable doesn't keep the
+    // user's Sprite2DLayer (and its CPU instance/savedSize buffers) alive.
+    // Cast through unknown — the field is non-null in the live path; only
+    // disposed renderables (no longer touched by render code) ever see null.
+    (r as unknown as { _layer: Sprite2DLayer | null })._layer = null;
+    releaseSharedPipelineCache();
 }

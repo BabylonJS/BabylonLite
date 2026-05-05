@@ -89,11 +89,18 @@ for (const scene of SCENES) {
 
         expect(rawKB, `raw ${rawKB.toFixed(1)} KB exceeds ceiling ${scene.maxRawKB} KB (+${(rawKB - scene.maxRawKB!).toFixed(1)} KB over)`).toBeLessThanOrEqual(scene.maxRawKB!);
 
-        // Pure-2D ceiling: scenes 50/51 must NOT pull any scene/* code.
+        // Pure-2D ceiling: scenes 50/51 must NOT pull any scene/* code, the depth-hosted
+        // sprite renderable wrapper, or scene-helpers (scene BGL etc.). Tree-shaking
+        // currently strips these from the pure-2D path; a future edit that accidentally
+        // pulls them in (e.g. a top-level reference to getSceneBindGroupLayout in
+        // sprite-pipeline.ts) must trip this guard rather than silently regressing.
         if (scene.slug === "scene50-sprite-grid" || scene.slug === "scene51-sprite-grid") {
-            const forbidden = /scene-core|scene-camera|scene-node|asset-container/;
-            const offenders = jsPayloads.map((p) => p.url.split("/").pop()!).filter((f) => forbidden.test(f));
-            expect(offenders, `pure-2D ${scene.slug} must not load scene/* chunks; found: ${offenders.join(", ")}`).toEqual([]);
+            const forbiddenChunks = /scene-core|scene-camera|scene-node|asset-container|scene-helpers|sprite-renderable/;
+            const chunkOffenders = jsPayloads.map((p) => p.url.split("/").pop()!).filter((f) => forbiddenChunks.test(f));
+            expect(chunkOffenders, `pure-2D ${scene.slug} must not load scene/* chunks; found: ${chunkOffenders.join(", ")}`).toEqual([]);
+            const forbiddenModules = /\/(scene\/scene-core|scene\/scene-camera|scene\/scene-node|asset-container|render\/scene-helpers|sprite\/sprite-renderable)\.ts$/;
+            const moduleOffenders = runtimeModules.filter((id) => forbiddenModules.test(id));
+            expect(moduleOffenders, `pure-2D ${scene.slug} must not load scene/* modules; found: ${moduleOffenders.join(", ")}`).toEqual([]);
         }
 
         // Scene 52 — HUD on 3D — uses SpriteRenderer for the HUD overlay; the

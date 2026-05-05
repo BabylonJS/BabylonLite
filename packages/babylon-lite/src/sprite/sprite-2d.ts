@@ -44,7 +44,7 @@ export interface Sprite2DLayerOptions {
     /**
      * Default NDC depth (`0` = near, `1` = far) for sprites added to this layer when their
      * `Sprite2DProps.z` is omitted. Only meaningful for `depth: "test" | "test-write"` layers
-    * (depth-hosted sprites added to a `SceneContext` via `addToScene`); ignored by pure-2D
+     * (depth-hosted sprites added to a `SceneContext` via `addToScene`); ignored by pure-2D
      * `SpriteRenderer` paths whose pipelines have no depth attachment.
      *
      * Each sprite carries its **own** Z (slot [10] of the per-instance buffer) so a single layer

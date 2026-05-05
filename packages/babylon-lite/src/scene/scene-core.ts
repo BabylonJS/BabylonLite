@@ -236,7 +236,19 @@ export function getFrameGraph(scene: SceneContext): FrameGraph {
     return (scene as SceneContextInternal)._frameGraph;
 }
 
-/** Add an entity (mesh, light, camera, transform node, shadow generator, asset container, or depth-hosted sprite layer) to the scene. */
+/**
+ * Add an entity (mesh, light, camera, transform node, shadow generator, asset container,
+ * or depth-hosted sprite layer) to the scene.
+ *
+ * **`Sprite2DLayer` lifetime note.** A depth-hosted layer added here lives until
+ * `disposeScene` — there is no `removeFromScene(layer)`. A layer is a *container*
+ * for sprites (its mesh-equivalent is the whole `MeshGroupBuilder` output, not a single
+ * mesh). To hide or clear a layer at runtime without removing it, use
+ * `layer.visible = false` (free GPU cull via degenerate quads) or `layer.count = 0`.
+ * Per-sprite churn goes through `addSprite2DIndex` / `removeSprite2DIndex`.
+ * `disposeScene` releases the layer's GPU resources (instance / UBO / index buffers,
+ * pipeline cache, bind groups).
+ */
 export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camera | ShadowGenerator | TransformNode | AssetContainer | Sprite2DLayer): void {
     const ctx = scene as SceneContextInternal;
     if ((entity as Sprite2DLayer)._entityType === "sprite-2d-layer") {
