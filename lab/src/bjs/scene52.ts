@@ -1,4 +1,4 @@
-// Reference scene 52 — HUD on 3D (BJS).
+// Reference scene 52 - HUD on 3D (BJS).
 //
 // Mirrors lab/src/lite/scene52.ts with two BJS passes: a regular Scene for the
 // StandardMaterial sphere, then a thin SpriteRenderer pass for the pixel-space
@@ -17,14 +17,10 @@ import { Scene } from "@babylonjs/core/scene";
 import { SpriteRenderer } from "@babylonjs/core/Sprites/spriteRenderer";
 import { ThinSprite } from "@babylonjs/core/Sprites/thinSprite";
 
-// `SpriteManager` calls `engine.setAlphaMode(...)` via `SpriteRenderer`. Scene
-// usually pulls this in transitively, but importing explicitly is harmless and
-// makes the dependency obvious.
+// SpriteRenderer calls engine.setAlphaMode(...); import the extension explicitly
+// so the thin BJS oracle path has the same dependency in every environment.
 import "@babylonjs/core/Engines/Extensions/engine.alpha";
-
-// Force the WGSL sprite shaders into the main bundle (otherwise dynamically
-// imported by SpriteRenderer). Same pattern as scene 50/51 — keeps the
-// per-frame timing free of one-off shader-fetch jitter.
+// Force WGSL sprite shaders into the main bundle instead of a one-off dynamic fetch.
 import "@babylonjs/core/ShadersWGSL/sprites.vertex";
 import "@babylonjs/core/ShadersWGSL/sprites.fragment";
 

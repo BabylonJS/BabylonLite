@@ -4,6 +4,8 @@
  * Captures the Babylon Lite frame-graph multi-pass scene render and compares
  * against the golden reference (captured from Babylon.js using
  * RenderTargetTexture + setMaterialForRendering + per-RTT activeCamera).
+ *
+ * Scene id 110 — moved from id 52.
  */
 import { test, expect } from "@playwright/test";
 import * as path from "path";

@@ -1,19 +1,18 @@
-// Scene 52 — HUD-on-3D
+// Scene 52 - HUD-on-3D
 //
 // 3D scene (sphere + StandardMaterial under a directional light) with a
 // pure-2D HUD sprite overlay rendered AFTER the 3D pass via the
 // `SpriteRenderer` rendering context. The HUD layer uses `depth: "none"`
-// so it does not consume the engine's depth attachment — it's the same
+// so it does not consume the engine's depth attachment. It is the same
 // route as scenes 50/51, layered on top of a regular 3D scene.
 //
-// Demonstrates the explicit "Lite is a low-level engine" composition:
-// the user wires `addToScene` for 3D entities AND
-// `createSpriteRenderer / registerSpriteRenderer` for the HUD; there is no
-// hidden HUD scaffolding inside the scene context.
+// Demonstrates explicit composition: the user wires `addToScene` for 3D
+// entities and `createSpriteRenderer / registerSpriteRenderer` for the HUD;
+// there is no hidden HUD scaffolding inside the scene context.
 //
 // Lifecycle: the HUD renderer is independent of the scene, but we tie its
-// disposal to the scene via `onSceneDispose` — `disposeScene` then cleans
-// up the HUD's GPU buffers for free.
+// disposal to the scene via `onSceneDispose` so `disposeScene` cleans up the
+// HUD's GPU buffers.
 
 import {
     addSprite2DIndex,
@@ -57,8 +56,8 @@ async function main(): Promise<void> {
 
     await registerScene(engine, scene);
 
-    // HUD overlay — separate `SpriteRenderer` rendering context, registered
-    // AFTER the scene so it draws on top in the engine's render-list order.
+    // HUD overlay: a separate `SpriteRenderer` rendering context, registered
+    // after the scene so it draws on top in engine render-list order.
     const atlas = await loadSpriteAtlas(engine, getSpriteAtlasDataUrl(), {
         gridSize: [SPRITE_ATLAS_INFO.cellWidthPx, SPRITE_ATLAS_INFO.cellHeightPx],
         sampling: "linear",
@@ -67,7 +66,7 @@ async function main(): Promise<void> {
     addHudSprites(hud, canvas);
     const hudRenderer = createSpriteRenderer(engine, { layers: [hud], clear: false });
     registerSpriteRenderer(hudRenderer);
-    // Tie HUD disposal to the scene — `disposeScene` will fire this and free the GPU buffers.
+    // Tie HUD disposal to the scene. `disposeScene` will fire this callback.
     onSceneDispose(scene, () => disposeSpriteRenderer(hudRenderer));
 
     await startEngine(engine);
@@ -76,9 +75,7 @@ async function main(): Promise<void> {
     canvas.dataset.ready = "true";
 }
 
-/** Lay out a deterministic HUD: a top-row icon strip + a centre cross-hair + a
- *  bottom-centre action bar. Same composition the previous PR2 branch used so
- *  visual review against historical golden screenshots stays apples-to-apples. */
+/** Lay out a deterministic HUD: top-row icon strip, center crosshair, and bottom-center action bar. */
 function addHudSprites(layer: Sprite2DLayer, canvas: HTMLCanvasElement): void {
     for (let i = 0; i < 8; i++) {
         addSprite2DIndex(layer, {
