@@ -18,6 +18,7 @@
 import type { EngineContextInternal } from "../engine/engine.js";
 import type { RenderTargetSignature } from "../engine/render-target.js";
 import type { DrawBinding, Renderable } from "../render/renderable.js";
+import { getSceneBindGroupLayout } from "../render/scene-helpers.js";
 import { createEmptyUniformBuffer, createMappedBuffer } from "../resource/gpu-buffers.js";
 import type { Sprite2DLayer } from "./sprite-2d.js";
 import {
@@ -152,7 +153,17 @@ function bindLayer(r: SpriteRenderableInternal, engine: EngineContextInternal, t
     const depthWrite = r._layer.depth === "test-write";
     let entry = r._pipelineEntry;
     if (!entry || !isSpritePipelineEntryCurrent(engine, entry, target.colorFormat, sampleCount, true, depthWrite, target.depthStencilFormat)) {
-        entry = getOrCreateSpritePipeline(engine, r._pipelineCache, target.colorFormat, sampleCount, r._layer.blendMode, true, depthWrite, target.depthStencilFormat);
+        entry = getOrCreateSpritePipeline(
+            engine,
+            r._pipelineCache,
+            target.colorFormat,
+            sampleCount,
+            r._layer.blendMode,
+            true,
+            depthWrite,
+            target.depthStencilFormat,
+            getSceneBindGroupLayout(engine)
+        );
         r._pipelineEntry = entry;
     }
     const drawTarget = { width: target.width ?? engine.canvas.width, height: target.height ?? engine.canvas.height };

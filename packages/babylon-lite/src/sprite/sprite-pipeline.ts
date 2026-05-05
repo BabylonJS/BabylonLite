@@ -1,6 +1,5 @@
 /** Internal sprite pipeline helpers: owns WGSL, bind-group schema, pipeline construction, and bind-group creation. */
 import type { EngineContextInternal } from "../engine/engine.js";
-import { getSceneBindGroupLayout } from "../render/scene-helpers.js";
 import type { Sprite2DLayer, SpriteBlendMode } from "./sprite-2d.js";
 import { INSTANCE_STRIDE_BYTES } from "./sprite-2d.js";
 
@@ -164,7 +163,8 @@ export function getOrCreateSpritePipeline(
     blendMode: SpriteBlendMode,
     hasDepth: boolean,
     depthWrite = false,
-    depthStencilFormat?: GPUTextureFormat
+    depthStencilFormat?: GPUTextureFormat,
+    sceneBindGroupLayout?: GPUBindGroupLayout
 ): SpritePipelineEntry {
     ensureCacheMatchesEngine(engine, cache);
 
@@ -175,7 +175,7 @@ export function getOrCreateSpritePipeline(
         return cached;
     }
 
-    const entry = buildSpritePipeline(engine, cache, format, sampleCount, blendMode, hasDepth, depthWrite, resolvedDepthStencilFormat);
+    const entry = buildSpritePipeline(engine, cache, format, sampleCount, blendMode, hasDepth, depthWrite, resolvedDepthStencilFormat, sceneBindGroupLayout);
     cache._entries.set(key, entry);
     return entry;
 }
@@ -242,7 +242,8 @@ function buildSpritePipeline(
     blendMode: SpriteBlendMode,
     hasDepth: boolean,
     depthWrite: boolean,
-    depthStencilFormat: GPUTextureFormat | null
+    depthStencilFormat: GPUTextureFormat | null,
+    sceneBindGroupLayout?: GPUBindGroupLayout
 ): SpritePipelineEntry {
     const device = engine.device;
     const bindGroupLayout = device.createBindGroupLayout({
@@ -253,7 +254,10 @@ function buildSpritePipeline(
         ],
     });
     const module = getShaderModule(engine, cache, hasDepth);
-    const bindGroupLayouts = hasDepth ? [getSceneBindGroupLayout(engine), bindGroupLayout] : [bindGroupLayout];
+    if (hasDepth && !sceneBindGroupLayout) {
+        throw new Error("Sprite pipeline: depth-enabled pipelines require a scene bind-group layout.");
+    }
+    const bindGroupLayouts = hasDepth ? [sceneBindGroupLayout!, bindGroupLayout] : [bindGroupLayout];
     const descriptor: GPURenderPipelineDescriptor = {
         layout: device.createPipelineLayout({ bindGroupLayouts }),
         vertex: {
