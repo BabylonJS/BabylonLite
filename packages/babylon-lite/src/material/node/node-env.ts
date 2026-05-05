@@ -95,11 +95,11 @@ export function pushEnvBindGroupEntries(
     entries.push({ binding: envBindings.brdfSampler, resource: env.brdfSampler });
 }
 
-/** Write the env tail of the NME scene UBO (40 floats):
+/** Write the env tail of the NME scene UBO (40 floats), beginning after the base NME scene block:
  *  9 vec4 SH coefficients + vec4(envRotationY, lodGenerationScale,
  *  environmentIntensity, _pad). */
 let _envScratch: Float32Array | null = null;
-export function writeEnvSceneTail(engine: EngineContextInternal, sceneUBO: GPUBuffer, scene: SceneContext): void {
+export function writeEnvSceneTail(engine: EngineContextInternal, sceneUBO: GPUBuffer, scene: SceneContext, offsetBytes = 192): void {
     const env = (scene as unknown as { _envTextures?: import("../../loader-env/load-env.js").EnvironmentTextures })._envTextures;
     if (!env) {
         return;
@@ -113,5 +113,5 @@ export function writeEnvSceneTail(engine: EngineContextInternal, sceneUBO: GPUBu
     _envScratch[37] = env.lodGenerationScale;
     _envScratch[38] = 1.0;
     _envScratch[39] = 0;
-    engine.device.queue.writeBuffer(sceneUBO, 192, _envScratch as Float32Array<ArrayBuffer>);
+    engine.device.queue.writeBuffer(sceneUBO, offsetBytes, _envScratch as Float32Array<ArrayBuffer>);
 }

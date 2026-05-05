@@ -116,12 +116,15 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
 
         const packets: NodePacket[] = [];
         for (const mesh of matMeshes) {
-            // Mesh UBO layout: world (64B) + receivesShadow (vec4, 16B) = 80B.
+            // Mesh UBO layout: world (64B) + receivesShadow/attribute flags (vec4, 16B) = 80B.
             const meshUBO = device.createBuffer({ label: "node-mesh-ubo", size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             const meshScratch = new Float32Array(20);
             meshScratch.set(mesh.worldMatrix as unknown as Float32Array, 0);
             const recv = mesh.receiveShadows ? 1 : 0;
             meshScratch[16] = recv;
+            if (compile.usesMeshAttributeFlags) {
+                writeAttributeFlags(mesh, meshScratch);
+            }
             device.queue.writeBuffer(meshUBO, 0, meshScratch);
 
             const entries: GPUBindGroupEntry[] = [{ binding: 0, resource: { buffer: meshUBO } }];
@@ -185,6 +188,9 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
                     if (worldChanged || recvChanged) {
                         pkt.meshScratch.set(pkt.mesh.worldMatrix as unknown as Float32Array, 0);
                         pkt.meshScratch[16] = recv;
+                        if (compile.usesMeshAttributeFlags) {
+                            writeAttributeFlags(pkt.mesh, pkt.meshScratch);
+                        }
                         device.queue.writeBuffer(pkt.meshUBO, 0, pkt.meshScratch as Float32Array<ArrayBuffer>);
                         pkt._lastWorldVersion = pkt.mesh.worldMatrixVersion;
                         pkt._lastReceivesShadow = recv;
@@ -230,6 +236,9 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
                     if (worldChanged || recvChanged) {
                         pkt.meshScratch.set(pkt.mesh.worldMatrix as unknown as Float32Array, 0);
                         pkt.meshScratch[16] = recv;
+                        if (compile.usesMeshAttributeFlags) {
+                            writeAttributeFlags(pkt.mesh, pkt.meshScratch);
+                        }
                         device.queue.writeBuffer(pkt.meshUBO, 0, pkt.meshScratch as Float32Array<ArrayBuffer>);
                         pkt._lastWorldVersion = pkt.mesh.worldMatrixVersion;
                         pkt._lastReceivesShadow = recv;
@@ -288,7 +297,7 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
                 // into the NME material's per-material scene UBO. NME materials own their own
                 // scene UBO (custom struct generated from the NME node graph) and hence cannot
                 // share the canonical SCENE_UBO from the active RenderPassTask.
-                // Scratch must be large enough for the LARGEST NME UBO seen (with env = 336 B / 84 floats).
+                // Scratch must be large enough for the LARGEST NME UBO allocation.
                 const sizeFloats = material._compile.sceneUboBytes / 4;
                 if (!_nmeSceneScratch || _nmeSceneScratch.length < sizeFloats) {
                     _nmeSceneScratch = new Float32Array(Math.max(sizeFloats, 64));
@@ -310,12 +319,21 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[]): {
                     data[41] = fog.color[1];
                     data[42] = fog.color[2];
                 }
+                data[43] = eng.canvas.width;
                 data[44] = scene.imageProcessing.exposure;
                 data[45] = scene.imageProcessing.contrast;
                 data[46] = scene.imageProcessing.toneMappingEnabled ? 1 : 0;
+                data[47] = eng.canvas.height;
+                const clip = material._compile.usesClipPlanes ? scene.clipPlane : null;
+                if (clip) {
+                    data[48] = clip[0];
+                    data[49] = clip[1];
+                    data[50] = clip[2];
+                    data[51] = clip[3];
+                }
                 engine.device.queue.writeBuffer(ubo, 0, data.subarray(0, sizeFloats) as Float32Array<ArrayBuffer>);
                 if (material._compile.envBindings) {
-                    material._envHelpers!.writeEnvSceneTail(engine, ubo, scene);
+                    material._envHelpers!.writeEnvSceneTail(engine, ubo, scene, material._compile.envSceneOffset);
                 }
             }
             if (nmeLightsUBO && nmeLightsScratch) {
@@ -372,4 +390,11 @@ function getAttrBuffer(engine: EngineContextInternal, gpu: MeshGPU, name: string
         default:
             throw new Error(`NodeMaterial: unsupported attribute "${name}"`);
     }
+}
+
+function writeAttributeFlags(mesh: Mesh, scratch: Float32Array): void {
+    const gpu = (mesh as MeshInternal)._gpu;
+    scratch[17] = gpu.hasUv === false ? 0 : 1;
+    scratch[18] = gpu.hasTangent ? 1 : 0;
+    scratch[19] = gpu.hasColor ? 1 : 0;
 }
