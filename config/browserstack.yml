@@ -16,7 +16,8 @@ platforms:
       browserName: chrome
       browserVersion: latest
 
-parallelsPerPlatform: 5
+# BrowserStack runs are serialized so this pipeline uses one instance at a time.
+parallelsPerPlatform: 1
 
 # Local tunnel — required because tests hit localhost dev server
 browserstackLocal: true
