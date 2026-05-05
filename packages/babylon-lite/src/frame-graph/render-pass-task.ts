@@ -72,7 +72,7 @@ export interface RenderPassTask extends Task {
     _transparentBindings: DrawBinding[];
 
     /** Cached opaque render bundle. Invalidated by renderable list mutations
-     *  (`_lastVersion`) and visibility changes (`_lastVis`). */
+     *  (`_lastVersion`) and visibility / mutable command changes (`_lastVis`). */
     _opaqueBundles: GPURenderBundle[];
     _lastVersion: number;
     _lastVis: number;
@@ -366,7 +366,7 @@ function executePass(task: RenderPassTask): number {
     // Per-pass scene UBO write — uses task config camera if set, else scene.camera.
     writePassSceneUBO(task, eng, scene, camera);
 
-    updateBindingUBOs(task._opaqueBindings);
+    const vis = (_vis * 31 + updateBindingUBOs(task._opaqueBindings)) | 0;
     updateBindingUBOs(task._transmissiveBindings);
     updateBindingUBOs(task._transparentBindings);
 
@@ -385,10 +385,10 @@ function executePass(task: RenderPassTask): number {
     // Scene bind group (group 0) is task-owned and identical for every draw in this pass.
     pass.setBindGroup(0, task._sceneBG);
 
-    // Opaque: cached render bundle. Invalidated by scene mutation (_renderableVersion)
-    // or visibility version (_vis). The bundle records group(0) at its start so it can
+    // Opaque: cached render bundle. Invalidated by scene mutation (_renderableVersion),
+    // visibility (_vis), or mutable binding command changes. The bundle records group(0) at its start so it can
     // be replayed standalone (executeBundles inherits no inherited state).
-    if (task._lastVersion !== scene._renderableVersion || task._lastVis !== _vis || task._opaqueBundles.length === 0) {
+    if (task._lastVersion !== scene._renderableVersion || task._lastVis !== vis || task._opaqueBundles.length === 0) {
         const be = eng.device.createRenderBundleEncoder({
             label: `${task.name}-opaque`,
             colorFormats: [rt.descriptor.colorFormat],
@@ -399,7 +399,7 @@ function executePass(task: RenderPassTask): number {
         drawList(be, task._opaqueBindings, eng);
         task._opaqueBundles[0] = be.finish();
         task._lastVersion = scene._renderableVersion;
-        task._lastVis = _vis;
+        task._lastVis = vis;
     }
     let draws = task._opaqueBindings.length;
     pass.executeBundles(task._opaqueBundles);
@@ -486,12 +486,13 @@ function writePassSceneUBO(task: RenderPassTask, eng: EngineContextInternal, sce
     eng.device.queue.writeBuffer(task._sceneUBO, 0, data as Float32Array<ArrayBuffer>);
 }
 
-function updateBindingUBOs(list: readonly DrawBinding[]): void {
+function updateBindingUBOs(list: readonly DrawBinding[]): number {
+    let version = 0;
     for (const b of list) {
-        if (b.updateUBOs) {
-            b.updateUBOs();
-        }
+        b.updateUBOs?.();
+        version = (version * 31 + (b.bundleVersion ?? 0)) | 0;
     }
+    return version;
 }
 
 /** Iterate DrawBindings, deduping setPipeline. */

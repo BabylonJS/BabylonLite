@@ -4,9 +4,8 @@
  * Verifies that adding a `Sprite2DLayer` with `depth: "test"` or
  * `"test-write"` to a `SceneContext` via `addToScene`:
  *   - registers a deferred builder (no eager GPU work),
- *   - lands the produced `Renderable` in the right bucket
- *     (`_transparentRenderables` for `"test"`, `_opaqueRenderables` for
- *     `"test-write"`),
+ *   - lands the produced `Renderable` in `scene._renderables` with the right
+ *     transparency/order metadata for frame-graph bucketing,
  *   - registers a disposable that runs on `disposeScene`.
  *
  * Also verifies that `depth: "none"` layers throw with a message that
@@ -20,8 +19,9 @@ const G = globalThis as unknown as Record<string, unknown>;
 G.GPUBufferUsage ??= { VERTEX: 32, INDEX: 16, UNIFORM: 64, COPY_DST: 8, MAP_WRITE: 1 };
 G.GPUShaderStage ??= { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 };
 G.GPUColorWrite ??= { ALL: 0xf };
+G.GPUTextureUsage ??= { RENDER_ATTACHMENT: 16, TEXTURE_BINDING: 4 };
 
-import { createSprite2DLayer } from "../../packages/babylon-lite/src/sprite/sprite-2d";
+import { addSprite2DIndex, createSprite2DLayer, updateSprite2DIndex } from "../../packages/babylon-lite/src/sprite/sprite-2d";
 import { addToScene, createSceneContext, disposeScene } from "../../packages/babylon-lite/src/scene/scene";
 import { registerScene } from "../../packages/babylon-lite/src/scene/scene-core";
 import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
@@ -52,6 +52,10 @@ function makeMockEngine(): EngineContext {
         createPipelineLayout: vi.fn(() => ({ _kind: "pl" })),
         createRenderPipeline: vi.fn(() => ({ _kind: "pipeline" })),
         createBindGroup: vi.fn(() => ({ _kind: "bg" })),
+        createTexture: vi.fn(() => ({
+            createView: vi.fn(() => ({ _kind: "view" })),
+            destroy: vi.fn(),
+        })),
         queue,
     } as unknown as GPUDevice;
 
@@ -62,6 +66,7 @@ function makeMockEngine(): EngineContext {
         device,
         context: {} as GPUCanvasContext,
         format: "bgra8unorm",
+        alphaMode: "opaque",
         _targets: {
             msaaTexture: {} as GPUTexture,
             msaaView: {} as GPUTextureView,
@@ -73,6 +78,10 @@ function makeMockEngine(): EngineContext {
         _animFrameId: 0,
         _renderFn: null,
         _renderingContexts: [],
+        _currentEncoder: {} as GPUCommandEncoder,
+        _swapchainView: {} as GPUTextureView,
+        _currentDelta: 0,
+        _cbs: [],
     } as EngineContextInternal;
 }
 
@@ -106,32 +115,80 @@ describe("addToScene with Sprite2DLayer", () => {
     it("registers a deferred builder for depth: 'test' (no eager GPU work)", () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContextInternal;
+        const device = engine.device as unknown as { createBuffer: ReturnType<typeof vi.fn> };
+        device.createBuffer.mockClear();
         const layer = createSprite2DLayer(makeMockAtlas(), { depth: "test" });
         addToScene(scene, layer);
         expect(scene._deferredBuilders.length).toBe(1);
         // No buffers/pipelines created until registerScene runs the builder.
-        const device = engine.device as unknown as { createBuffer: ReturnType<typeof vi.fn> };
         expect(device.createBuffer).not.toHaveBeenCalled();
     });
 
-    it("routes depth: 'test' into _transparentRenderables after registerScene", async () => {
+    it("routes depth: 'test' into a transparent frame-graph renderable after registerScene", async () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContextInternal;
         addToScene(scene, createSprite2DLayer(makeMockAtlas(), { depth: "test" }));
         await registerScene(engine, scene);
-        expect(scene._transparentRenderables.length).toBe(1);
-        expect(scene._opaqueRenderables.length).toBe(0);
-        expect(scene._transparentRenderables[0]!.isTransparent).toBe(true);
+        expect(scene._renderables.length).toBe(1);
+        expect(scene._renderables[0]!.isTransparent).toBe(true);
+        expect(scene._renderables[0]!.order).toBe(200);
     });
 
-    it("routes depth: 'test-write' into _opaqueRenderables after registerScene", async () => {
+    it("routes depth: 'test-write' into an opaque frame-graph renderable after registerScene", async () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContextInternal;
         addToScene(scene, createSprite2DLayer(makeMockAtlas(), { depth: "test-write" }));
         await registerScene(engine, scene);
-        expect(scene._opaqueRenderables.length).toBe(1);
-        expect(scene._transparentRenderables.length).toBe(0);
-        expect(scene._opaqueRenderables[0]!.isTransparent).toBe(false);
+        expect(scene._renderables.length).toBe(1);
+        expect(scene._renderables[0]!.isTransparent).toBe(false);
+        expect(scene._renderables[0]!.order).toBe(100);
+    });
+
+    it("exposes a render-bundle version for depth-hosted sprite command changes", async () => {
+        const engine = makeMockEngine();
+        const scene = createSceneContext(engine) as SceneContextInternal;
+        const layer = createSprite2DLayer(makeMockAtlas(), { depth: "test-write" });
+        addToScene(scene, layer);
+        await registerScene(engine, scene);
+
+        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth24plus-stencil8", sampleCount: 4 });
+        expect(binding.bundleVersion).toBeTypeOf("number");
+
+        const emptyVersion = binding.bundleVersion;
+        addSprite2DIndex(layer, { positionPx: [10, 20], sizePx: [32, 32], frame: 0 });
+        binding.updateUBOs?.();
+        const oneSpriteVersion = binding.bundleVersion;
+        expect(oneSpriteVersion).not.toBe(emptyVersion);
+
+        updateSprite2DIndex(layer, 0, { positionPx: [30, 40] });
+        binding.updateUBOs?.();
+        expect(binding.bundleVersion).toBe(oneSpriteVersion);
+
+        layer.visible = false;
+        binding.updateUBOs?.();
+        expect(binding.bundleVersion).not.toBe(oneSpriteVersion);
+    });
+
+    it("uses the render target depth-stencil format for depth-hosted sprite pipelines", async () => {
+        const engine = makeMockEngine();
+        const scene = createSceneContext(engine) as SceneContextInternal;
+        addToScene(scene, createSprite2DLayer(makeMockAtlas(), { depth: "test-write" }));
+        await registerScene(engine, scene);
+
+        const device = engine.device as unknown as { createRenderPipeline: ReturnType<typeof vi.fn> };
+        device.createRenderPipeline.mockClear();
+        const renderable = scene._renderables[0]!;
+
+        const first = renderable.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+        expect(device.createRenderPipeline).toHaveBeenCalledTimes(1);
+        let descriptor = device.createRenderPipeline.mock.calls[0]![0] as GPURenderPipelineDescriptor;
+        expect(descriptor.depthStencil?.format).toBe("depth32float");
+
+        const second = renderable.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth24plus-stencil8", sampleCount: 1 });
+        expect(second.pipeline).not.toBe(first.pipeline);
+        expect(device.createRenderPipeline).toHaveBeenCalledTimes(2);
+        descriptor = device.createRenderPipeline.mock.calls[1]![0] as GPURenderPipelineDescriptor;
+        expect(descriptor.depthStencil?.format).toBe("depth24plus-stencil8");
     });
 
     it("disposeScene runs the depth-hosted sprite disposable", async () => {

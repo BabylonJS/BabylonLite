@@ -120,21 +120,31 @@ function bindLayer(r: SpriteRenderableInternal, engine: EngineContextInternal, t
     const sampleCount = target.sampleCount === 1 ? 1 : 4;
     const depthWrite = r._layer.depth === "test-write";
     let entry = r._pipelineEntry;
-    if (!entry || !isSpritePipelineEntryCurrent(engine, entry, target.colorFormat, sampleCount, true, depthWrite)) {
-        entry = getOrCreateSpritePipeline(engine, r._pipelineCache, target.colorFormat, sampleCount, r._layer.blendMode, true, depthWrite);
+    if (!entry || !isSpritePipelineEntryCurrent(engine, entry, target.colorFormat, sampleCount, true, depthWrite, target.depthStencilFormat)) {
+        entry = getOrCreateSpritePipeline(engine, r._pipelineCache, target.colorFormat, sampleCount, r._layer.blendMode, true, depthWrite, target.depthStencilFormat);
         r._pipelineEntry = entry;
         r._bindGroup = null;
     }
-    return {
+    const binding: DrawBinding = {
         renderable: r,
         pipeline: entry.pipeline,
+        bundleVersion: getLayerRenderBundleVersion(r),
         updateUBOs() {
             uploadLayer(r);
+            binding.bundleVersion = getLayerRenderBundleVersion(r);
         },
         draw(pass) {
             return drawLayer(r, entry, pass);
         },
     };
+    return binding;
+}
+
+function getLayerRenderBundleVersion(r: SpriteRenderableInternal): number {
+    let version = r._layer.visible ? 1 : 0;
+    version = (version * 31 + r._layer.count) | 0;
+    version = (version * 31 + r._instanceBufferCapacity) | 0;
+    return version;
 }
 
 /** Sync per-instance vertex data and the per-layer UBO via the shared pipeline helpers. */

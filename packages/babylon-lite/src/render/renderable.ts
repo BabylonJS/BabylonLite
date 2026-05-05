@@ -33,6 +33,10 @@ export interface DrawBinding {
      *  per binding. Per-mesh state (e.g. world matrix) shared across bindings should be
      *  version-guarded to avoid redundant writes. */
     updateUBOs?(): void;
+    /** Optional version for draw-command state baked into render bundles. Stable mesh
+     *  bindings can leave this undefined; mutable bindings should change it when `draw()`
+     *  would record different commands into a render bundle. */
+    bundleVersion?: number;
     /** Scratch: squared distance from camera for transparent sorting (per-pass). */
     _sortDistance?: number;
 }

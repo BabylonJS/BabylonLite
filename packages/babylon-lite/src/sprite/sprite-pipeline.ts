@@ -9,6 +9,7 @@ export interface SpritePipelineEntry {
     readonly format: GPUTextureFormat;
     readonly msaaSamples: number;
     readonly hasDepth: boolean;
+    readonly depthStencilFormat: GPUTextureFormat | null;
     readonly depthWrite: boolean;
     readonly spriteBindGroupIndex: number;
     readonly pipeline: GPURenderPipeline;
@@ -141,9 +142,18 @@ export function isSpritePipelineEntryCurrent(
     format: GPUTextureFormat,
     sampleCount: 1 | 4,
     hasDepth: boolean,
-    depthWrite = false
+    depthWrite = false,
+    depthStencilFormat?: GPUTextureFormat
 ): boolean {
-    return entry.device === engine.device && entry.format === format && entry.msaaSamples === sampleCount && entry.hasDepth === hasDepth && entry.depthWrite === depthWrite;
+    const resolvedDepthStencilFormat = normalizeDepthStencilFormat(hasDepth, depthStencilFormat);
+    return (
+        entry.device === engine.device &&
+        entry.format === format &&
+        entry.msaaSamples === sampleCount &&
+        entry.hasDepth === hasDepth &&
+        entry.depthWrite === depthWrite &&
+        entry.depthStencilFormat === resolvedDepthStencilFormat
+    );
 }
 
 export function getOrCreateSpritePipeline(
@@ -153,17 +163,19 @@ export function getOrCreateSpritePipeline(
     sampleCount: 1 | 4,
     blendMode: SpriteBlendMode,
     hasDepth: boolean,
-    depthWrite = false
+    depthWrite = false,
+    depthStencilFormat?: GPUTextureFormat
 ): SpritePipelineEntry {
     ensureCacheMatchesEngine(engine, cache);
 
-    const key = spritePipelineKey(format, sampleCount, blendMode, hasDepth, depthWrite);
+    const resolvedDepthStencilFormat = normalizeDepthStencilFormat(hasDepth, depthStencilFormat);
+    const key = spritePipelineKey(format, sampleCount, blendMode, hasDepth, depthWrite, resolvedDepthStencilFormat);
     const cached = cache._entries.get(key);
     if (cached) {
         return cached;
     }
 
-    const entry = buildSpritePipeline(engine, cache, format, sampleCount, blendMode, hasDepth, depthWrite);
+    const entry = buildSpritePipeline(engine, cache, format, sampleCount, blendMode, hasDepth, depthWrite, resolvedDepthStencilFormat);
     cache._entries.set(key, entry);
     return entry;
 }
@@ -192,8 +204,25 @@ function ensureCacheMatchesEngine(engine: EngineContextInternal, cache: SpritePi
     cache._sceneShaderModule = null;
 }
 
-function spritePipelineKey(format: GPUTextureFormat, sampleCount: number, blendMode: SpriteBlendMode, hasDepth: boolean, depthWrite: boolean): string {
-    return `${format}:${sampleCount}:${getBlendModeEntry(blendMode).index}:${hasDepth ? 1 : 0}:${depthWrite ? 1 : 0}`;
+function normalizeDepthStencilFormat(hasDepth: boolean, depthStencilFormat?: GPUTextureFormat): GPUTextureFormat | null {
+    if (!hasDepth) {
+        return null;
+    }
+    if (!depthStencilFormat) {
+        throw new Error("Sprite pipeline: depth-enabled pipelines require a depth-stencil format.");
+    }
+    return depthStencilFormat;
+}
+
+function spritePipelineKey(
+    format: GPUTextureFormat,
+    sampleCount: number,
+    blendMode: SpriteBlendMode,
+    hasDepth: boolean,
+    depthWrite: boolean,
+    depthStencilFormat: GPUTextureFormat | null
+): string {
+    return `${format}:${sampleCount}:${getBlendModeEntry(blendMode).index}:${hasDepth ? 1 : 0}:${depthWrite ? 1 : 0}:${depthStencilFormat ?? "-"}`;
 }
 
 function getShaderModule(engine: EngineContextInternal, cache: SpritePipelineCache, sceneBound: boolean): GPUShaderModule {
@@ -212,7 +241,8 @@ function buildSpritePipeline(
     sampleCount: 1 | 4,
     blendMode: SpriteBlendMode,
     hasDepth: boolean,
-    depthWrite: boolean
+    depthWrite: boolean,
+    depthStencilFormat: GPUTextureFormat | null
 ): SpritePipelineEntry {
     const device = engine.device;
     const bindGroupLayout = device.createBindGroupLayout({
@@ -255,14 +285,14 @@ function buildSpritePipeline(
     };
     if (hasDepth) {
         descriptor.depthStencil = {
-            format: "depth24plus-stencil8",
+            format: depthStencilFormat!,
             depthCompare: "less-equal",
             depthWriteEnabled: depthWrite,
         };
     }
     const pipeline = device.createRenderPipeline(descriptor);
 
-    return { device, format, msaaSamples: sampleCount, hasDepth, depthWrite, spriteBindGroupIndex: hasDepth ? 1 : 0, pipeline, bindGroupLayout };
+    return { device, format, msaaSamples: sampleCount, hasDepth, depthStencilFormat, depthWrite, spriteBindGroupIndex: hasDepth ? 1 : 0, pipeline, bindGroupLayout };
 }
 
 // ─── Per-layer GPU sync helpers ────────────────────────────────────────────
