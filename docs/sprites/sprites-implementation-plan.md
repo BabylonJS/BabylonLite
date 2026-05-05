@@ -1,6 +1,6 @@
 # Sprites — Implementation Plan
 
-> **Status:** Active plan. PRs 1-3 shipped; later sprite phases remain planned.
+> **Status:** Active plan. PR 1 and PR 3 shipped; PR 2 was absorbed into the PR 1 SpriteRenderer composition model; later sprite phases remain planned.
 > **Source spec:** [`architecture/26-sprites.md`](architecture/26-sprites.md)
 > **Engine/scene cross-cutting review (David-approved):** [`sprites-scene-engine-changes-review.md`](sprites-scene-engine-changes-review.md)
 
@@ -18,6 +18,8 @@ It also captures two strategic decisions made before the first PR:
 ## Shipped rendering split
 
 Pure-2D and HUD sprites use `SpriteRenderer`, which records a direct swapchain pass with `sampleCount = 1`, no depth attachment, and optional `clear: false` for overlays. This avoids paying scene MSAA cost for texture-alpha sprite edges and keeps pure-2D scenes out of scene/frame-graph code.
+
+The HUD-on-3D case did not land as a separate rendering path or special scene API. It is the PR 1 pure-sprite renderer registered after a scene so it draws on top.
 
 Depth-hosted sprites use `addToScene(scene, layer)` with `depth: "test" | "test-write"`. They become scene renderables and inherit the frame-graph pass target's color format, sample count, depth-stencil format, and target dimensions.
 
@@ -144,17 +146,17 @@ _The `RenderingContext` interface, `_renderingContexts` list, `registerScene`/`u
 
 ---
 
-### PR 2 — Sprite HUD on top of 3D _(the 2.5D path)_ ✅ shipped
+### PR 2 — Sprite HUD on top of 3D _(absorbed into PR 1)_ ✅ validated
 
 **Goal:** 3D scene with a static sprite HUD overlay (the canonical game-GUI case).
 
-**As-shipped scope:**
+**Outcome:** no separate PR 2 rendering path shipped. HUD-on-3D is the PR 1 pure-sprite path composed with an existing scene:
 
 - HUD overlays use the same primitives as the pure-2D path: `createSpriteRenderer(engine, { layers, clear: false, clearValue? })` + `registerSpriteRenderer(sr)` after `registerScene(engine, scene)`.
-- A new public `onSceneDispose(scene, cb)` helper is added so callers can wire HUD disposal to the scene lifetime: `onSceneDispose(scene, () => disposeSpriteRenderer(hud))`. With this the HUD comes down on `disposeScene(scene)` automatically.
-- `addToScene` does **not** auto-route HUD layers to an internal `SpriteRenderer`. A `Sprite2DLayer { depth: "none" }` passed to `addToScene` throws and tells the caller to use `createSpriteRenderer`. This keeps `registerScene` zero-cost for non-HUD scenes (no scene/\* code references `SpriteRenderer`) and keeps HUD lifecycle explicit and caller-owned.
+- `onSceneDispose(scene, cb)` exists as a general scene lifecycle helper; scene52 uses it to tie the caller-owned HUD renderer to `disposeScene(scene)`.
+- `addToScene` does **not** auto-route HUD layers to an internal `SpriteRenderer`. A `Sprite2DLayer { depth: "none" }` passed to `addToScene` throws and tells the caller to use `createSpriteRenderer`. This keeps `registerScene` zero-cost for non-HUD scenes and keeps HUD lifecycle explicit and caller-owned.
 
-**Visual proof:** lab scene `scene52-hud-on-3d` — rotating 3D scene + sprite HUD overlay; HUD disposed via `onSceneDispose`.
+**Visual proof:** lab scene `scene52-hud-on-3d` — rotating 3D scene + pure SpriteRenderer HUD overlay; HUD disposal is wired via `onSceneDispose`.
 
 **Tests:**
 
@@ -169,15 +171,16 @@ _The `RenderingContext` interface, `_renderingContexts` list, `registerScene`/`u
 
 **As-shipped scope:**
 
-- `Sprite2DLayer { depth: "test" | "test-write" }` added through `addToScene` inserts a `Renderable` into `scene._renderables` (`order = 200` transparent direct draw for blended `"test"`; `order = 100` transmissive direct draw after cached opaque meshes for `"test-write"`).
-- No new render pass. No new pipeline-cache plumbing. The renderable participates in the existing scene 3D pass alongside meshes.
-- The composer emits `depthCompare: "less-equal"`, `depthWriteEnabled: true|false` driven by the `depth` value; the per-instance Z (slot [10]) is consumed by the depth test.
+- `Sprite2DLayer { depth: "test" | "test-write" }` added through `addToScene` registers a deferred builder. When `registerScene` runs, the layer becomes one scene `Renderable` in `scene._renderables` (`order = 200` transparent direct draw for blended `"test"`; `order = 100` transmissive direct draw after cached opaque meshes for `"test-write"`).
+- No new render pass. The renderable participates in the existing frame-graph 3D pass alongside meshes, inheriting the pass color format, sample count, depth-stencil format, and render-target dimensions.
+- Depth-hosted sprite renderables use a lazy shared pipeline cache, keyed by target color format, sample count, blend mode, depth-write mode, and depth-stencil format. Bind groups are cached per target-specific pipeline entry.
+- The sprite pipeline emits `depthCompare: "less-equal"`, `depthWriteEnabled: true|false` driven by the `depth` value; the per-instance Z (slot [10]) is consumed by the depth test.
 
 **Visual proof:** lab scene `scene53-depth-hosted-sprites` — sprites partially occluded by 3D meshes.
 
 **Tests:**
 
-- `sprite-depth-hosted-routing.test.ts` — verifies `addToScene` routes `"test"` / `"test-write"` to `scene._renderables` with the correct `order`, and throws for `"none"`.
+- `sprite-depth-hosted-routing.test.ts` — verifies `addToScene` registers deferred depth-hosted builders, `registerScene` routes `"test"` / `"test-write"` to `scene._renderables` with the correct bucket/order metadata, target-specific formats/dimensions are honored, bind groups stay pipeline-compatible, disposal runs through `disposeScene`, and `depth: "none"` rejects during scene registration with a message that points callers to `SpriteRenderer`.
 
 ---
 
