@@ -197,14 +197,14 @@ describe("addDepthHostedSpriteLayer", () => {
         const instanceBufferCreate = device.createBuffer.mock.calls.find((call) => (call[0] as GPUBufferDescriptor).label === "sprite-depth-hosted-instances");
         expect((instanceBufferCreate![0] as GPUBufferDescriptor).size).toBe(DEPTH_INSTANCE_STRIDE_BYTES);
 
-        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth24plus-stencil8", sampleCount: 1, width: 512, height: 256 });
+        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth24plus-stencil8", sampleCount: 1 });
         device.queue.writeBuffer.mockClear();
-        binding.updateUBOs?.();
+        binding.update?.({ targetWidth: 512, targetHeight: 256 });
 
         expect(device.queue.writeBuffer.mock.calls.some((call) => call[4] === DEPTH_INSTANCE_STRIDE_BYTES)).toBe(true);
     });
 
-    it("uses the bound render target dimensions for the sprite layer UBO", async () => {
+    it("uses the pass update context dimensions for the sprite layer UBO", async () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContextInternal;
         const layer = createSprite2DLayer(makeMockAtlas(), { depth: "test-write" });
@@ -212,10 +212,10 @@ describe("addDepthHostedSpriteLayer", () => {
         addDepthHostedSpriteLayer(scene, layer);
         await registerScene(engine, scene);
 
-        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth24plus-stencil8", sampleCount: 1, width: 512, height: 256 });
+        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth24plus-stencil8", sampleCount: 1 });
         const queue = (engine.device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } }).queue;
         queue.writeBuffer.mockClear();
-        binding.updateUBOs?.();
+        binding.update?.({ targetWidth: 512, targetHeight: 256 });
 
         const uboCall = queue.writeBuffer.mock.calls.find((call) => call[4] === LAYER_UBO_BYTES);
         expect(uboCall).toBeDefined();
@@ -235,8 +235,8 @@ describe("addDepthHostedSpriteLayer", () => {
         await registerScene(engine, scene);
 
         const renderable = scene._renderables[0]!;
-        const first = renderable.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth24plus-stencil8", sampleCount: 1, width: 512, height: 512 });
-        const second = renderable.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth24plus-stencil8", sampleCount: 4, width: 800, height: 600 });
+        const first = renderable.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth24plus-stencil8", sampleCount: 1 });
+        const second = renderable.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth24plus-stencil8", sampleCount: 4 });
         const device = engine.device as unknown as { createBindGroup: ReturnType<typeof vi.fn> };
         const pass = makeDrawPassMock();
         device.createBindGroup.mockClear();

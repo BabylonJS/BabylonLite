@@ -122,7 +122,7 @@ export interface Sprite2DProps {
      * layers (`depth: "test" | "test-write"`); pure-2D HUD layers use a 10-float layout and
      * do not allocate a Z slot. When omitted on add for a depth-hosted layer, defaults to the
      * **owning layer's** `layerZ` at the moment of insertion. When omitted on update, the
-     * sprite's existing Z is preserved. Mutate freely — the next `updateUBOs` will re-upload
+     * sprite's existing Z is preserved. Mutate freely — the next binding update will re-upload
      * only the dirty range.
      */
     z?: number;

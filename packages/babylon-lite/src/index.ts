@@ -170,7 +170,7 @@ export { getPickedNormal, getPickedUV } from "./picking/picking-helpers.js";
 
 // ─── Low-level (for advanced/custom rendering) ──────────────────────
 export type { EnvironmentTextures } from "./loader-env/load-env.js";
-export type { Renderable, PrePassRenderable, SceneUniformUpdater, DrawBinding } from "./render/renderable.js";
+export type { Renderable, PrePassRenderable, SceneUniformUpdater, DrawBinding, DrawUpdateContext } from "./render/renderable.js";
 export type { RenderTargetSignature } from "./engine/render-target.js";
 
 // ─── Sprites (2D) ────────────────────────────────────────────────────

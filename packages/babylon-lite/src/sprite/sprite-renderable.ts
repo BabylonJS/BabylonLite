@@ -18,7 +18,7 @@
 
 import type { EngineContextInternal } from "../engine/engine.js";
 import type { RenderTargetSignature } from "../engine/render-target.js";
-import type { DrawBinding, Renderable } from "../render/renderable.js";
+import type { DrawBinding, DrawUpdateContext, Renderable } from "../render/renderable.js";
 import { getSceneBindGroupLayout } from "../render/scene-helpers.js";
 import { createEmptyUniformBuffer, createMappedBuffer } from "../resource/gpu-buffers.js";
 import type { Sprite2DLayer } from "./sprite-2d.js";
@@ -37,11 +37,6 @@ import {
     writeSpriteLayerUboIfDirty,
 } from "./sprite-pipeline.js";
 import type { SpritePipelineCache, SpritePipelineEntry } from "./sprite-pipeline.js";
-
-interface SpriteDrawTarget {
-    width: number;
-    height: number;
-}
 
 // Shared sprite pipeline cache across every depth-hosted Sprite2DLayer renderable
 // in the process. Lazy-init on first acquire (per GUIDANCE §4 — module-level
@@ -167,12 +162,11 @@ function bindLayer(r: SpriteRenderableInternal, engine: EngineContextInternal, t
         );
         r._pipelineEntry = entry;
     }
-    const drawTarget = { width: target.width ?? engine.canvas.width, height: target.height ?? engine.canvas.height };
     return {
         renderable: r,
         pipeline: entry.pipeline,
-        updateUBOs() {
-            uploadLayer(r, drawTarget);
+        update(context) {
+            uploadLayer(r, context);
         },
         draw(pass) {
             return drawLayer(r, entry, pass);
@@ -181,7 +175,7 @@ function bindLayer(r: SpriteRenderableInternal, engine: EngineContextInternal, t
 }
 
 /** Sync per-instance vertex data and the per-layer UBO via the shared pipeline helpers. */
-function uploadLayer(r: SpriteRenderableInternal, target: SpriteDrawTarget): void {
+function uploadLayer(r: SpriteRenderableInternal, target: DrawUpdateContext): void {
     if (r._disposed || !r._layer.visible || r._layer.count === 0) {
         return;
     }
@@ -192,7 +186,7 @@ function uploadLayer(r: SpriteRenderableInternal, target: SpriteDrawTarget): voi
         r._uploadedVersion = -1;
     }
     r._uploadedVersion = uploadSpriteInstances(r._engine.device, r._layer, r._instanceBuffer, r._uploadedVersion);
-    buildSpriteLayerUbo(r._layer, target.width, target.height, r._scratchUbo);
+    buildSpriteLayerUbo(r._layer, target.targetWidth, target.targetHeight, r._scratchUbo);
     r._uboUploaded = writeSpriteLayerUboIfDirty(r._engine.device, r._uniformBuffer, r._scratchUbo, r._lastUbo, r._uboUploaded);
 }
 

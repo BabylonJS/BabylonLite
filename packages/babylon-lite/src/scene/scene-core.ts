@@ -190,10 +190,8 @@ export function createSceneContext(engine: EngineContext): SceneContext {
         },
         _resize(): void {
             // Canvas backing-store changed: rebuild the frame graph so canvas-sized
-            // render targets get re-allocated at the new pixel size. Build is async
-            // (a task may have async work) but render-pass-task records synchronously,
-            // so the rebuild typically finishes before the next frame.
-            void ctx._frameGraph.build();
+            // render targets get re-allocated at the new pixel size before the next record.
+            ctx._frameGraph.build();
         },
     };
 
@@ -385,7 +383,7 @@ export async function registerScene(engine: EngineContext, scene: SceneContext):
     }
     await buildScene(scene);
     ctx._renderables.sort(byOrder);
-    await ctx._frameGraph.build();
+    ctx._frameGraph.build();
     registerRenderingContext(engine, ctx);
 }
 
