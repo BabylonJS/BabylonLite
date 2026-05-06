@@ -2,6 +2,7 @@ import type { EngineContext } from "../engine/engine.js";
 import type { EngineContextInternal } from "../engine/engine.js";
 import type { Mesh, MeshInternal } from "./mesh.js";
 import type { Mat4 } from "../math/types.js";
+import type { Material } from "../material/material.js";
 import { mat4Invert } from "../math/mat4.js";
 import { createMeshFromData } from "./mesh-factories.js";
 
@@ -49,12 +50,15 @@ class CsgPlane {
 class CsgPolygon {
     public plane: CsgPlane;
 
-    constructor(public vertices: CsgVertex[]) {
+    constructor(
+        public vertices: CsgVertex[],
+        public readonly materialSlot = 0
+    ) {
         this.plane = planeFromVertices(vertices[0]!, vertices[1]!, vertices[2]!);
     }
 
     clone(): CsgPolygon {
-        return new CsgPolygon(this.vertices.map(cloneVertex));
+        return new CsgPolygon(this.vertices.map(cloneVertex), this.materialSlot);
     }
 
     flip(): void {
@@ -269,10 +273,10 @@ function splitPolygon(plane: CsgPlane, polygon: CsgPolygon, coplanarFront: CsgPo
         }
     }
     if (frontVertices.length >= 3) {
-        front.push(new CsgPolygon(frontVertices));
+        front.push(new CsgPolygon(frontVertices, polygon.materialSlot));
     }
     if (backVertices.length >= 3) {
-        back.push(new CsgPolygon(backVertices));
+        back.push(new CsgPolygon(backVertices, polygon.materialSlot));
     }
 }
 
@@ -313,7 +317,7 @@ function requireCpuGeometry(mesh: Mesh): MeshInternal {
     return internal;
 }
 
-export function createCsgFromMesh(mesh: Mesh): CsgSolid {
+export function createCsgFromMesh(mesh: Mesh, materialSlot = 0): CsgSolid {
     const internal = requireCpuGeometry(mesh);
     const positions = internal._cpuPositions!;
     const normals = internal._cpuNormals!;
@@ -336,7 +340,7 @@ export function createCsgFromMesh(mesh: Mesh): CsgSolid {
         if (triangleArea2(vertices[0]!, vertices[1]!, vertices[2]!) <= EPSILON * EPSILON) {
             continue;
         }
-        polygons.push(new CsgPolygon(vertices));
+        polygons.push(new CsgPolygon(vertices, materialSlot));
     }
 
     return solidFromPolygons(polygons);
@@ -381,8 +385,7 @@ export function csgIntersect(a: CsgSolid, b: CsgSolid): CsgSolid {
     return solidFromPolygons(an.allPolygons());
 }
 
-export function createMeshFromCsg(engine: EngineContext, solid: CsgSolid, name = "csg"): Mesh {
-    const polygons = internalSolid(solid)._polygons;
+function createMeshFromPolygons(engine: EngineContext, polygons: readonly CsgPolygon[], name: string): Mesh {
     const positions: number[] = [];
     const normals: number[] = [];
     const uvs: number[] = [];
@@ -401,4 +404,32 @@ export function createMeshFromCsg(engine: EngineContext, solid: CsgSolid, name =
     }
 
     return createMeshFromData(engine as EngineContextInternal, name, new Float32Array(positions), new Float32Array(normals), new Uint32Array(indices), new Float32Array(uvs));
+}
+
+export function createMeshFromCsg(engine: EngineContext, solid: CsgSolid, name = "csg"): Mesh {
+    return createMeshFromPolygons(engine, internalSolid(solid)._polygons, name);
+}
+
+export function createMeshesFromCsg(engine: EngineContext, solid: CsgSolid, materials: readonly Material[], name = "csg"): Mesh[] {
+    const polygons = internalSolid(solid)._polygons;
+    const slots: number[] = [];
+    for (const polygon of polygons) {
+        if (!slots.includes(polygon.materialSlot)) {
+            slots.push(polygon.materialSlot);
+        }
+    }
+    slots.sort((a, b) => a - b);
+
+    const meshes: Mesh[] = [];
+    for (const slot of slots) {
+        const material = materials[slot];
+        if (!material) {
+            throw new Error(`createMeshesFromCsg("${name}") missing material for CSG material slot ${slot}.`);
+        }
+        const slotPolygons = polygons.filter((p) => p.materialSlot === slot);
+        const mesh = createMeshFromPolygons(engine, slotPolygons, `${name}_sub${slot}`);
+        mesh.material = material;
+        meshes.push(mesh);
+    }
+    return meshes;
 }

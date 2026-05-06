@@ -1476,7 +1476,7 @@
     "bjsGzipKB": 597.9
   },
   "scene90": {
-    "rawKB": 57.1,
+    "rawKB": 57.2,
     "gzipKB": 21.6,
     "ignoredRawKB": 0,
     "runtimeChunks": [
@@ -1489,16 +1489,17 @@
     "bjsGzipKB": 345.4
   },
   "scene91": {
-    "rawKB": 57.1,
+    "rawKB": 56.2,
     "gzipKB": 21.6,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene91-generate-mipmaps-C77tBDk9.js",
+      "scene91-manifold-DzfOEtRz.js",
       "scene91-standard-renderable-4BuEN-Pd.js",
       "scene91-wgsl-helpers-WTsokIfK.js",
       "scene91.js"
     ],
-    "bjsRawKB": 1447.9,
-    "bjsGzipKB": 344.9
+    "bjsRawKB": 1448.5,
+    "bjsGzipKB": 345
   }
 }

@@ -5,22 +5,24 @@ import {
     attachControl,
     createArcRotateCamera,
     createBox,
-    createCsgFromMesh,
+    createCsg2FromMesh,
     createEngine,
     createHemisphericLight,
-    createMeshFromCsg,
+    createMeshesFromCsg2,
     createPlane,
     createSceneContext,
     createSphere,
     createStandardMaterial,
-    csgIntersect,
-    csgSubtract,
-    csgUnion,
+    csg2Add,
+    csg2Intersect,
+    csg2Subtract,
+    disposeCsg2,
+    initializeCsg2Async,
     loadTexture2D,
     registerScene,
     startEngine,
 } from "babylon-lite";
-import type { EngineContext, Mesh, StandardMaterialProps } from "babylon-lite";
+import type { Csg2Solid, EngineContext, Mesh, StandardMaterialProps } from "babylon-lite";
 
 const GRASS_URL = "https://playground.babylonjs.com/textures/grass.png";
 const CRATE_URL = "https://playground.babylonjs.com/textures/crate.png";
@@ -66,6 +68,7 @@ async function main(): Promise<void> {
     const initStart = performance.now();
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
     const engine = await createEngine(canvas);
+    await initializeCsg2Async();
     const scene = createSceneContext(engine);
 
     scene.camera = createArcRotateCamera(-1.5, 1.6, 18, { x: 0, y: 0, z: 0 });
@@ -88,8 +91,6 @@ async function main(): Promise<void> {
     crateMaterial.diffuseTexture = crateTexture;
     const grassMaterial = createStandardMaterial();
     grassMaterial.diffuseTexture = grassTexture;
-    const resultMaterial = createStandardMaterial();
-    resultMaterial.diffuseTexture = crateTexture;
 
     const rows: Array<{ y: number; label: StandardMaterialProps; op: "subtract" | "intersect" | "union" }> = [
         { y: -4, label: subtractLabel, op: "subtract" },
@@ -100,20 +101,31 @@ async function main(): Promise<void> {
     for (const row of rows) {
         const box = createBox(engine, 2);
         const sphere = createSphere(engine, { diameter: 2.5, segments: 32 });
-        const boxSolid = createCsgFromMesh(box);
-        const sphereSolid = createCsgFromMesh(sphere);
-        const resultSolid = row.op === "subtract" ? csgSubtract(boxSolid, sphereSolid) : row.op === "intersect" ? csgIntersect(boxSolid, sphereSolid) : csgUnion(boxSolid, sphereSolid);
-        const result = createMeshFromCsg(engine, resultSolid, `csg-${row.op}`);
-
         box.material = crateMaterial;
         sphere.material = grassMaterial;
-        result.material = resultMaterial;
+        const boxCsg = createCsg2FromMesh(box, 0);
+        const sphereCsg = createCsg2FromMesh(sphere, 1);
+        let resultCsg: Csg2Solid | undefined;
+        let resultMeshes: Mesh[] = [];
+        try {
+            resultCsg = row.op === "subtract" ? csg2Subtract(boxCsg, sphereCsg) : row.op === "intersect" ? csg2Intersect(boxCsg, sphereCsg) : csg2Add(boxCsg, sphereCsg);
+            resultMeshes = createMeshesFromCsg2(engine, resultCsg, [crateMaterial, grassMaterial], `csg-${row.op}`);
+        } finally {
+            disposeCsg2(boxCsg);
+            disposeCsg2(sphereCsg);
+            if (resultCsg) {
+                disposeCsg2(resultCsg);
+            }
+        }
+
         setMeshPosition(box, -4, row.y);
         setMeshPosition(sphere, 0.2, row.y);
-        setMeshPosition(result, 4, row.y);
         addToScene(scene, box);
         addToScene(scene, sphere);
-        addToScene(scene, result);
+        for (const result of resultMeshes) {
+            setMeshPosition(result, 4, row.y);
+            addToScene(scene, result);
+        }
 
         const label = createPlane(engine, { width: 1.4, height: 0.7 });
         label.material = row.label;

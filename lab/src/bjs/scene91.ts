@@ -82,7 +82,6 @@ function setMeshPosition(mesh: Mesh, x: number, y: number, z = 0): void {
 
     const crateMaterial = createTextureMaterial(scene, "crate", CRATE_URL);
     const grassMaterial = createTextureMaterial(scene, "grass", GRASS_URL);
-    const resultMaterial = createTextureMaterial(scene, "result", CRATE_URL);
     const subtractLabel = createLabelMaterial(scene, "-");
     const intersectLabel = createLabelMaterial(scene, "∩");
     const unionLabel = createLabelMaterial(scene, "+");
@@ -106,7 +105,7 @@ function setMeshPosition(mesh: Mesh, x: number, y: number, z = 0): void {
         let resultCsg: CSG2 | undefined;
         try {
             resultCsg = row.op === "subtract" ? boxCsg.subtract(sphereCsg) : row.op === "intersect" ? boxCsg.intersect(sphereCsg) : boxCsg.add(sphereCsg);
-            result = resultCsg.toMesh(`csg-${row.op}`, scene, { materialToUse: resultMaterial });
+            result = resultCsg.toMesh(`csg-${row.op}`, scene);
         } finally {
             boxCsg.dispose();
             sphereCsg.dispose();
