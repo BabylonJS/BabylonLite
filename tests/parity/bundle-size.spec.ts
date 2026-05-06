@@ -13,9 +13,11 @@
  *
  * Ceilings are set ~5 KB above baseline to catch regressions while allowing
  * natural growth.  Per-scene ceilings live in scene-config.json (maxRawKB).
+ * If lab/public/bundle/master-manifest.json is available, bundle-size increases
+ * relative to master are emitted as warnings only; ceilings remain the blocker.
  */
 import { test, expect } from "@playwright/test";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 
 import type { SceneConfig } from "./compare-utils";
@@ -23,6 +25,7 @@ import { IGNORED_BUNDLE_MODULE_PATTERN, summarizeRuntimeBundle } from "../../scr
 
 const CONFIG_PATH = resolve(__dirname, "../../scene-config.json");
 const BUNDLE_INFO_DIR = resolve(__dirname, "../../lab/public/bundle/bundle-info");
+const MASTER_MANIFEST_PATH = resolve(__dirname, "../../lab/public/bundle/master-manifest.json");
 const allScenes: SceneConfig[] = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 const SCENES = allScenes.filter((s) => s.maxRawKB != null);
 
@@ -41,23 +44,49 @@ function getRuntimeModuleIds(sceneKey: string, runtimeFiles: readonly string[]):
     return info.chunks.filter((chunk) => loaded.has(chunk.file)).flatMap((chunk) => chunk.modules.map((module) => module.id.replace(/\\/g, "/")));
 }
 
+interface BundleManifestEntry {
+    rawKB?: number;
+}
+
+type BundleManifest = Record<string, BundleManifestEntry>;
+
+function loadMasterManifest(): BundleManifest | null {
+    if (!existsSync(MASTER_MANIFEST_PATH)) {
+        return null;
+    }
+
+    return JSON.parse(readFileSync(MASTER_MANIFEST_PATH, "utf-8")) as BundleManifest;
+}
+
+function roundedKB(value: number): number {
+    return Math.round(value * 10) / 10;
+}
+
+const MASTER_MANIFEST = loadMasterManifest();
+
 for (const scene of SCENES) {
     test(`${scene.name} bundle ≤ ${scene.maxRawKB} KB raw`, async ({ page }) => {
         const jsPayloads: { url: string; file: string; body: Buffer }[] = [];
+        const responseReads: Promise<void>[] = [];
 
         // Intercept every JS response served from /bundle/
-        page.on("response", async (resp) => {
+        page.on("response", (resp) => {
             const url = resp.url();
             if (url.includes("/bundle/") && url.endsWith(".js") && resp.ok()) {
-                const body = await resp.body();
-                const file = url.split("/").pop()!.split("?")[0]!;
-                jsPayloads.push({ url, file, body });
+                responseReads.push(
+                    (async () => {
+                        const body = await resp.body();
+                        const file = url.split("/").pop()!.split("?")[0]!;
+                        jsPayloads.push({ url, file, body });
+                    })()
+                );
             }
         });
 
         // Navigate to the bundle page and wait for the scene to finish rendering
         await page.goto(`/bundle-scene${scene.id}.html`);
         await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 50_000 });
+        await Promise.all(responseReads);
 
         // Tally raw + gzipped sizes of all JS that was actually loaded (gzip is informational only).
         // Local serialized NME scene data is ignored so ceilings track runtime code.
@@ -71,8 +100,16 @@ for (const scene of SCENES) {
         const rawKB = summary.rawBytes / 1024;
         const gzipKB = summary.gzipBytes / 1024;
         const ignoredRawKB = summary.ignoredRawBytes / 1024;
+        const sceneKey = `scene${scene.id}`;
 
         console.log(`  ${scene.name}: ${rawKB.toFixed(1)} KB raw (limit: ${scene.maxRawKB} KB), ${gzipKB.toFixed(1)} KB gzip (informational)`);
+        const masterRawKB = MASTER_MANIFEST?.[sceneKey]?.rawKB;
+        const currentRawKB = roundedKB(rawKB);
+        if (masterRawKB != null && currentRawKB > masterRawKB) {
+            console.warn(
+                `  ⚠ ${scene.name}: bundle increased vs master by ${(currentRawKB - masterRawKB).toFixed(1)} KB raw (${currentRawKB.toFixed(1)} KB vs ${masterRawKB.toFixed(1)} KB)`
+            );
+        }
         if (summary.ignoredRawBytes > 0) {
             console.log(`  Ignored ${ignoredRawKB.toFixed(1)} KB raw from local ${IGNORED_BUNDLE_MODULE_PATTERN} modules:`);
             for (const module of summary.ignoredModules) {
