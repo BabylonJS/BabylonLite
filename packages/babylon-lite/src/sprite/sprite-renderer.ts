@@ -28,11 +28,10 @@ import {
     ensureSpriteInstanceBuffer,
     getOrCreateSpritePipeline,
     getSpritePipelineCacheSize,
-    isSpritePipelineEntryCurrent,
     uploadSpriteInstances,
     writeSpriteLayerUboIfDirty,
 } from "./sprite-pipeline.js";
-import type { SpritePipelineCache, SpritePipelineEntry } from "./sprite-pipeline.js";
+import type { SpritePipelineCache } from "./sprite-pipeline.js";
 
 /** Tag used by the engine and by tests to identify a sprite renderer. */
 const KIND = "sprite-renderer" as const;
@@ -86,9 +85,8 @@ interface LayerGpu {
      *  buffer is allocated once in `ensureLayerGpu`). Cleared if we ever recreate either. */
     bindGroup: GPUBindGroup | null;
     uploadedVersion: number;
-    /** Cached pipeline entry. Built lazily on first frame; never invalidated because blend mode
-     *  is immutable on a `Sprite2DLayer`. Lets `_record` skip the per-frame pipeline-cache lookup. */
-    pipelineEntry: SpritePipelineEntry | null;
+    /** Cached pipeline object. Refreshed when target-defining GPU state resolves to a different pipeline. */
+    pipeline: GPURenderPipeline | null;
     /** Snapshot of the last UBO bytes written to `uniformBuffer`. We rebuild the UBO into
      *  `_scratchUbo` each frame, then `writeBuffer` only if the contents actually changed.
      *  For static scenes (steady-state) this skips one `queue.writeBuffer` per layer per frame. */
@@ -144,7 +142,7 @@ function ensureLayerGpu(rr: SpriteRendererInternal, layer: Sprite2DLayer): Layer
             uniformBuffer,
             bindGroup: null,
             uploadedVersion: -1,
-            pipelineEntry: null,
+            pipeline: null,
             lastUbo: new Float32Array(LAYER_UBO_BYTES / 4),
             uboUploaded: false,
             renderBundle: null,
@@ -181,17 +179,17 @@ const _scratchUbo = new Float32Array(LAYER_UBO_BYTES / 4);
 
 /**
  * Build (and cache) the bind group that attaches `lg.uniformBuffer` + atlas texture +
- * sampler to the pipeline's `@group(0)` schema. All three resources are immutable for
+ * sampler to the pipeline's sprite `@group(0)` schema. All three resources are immutable for
  * the layer's lifetime, so this runs at most once per layer; subsequent calls return
  * the cached group. The instance buffer is **not** in the bind group — it's a vertex
  * buffer, bound separately at draw time — which is why instance-buffer growth in
  * `ensureLayerGpu` doesn't invalidate this cache.
  */
-function ensureBindGroup(rr: SpriteRendererInternal, lg: LayerGpu, entry: SpritePipelineEntry): GPUBindGroup {
+function ensureBindGroup(rr: SpriteRendererInternal, lg: LayerGpu, pipeline: GPURenderPipeline): GPUBindGroup {
     if (lg.bindGroup) {
         return lg.bindGroup;
     }
-    lg.bindGroup = createSpriteLayerBindGroup(rr._engine, entry, lg.layer, lg.uniformBuffer);
+    lg.bindGroup = createSpriteLayerBindGroup(rr._engine, pipeline, 0, lg.layer, lg.uniformBuffer);
     return lg.bindGroup;
 }
 
@@ -329,17 +327,14 @@ function spriteRendererRecord(rr: SpriteRendererInternal): number {
         if (!lg) {
             continue;
         }
-        // Cache on the `LayerGpu` so `_record` does no Map lookup or hash-key compute
-        // in the steady state; refresh if the engine's pipeline-defining GPU state changes.
-        let entry = lg.pipelineEntry;
         const sampleCount = 1;
-        if (!entry || !isSpritePipelineEntryCurrent(rr._engine, entry, rr._engine.format, sampleCount, false)) {
-            entry = getOrCreateSpritePipeline(rr._engine, rr._pipelineCache, rr._engine.format, sampleCount, layer.blendMode, false);
-            lg.pipelineEntry = entry;
+        const pipeline = getOrCreateSpritePipeline(rr._engine, rr._pipelineCache, rr._engine.format, sampleCount, layer.blendMode, false);
+        if (lg.pipeline !== pipeline) {
+            lg.pipeline = pipeline;
             lg.bindGroup = null;
             lg.renderBundle = null;
         }
-        const bg = ensureBindGroup(rr, lg, entry);
+        const bg = ensureBindGroup(rr, lg, pipeline);
         // (Re)record the bundle when count changes (drawIndexed instance count is baked in)
         // or when ensureLayerGpu reallocated the instance buffer (renderBundle was nulled).
         if (lg.renderBundle == null || lg.bundleCount !== layer.count) {
@@ -348,7 +343,7 @@ function spriteRendererRecord(rr: SpriteRendererInternal): number {
                 sampleCount,
             });
             be.setIndexBuffer(rr._indexBuffer, "uint16");
-            be.setPipeline(entry.pipeline);
+            be.setPipeline(pipeline);
             be.setBindGroup(0, bg);
             be.setVertexBuffer(0, lg.instanceBuffer);
             be.drawIndexed(6, layer.count, 0, 0, 0);

@@ -3,25 +3,15 @@ import type { EngineContextInternal } from "../engine/engine.js";
 import type { Sprite2DLayer, SpriteBlendMode } from "./sprite-2d.js";
 import { DEPTH_INSTANCE_STRIDE_BYTES, PURE_2D_INSTANCE_STRIDE_BYTES } from "./sprite-2d.js";
 
-export interface SpritePipelineEntry {
-    readonly device: GPUDevice;
-    readonly format: GPUTextureFormat;
-    readonly msaaSamples: number;
-    readonly hasDepth: boolean;
-    readonly depthStencilFormat: GPUTextureFormat | null;
-    readonly depthWrite: boolean;
-    readonly spriteBindGroupIndex: number;
-    readonly pipeline: GPURenderPipeline;
-    readonly bindGroupLayout: GPUBindGroupLayout;
+export interface SpritePipelineDeviceCache {
+    _shaderModule: GPUShaderModule | null;
+    _sceneShaderModule: GPUShaderModule | null;
+    _pipelines: Map<string, GPURenderPipeline>;
 }
 
 export interface SpritePipelineCache {
-    _device: GPUDevice | null;
-    _format: GPUTextureFormat | null;
-    _msaaSamples: number;
-    _shaderModule: GPUShaderModule | null;
-    _sceneShaderModule: GPUShaderModule | null;
-    _entries: Map<string, SpritePipelineEntry>;
+    _devices: WeakMap<GPUDevice, SpritePipelineDeviceCache>;
+    _lastDeviceCache: SpritePipelineDeviceCache | null;
 }
 
 function makeSpriteWgsl(hasDepth: boolean, spriteGroupIndex: 0 | 1): string {
@@ -114,46 +104,18 @@ function getBlendModeEntry(blendMode: SpriteBlendMode): (typeof BLEND_MODE_TABLE
 
 export function createSpritePipelineCache(): SpritePipelineCache {
     return {
-        _device: null,
-        _format: null,
-        _msaaSamples: 0,
-        _shaderModule: null,
-        _sceneShaderModule: null,
-        _entries: new Map(),
+        _devices: new WeakMap(),
+        _lastDeviceCache: null,
     };
 }
 
 export function clearSpritePipelineCache(cache: SpritePipelineCache): void {
-    cache._entries.clear();
-    cache._device = null;
-    cache._format = null;
-    cache._msaaSamples = 0;
-    cache._shaderModule = null;
-    cache._sceneShaderModule = null;
+    cache._devices = new WeakMap();
+    cache._lastDeviceCache = null;
 }
 
 export function getSpritePipelineCacheSize(cache: SpritePipelineCache): number {
-    return cache._entries.size;
-}
-
-export function isSpritePipelineEntryCurrent(
-    engine: EngineContextInternal,
-    entry: SpritePipelineEntry,
-    format: GPUTextureFormat,
-    sampleCount: 1 | 4,
-    hasDepth: boolean,
-    depthWrite = false,
-    depthStencilFormat?: GPUTextureFormat
-): boolean {
-    const resolvedDepthStencilFormat = normalizeDepthStencilFormat(hasDepth, depthStencilFormat);
-    return (
-        entry.device === engine.device &&
-        entry.format === format &&
-        entry.msaaSamples === sampleCount &&
-        entry.hasDepth === hasDepth &&
-        entry.depthWrite === depthWrite &&
-        entry.depthStencilFormat === resolvedDepthStencilFormat
-    );
+    return cache._lastDeviceCache?._pipelines.size ?? 0;
 }
 
 export function getOrCreateSpritePipeline(
@@ -166,25 +128,30 @@ export function getOrCreateSpritePipeline(
     depthWrite = false,
     depthStencilFormat?: GPUTextureFormat,
     sceneBindGroupLayout?: GPUBindGroupLayout
-): SpritePipelineEntry {
-    ensureCacheMatchesEngine(engine, cache);
-
+): GPURenderPipeline {
+    const deviceCache = getSpritePipelineDeviceCache(engine, cache);
     const resolvedDepthStencilFormat = normalizeDepthStencilFormat(hasDepth, depthStencilFormat);
     const key = spritePipelineKey(format, sampleCount, blendMode, hasDepth, depthWrite, resolvedDepthStencilFormat);
-    const cached = cache._entries.get(key);
+    const cached = deviceCache._pipelines.get(key);
     if (cached) {
         return cached;
     }
 
-    const entry = buildSpritePipeline(engine, cache, format, sampleCount, blendMode, hasDepth, depthWrite, resolvedDepthStencilFormat, sceneBindGroupLayout);
-    cache._entries.set(key, entry);
-    return entry;
+    const pipeline = buildSpritePipeline(engine, deviceCache, format, sampleCount, blendMode, hasDepth, depthWrite, resolvedDepthStencilFormat, sceneBindGroupLayout);
+    deviceCache._pipelines.set(key, pipeline);
+    return pipeline;
 }
 
-export function createSpriteLayerBindGroup(engine: EngineContextInternal, entry: SpritePipelineEntry, layer: Sprite2DLayer, uniformBuffer: GPUBuffer): GPUBindGroup {
+export function createSpriteLayerBindGroup(
+    engine: EngineContextInternal,
+    pipeline: GPURenderPipeline,
+    spriteBindGroupIndex: 0 | 1,
+    layer: Sprite2DLayer,
+    uniformBuffer: GPUBuffer
+): GPUBindGroup {
     const tex = layer.atlas.texture;
     return engine.device.createBindGroup({
-        layout: entry.bindGroupLayout,
+        layout: pipeline.getBindGroupLayout(spriteBindGroupIndex),
         entries: [
             { binding: 0, resource: { buffer: uniformBuffer } },
             { binding: 1, resource: tex.view },
@@ -193,16 +160,18 @@ export function createSpriteLayerBindGroup(engine: EngineContextInternal, entry:
     });
 }
 
-function ensureCacheMatchesEngine(engine: EngineContextInternal, cache: SpritePipelineCache): void {
-    if (cache._device === engine.device && cache._format === engine.format && cache._msaaSamples === engine.msaaSamples) {
-        return;
+function getSpritePipelineDeviceCache(engine: EngineContextInternal, cache: SpritePipelineCache): SpritePipelineDeviceCache {
+    let deviceCache = cache._devices.get(engine.device);
+    if (!deviceCache) {
+        deviceCache = {
+            _shaderModule: null,
+            _sceneShaderModule: null,
+            _pipelines: new Map(),
+        };
+        cache._devices.set(engine.device, deviceCache);
     }
-    cache._entries.clear();
-    cache._device = engine.device;
-    cache._format = engine.format;
-    cache._msaaSamples = engine.msaaSamples;
-    cache._shaderModule = null;
-    cache._sceneShaderModule = null;
+    cache._lastDeviceCache = deviceCache;
+    return deviceCache;
 }
 
 function normalizeDepthStencilFormat(hasDepth: boolean, depthStencilFormat?: GPUTextureFormat): GPUTextureFormat | null {
@@ -226,7 +195,7 @@ function spritePipelineKey(
     return `${format}:${sampleCount}:${getBlendModeEntry(blendMode).index}:${hasDepth ? 1 : 0}:${depthWrite ? 1 : 0}:${depthStencilFormat ?? "-"}`;
 }
 
-function getShaderModule(engine: EngineContextInternal, cache: SpritePipelineCache, hasDepth: boolean): GPUShaderModule {
+function getShaderModule(engine: EngineContextInternal, cache: SpritePipelineDeviceCache, hasDepth: boolean): GPUShaderModule {
     if (hasDepth) {
         cache._sceneShaderModule ??= engine.device.createShaderModule({ code: makeSpriteWgsl(true, 1) });
         return cache._sceneShaderModule;
@@ -237,7 +206,7 @@ function getShaderModule(engine: EngineContextInternal, cache: SpritePipelineCac
 
 function buildSpritePipeline(
     engine: EngineContextInternal,
-    cache: SpritePipelineCache,
+    cache: SpritePipelineDeviceCache,
     format: GPUTextureFormat,
     sampleCount: 1 | 4,
     blendMode: SpriteBlendMode,
@@ -245,7 +214,7 @@ function buildSpritePipeline(
     depthWrite: boolean,
     depthStencilFormat: GPUTextureFormat | null,
     sceneBindGroupLayout?: GPUBindGroupLayout
-): SpritePipelineEntry {
+): GPURenderPipeline {
     const device = engine.device;
     const bindGroupLayout = device.createBindGroupLayout({
         entries: [
@@ -298,9 +267,7 @@ function buildSpritePipeline(
             depthWriteEnabled: depthWrite,
         };
     }
-    const pipeline = device.createRenderPipeline(descriptor);
-
-    return { device, format, msaaSamples: sampleCount, hasDepth, depthStencilFormat, depthWrite, spriteBindGroupIndex: hasDepth ? 1 : 0, pipeline, bindGroupLayout };
+    return device.createRenderPipeline(descriptor);
 }
 
 // ─── Per-layer GPU sync helpers ────────────────────────────────────────────

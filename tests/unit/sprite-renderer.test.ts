@@ -82,7 +82,7 @@ function makeMockEngine(): { engine: EngineContext; counters: MockCounters } {
         createPipelineLayout: vi.fn(() => ({ _kind: "pl" })),
         createRenderPipeline: vi.fn(() => {
             counters.pipelinesBuilt++;
-            return { _kind: "pipeline" };
+            return { _kind: "pipeline", getBindGroupLayout: vi.fn((index: number) => ({ _kind: "pipeline-bgl", index })) };
         }),
         createBindGroup: vi.fn(() => ({ _kind: "bg" })),
         queue,

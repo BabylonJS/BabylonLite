@@ -51,7 +51,7 @@ function makeMockEngine(): EngineContext {
         createShaderModule: vi.fn(() => ({ _kind: "shader" })),
         createBindGroupLayout: vi.fn(() => ({ _kind: "bgl" })),
         createPipelineLayout: vi.fn(() => ({ _kind: "pl" })),
-        createRenderPipeline: vi.fn(() => ({ _kind: "pipeline" })),
+        createRenderPipeline: vi.fn(() => ({ _kind: "pipeline", getBindGroupLayout: vi.fn((index: number) => ({ _kind: "pipeline-bgl", index })) })),
         createBindGroup: vi.fn(() => ({ _kind: "bg" })),
         createTexture: vi.fn(() => ({
             createView: vi.fn(() => ({ _kind: "view" })),
@@ -234,17 +234,23 @@ describe("addDepthHostedSpriteLayer", () => {
         addDepthHostedSpriteLayer(scene, layer);
         await registerScene(engine, scene);
 
-        const renderable = scene._renderables[0]!;
-        const first = renderable.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth24plus-stencil8", sampleCount: 1 });
-        const second = renderable.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth24plus-stencil8", sampleCount: 4 });
         const device = engine.device as unknown as { createBindGroup: ReturnType<typeof vi.fn> };
+        device.createBindGroup.mockClear();
+
+        const renderable = scene._renderables[0]!;
+        const first = renderable.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+        const second = renderable.bind(engine, { colorFormat: "rgba16float", depthStencilFormat: "depth32float", sampleCount: 1 });
+
+        expect(second.pipeline).not.toBe(first.pipeline);
+        expect(device.createBindGroup).toHaveBeenCalledTimes(2);
+
         const pass = makeDrawPassMock();
         device.createBindGroup.mockClear();
 
         first.draw(pass, engine);
         second.draw(pass, engine);
 
-        expect(device.createBindGroup).toHaveBeenCalledTimes(2);
+        expect(device.createBindGroup).not.toHaveBeenCalled();
     });
 
     it("disposeScene runs the depth-hosted sprite disposable", async () => {

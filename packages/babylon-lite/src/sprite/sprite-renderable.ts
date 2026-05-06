@@ -32,19 +32,18 @@ import {
     createSpritePipelineCache,
     ensureSpriteInstanceBuffer,
     getOrCreateSpritePipeline,
-    isSpritePipelineEntryCurrent,
     uploadSpriteInstances,
     writeSpriteLayerUboIfDirty,
 } from "./sprite-pipeline.js";
-import type { SpritePipelineCache, SpritePipelineEntry } from "./sprite-pipeline.js";
+import type { SpritePipelineCache } from "./sprite-pipeline.js";
 
 // Shared sprite pipeline cache across every depth-hosted Sprite2DLayer renderable
 // in the process. Lazy-init on first acquire (per GUIDANCE §4 — module-level
 // `null` initializer + `getCache()`-style helper, never a top-level `new Map()`).
 // Refcounted so the cache (and its compiled GPUShaderModule + pipelines) is
 // released exactly when the last depth-hosted renderable is disposed; device
-// changes are handled inside `getOrCreateSpritePipeline` via
-// `ensureCacheMatchesEngine`. Pure 3D scenes never load this module so they pay
+// changes are handled inside `getOrCreateSpritePipeline` via its per-device cache.
+// Pure 3D scenes never load this module so they pay
 // nothing; the SpriteRenderer (HUD) path uses its own per-renderer cache.
 let _sharedPipelineCache: SpritePipelineCache | null = null;
 let _sharedPipelineCacheRefs = 0;
@@ -74,8 +73,7 @@ interface SpriteRenderableInternal extends Renderable {
     _instanceBuffer: GPUBuffer;
     _instanceBufferCapacity: number;
     _pipelineCache: SpritePipelineCache;
-    _pipelineEntry: SpritePipelineEntry | null;
-    _bindGroups: Map<SpritePipelineEntry, GPUBindGroup>;
+    _bindGroups: Map<GPURenderPipeline, GPUBindGroup>;
     _uploadedVersion: number;
     _uboUploaded: boolean;
     _lastUbo: Float32Array;
@@ -120,7 +118,6 @@ export function buildSpriteRenderable(engine: EngineContextInternal, layer: Spri
         _instanceBuffer: instanceBuffer,
         _instanceBufferCapacity: cap,
         _pipelineCache: acquireSharedPipelineCache(),
-        _pipelineEntry: null,
         _bindGroups: new Map(),
         _uploadedVersion: -1,
         _uboUploaded: false,
@@ -147,29 +144,30 @@ function bindLayer(r: SpriteRenderableInternal, engine: EngineContextInternal, t
     }
     const sampleCount = target.sampleCount === 1 ? 1 : 4;
     const depthWrite = r._layer.depth === "test-write";
-    let entry = r._pipelineEntry;
-    if (!entry || !isSpritePipelineEntryCurrent(engine, entry, target.colorFormat, sampleCount, true, depthWrite, target.depthStencilFormat)) {
-        entry = getOrCreateSpritePipeline(
-            engine,
-            r._pipelineCache,
-            target.colorFormat,
-            sampleCount,
-            r._layer.blendMode,
-            true,
-            depthWrite,
-            target.depthStencilFormat,
-            getSceneBindGroupLayout(engine)
-        );
-        r._pipelineEntry = entry;
+    const pipeline = getOrCreateSpritePipeline(
+        engine,
+        r._pipelineCache,
+        target.colorFormat,
+        sampleCount,
+        r._layer.blendMode,
+        true,
+        depthWrite,
+        target.depthStencilFormat,
+        getSceneBindGroupLayout(engine)
+    );
+    let bindGroup = r._bindGroups.get(pipeline);
+    if (!bindGroup) {
+        bindGroup = createSpriteLayerBindGroup(engine, pipeline, 1, r._layer, r._uniformBuffer);
+        r._bindGroups.set(pipeline, bindGroup);
     }
     return {
         renderable: r,
-        pipeline: entry.pipeline,
+        pipeline,
         update(context) {
             uploadLayer(r, context);
         },
         draw(pass) {
-            return drawLayer(r, entry, pass);
+            return drawLayer(r, bindGroup, pass);
         },
     };
 }
@@ -191,16 +189,11 @@ function uploadLayer(r: SpriteRenderableInternal, target: DrawUpdateContext): vo
 }
 
 /** Issue the indexed instanced draw for this depth-hosted sprite layer. */
-function drawLayer(r: SpriteRenderableInternal, entry: SpritePipelineEntry, pass: GPURenderPassEncoder | GPURenderBundleEncoder): number {
+function drawLayer(r: SpriteRenderableInternal, bindGroup: GPUBindGroup, pass: GPURenderPassEncoder | GPURenderBundleEncoder): number {
     if (r._disposed || !r._layer.visible || r._layer.count === 0) {
         return 0;
     }
-    let bindGroup = r._bindGroups.get(entry);
-    if (!bindGroup) {
-        bindGroup = createSpriteLayerBindGroup(r._engine, entry, r._layer, r._uniformBuffer);
-        r._bindGroups.set(entry, bindGroup);
-    }
-    pass.setBindGroup(entry.spriteBindGroupIndex, bindGroup);
+    pass.setBindGroup(1, bindGroup);
     pass.setIndexBuffer(r._indexBuffer, "uint16");
     pass.setVertexBuffer(0, r._instanceBuffer);
     pass.drawIndexed(6, r._layer.count, 0, 0, 0);
@@ -216,7 +209,6 @@ function disposeRenderable(r: SpriteRenderableInternal): void {
     r._uniformBuffer.destroy();
     r._indexBuffer.destroy();
     r._bindGroups.clear();
-    r._pipelineEntry = null;
     // Drop the layer back-reference so a disposed renderable doesn't keep the
     // user's Sprite2DLayer (and its CPU instance/savedSize buffers) alive.
     // Cast through unknown — the field is non-null in the live path; only
