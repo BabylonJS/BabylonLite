@@ -1487,5 +1487,18 @@
     ],
     "bjsRawKB": 1451.1,
     "bjsGzipKB": 345.4
+  },
+  "scene91": {
+    "rawKB": 57.1,
+    "gzipKB": 21.6,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene91-generate-mipmaps-C77tBDk9.js",
+      "scene91-standard-renderable-4BuEN-Pd.js",
+      "scene91-wgsl-helpers-WTsokIfK.js",
+      "scene91.js"
+    ],
+    "bjsRawKB": 1447.9,
+    "bjsGzipKB": 344.9
   }
 }
