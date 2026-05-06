@@ -107,7 +107,7 @@ export function buildSpriteRenderable(engine: EngineContextInternal, layer: Spri
     const indexBuffer = createMappedBuffer(engine, SHARED_SPRITE_INDEX_DATA, GPUBufferUsage.INDEX);
     const uniformBuffer = createEmptyUniformBuffer(engine, LAYER_UBO_BYTES, "sprite-depth-hosted-ubo");
     const cap = layer._capacity;
-    const instanceBuffer = createSpriteInstanceBuffer(engine.device, cap, "sprite-depth-hosted-instances");
+    const instanceBuffer = createSpriteInstanceBuffer(engine.device, layer, "sprite-depth-hosted-instances");
 
     const isTransparent = layer.depth === "test";
     const isDirectDepthWrite = layer.depth === "test-write";

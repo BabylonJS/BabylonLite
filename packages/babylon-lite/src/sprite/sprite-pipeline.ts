@@ -1,7 +1,7 @@
 /** Internal sprite pipeline helpers: owns WGSL, bind-group schema, pipeline construction, and bind-group creation. */
 import type { EngineContextInternal } from "../engine/engine.js";
 import type { Sprite2DLayer, SpriteBlendMode } from "./sprite-2d.js";
-import { INSTANCE_STRIDE_BYTES } from "./sprite-2d.js";
+import { DEPTH_INSTANCE_STRIDE_BYTES, PURE_2D_INSTANCE_STRIDE_BYTES } from "./sprite-2d.js";
 
 export interface SpritePipelineEntry {
     readonly device: GPUDevice;
@@ -24,7 +24,11 @@ export interface SpritePipelineCache {
     _entries: Map<string, SpritePipelineEntry>;
 }
 
-const WGSL_SHADER = `struct Layer {
+function makeSpriteWgsl(hasDepth: boolean, spriteGroupIndex: 0 | 1): string {
+    const group = `@group(${spriteGroupIndex})`;
+    const zAttribute = hasDepth ? `,\n@location(6) iZ: f32` : "";
+    const zPosition = hasDepth ? "in.iZ" : "0.0";
+    return `struct Layer {
 viewPos: vec2<f32>,
 viewScale: f32,
 viewRot: f32,
@@ -36,9 +40,9 @@ pivot: vec2<f32>,
 // One uniform, no shader branch.
 opacityMul: vec4<f32>,
 };
-@group(0) @binding(0) var<uniform> L: Layer;
-@group(0) @binding(1) var atlasTex: texture_2d<f32>;
-@group(0) @binding(2) var atlasSamp: sampler;
+${group} @binding(0) var<uniform> L: Layer;
+${group} @binding(1) var atlasTex: texture_2d<f32>;
+${group} @binding(2) var atlasSamp: sampler;
 struct VIn {
 @builtin(vertex_index) vid: u32,
 @location(0) iPos: vec2<f32>,
@@ -46,11 +50,7 @@ struct VIn {
 @location(2) iUvMin: vec2<f32>,
 @location(3) iUvMax: vec2<f32>,
 @location(4) iRot: f32,
-@location(5) iColor: vec4<f32>,
-// Per-instance NDC depth (0 = near, 1 = far). Pure-2D / HUD pipelines have
-// no depth attachment, so the value is ignored; depth-hosted pipelines
-// (depth: "test" | "test-write") use it to participate in the scene's depth attachment.
-@location(6) iZ: f32,
+@location(5) iColor: vec4<f32>${zAttribute}
 };
 struct VOut {
 @builtin(position) pos: vec4<f32>,
@@ -74,7 +74,7 @@ let screenPx = viewRot * L.viewScale;
 let ndc = vec2<f32>(screenPx.x / L.screenSize.x * 2.0 - 1.0, 1.0 - screenPx.y / L.screenSize.y * 2.0);
 let uv = mix(in.iUvMin, in.iUvMax, c);
 var out: VOut;
-out.pos = vec4<f32>(ndc, in.iZ, 1.0);
+out.pos = vec4<f32>(ndc, ${zPosition}, 1.0);
 out.uv = uv;
 out.tint = in.iColor;
 return out;
@@ -84,6 +84,7 @@ fn fs(in: VOut) -> @location(0) vec4<f32> {
 let s = textureSample(atlasTex, atlasSamp, in.uv);
 return s * in.tint * L.opacityMul;
 }`;
+}
 
 type SupportedSpriteBlendMode = Extract<SpriteBlendMode, "alpha" | "premultiplied">;
 
@@ -225,12 +226,12 @@ function spritePipelineKey(
     return `${format}:${sampleCount}:${getBlendModeEntry(blendMode).index}:${hasDepth ? 1 : 0}:${depthWrite ? 1 : 0}:${depthStencilFormat ?? "-"}`;
 }
 
-function getShaderModule(engine: EngineContextInternal, cache: SpritePipelineCache, sceneBound: boolean): GPUShaderModule {
-    if (sceneBound) {
-        cache._sceneShaderModule ??= engine.device.createShaderModule({ code: WGSL_SHADER.replace(/@group\(0\)/g, "@group(1)") });
+function getShaderModule(engine: EngineContextInternal, cache: SpritePipelineCache, hasDepth: boolean): GPUShaderModule {
+    if (hasDepth) {
+        cache._sceneShaderModule ??= engine.device.createShaderModule({ code: makeSpriteWgsl(true, 1) });
         return cache._sceneShaderModule;
     }
-    cache._shaderModule ??= engine.device.createShaderModule({ code: WGSL_SHADER });
+    cache._shaderModule ??= engine.device.createShaderModule({ code: makeSpriteWgsl(false, 0) });
     return cache._shaderModule;
 }
 
@@ -258,6 +259,17 @@ function buildSpritePipeline(
         throw new Error("Sprite pipeline: depth-enabled pipelines require a scene bind-group layout.");
     }
     const bindGroupLayouts = hasDepth ? [sceneBindGroupLayout!, bindGroupLayout] : [bindGroupLayout];
+    const instanceAttributes: GPUVertexAttribute[] = [
+        { shaderLocation: 0, offset: 0, format: "float32x2" },
+        { shaderLocation: 1, offset: 8, format: "float32x2" },
+        { shaderLocation: 2, offset: 16, format: "float32x2" },
+        { shaderLocation: 3, offset: 24, format: "float32x2" },
+        { shaderLocation: 4, offset: 32, format: "float32" },
+        { shaderLocation: 5, offset: 36, format: "unorm8x4" },
+    ];
+    if (hasDepth) {
+        instanceAttributes.push({ shaderLocation: 6, offset: 40, format: "float32" });
+    }
     const descriptor: GPURenderPipelineDescriptor = {
         layout: device.createPipelineLayout({ bindGroupLayouts }),
         vertex: {
@@ -265,17 +277,9 @@ function buildSpritePipeline(
             entryPoint: "vs",
             buffers: [
                 {
-                    arrayStride: INSTANCE_STRIDE_BYTES,
+                    arrayStride: hasDepth ? DEPTH_INSTANCE_STRIDE_BYTES : PURE_2D_INSTANCE_STRIDE_BYTES,
                     stepMode: "instance",
-                    attributes: [
-                        { shaderLocation: 0, offset: 0, format: "float32x2" },
-                        { shaderLocation: 1, offset: 8, format: "float32x2" },
-                        { shaderLocation: 2, offset: 16, format: "float32x2" },
-                        { shaderLocation: 3, offset: 24, format: "float32x2" },
-                        { shaderLocation: 4, offset: 32, format: "float32" },
-                        { shaderLocation: 5, offset: 36, format: "unorm8x4" },
-                        { shaderLocation: 6, offset: 40, format: "float32" },
-                    ],
+                    attributes: instanceAttributes,
                 },
             ],
         },
@@ -316,9 +320,9 @@ export const LAYER_UBO_FLOATS = LAYER_UBO_BYTES / 4;
 export const SHARED_SPRITE_INDEX_DATA: Readonly<Uint16Array> = new Uint16Array([0, 1, 2, 0, 2, 3]);
 
 /** Allocate a per-layer instance vertex buffer sized for `capacity` sprites. */
-export function createSpriteInstanceBuffer(device: GPUDevice, capacity: number, label?: string): GPUBuffer {
+export function createSpriteInstanceBuffer(device: GPUDevice, layer: Sprite2DLayer, label?: string): GPUBuffer {
     return device.createBuffer({
-        size: capacity * INSTANCE_STRIDE_BYTES,
+        size: layer._capacity * layer._instanceStrideBytes,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
         label,
     });
@@ -341,7 +345,7 @@ export function ensureSpriteInstanceBuffer(
     }
     currentBuffer.destroy();
     return {
-        buffer: createSpriteInstanceBuffer(device, layer._capacity, label),
+        buffer: createSpriteInstanceBuffer(device, layer, label),
         capacity: layer._capacity,
         reallocated: true,
     };
@@ -367,8 +371,8 @@ export function uploadSpriteInstances(device: GPUDevice, layer: Sprite2DLayer, i
         hi = Math.min(layer._dirtyMax, layer.count);
     }
     if (hi > lo) {
-        const offsetBytes = lo * INSTANCE_STRIDE_BYTES;
-        const bytes = (hi - lo) * INSTANCE_STRIDE_BYTES;
+        const offsetBytes = lo * layer._instanceStrideBytes;
+        const bytes = (hi - lo) * layer._instanceStrideBytes;
         device.queue.writeBuffer(instanceBuffer, offsetBytes, layer._instanceData.buffer, layer._instanceData.byteOffset + offsetBytes, bytes);
     }
     layer._dirtyMin = 0;
@@ -383,9 +387,10 @@ export function uploadSpriteInstances(device: GPUDevice, layer: Sprite2DLayer, i
  *   [4..5]  screenSize.xy   [6..7] pivot.xy
  *   [8..11] opacityMul.rgba (pre-shaped per blend mode)
  *
- * Per-sprite NDC depth lives on the per-instance vertex buffer (slot [10] of
- * `Sprite2DLayer._instanceData`), not in this UBO — a single layer can mix sprites
- * at different depths.
+ * Depth-hosted layers keep per-sprite NDC depth on the per-instance vertex buffer
+ * (slot [10] of `Sprite2DLayer._instanceData`), not in this UBO — a single
+ * depth-hosted layer can mix sprites at different depths. Pure-2D layers have no
+ * Z slot.
  *
  * Premultiplied sources need RGB *and* A scaled by opacity for a correct fade;
  * straight-alpha needs only A scaled (the blend stage already uses src.a as factor).

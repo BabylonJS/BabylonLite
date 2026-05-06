@@ -308,8 +308,9 @@ During `_record` it opens a sprite-only render pass directly on the
 per-frame swapchain view using `sampleCount = 1`, the engine's swapchain
 format, and no depth attachment. `clear: false` makes the pass use
 `loadOp: "load"`, which is the HUD path after a 3D scene has already
-resolved into the swapchain. Per-instance Z is still written by the
-shared vertex layout, but it is ignored by these no-depth pipelines.
+resolved into the swapchain. Pure-2D layers use a 40-byte instance layout
+with no Z attribute; depth-hosted layers use the 44-byte layout with
+per-instance Z.
 
 Internally `SpriteRenderer._update`:
 
@@ -455,16 +456,18 @@ onSceneDispose(scene, () => disposeSpriteRenderer(hudRenderer));
 await startEngine(engine);
 ```
 
-The punch line: **one** `createSprite2DLayer` factory, one WGSL, one
-44-byte instance layout, one packed buffer. The `depth` option chooses
-which path the layer ends up in:
+The punch line: **one** `createSprite2DLayer` factory and one public
+Index API, with the per-layer instance layout fixed at creation. The
+`depth` option chooses which path the layer ends up in:
 
 - `depth: "none"` → caller hands the layer to a `SpriteRenderer` (pure-2D
-  or HUD); never goes through `addToScene`.
+  or HUD); never goes through `addToScene`. The layer uses a 10-float /
+  40-byte instance layout and the pure shader keeps clip-space Z constant.
 - `depth: "test" | "test-write"` → caller passes the layer to
   `addToScene`, which dynamic-imports the depth-hosted renderable
   builder; layer is drawn inside the scene's 3D pass and sorts against
-  meshes by per-instance Z.
+  meshes by per-instance Z. The layer uses the 11-float / 44-byte layout
+  with slot [10] exposed to the shader as `@location(6) iZ`.
 
 The `addAnchoredSprite2D` helper attaches an `AnchorSource` and ensures
 the per-frame projection hook is installed.
@@ -606,7 +609,7 @@ export interface Sprite2DLayerOptions {
     pivot?: [number, number];
     /**
      * Depth participation:
-     *  - "none"        (default) → drawn by a `SpriteRenderer` registered on the engine. Pipeline has no depth attachment; per-instance Z is written but ignored. HUD overlays must use this mode and live on a `SpriteRenderer` (not on `addToScene`).
+     *  - "none"        (default) → drawn by a `SpriteRenderer` registered on the engine. Pipeline has no depth attachment; the per-instance layout has no Z slot. HUD overlays must use this mode and live on a `SpriteRenderer` (not on `addToScene`).
      *  - "test"                  → drawn inside the scene's 3D pass via `addToScene` with `depthCompare: "less-equal"`, `depthWrite: false`. Sprites occlude behind 3D geometry but do not write depth.
      *  - "test-write"            → drawn inside the scene's 3D pass via `addToScene` with `depthCompare: "less-equal"`, `depthWrite: true`. Sprites direct-draw after cached opaque meshes and before transparent renderables.
      *  Each value is a pipeline-cache key bit, baked at composition time. No runtime branch.
@@ -615,9 +618,9 @@ export interface Sprite2DLayerOptions {
     depth?: Sprite2DDepthMode;
     /**
      * Default per-instance NDC depth (`0` = near, `1` = far) for sprites added to this
-     * layer when their `Sprite2DProps.z` is omitted. Only consumed by `depth: "test" |
-     * "test-write"` layers; HUD/pure-2D pipelines have no depth attachment and ignore
-     * the per-instance Z attribute. Defaults to `0.5`. Mutating `layer.layerZ` after
+     * layer when their `Sprite2DProps.z` is omitted. Only stored and consumed by `depth: "test" |
+     * "test-write"` layers; HUD/pure-2D layers use a 10-float layout and allocate no
+     * per-instance Z attribute. Defaults to `0.5`. Mutating `layer.layerZ` after
      * sprites have been added does **not** retroactively change them — call
      * `updateSprite2DIndex(layer, idx, { z: … })` to move an existing sprite.
      */
@@ -876,17 +879,22 @@ There is still no shared `createSprite()`, no `SpriteMode` enum, no per-
 frame `if (sprite.kind === ...)`. The two families have separate composers,
 separate renderables, separate WGSL. The unification happens at the
 **scene** layer, not at the sprite-shader layer. The `AnchorSource`
-projection is a CPU step on a sparse per-layer map; the GPU pipeline and
-per-instance layout are byte-identical to a pure-2D layer.
+projection is a CPU step on a sparse per-layer map; it writes into the
+owning layer's already-fixed instance layout (40 B for pure-2D, 44 B for
+depth-hosted).
 
 ### Per-Instance GPU Layout
 
-`Sprite2DLayer` uses a 44-byte stride for every layer, anchored or not.
-Anchor data lives off-instance in a sparse JS map. Per-layer constants
-(view, screen size, pivot, opacity) live in a separate 48-byte UBO bound
-at `@group(0) @binding(0)`.
+`Sprite2DLayer` fixes its instance stride at creation from `depth`.
+`depth: "none"` uses 40 bytes / 10 floats and has no Z lane. `depth:
+"test" | "test-write"` uses 44 bytes / 11 floats and exposes slot [10]
+as the per-instance depth attribute. Anchor data lives off-instance in a
+sparse JS map. Per-layer constants (view, screen size, pivot, opacity)
+live in a separate 48-byte UBO bound at `@group(0) @binding(0)` for the
+pure renderer and `@group(1) @binding(0)` for the depth-hosted scene
+renderable.
 
-#### Sprite2DLayer per-instance vertex buffer (44 B = 11 floats)
+#### Sprite2DLayer pure per-instance vertex buffer (40 B = 10 floats)
 
 | Offset (bytes) | Slot   | Field        | Vertex attr             | Notes                                                                      |
 | -------------- | ------ | ------------ | ----------------------- | -------------------------------------------------------------------------- |
@@ -896,7 +904,14 @@ at `@group(0) @binding(0)`.
 | 24..31         | [6..7] | `uvMax`      | `@location(3)` f32×2    | atlas UV max                                                               |
 | 32..35         | [8]    | `rotation`   | `@location(4)` f32      | radians; vertex shader takes `sin`/`cos` once per vertex                   |
 | 36..39         | [9]    | `colorRGBA`  | `@location(5)` unorm8x4 | packed via the cached `Uint32Array` view aliased on `_instanceData.buffer` |
-| 40..43         | [10]   | `z`          | `@location(6)` f32      | NDC depth (`0` = near, `1` = far); ignored by HUD pipelines (`always`)     |
+
+#### Sprite2DLayer depth-hosted extension (44 B = 11 floats)
+
+Depth-hosted layers use the same first 40 bytes, plus:
+
+| Offset (bytes) | Slot | Field | Vertex attr        | Notes                                                            |
+| -------------- | ---- | ----- | ------------------ | ---------------------------------------------------------------- |
+| 40..43         | [10] | `z`   | `@location(6)` f32 | NDC depth (`0` = near, `1` = far), consumed by the scene pipeline |
 
 Slot [9] is laid out as 4 bytes inside the homogeneous `Float32Array` backing
 store; the bits are written via the cached `_instanceDataU32` view on
@@ -907,12 +922,11 @@ Visibility (`visible: false`) is implemented by zeroing slots [2..3]; the
 sprite's true size lives in `layer._savedSize` so a later `visible: true`
 (without re-supplying `sizePx`) can restore it.
 
-**Per-instance Z, not per-layer.** A single layer can mix sprites at
-different depths — useful for depth-hosted layers where one sprite goes
-in front of a 3D object and another behind it. HUD/pure-2D layers still
-write the slot, but their pipelines have no depth attachment, so the
-value is uploaded but never consulted on the GPU. The CPU upload path
-treats it like any other slot (per-sprite dirty range; no special case).
+**Per-instance Z, not per-layer, for depth-hosted layers.** A single
+depth-hosted layer can mix sprites at different depths — useful where
+one sprite goes in front of a 3D object and another behind it. Pure-2D
+layers do not allocate, upload, declare, or fetch a Z slot; `z` remains
+accepted by the public props shape but is ignored before storage.
 
 #### Sprite2DLayer Layer UBO (48 B = 12 floats; std140-aligned)
 
@@ -1162,11 +1176,11 @@ loses one tick of animation in the captured image. All sprite families
 
 ### Sprite2DLayer per-`depth` Pipeline State
 
-| Layer `depth`  | Drawn via                                                                     | Depth attachment        | Depth compare | Depth write | Per-instance Z slot [10]                        | Render order                                                |
-| -------------- | ----------------------------------------------------------------------------- | ----------------------- | ------------- | ----------- | ----------------------------------------------- | ----------------------------------------------------------- |
-| `"none"`       | A `SpriteRenderer` registered on the engine                                   | none                    | none          | `false`     | written but ignored by the GPU                  | engine registration order; layer order within the renderer  |
-| `"test"`       | `addToScene` → `sprite-renderable.ts` (renderable `order = 200`) | engine depth attachment | `less-equal`  | `false`     | consumed; sprite is occluded behind 3D geometry | scene transparent queue (after opaque meshes)               |
-| `"test-write"` | `addToScene` → `sprite-renderable.ts` (renderable `order = 100`) | engine depth attachment | `less-equal`  | `true`      | consumed; sprite both reads and writes depth    | direct-drawn after cached opaque meshes, before transparent |
+| Layer `depth`  | Drawn via                                                                     | Depth attachment        | Depth compare | Depth write | Instance layout / Z                  | Render order                                                |
+| -------------- | ----------------------------------------------------------------------------- | ----------------------- | ------------- | ----------- | ------------------------------------ | ----------------------------------------------------------- |
+| `"none"`       | A `SpriteRenderer` registered on the engine                                   | none                    | none          | `false`     | 40 B / 10 floats; no slot [10]       | engine registration order; layer order within the renderer  |
+| `"test"`       | `addToScene` → `sprite-renderable.ts` (renderable `order = 200`) | engine depth attachment | `less-equal`  | `false`     | 44 B / 11 floats; slot [10] consumed | scene transparent queue (after opaque meshes)               |
+| `"test-write"` | `addToScene` → `sprite-renderable.ts` (renderable `order = 100`) | engine depth attachment | `less-equal`  | `true`      | 44 B / 11 floats; slot [10] consumed | direct-drawn after cached opaque meshes, before transparent |
 
 The sprite pipeline cache key includes `(format, sampleCount, blendMode, hasDepth, depthWrite, depthStencilFormat)`. `SpriteRenderer`
 layers always request `hasDepth = false` and `sampleCount = 1`, so their pipelines are built without a depth-stencil descriptor. Depth-hosted layers request `hasDepth = true`, use the target depth-stencil format provided by the frame graph, and set `depthWrite` from the layer's `depth` mode.
@@ -1454,7 +1468,7 @@ never a pipeline recompile. This matches how Lite handles mesh `alpha`.
 
 | Family / variant                      | Drawn through                                                      | Render slot                                           | Per-instance Z                              | Blend     | Depth write |
 | ------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------- | ------------------------------------------- | --------- | ----------- |
-| Sprite2DLayer `depth: "none"`         | a `SpriteRenderer` registered on the engine                        | engine `_renderingContexts` (after the scene context) | written to slot [10] but ignored by the GPU | per-blend | off         |
+| Sprite2DLayer `depth: "none"`         | a `SpriteRenderer` registered on the engine                        | engine `_renderingContexts` (after the scene context) | none; no Z slot                             | per-blend | off         |
 | Sprite2DLayer `depth: "test"` blended | `addToScene` → `sprite-renderable.ts` (`order = 200`) | scene transparent queue (after opaque meshes)         | consumed; per-instance depth test, no write | per-blend | off         |
 | Sprite2DLayer `depth: "test"` cutout  | `addToScene` → `sprite-renderable.ts` (`order = 200`) | scene transparent queue (after opaque meshes)         | consumed; per-instance depth test, no write | none      | off         |
 | Sprite2DLayer `depth: "test-write"`   | `addToScene` → `sprite-renderable.ts` (`order = 100`) | direct draw after cached opaque meshes                | consumed; per-instance depth test + write   | per-blend | on          |
@@ -1464,9 +1478,9 @@ never a pipeline recompile. This matches how Lite handles mesh `alpha`.
 Depth-hosted Sprite2D layers do **not** sort sprites individually — each
 layer becomes one `Renderable` and the GPU's depth test resolves
 overlap between sprites in the same layer (cutout) or between layers
-that share the depth buffer. Within a layer, sprites draw in insertion
+that share the depth buffer. Within a depth-hosted layer, sprites draw in insertion
 order, and the per-instance Z (slot [10]) is used as the depth-test
-value. Billboards use the per-sprite sort indirection buffer described
+value. Pure-2D layers have no slot [10]. Billboards use the per-sprite sort indirection buffer described
 under [BillboardSpriteSystem (96 B = 24 floats)](#billboardspritesystem-96-b--24-floats).
 
 ---

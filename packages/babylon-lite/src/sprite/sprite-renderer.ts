@@ -133,7 +133,7 @@ function ensureLayerGpu(rr: SpriteRendererInternal, layer: Sprite2DLayer): Layer
     let lg = rr._layerGpu.get(layer);
     if (!lg) {
         const cap = layer._capacity;
-        const instanceBuffer = createSpriteInstanceBuffer(rr._engine.device, cap, "sprite-layer-instances");
+        const instanceBuffer = createSpriteInstanceBuffer(rr._engine.device, layer, "sprite-layer-instances");
         const uniformBuffer = createEmptyUniformBuffer(rr._engine, LAYER_UBO_BYTES, "sprite-layer-ubo");
         lg = {
             layer,
