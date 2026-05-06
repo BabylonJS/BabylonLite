@@ -1,10 +1,10 @@
 /**
- * Build Perf Baseline — builds bundle scenes from the last release tag (or master)
+ * Build Perf Baseline — builds and measures bundle scenes from master (or latest release fallback)
  * into lab/public/bundle-baseline/ and generates matching HTML loader pages.
  *
  * Uses git worktree to checkout the baseline ref without disturbing the working tree.
  *
- * Env:  PERF_BASELINE_REF — override the git ref to use (default: latest tag or origin/master)
+ * Env:  PERF_BASELINE_REF — override the git ref to use (default: origin/master or origin/main)
  *
  * Usage: tsx scripts/build-perf-baseline.ts
  */
@@ -34,20 +34,7 @@ function getBaselineRef(): string {
         return override;
     }
 
-    // Find the latest semver tag reachable from HEAD
-    try {
-        const tag = run("git describe --tags --abbrev=0 --match 'v*'");
-        if (tag) {
-            console.log(`Found latest release tag: ${tag}`);
-            return tag;
-        }
-    } catch {
-        // No tags found
-    }
-
-    console.log("No release tags found, falling back to default branch");
-
-    // Try common remote branch names
+    // Prefer the default branch so bundle-size warnings compare against master.
     for (const ref of ["origin/master", "origin/main"]) {
         try {
             run(`git rev-parse ${ref}`);
@@ -58,8 +45,19 @@ function getBaselineRef(): string {
         }
     }
 
+    // Fall back to the latest semver tag reachable from HEAD.
+    try {
+        const tag = run("git describe --tags --abbrev=0 --match 'v*'");
+        if (tag) {
+            console.log(`Found latest release tag: ${tag}`);
+            return tag;
+        }
+    } catch {
+        // No tags found
+    }
+
     // Last resort: previous commit
-    console.log("No remote branches found, using HEAD~1");
+    console.log("No remote branches or release tags found, using HEAD~1");
     return "HEAD~1";
 }
 
@@ -110,10 +108,10 @@ try {
     run("pnpm install", { cwd: WORKTREE_DIR });
 }
 
-console.log("\nBuilding bundle scenes from baseline (Lite only, skip measurement)...");
+console.log("\nBuilding and measuring bundle scenes from baseline (Lite only)...");
 run("pnpm build:bundle-scenes", {
     cwd: WORKTREE_DIR,
-    env: { SKIP_BJS: "true", SKIP_MEASURE: "true" },
+    env: { SKIP_BJS: "true" },
 });
 
 // ── 4. Copy baseline bundles to lab/public/bundle-baseline/ ────────

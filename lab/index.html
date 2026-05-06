@@ -592,6 +592,17 @@
             .size-info .size-label-ceil {
                 color: #d29922;
             }
+            .size-info .size-label-base {
+                color: #bc8cff;
+            }
+            .size-info .size-baseline-delta {
+                color: #6e7681;
+                font-size: 0.7rem;
+            }
+            .size-info .size-baseline-delta.warn {
+                color: #d29922;
+                font-weight: 600;
+            }
             .size-info .size-headroom {
                 color: #6e7681;
                 font-size: 0.7rem;
@@ -4027,17 +4038,28 @@
 
             // ── Consolidated config fetch + init ──
             function loadBundleManifest() {
-                fetch("/bundle/manifest.json")
-                    .then(function (r) {
+                Promise.all([
+                    fetch("/bundle/manifest.json").then(function (r) {
                         return r.json();
-                    })
-                    .then(function (manifest) {
+                    }),
+                    fetch("/bundle-baseline/manifest.json")
+                        .then(function (r) {
+                            return r.ok ? r.json() : null;
+                        })
+                        .catch(function () {
+                            return null;
+                        }),
+                ])
+                    .then(function (results) {
+                        var manifest = results[0];
+                        var baselineManifest = results[1] || {};
                         var bjsCount = 0;
                         for (var scene in manifest) {
                             if (!manifest.hasOwnProperty(scene)) continue;
                             var sizes = manifest[scene];
                             var card = document.querySelector('[data-scene="' + scene + '"] .size-info');
                             if (!card) continue;
+                            var sceneCard = card.closest(".card");
                             var html =
                                 '<div class="size-row"><span class="size-label">Lite</span>' +
                                 '<span><span class="size-value">' +
@@ -4046,6 +4068,26 @@
                                 '<span class="size-gzip">' +
                                 sizes.gzipKB +
                                 " KB gzip</span></div>";
+                            var baseline = baselineManifest[scene];
+                            if (baseline && baseline.rawKB != null) {
+                                var baselineDelta = sizes.rawKB - baseline.rawKB;
+                                var baselineDeltaText = (baselineDelta > 0 ? "+" : "") + baselineDelta.toFixed(1) + " KB";
+                                var baselineWarnCls = baselineDelta > 0 ? " warn" : "";
+                                html +=
+                                    '<div class="size-row"><span class="size-label size-label-base">Base</span>' +
+                                    '<span><span class="size-value">' +
+                                    baseline.rawKB +
+                                    "</span> KB master</span>" +
+                                    '<span class="size-baseline-delta' +
+                                    baselineWarnCls +
+                                    '" title="Delta vs master baseline">' +
+                                    baselineDeltaText +
+                                    "</span></div>";
+                                if (sceneCard) {
+                                    sceneCard.dataset.baselineRawKb = baseline.rawKB;
+                                    sceneCard.dataset.baselineDeltaKb = baselineDelta.toFixed(1);
+                                }
+                            }
                             var cfg = (window.SCENE_CONFIG || []).find(function (c) {
                                 return "scene" + c.id === scene;
                             });
@@ -4079,10 +4121,11 @@
                                     "\u00d7</span></div>";
                             }
                             card.innerHTML = html;
-                            card.closest(".card").dataset.rawKb = sizes.rawKB;
-                            card.closest(".card").dataset.gzipKb = sizes.gzipKB;
+                            if (!sceneCard) continue;
+                            sceneCard.dataset.rawKb = sizes.rawKB;
+                            sceneCard.dataset.gzipKb = sizes.gzipKB;
                             if (cfg && cfg.maxRawKB != null) {
-                                card.closest(".card").dataset.maxRawKb = cfg.maxRawKB;
+                                sceneCard.dataset.maxRawKb = cfg.maxRawKB;
                             }
                         }
                         // Re-apply stored sort now that size data is available

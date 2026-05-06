@@ -15,7 +15,7 @@
  * natural growth.  Per-scene ceilings live in scene-config.json (maxRawKB).
  */
 import { test, expect } from "@playwright/test";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 
 import type { SceneConfig } from "./compare-utils";
@@ -23,8 +23,20 @@ import { IGNORED_BUNDLE_MODULE_PATTERN, summarizeRuntimeBundle } from "../../scr
 
 const CONFIG_PATH = resolve(__dirname, "../../scene-config.json");
 const BUNDLE_INFO_DIR = resolve(__dirname, "../../lab/public/bundle/bundle-info");
+const BASELINE_MANIFEST_PATH = resolve(__dirname, "../../lab/public/bundle-baseline/manifest.json");
 const allScenes: SceneConfig[] = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 const SCENES = allScenes.filter((s) => s.maxRawKB != null);
+
+interface BundleSizeManifestEntry {
+    rawKB?: number;
+}
+
+function loadBaselineManifest(): Record<string, BundleSizeManifestEntry> {
+    if (!existsSync(BASELINE_MANIFEST_PATH)) return {};
+    return JSON.parse(readFileSync(BASELINE_MANIFEST_PATH, "utf-8")) as Record<string, BundleSizeManifestEntry>;
+}
+
+const baselineManifest = loadBaselineManifest();
 
 for (const scene of SCENES) {
     test(`${scene.name} bundle ≤ ${scene.maxRawKB} KB raw`, async ({ page }) => {
@@ -58,6 +70,12 @@ for (const scene of SCENES) {
         const ignoredRawKB = summary.ignoredRawBytes / 1024;
 
         console.log(`  ${scene.name}: ${rawKB.toFixed(1)} KB raw (limit: ${scene.maxRawKB} KB), ${gzipKB.toFixed(1)} KB gzip (informational)`);
+        const baselineRawKB = baselineManifest[`scene${scene.id}`]?.rawKB;
+        if (baselineRawKB != null && rawKB > baselineRawKB) {
+            console.warn(
+                `##vso[task.logissue type=warning]${scene.name}: raw ${rawKB.toFixed(1)} KB exceeds master baseline ${baselineRawKB.toFixed(1)} KB (+${(rawKB - baselineRawKB).toFixed(1)} KB)`
+            );
+        }
         if (summary.ignoredRawBytes > 0) {
             console.log(`  Ignored ${ignoredRawKB.toFixed(1)} KB raw from local ${IGNORED_BUNDLE_MODULE_PATTERN} modules:`);
             for (const module of summary.ignoredModules) {
