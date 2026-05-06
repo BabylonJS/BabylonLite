@@ -662,6 +662,15 @@
         "tags": ["csg", "procedural", "std"]
     },
     {
+        "id": 91,
+        "slug": "scene91-csg2",
+        "name": "Scene 91 — CSG2 Operations",
+        "maxMad": 1,
+        "maxRawKB": 78,
+        "description": "Box and sphere CSG2 rows showing subtract, intersect, and add/union with textured StandardMaterial meshes and canvas texture labels.",
+        "tags": ["csg", "procedural", "std"]
+    },
+    {
         "id": 110,
         "slug": "scene110-rtt-override",
         "name": "Scene 110 — RTT with material override",
