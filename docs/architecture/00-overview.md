@@ -41,6 +41,7 @@
 | [23-loader-hdr.md](23-loader-hdr.md) | HDR Loader | RGBE parsing, SH extraction, GPU compute IBL |
 | [24-loader-babylon.md](24-loader-babylon.md) | .babylon Loader | .babylon format parsing |
 | [25-resource-pool.md](25-resource-pool.md) | Resource Pool | GPU buffer/texture pooling |
+| [26-sprites.md](26-sprites.md) | Sprites | 2D sprites, depth-hosted sprites, sprite renderables |
 | [27-frame-graph.md](27-frame-graph.md) | Frame Graph | Task ordering, RenderPassTask, render targets, RTT texture flow |
 
 ---
@@ -367,318 +368,406 @@ getPickedUV(info: PickingInfo): [number, number]
 // ─── Engine ──────────────────────────────────────────────────────────
 // Note: GPU internals (device, context, format) are @internal and not exposed.
 interface EngineContext {
-  readonly canvas: HTMLCanvasElement;
-  readonly msaaSamples: number;       // always 4
-  drawCallCount: number;              // GPU draw calls in last rendered frame
+    readonly canvas: HTMLCanvasElement;
+    readonly msaaSamples: number; // always 4
+    drawCallCount: number; // GPU draw calls in last rendered frame
 }
 
 // ─── Scene ───────────────────────────────────────────────────────────
 interface SceneContext {
-  readonly engine: Engine;
-  clearColor: GPUColorDict;
-  camera: ArcRotateCamera | FreeCamera | null;
-  lights: LightBase[];               // All light types (HemisphericLight, PointLight, etc.)
-  meshes: Mesh[];
-  animationGroups: AnimationGroup[];
-  fog: FogConfig | null;
-  shadowGenerators: ShadowGenerator[];
-  imageProcessing: ImageProcessingConfig;
-  environmentPrimaryColor?: [number, number, number];
-  envRotationY?: number;             // Environment cubemap Y rotation in radians
-  fixedDeltaMs: number;              // Fixed delta for deterministic animation (0 = real time)
+    readonly engine: Engine;
+    clearColor: GPUColorDict;
+    camera: ArcRotateCamera | FreeCamera | null;
+    lights: LightBase[]; // All light types (HemisphericLight, PointLight, etc.)
+    meshes: Mesh[];
+    animationGroups: AnimationGroup[];
+    fog: FogConfig | null;
+    shadowGenerators: ShadowGenerator[];
+    imageProcessing: ImageProcessingConfig;
+    environmentPrimaryColor?: [number, number, number];
+    envRotationY?: number; // Environment cubemap Y rotation in radians
+    fixedDeltaMs: number; // Fixed delta for deterministic animation (0 = real time)
 
-  // Internal renderable lists
-  _renderables: Renderable[];
-  _opaqueRenderables: Renderable[];
-  _transparentRenderables: Renderable[];
-  _prePasses: PrePassRenderable[];
-  _uniformUpdaters: SceneUniformUpdater[];
-  _fixedDeltaMs: number;
-  _beforeRender: ((deltaMs: number) => void)[];
-  _deferredBuilders: (() => void | Promise<void>)[];
+    // Internal renderable lists
+    _renderables: Renderable[];
+    _opaqueRenderables: Renderable[];
+    _transparentRenderables: Renderable[];
+    _prePasses: PrePassRenderable[];
+    _uniformUpdaters: SceneUniformUpdater[];
+    _fixedDeltaMs: number;
+    _beforeRender: ((deltaMs: number) => void)[];
+    _deferredBuilders: (() => void | Promise<void>)[];
 }
 
 // ─── Cameras ─────────────────────────────────────────────────────────
 interface ArcRotateCamera {
-  alpha: number;              // Horizontal rotation (azimuth)
-  beta: number;               // Vertical angle from top pole (0=top, π=bottom)
-  radius: number;             // Distance from target
-  target: Vec3;               // Look-at point (ObservableVec3 at runtime)
-  fov: number;                // Vertical FOV in radians
-  nearPlane: number;          // Near clip plane
-  farPlane: number;           // Far clip plane
-  inertia: number;            // Rotation + zoom inertia (0=instant, 0.9=default)
-  panningInertia: number;     // Panning inertia
-  inertialAlphaOffset: number;
-  inertialBetaOffset: number;
-  inertialRadiusOffset: number;
-  inertialPanningX: number;
-  inertialPanningY: number;
-  getViewMatrix(): Mat4;
-  getProjectionMatrix(aspectRatio: number): Mat4;
-  getViewProjectionMatrix(aspectRatio: number): Mat4;
-  getPosition(): Vec3;
+    alpha: number; // Horizontal rotation (azimuth)
+    beta: number; // Vertical angle from top pole (0=top, π=bottom)
+    radius: number; // Distance from target
+    target: Vec3; // Look-at point (ObservableVec3 at runtime)
+    fov: number; // Vertical FOV in radians
+    nearPlane: number; // Near clip plane
+    farPlane: number; // Far clip plane
+    inertia: number; // Rotation + zoom inertia (0=instant, 0.9=default)
+    panningInertia: number; // Panning inertia
+    inertialAlphaOffset: number;
+    inertialBetaOffset: number;
+    inertialRadiusOffset: number;
+    inertialPanningX: number;
+    inertialPanningY: number;
+    getViewMatrix(): Mat4;
+    getProjectionMatrix(aspectRatio: number): Mat4;
+    getViewProjectionMatrix(aspectRatio: number): Mat4;
+    getPosition(): Vec3;
 }
 
 interface FreeCamera {
-  position: ObservableVec3;     // Camera world position
-  target: ObservableVec3;       // Look-at target
-  speed: number;                // Movement speed (default 2.0, matches BJS)
-  angularSensitivity: number;   // Mouse rotation sensitivity (default 2000)
-  inertia: number;              // Damping factor (0=instant, 0.9=default)
-  fov: number;
-  nearPlane: number;
-  farPlane: number;
-  getViewMatrix(): Mat4;
-  getProjectionMatrix(aspectRatio: number): Mat4;
-  getViewProjectionMatrix(aspectRatio: number): Mat4;
-  getPosition(): Vec3;
+    position: ObservableVec3; // Camera world position
+    target: ObservableVec3; // Look-at target
+    speed: number; // Movement speed (default 2.0, matches BJS)
+    angularSensitivity: number; // Mouse rotation sensitivity (default 2000)
+    inertia: number; // Damping factor (0=instant, 0.9=default)
+    fov: number;
+    nearPlane: number;
+    farPlane: number;
+    getViewMatrix(): Mat4;
+    getProjectionMatrix(aspectRatio: number): Mat4;
+    getViewProjectionMatrix(aspectRatio: number): Mat4;
+    getPosition(): Vec3;
 }
 
-interface Camera { /* Union: ArcRotateCamera | FreeCamera */ }
+interface Camera {
+    /* Union: ArcRotateCamera | FreeCamera */
+}
 
 // ─── Lights ──────────────────────────────────────────────────────────
 interface LightBase {
-  readonly lightType: string;
-  intensity: number;
-  excludedMeshIds?: ReadonlySet<string>;
-  includedOnlyMeshIds?: ReadonlySet<string>;
-  shadowGenerator?: ShadowGenerator;
-  parent: IWorldMatrixProvider | null;
-  readonly worldMatrix: Mat4;
-  readonly worldMatrixVersion: number;
+    readonly lightType: string;
+    intensity: number;
+    excludedMeshIds?: ReadonlySet<string>;
+    includedOnlyMeshIds?: ReadonlySet<string>;
+    shadowGenerator?: ShadowGenerator;
+    parent: IWorldMatrixProvider | null;
+    readonly worldMatrix: Mat4;
+    readonly worldMatrixVersion: number;
 }
 
 interface HemisphericLight extends LightBase {
-  readonly lightType: "hemispheric";
-  direction: ObservableVec3;
-  intensity: number;
-  diffuseColor: [number, number, number];
-  specularColor: [number, number, number];
-  groundColor: [number, number, number];
+    readonly lightType: "hemispheric";
+    direction: ObservableVec3;
+    intensity: number;
+    diffuseColor: [number, number, number];
+    specularColor: [number, number, number];
+    groundColor: [number, number, number];
 }
 
 interface PointLight extends LightBase {
-  readonly lightType: "point";
-  position: ObservableVec3;
-  diffuse: [number, number, number];
-  specular: [number, number, number];
-  intensity: number;
-  range: number;
+    readonly lightType: "point";
+    position: ObservableVec3;
+    diffuse: [number, number, number];
+    specular: [number, number, number];
+    intensity: number;
+    range: number;
 }
 
 interface DirectionalLight extends LightBase {
-  readonly lightType: "directional";
-  direction: ObservableVec3;
-  position: ObservableVec3;
-  diffuse: [number, number, number];
-  specular: [number, number, number];
-  intensity: number;
+    readonly lightType: "directional";
+    direction: ObservableVec3;
+    position: ObservableVec3;
+    diffuse: [number, number, number];
+    specular: [number, number, number];
+    intensity: number;
 }
 
 interface SpotLight extends LightBase {
-  readonly lightType: "spot";
-  position: ObservableVec3;
-  direction: ObservableVec3;
-  angle: number;
-  exponent: number;
-  diffuse: [number, number, number];
-  specular: [number, number, number];
-  intensity: number;
-  range: number;
+    readonly lightType: "spot";
+    position: ObservableVec3;
+    direction: ObservableVec3;
+    angle: number;
+    exponent: number;
+    diffuse: [number, number, number];
+    specular: [number, number, number];
+    intensity: number;
+    range: number;
 }
 
 // ─── Materials ───────────────────────────────────────────────────────
 interface PbrMaterialProps {
-  baseColorTexture?: Texture2D;
-  normalTexture?: Texture2D;
-  ormTexture?: Texture2D;                               // R=occ, G=rough, B=metal
-  emissiveTexture?: Texture2D;
-  emissiveColor?: [number, number, number];             // Linear RGB emissive (no texture)
-  specGlossTexture?: Texture2D;                         // KHR_materials_pbrSpecularGlossiness
-  doubleSided?: boolean;
-  alpha?: number;                                        // Overall material alpha (default 1.0)
-  alphaBlend?: boolean;                                  // Enable alpha blending (glTF BLEND)
-  environmentIntensity?: number;                         // IBL contribution scale (default 1.0)
-  directIntensity?: number;                              // Direct light contribution scale (default 1.0)
-  usePhysicalLightFalloff?: boolean;                     // Direct point/spot inverse-square falloff (default true)
-  reflectance?: number;                                  // Dielectric F0 (default 0.04)
-  occlusionStrength?: number;                            // AO strength from ORM R channel (default 1.0)
-  metallicF0Factor?: number;                             // Dielectric F0 scale (default 1.0)
-  metallicReflectanceColor?: [number, number, number];  // Tints dielectric reflectance (default [1,1,1])
-  metallicReflectanceTexture?: Texture2D;               // RGB=reflectance tint, A=F0 scalar
-  reflectanceTexture?: Texture2D;                       // RGB=reflectance tint only
-  useOnlyMetallicFromMetallicReflectanceTexture?: boolean;
-  enableSpecularAA?: boolean;                            // Specular anti-aliasing on IBL alphaG
-  gammaAlbedo?: boolean;                                 // Apply pow(2.2) sRGB→linear in shader
-  clearCoat?: ClearCoatProps;
-  sheen?: SheenProps;
+    baseColorTexture?: Texture2D;
+    normalTexture?: Texture2D;
+    ormTexture?: Texture2D; // R=occ, G=rough, B=metal
+    emissiveTexture?: Texture2D;
+    emissiveColor?: [number, number, number]; // Linear RGB emissive (no texture)
+    specGlossTexture?: Texture2D; // KHR_materials_pbrSpecularGlossiness
+    doubleSided?: boolean;
+    alpha?: number; // Overall material alpha (default 1.0)
+    alphaBlend?: boolean; // Enable alpha blending (glTF BLEND)
+    environmentIntensity?: number; // IBL contribution scale (default 1.0)
+    directIntensity?: number; // Direct light contribution scale (default 1.0)
+    usePhysicalLightFalloff?: boolean; // Direct point/spot inverse-square falloff (default true)
+    reflectance?: number; // Dielectric F0 (default 0.04)
+    occlusionStrength?: number; // AO strength from ORM R channel (default 1.0)
+    metallicF0Factor?: number; // Dielectric F0 scale (default 1.0)
+    metallicReflectanceColor?: [number, number, number]; // Tints dielectric reflectance (default [1,1,1])
+    metallicReflectanceTexture?: Texture2D; // RGB=reflectance tint, A=F0 scalar
+    reflectanceTexture?: Texture2D; // RGB=reflectance tint only
+    useOnlyMetallicFromMetallicReflectanceTexture?: boolean;
+    enableSpecularAA?: boolean; // Specular anti-aliasing on IBL alphaG
+    gammaAlbedo?: boolean; // Apply pow(2.2) sRGB→linear in shader
+    clearCoat?: ClearCoatProps;
+    sheen?: SheenProps;
 }
 
 interface ClearCoatProps {
-  isEnabled?: boolean;
-  intensity?: number;
-  roughness?: number;
-  indexOfRefraction?: number;  // Default 1.5
+    isEnabled?: boolean;
+    intensity?: number;
+    roughness?: number;
+    indexOfRefraction?: number; // Default 1.5
 }
 
 interface SheenProps {
-  isEnabled: boolean;
-  color?: [number, number, number];
-  roughness?: number;
-  intensity?: number;
-  texture?: Texture2D;         // Sheen tint texture (modulates color)
+    isEnabled: boolean;
+    color?: [number, number, number];
+    roughness?: number;
+    intensity?: number;
+    texture?: Texture2D; // Sheen tint texture (modulates color)
 }
 
 interface StandardMaterialProps {
-  diffuseColor: [number, number, number];
-  alpha: number;
-  specularColor: [number, number, number];
-  specularPower: number;
-  emissiveColor: [number, number, number];
-  ambientColor: [number, number, number];
-  diffuseTexture: Texture2D | null;
-  diffuseCoordIndex: 0 | 1;
-  emissiveTexture: Texture2D | null;
-  bumpTexture: Texture2D | null;
-  bumpLevel: number;
-  specularTexture: Texture2D | null;
-  specularCoordIndex: 0 | 1;
-  ambientTexture: Texture2D | null;
-  ambientTexLevel: number;
-  ambientCoordIndex: 0 | 1;
-  lightmapTexture: Texture2D | null;
-  lightmapLevel: number;
-  lightmapCoordIndex: 0 | 1;
-  opacityTexture: Texture2D | null;
-  opacityLevel: number;
-  opacityFromRGB: boolean;
-  alphaCutOff: number;
-  reflectionTexture: Texture2D | null;
-  reflectionLevel: number;
-  reflectionCoordMode: 1 | 2;
-  uvScale: [number, number];
-  backFaceCulling: boolean;
-  disableLighting: boolean;
+    diffuseColor: [number, number, number];
+    alpha: number;
+    specularColor: [number, number, number];
+    specularPower: number;
+    emissiveColor: [number, number, number];
+    ambientColor: [number, number, number];
+    diffuseTexture: Texture2D | null;
+    diffuseCoordIndex: 0 | 1;
+    emissiveTexture: Texture2D | null;
+    bumpTexture: Texture2D | null;
+    bumpLevel: number;
+    specularTexture: Texture2D | null;
+    specularCoordIndex: 0 | 1;
+    ambientTexture: Texture2D | null;
+    ambientTexLevel: number;
+    ambientCoordIndex: 0 | 1;
+    lightmapTexture: Texture2D | null;
+    lightmapLevel: number;
+    lightmapCoordIndex: 0 | 1;
+    opacityTexture: Texture2D | null;
+    opacityLevel: number;
+    opacityFromRGB: boolean;
+    alphaCutOff: number;
+    reflectionTexture: Texture2D | null;
+    reflectionLevel: number;
+    reflectionCoordMode: 1 | 2;
+    uvScale: [number, number];
+    backFaceCulling: boolean;
+    disableLighting: boolean;
 }
 
 interface FogConfig {
-  mode: 0 | 1 | 2 | 3;  // 0=off, 1=exp, 2=exp2, 3=linear (matches BJS Scene.FOGMODE_*)
-  density: number;
-  start: number;
-  end: number;
-  color: [number, number, number];
+    mode: 0 | 1 | 2 | 3; // 0=off, 1=exp, 2=exp2, 3=linear (matches BJS Scene.FOGMODE_*)
+    density: number;
+    start: number;
+    end: number;
+    color: [number, number, number];
 }
 
-interface ImageProcessingConfig { exposure: number; contrast: number; toneMappingEnabled: boolean; }
+interface ImageProcessingConfig {
+    exposure: number;
+    contrast: number;
+    toneMappingEnabled: boolean;
+}
 
 // ─── Mesh ────────────────────────────────────────────────────────────
 interface Mesh {
-  boundMin?: Vec3;
-  boundMax?: Vec3;
-  name?: string;
-  material: StandardMaterialProps | PbrMaterialProps | null;
-  receiveShadows: boolean;
+    boundMin?: Vec3;
+    boundMax?: Vec3;
+    name?: string;
+    material: StandardMaterialProps | PbrMaterialProps | null;
+    receiveShadows: boolean;
 }
-interface MeshGPU { /* internal GPU state */ }
+interface MeshGPU {
+    /* internal GPU state */
+}
 
 // ─── Textures ────────────────────────────────────────────────────────
-interface Texture2D { texture: GPUTexture; view: GPUTextureView; sampler: GPUSampler; width: number; height: number; }
+interface Texture2D {
+    texture: GPUTexture;
+    view: GPUTextureView;
+    sampler: GPUSampler;
+    width: number;
+    height: number;
+}
 interface Texture2DOptions {
-  mipMaps?: boolean;         // Generate mipmaps (default true)
-  addressModeU?: GPUAddressMode;  // Default 'repeat'
-  addressModeV?: GPUAddressMode;  // Default 'repeat'
-  minFilter?: GPUFilterMode;      // Default 'linear'
-  magFilter?: GPUFilterMode;      // Default 'linear'
-  invertY?: boolean;         // Flip Y axis (default true, matches BJS)
-  srgb?: boolean;            // Use rgba8unorm-srgb format (default false)
+    mipMaps?: boolean; // Generate mipmaps (default true)
+    addressModeU?: GPUAddressMode; // Default 'repeat'
+    addressModeV?: GPUAddressMode; // Default 'repeat'
+    minFilter?: GPUFilterMode; // Default 'linear'
+    magFilter?: GPUFilterMode; // Default 'linear'
+    invertY?: boolean; // Flip Y axis (default true, matches BJS)
+    srgb?: boolean; // Use rgba8unorm-srgb format (default false)
 }
 
 // ─── Shadows ─────────────────────────────────────────────────────────
 interface ShadowGenerator {
-  shadowType: 'esm' | 'pcf';
-  light: LightBase;
-  config: Required<ShadowGeneratorConfig>;
+    shadowType: "esm" | "pcf";
+    light: LightBase;
+    config: Required<ShadowGeneratorConfig>;
 }
 interface ShadowGeneratorConfig {
-  mapSize?: number;           // Shadow map size (default 1024)
-  depthScale?: number;        // ESM depth exponent scale (default 50)
-  bias?: number;              // Shadow bias (default 0.00005)
-  blurScale?: number;         // Gaussian blur downscale factor (default 2)
-  darkness?: number;          // Shadow darkness 0–1 (default 0 = full black)
-  frustumEdgeFalloff?: number;
-  orthoMinZ?: number;         // Ortho projection near Z (default 1)
-  orthoMaxZ?: number;         // Ortho projection far Z (default 10000)
+    mapSize?: number; // Shadow map size (default 1024)
+    depthScale?: number; // ESM depth exponent scale (default 50)
+    bias?: number; // Shadow bias (default 0.00005)
+    blurScale?: number; // Gaussian blur downscale factor (default 2)
+    darkness?: number; // Shadow darkness 0–1 (default 0 = full black)
+    frustumEdgeFalloff?: number;
+    orthoMinZ?: number; // Ortho projection near Z (default 1)
+    orthoMaxZ?: number; // Ortho projection far Z (default 10000)
 }
 interface PcfShadowGeneratorConfig {
-  mapSize?: number;           // Shadow map size (default 512)
-  bias?: number;
-  darkness?: number;
-  normalBias?: number;
-  near?: number;              // Near plane for shadow projection
-  far?: number;               // Far plane for shadow projection
+    mapSize?: number; // Shadow map size (default 512)
+    bias?: number;
+    darkness?: number;
+    normalBias?: number;
+    near?: number; // Near plane for shadow projection
+    far?: number; // Far plane for shadow projection
 }
 
 // ─── Loaders ─────────────────────────────────────────────────────────
 // Unified result returned by both loadGltf() and loadBabylon()
 interface AssetContainer {
-  // glTF: [root TransformNode]. .babylon: flat [...meshes, ...lights]
-  entities: Array<Mesh | TransformNode | LightBase>;
-  animationGroups?: AnimationGroup[];  // auto-ticked by addToScene()
-  clearColor?: GPUColorDict;           // applied to scene.clearColor by addToScene()
+    // glTF: [root TransformNode]. .babylon: flat [...meshes, ...lights]
+    entities: Array<Mesh | TransformNode | LightBase>;
+    animationGroups?: AnimationGroup[]; // auto-ticked by addToScene()
+    clearColor?: GPUColorDict; // applied to scene.clearColor by addToScene()
 }
 
 interface EnvironmentTextures {
-  specularCube: GPUTexture;       specularCubeView: GPUTextureView;
-  brdfLut: GPUTexture;            brdfLutView: GPUTextureView;
-  cubeSampler: GPUSampler;        brdfSampler: GPUSampler;
-  irradianceSH: Float32Array;     // 27 floats (9 vec3 SH coefficients)
-  sphericalHarmonics: {           // Pre-scaled SH bands for shader (L00…L22)
-    l00: Float32Array; l1_1: Float32Array; l10: Float32Array; l11: Float32Array;
-    l2_2: Float32Array; l2_1: Float32Array; l20: Float32Array; l21: Float32Array; l22: Float32Array;
-  };
-  lodGenerationScale: number;     // LOD scale for specular IBL sampling (default 0.8)
+    specularCube: GPUTexture;
+    specularCubeView: GPUTextureView;
+    brdfLut: GPUTexture;
+    brdfLutView: GPUTextureView;
+    cubeSampler: GPUSampler;
+    brdfSampler: GPUSampler;
+    irradianceSH: Float32Array; // 27 floats (9 vec3 SH coefficients)
+    sphericalHarmonics: {
+        // Pre-scaled SH bands for shader (L00…L22)
+        l00: Float32Array;
+        l1_1: Float32Array;
+        l10: Float32Array;
+        l11: Float32Array;
+        l2_2: Float32Array;
+        l2_1: Float32Array;
+        l20: Float32Array;
+        l21: Float32Array;
+        l22: Float32Array;
+    };
+    lodGenerationScale: number; // LOD scale for specular IBL sampling (default 0.8)
 }
 
 interface HdrLoadOptions {
-  faceSize?: number;           // Cubemap face size in pixels (default 256)
-  useCubemapSkybox?: boolean;  // Render HDR cubemap as skybox background
-  skipGround?: boolean;        // Skip the background ground plane
-  skyboxSize?: number;         // Skybox mesh size (matches BJS skyboxSize)
+    faceSize?: number; // Cubemap face size in pixels (default 256)
+    useCubemapSkybox?: boolean; // Render HDR cubemap as skybox background
+    skipGround?: boolean; // Skip the background ground plane
+    skyboxSize?: number; // Skybox mesh size (matches BJS skyboxSize)
 }
 
 // ─── Animation ───────────────────────────────────────────────────────
-interface AnimationController { update(deltaMs: number): void; }
-interface AnimationGroup { name: string; play(loop?: boolean): void; stop(): void; }
-interface AnimationClip { /* keyframe data */ }
-interface GltfAnimationData { /* parsed glTF animation channels */ }
+interface AnimationController {
+    update(deltaMs: number): void;
+}
+interface AnimationGroup {
+    name: string;
+    play(loop?: boolean): void;
+    stop(): void;
+}
+interface AnimationClip {
+    /* keyframe data */
+}
+interface GltfAnimationData {
+    /* parsed glTF animation channels */
+}
 
 // ─── Hierarchy ───────────────────────────────────────────────────────
-interface TransformNode { name: string; position: ObservableVec3; rotation: ObservableQuat; scaling: ObservableVec3; }
-interface IWorldMatrixProvider { getWorldMatrix(): Mat4; }
-interface IParentable extends IWorldMatrixProvider { parent: IWorldMatrixProvider | null; }
+interface TransformNode {
+    name: string;
+    position: ObservableVec3;
+    rotation: ObservableQuat;
+    scaling: ObservableVec3;
+}
+interface IWorldMatrixProvider {
+    getWorldMatrix(): Mat4;
+}
+interface IParentable extends IWorldMatrixProvider {
+    parent: IWorldMatrixProvider | null;
+}
 
 // ─── Thin Instances ──────────────────────────────────────────────────
-interface ThinInstanceData { matrices: Mat4[]; colors?: Float32Array; }
+interface ThinInstanceData {
+    matrices: Mat4[];
+    colors?: Float32Array;
+}
 
 // ─── Math ────────────────────────────────────────────────────────────
-class ObservableVec3 { x: number; y: number; z: number; }
-class ObservableQuat { x: number; y: number; z: number; w: number; }
+class ObservableVec3 {
+    x: number;
+    y: number;
+    z: number;
+}
+class ObservableQuat {
+    x: number;
+    y: number;
+    z: number;
+    w: number;
+}
 
 // ─── Picking ─────────────────────────────────────────────────────────
-interface GpuPicker { pick(x: number, y: number): Promise<PickingInfo | null>; }
-interface PickingInfo { mesh: Mesh; faceId: number; worldPosition: Vec3; }
+interface GpuPicker {
+    pick(x: number, y: number): Promise<PickingInfo | null>;
+}
+interface PickingInfo {
+    mesh: Mesh;
+    faceId: number;
+    worldPosition: Vec3;
+}
 
 // ─── Low-level (advanced/custom rendering) ───────────────────────────
-interface Renderable { order: number; bind(engine: Engine, target: RenderTargetSignature): DrawBinding; }
-interface DrawBinding { pipeline: GPURenderPipeline; draw(pass: GPURenderPassEncoder | GPURenderBundleEncoder, engine: Engine): number; }
-interface PrePassRenderable { execute(encoder: GPUCommandEncoder, engine: Engine): number; }
-interface SceneUniformUpdater { update(engine: Engine): void; }
+interface DrawUpdateContext {
+    targetWidth: number;
+    targetHeight: number;
+}
+interface Renderable {
+    order: number;
+    bind(engine: Engine, target: RenderTargetSignature): DrawBinding;
+}
+interface DrawBinding {
+    pipeline: GPURenderPipeline;
+    update?(context: DrawUpdateContext): void;
+    draw(pass: GPURenderPassEncoder | GPURenderBundleEncoder, engine: Engine): number;
+}
+interface PrePassRenderable {
+    execute(encoder: GPUCommandEncoder, engine: Engine): number;
+}
+interface SceneUniformUpdater {
+    update(engine: Engine): void;
+}
 
 // ─── Mesh factory options ────────────────────────────────────────────
-interface SphereOptions { diameter?: number; segments?: number; }
-interface TorusOptions { diameter?: number; thickness?: number; tessellation?: number; }
-interface GroundOptions { width?: number; height?: number; subdivisions?: number; }
+interface SphereOptions {
+    diameter?: number;
+    segments?: number;
+}
+interface TorusOptions {
+    diameter?: number;
+    thickness?: number;
+    tessellation?: number;
+}
+interface GroundOptions {
+    width?: number;
+    height?: number;
+    subdivisions?: number;
+}
 ```
 
 ---
@@ -701,17 +790,18 @@ Indices `[col*4+row]` — matches WGSL `mat4x4<f32>` storage.
 
 **Key functions**:
 
-| Function | Signature | Notes |
-|----------|-----------|-------|
-| `mat4Identity()` | `→ Mat4` | 16-float identity |
-| `mat4Multiply(a, b)` | `→ Mat4` | Column-major `a * b` |
-| `mat4LookAtLH(eye, target, up)` | `→ Mat4` | LH look-at, `zAxis = normalize(target - eye)` |
-| `mat4PerspectiveLH(fov, aspect, near, far)` | `→ Mat4` | Zero-to-one depth, `tan = 1/tan(fov/2)` |
-| `mat4Invert(m)` | `→ Mat4 \| null` | Full 4x4 inverse via cofactors |
-| `mat4Compose(tx,ty,tz, qx,qy,qz,qw, sx,sy,sz)` | `→ Mat4` | TRS composition |
-| `mat4FromQuat(qx,qy,qz,qw)` | `→ Mat4` | Quaternion to rotation matrix |
+| Function                                       | Signature        | Notes                                         |
+| ---------------------------------------------- | ---------------- | --------------------------------------------- |
+| `mat4Identity()`                               | `→ Mat4`         | 16-float identity                             |
+| `mat4Multiply(a, b)`                           | `→ Mat4`         | Column-major `a * b`                          |
+| `mat4LookAtLH(eye, target, up)`                | `→ Mat4`         | LH look-at, `zAxis = normalize(target - eye)` |
+| `mat4PerspectiveLH(fov, aspect, near, far)`    | `→ Mat4`         | Zero-to-one depth, `tan = 1/tan(fov/2)`       |
+| `mat4Invert(m)`                                | `→ Mat4 \| null` | Full 4x4 inverse via cofactors                |
+| `mat4Compose(tx,ty,tz, qx,qy,qz,qw, sx,sy,sz)` | `→ Mat4`         | TRS composition                               |
+| `mat4FromQuat(qx,qy,qz,qw)`                    | `→ Mat4`         | Quaternion to rotation matrix                 |
 
 **LookAtLH formula** (matches Babylon.js `Matrix.LookAtLHToRef`):
+
 ```
 zAxis = normalize(target - eye)          // forward
 xAxis = normalize(cross(up, zAxis))      // right
@@ -723,6 +813,7 @@ M = | xAxis.x  yAxis.x  zAxis.x  0 |    (stored column-major)
 ```
 
 **PerspectiveLH formula** (zero-to-one depth, matches `Matrix.PerspectiveFovLHToRef`):
+
 ```
 f = 1 / tan(fov / 2)
 M = | f/aspect  0  0              0 |
@@ -737,28 +828,34 @@ M = | f/aspect  0  0              0 |
 drive the render loop.
 
 **Init sequence**:
+
 1. `navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })`
 2. `adapter.requestDevice({ requiredFeatures })` — optionally enables `float32-filterable` if supported
 3. `canvas.getContext('webgpu')` → configure with `options?.alphaMode ?? 'opaque'`
 4. Store engine render state (`msaaSamples`, registered contexts, transient encoder/swapchain view)
 
 **MSAA configuration**:
+
 - Color target: `format = navigator.gpu.getPreferredCanvasFormat()` (typically `bgra8unorm`), `sampleCount = 4`
 - Depth target: `depth24plus-stencil8`, `sampleCount = 4`
 - Canvas render targets are owned by frame-graph `RenderPassTask`s. If `sampleCount > 1`, the task owns an MSAA color texture and resolves to the swapchain texture each frame.
 
 **Render loop** (`startEngine(engine)` after `registerScene(engine, scene)` — async, returns `Promise<void>`):
+
 ```
 registerScene runs deferred builders → requestAnimationFrame → resize() → renderFrame() → requestAnimationFrame ...
 ```
 
 **`renderFrame()`**:
+
 1. Create command encoder and expose it as `engine._currentEncoder`
 2. For each registered rendering context, run `_update()`:
-   - before-render callbacks, material swaps, shadow generators, legacy pre-passes, shared uniform updaters
+    - before-render callbacks, material swaps, shadow generators, legacy pre-passes, shared uniform updaters
 3. For each registered rendering context, run `_record()`:
-   - `scene._frameGraph.execute()` drains its ordered tasks
-   - each `RenderPassTask` acquires/patches the swapchain or RTT views, writes its per-pass scene UBO, and draws bucketed `DrawBinding`s
+    - `scene._frameGraph.execute()` drains its ordered tasks
+
+- each `RenderPassTask` acquires/patches the swapchain or RTT views, writes its per-pass scene UBO, calls `DrawBinding.update({ targetWidth, targetHeight })`, and draws bucketed `DrawBinding`s
+
 4. Submit the command buffer
 
 **Resize**: checks `canvas.clientWidth * devicePixelRatio`, updates the canvas backing store if changed, then asks registered contexts to rebuild frame-graph targets that depend on canvas size.
@@ -783,7 +880,7 @@ A flat data struct with renderable arrays. No hierarchy. No callbacks.
   _transparentRenderables: [],   // Renderable[] — sorted back-to-front each frame
   _prePasses: [],                // PrePassRenderable[] — shadow passes etc.
   _uniformUpdaters: [],          // SceneUniformUpdater[] — per-frame UBO updates
-  _deferredBuilders: [],         // (() => void | Promise<void>)[] — run once at startEngine()
+  _deferredBuilders: [],         // (() => void | Promise<void>)[] — drained by buildScene() during registerScene()
   _fixedDeltaMs: 0,              // fixed delta for animation (0 = use real time)
   _beforeRender: [],             // ((deltaMs: number) => void)[] — per-frame callbacks
 }
@@ -797,6 +894,7 @@ A flat data struct with renderable arrays. No hierarchy. No callbacks.
 **ArcRotateCamera** — orbits around a target using spherical coordinates.
 
 **Position formula** (matches Babylon.js `ArcRotateCamera._getViewMatrix`):
+
 ```
 position = target + Vector3(
   radius * cos(alpha) * sin(beta),
@@ -806,6 +904,7 @@ position = target + Vector3(
 ```
 
 **`createDefaultCamera(scene)`** auto-frames loaded meshes:
+
 1. Compute world AABB from all `scene.meshes[].boundMin/boundMax`
 2. `target = center of AABB`
 3. `worldSize = max - min`
@@ -819,6 +918,7 @@ The playground then overrides: `camera.alpha = 1.77538207638442`
 ### 3.5 Light (`light/hemispheric.ts`)
 
 Plain data factory. Returns `HemisphericLight` with:
+
 - `direction: ObservableVec3(0, 1, 0)` (up)
 - `intensity: 1.0`
 - `diffuseColor: [1, 1, 1]` (sky/top)
@@ -826,6 +926,7 @@ Plain data factory. Returns `HemisphericLight` with:
 - `groundColor: [0, 0, 0]` (bottom)
 
 The hemispheric light model in the shader:
+
 ```
 hemiNdotL = dot(N, lightDir) * 0.5 + 0.5    // remap [-1,1] → [0,1]
 hemiColor = mix(groundColor, diffuseColor, hemiNdotL)
@@ -855,15 +956,30 @@ contribution = hemiColor * intensity
 **Entity-owned pipelines**: Each material/entity creates its own pipeline and returns `Renderable` objects. Scene-owned `RenderPassTask`s call `renderable.bind(engine, target)` to create target-specific `DrawBinding`s; the engine/frame graph never imports material code.
 
 ```typescript
-interface Renderable { order: number; bind(engine, target): DrawBinding; }
-interface DrawBinding { pipeline: GPURenderPipeline; draw(pass, engine): number; }
-interface PrePassRenderable { execute(encoder, engine): number; }
-interface SceneUniformUpdater { update(engine): void; }
+interface DrawUpdateContext {
+    targetWidth: number;
+    targetHeight: number;
+}
+interface Renderable {
+    order: number;
+    bind(engine, target): DrawBinding;
+}
+interface DrawBinding {
+    pipeline: GPURenderPipeline;
+    update?(context: DrawUpdateContext): void;
+    draw(pass, engine): number;
+}
+interface PrePassRenderable {
+    execute(encoder, engine): number;
+}
+interface SceneUniformUpdater {
+    update(engine): void;
+}
 ```
 
 **Draw order**: skybox/background (0) → opaque (100) → transmissive → transparent (200, distance-sorted).
 
-**Deferred building**: Entities register builders on `scene._deferredBuilders`. These run before rendering to create GPU resources, after which the scene frame graph is built.
+**Deferred building**: Entities register builders on `scene._deferredBuilders`. `registerScene()` calls `buildScene()` to drain them before the scene is registered, then builds the scene frame graph.
 
 ### 3.8 glTF Loader (`loader-gltf/load-gltf.ts`)
 
@@ -877,6 +993,7 @@ Optional glTF capabilities are dynamic feature modules (`gltf-ext-*.ts` / `gltf-
 **Animation extraction**: Creates `AnimationGroup[]` from glTF animations via `createAnimationGroups()`, registers `_beforeRender` callbacks on the scene for playback.
 
 **GLB container format**:
+
 ```
 [Header: 12B]  magic=0x46546c67, version=2, totalLength
 [JSON chunk]   type=0x4E4F534A, length, UTF-8 JSON payload
@@ -884,6 +1001,7 @@ Optional glTF capabilities are dynamic feature modules (`gltf-ext-*.ts` / `gltf-
 ```
 
 **Accessor resolution**:
+
 ```
 byteOffset = bufferView.byteOffset + accessor.byteOffset
 TypedArray = new T(binChunk.buffer, binChunk.byteOffset + byteOffset, count * componentCount)
@@ -892,6 +1010,7 @@ TypedArray = new T(binChunk.buffer, binChunk.byteOffset + byteOffset, count * co
 **Component types**: FLOAT=5126, UNSIGNED_SHORT=5123, UNSIGNED_INT=5125, UNSIGNED_BYTE=5121
 
 **Mesh extraction flow**:
+
 1. Discover dynamic feature modules (`KHR_texture_basisu`, Draco, variants, skins, morphs, etc.)
 2. Run feature `preMesh` hooks to decode feature-owned primitive data (for example strided FLOAT accessors used by FlightHelmetKTX)
 3. Walk nodes → find nodes with `mesh` property
@@ -900,6 +1019,7 @@ TypedArray = new T(binChunk.buffer, binChunk.byteOffset + byteOffset, count * co
 6. Resolve material: pbrMetallicRoughness textures → ImageBitmap (with `colorSpaceConversion: 'none'`) plus extension-owned overrides
 
 **GPU upload**:
+
 - Vertex/index buffers: `mappedAtCreation`, copy bytes, unmap
 - Textures: `copyExternalImageToTexture` with `premultipliedAlpha: false`, `rgba8unorm` or `rgba8unorm-srgb`
 - KTX2 textures: decoder-provided mip chain uploaded by `uploadKtx2Texture2D()` for `KHR_texture_basisu`
@@ -908,6 +1028,7 @@ TypedArray = new T(binChunk.buffer, binChunk.byteOffset + byteOffset, count * co
 - Bounding box: computed from positions × world matrix during upload
 
 **BoomBox.glb specifics (Scene 1)**:
+
 - 1 mesh primitive: 18,108 indices, 3,575 vertices
 - 4 vertex attributes: position (f32x3), normal (f32x3), tangent (f32x4), uv (f32x2)
 - 4 textures: baseColor (2048²), normal (2048²), metallicRoughness (2048²), emissive (2048²)
@@ -917,6 +1038,7 @@ TypedArray = new T(binChunk.buffer, binChunk.byteOffset + byteOffset, count * co
 ### 3.9 Environment Loader (`loader-env/load-env.ts`)
 
 **Babylon.js `.env` format**:
+
 ```
 [Magic: 8B]  0x86 0x16 0x87 0x96 0xF6 0xD6 0x96 0x36
 [JSON manifest: variable]  UTF-8, null-terminated
@@ -924,6 +1046,7 @@ TypedArray = new T(binChunk.buffer, binChunk.byteOffset + byteOffset, count * co
 ```
 
 **Manifest structure** (relevant fields):
+
 ```json
 {
   "width": 256,
@@ -946,6 +1069,7 @@ Decoded in the fragment shader, not during upload.
 with `premultiplyAlpha: false`, `colorSpaceConversion: 'none'`.
 
 **BRDF LUT generation**: CPU-computed at init (no CDN dependency).
+
 - 256×256 `rgba8unorm` texture
 - Split-sum BRDF integration: Hammersley quasi-random sampling + importance-sampled GGX
 - 64 samples per texel
@@ -959,6 +1083,7 @@ with `premultiplyAlpha: false`, `colorSpaceConversion: 'none'`.
 PBR and Standard material shaders are **dynamically composed** from feature flags via the ShaderFragment composition system in `pbr-template.ts` and `standard-template.ts`. No raw `.wgsl` files exist for these materials.
 
 Raw `.wgsl` shader files are still used for:
+
 - Background materials (skybox, ground)
 - Shadow passes (depth, blur)
 - CubeMap skybox
@@ -985,6 +1110,7 @@ Direct-light data is stored in the separate lights UBO, not in `SceneUniforms`.
 **Outputs**: clipPos (builtin), worldPos, worldNormal, [worldTangent, worldBitangent], uv
 
 **Logic**:
+
 ```
 worldPos = mesh.world * vec4(position, 1.0)
 clipPos = scene.viewProjection * worldPos
@@ -998,24 +1124,28 @@ bitangentW = cross(normalW, tangentW) * tangent.w
 **BRDF functions** (all matching standard microfacet model):
 
 1. **GGX/Trowbridge-Reitz NDF**:
-   ```
-   D(NdotH, α) = α⁴ / (π · (NdotH² · (α⁴ - 1) + 1)²)
-   where α = roughness²
-   ```
+
+    ```
+    D(NdotH, α) = α⁴ / (π · (NdotH² · (α⁴ - 1) + 1)²)
+    where α = roughness²
+    ```
 
 2. **Smith-GGX Height-Correlated Geometry**:
-   ```
-   G(NdotL, NdotV, α) = 0.5 / (NdotL·√(NdotV²·(1-α⁴)+α⁴) + NdotV·√(NdotL²·(1-α⁴)+α⁴))
-   ```
+
+    ```
+    G(NdotL, NdotV, α) = 0.5 / (NdotL·√(NdotV²·(1-α⁴)+α⁴) + NdotV·√(NdotL²·(1-α⁴)+α⁴))
+    ```
 
 3. **Schlick Fresnel**:
-   ```
-   F(cosθ, F0) = F0 + (1 - F0) · (1 - cosθ)⁵
-   ```
+
+    ```
+    F(cosθ, F0) = F0 + (1 - F0) · (1 - cosθ)⁵
+    ```
 
 4. **sRGB → Linear**: `pow(c, 2.2)` (applied to baseColor and emissive textures)
 
 **Fragment logic**:
+
 ```
 1. Sample textures (baseColor, ORM, normal, emissive)
 2. Linearize sRGB (baseColor, emissive)
@@ -1041,6 +1171,7 @@ bitangentW = cross(normalW, tangentW) * tangent.w
 **Source**: `playground.babylonjs.com/full.html?webgpu=1#QCU8DJ#800`
 
 ### Render Pass Configuration
+
 - 1 render pass, 3 draw calls
 - Color: `bgra8unorm`, 4x MSAA → resolve to swapchain
 - Depth: `depth24plus-stencil8`, 4x MSAA
@@ -1048,21 +1179,25 @@ bitangentW = cross(normalW, tangentW) * tangent.w
 - Viewport: 1280×720 (depends on window)
 
 ### Draw Call 1: BoomBox
+
 - 18,108 indices (uint16), 3,575 vertices
 - 4 vertex buffers: position (42900B), normal (42900B), tangent (57200B), uv (28600B)
 - PBR pipeline, back-face culling, depth write enabled
 
 ### Draw Call 2: Ground Plane
+
 - 36 indices, 24 vertices
 - 2 vertex buffers: position, normal
 - Background material shader
 
 ### Draw Call 3: Skybox
+
 - 6 indices, 4 vertices
 - 3 vertex buffers: position, normal, uv
 - Skybox material, depth write DISABLED
 
 ### Textures (10 total)
+
 - 4× BoomBox PBR (2048×2048): baseColor, normal, metallicRoughness, emissive
 - 1× BRDF LUT (256×256 or 128×128)
 - 1× Ground texture (1024×1024)
@@ -1070,10 +1205,12 @@ bitangentW = cross(normalW, tangentW) * tangent.w
 - 2× Render targets (MSAA + depth)
 
 ### Camera
+
 - ArcRotateCamera, alpha = 1.77538207638442
 - Beta, radius, target: auto-computed from mesh bounds by `createDefaultCameraOrLight(true,true,true)`
 
 ### Light
+
 - Hemispheric, direction = [0, 1, 0], intensity = 0.7
 
 ---
@@ -1131,28 +1268,35 @@ main.ts (e.g. scene1.ts)
 ## 7. Build & Dev Configuration
 
 ### TypeScript (`tsconfig.base.json`)
+
 ```json
 {
-  "target": "ES2022", "module": "ESNext", "moduleResolution": "bundler",
-  "lib": ["ES2022", "DOM", "DOM.Iterable"],
-  "strict": true, "noUncheckedIndexedAccess": true,
-  "noUnusedLocals": true, "noUnusedParameters": true,
-  "types": ["@webgpu/types"]
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": ["@webgpu/types"]
 }
 ```
 
 ### Vite (engine lib build)
+
 ```typescript
 // packages/babylon-lite/vite.config.ts
 export default defineConfig({
-  build: {
-    lib: { entry: 'src/index.ts', formats: ['es'] },
-    rollupOptions: { external: [] },
-  },
+    build: {
+        lib: { entry: "src/index.ts", formats: ["es"] },
+        rollupOptions: { external: [] },
+    },
 });
 ```
 
 ### Package resolution
+
 During dev, `package.json` exports point to source: `"main": "./src/index.ts"`.
 For production builds, switch to `"./dist/index.js"`.
 
@@ -1161,6 +1305,7 @@ For production builds, switch to `"./dist/index.js"`.
 ## 8. Test Specification
 
 ### Unit Tests (per module)
+
 - **core/mat4**: Identity, multiply, lookAtLH, perspectiveLH, invert — compare with Babylon.js `Matrix` class output
 - **core/vec3**: All operations — dot, cross, normalize, length
 - **camera**: Position from alpha/beta/radius matches Babylon's formula
@@ -1169,10 +1314,12 @@ For production builds, switch to `"./dist/index.js"`.
 - **BRDF LUT**: Generated values within tolerance of reference
 
 ### Integration Tests (Playwright + pixel diff)
+
 - Render Scene 1 → screenshot → RMSE against reference capture < threshold
 - Automated via CI with headed Chrome (WebGPU requires GPU)
 
 ### Regression
+
 - Every new scene must pass all previous scene tests
 - Pixel diff threshold: RMSE < 1.0 (out of 255)
 
