@@ -650,6 +650,28 @@
                 gap: 0.6rem;
                 margin-bottom: 0.8rem;
             }
+            .bundle-summary-filters {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 0.4rem;
+                margin-bottom: 0.8rem;
+            }
+            .bundle-summary-filter {
+                border: 1px solid #30363d;
+                background: #0d1117;
+                color: #8b949e;
+            }
+            .bundle-summary-filter.active {
+                border-color: #58a6ff;
+                color: #e6edf3;
+                background: rgba(88, 166, 255, 0.14);
+            }
+            .bundle-summary-filter-count {
+                margin-left: 0.3rem;
+                color: #e6edf3;
+                font-weight: 700;
+            }
             .bundle-summary-metric {
                 padding: 0.65rem 0.75rem;
                 border: 1px solid #30363d;
@@ -3336,6 +3358,20 @@
                     <button class="btn" id="bundle-summary-copy-btn" onclick="copyBundleSummary()">Copy</button>
                 </div>
                 <div class="bundle-summary-metrics" id="bundle-summary-metrics"></div>
+                <div class="bundle-summary-filters" id="bundle-summary-filters">
+                    <button class="btn bundle-summary-filter active" onclick="filterBundleSummary('all')" data-bundle-summary-filter="all">
+                        All<span class="bundle-summary-filter-count" id="bundle-summary-filter-all-count">0</span>
+                    </button>
+                    <button class="btn bundle-summary-filter" onclick="filterBundleSummary('increase')" data-bundle-summary-filter="increase">
+                        Increases<span class="bundle-summary-filter-count" id="bundle-summary-filter-increase-count">0</span>
+                    </button>
+                    <button class="btn bundle-summary-filter" onclick="filterBundleSummary('decrease')" data-bundle-summary-filter="decrease">
+                        Decreases<span class="bundle-summary-filter-count" id="bundle-summary-filter-decrease-count">0</span>
+                    </button>
+                    <button class="btn bundle-summary-filter" onclick="filterBundleSummary('new')" data-bundle-summary-filter="new">
+                        New<span class="bundle-summary-filter-count" id="bundle-summary-filter-new-count">0</span>
+                    </button>
+                </div>
                 <div class="bundle-summary-empty" id="bundle-summary-empty" hidden>No bundle manifest loaded yet.</div>
                 <div class="bundle-summary-table-wrap" id="bundle-summary-table-wrap" hidden>
                     <table class="bundle-summary-table">
@@ -4255,6 +4291,9 @@
             }
 
             var bundleSummaryText = "";
+            var bundleSummaryFilter = "all";
+            var bundleSummaryManifest = null;
+            var bundleSummaryMasterManifest = null;
 
             function getBundleDelta(sizes, masterSizes) {
                 var currentRaw = parseFloat(sizes && sizes.rawKB);
@@ -4384,6 +4423,44 @@
                 });
             }
 
+            function getBundleSummaryFilteredRows(data) {
+                if (bundleSummaryFilter === "all") return data.rows;
+                if (bundleSummaryFilter === "increase" || bundleSummaryFilter === "decrease" || bundleSummaryFilter === "new") {
+                    return data.rows.filter(function (row) {
+                        return row.change === bundleSummaryFilter;
+                    });
+                }
+                bundleSummaryFilter = "all";
+                return data.rows;
+            }
+
+            function updateBundleSummaryFilterButtons(data) {
+                var counts = {
+                    all: data.rows.length,
+                    increase: data.stats.increases,
+                    decrease: data.stats.decreases,
+                    new: data.stats.newScenes,
+                };
+                var buttons = document.querySelectorAll("[data-bundle-summary-filter]");
+                buttons.forEach(function (button) {
+                    var filter = button.getAttribute("data-bundle-summary-filter");
+                    button.classList.toggle("active", filter === bundleSummaryFilter);
+                    button.setAttribute("aria-pressed", filter === bundleSummaryFilter ? "true" : "false");
+                    var count = document.getElementById("bundle-summary-filter-" + filter + "-count");
+                    if (count) count.textContent = counts[filter] || 0;
+                });
+            }
+
+            function getBundleSummaryEmptyText(data) {
+                if (data.rows.length === 0) {
+                    return data.hasMaster ? "No bundle size changes vs master." : "No master bundle baseline loaded yet.";
+                }
+                if (bundleSummaryFilter === "increase") return "No bundle size increases vs master.";
+                if (bundleSummaryFilter === "decrease") return "No bundle size decreases vs master.";
+                if (bundleSummaryFilter === "new") return "No new bundle scenes vs master.";
+                return "No bundle size changes match this filter.";
+            }
+
             function renderBundleSummary(manifest, masterManifest) {
                 var data = buildBundleSummaryData(manifest, masterManifest);
                 var metrics = document.getElementById("bundle-summary-metrics");
@@ -4392,6 +4469,7 @@
                 var rowsEl = document.getElementById("bundle-summary-rows");
                 if (!metrics || !empty || !tableWrap || !rowsEl) return;
 
+                updateBundleSummaryFilterButtons(data);
                 var netClass = data.stats.netDelta > 0 ? "increase" : data.stats.netDelta < 0 ? "decrease" : "";
                 var netText = data.hasMaster ? (data.stats.netDelta > 0 ? "+" : "") + data.stats.netDelta.toFixed(1) + " KB" : "\u2014";
                 metrics.innerHTML =
@@ -4419,9 +4497,10 @@
                     (data.stats.newScenes === 1 ? "" : "s") +
                     "</div></div>";
 
-                if (data.rows.length === 0) {
+                var rows = getBundleSummaryFilteredRows(data);
+                if (data.rows.length === 0 || rows.length === 0) {
                     empty.hidden = false;
-                    empty.textContent = data.hasMaster ? "No bundle size changes vs master." : "No master bundle baseline loaded yet.";
+                    empty.textContent = getBundleSummaryEmptyText(data);
                     tableWrap.hidden = true;
                     rowsEl.innerHTML = "";
                     return;
@@ -4429,7 +4508,7 @@
 
                 empty.hidden = true;
                 tableWrap.hidden = false;
-                rowsEl.innerHTML = data.rows
+                rowsEl.innerHTML = rows
                     .map(function (row) {
                         return (
                             "<tr><td><span class=\"bundle-summary-scene\">" +
@@ -4457,9 +4536,16 @@
             function updateBundleSummary(manifest, masterManifest) {
                 var text = buildBundleSummaryText(manifest, masterManifest);
                 bundleSummaryText = text;
+                bundleSummaryManifest = manifest;
+                bundleSummaryMasterManifest = masterManifest;
                 var textarea = document.getElementById("bundle-summary-text");
                 if (textarea) textarea.value = text;
                 renderBundleSummary(manifest, masterManifest);
+            }
+
+            function filterBundleSummary(filter) {
+                bundleSummaryFilter = filter;
+                renderBundleSummary(bundleSummaryManifest, bundleSummaryMasterManifest);
             }
 
             function toggleBundleSummary() {
