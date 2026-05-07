@@ -123,7 +123,7 @@ const ext: GltfFeature = {
                 const refraction: RefractionProps = {
                     ...(subsurface.refraction ?? {}),
                     intensity,
-                    useThicknessAsDepth: true,
+                    useThicknessAsDepth: !!subsurface.thickness,
                     ...(transTex ? { texture: transTex } : undefined),
                 };
                 subsurface.refraction = refraction;

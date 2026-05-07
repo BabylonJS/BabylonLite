@@ -91,7 +91,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     for (let i = 0; i < meshes.length; i++) {
         const m = meshes[i]!;
         const mat = m.material as PbrMaterialProps & { _hasReflExt?: boolean; _hasUvTx?: boolean };
-        const mi = m as import("../../mesh/mesh.js").MeshInternal;
+        const mi = m as MeshInternal;
         hasSkybox ||= !!mat.skyboxMode;
         hasMetallicReflectance ||= !!(mat.metallicReflectanceTexture || mat.reflectanceTexture || mat._hasReflExt);
         hasClearcoat ||= !!mat.clearCoat?.isEnabled;

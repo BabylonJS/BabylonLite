@@ -8,10 +8,13 @@
  * registry in load-gltf.ts. This core file knows ZERO extension names.
  */
 import type { Texture2D } from "../texture/texture-2d.js";
+import type { EngineContextInternal } from "../engine/engine.js";
 import { getTextureImageIndex, resolveImage } from "./gltf-parser.js";
 
 /** Per-load context handed to each material extension's `applyMaterial()`. */
 export interface GltfMatExtCtx {
+    /** Internal engine access for dynamic-only texture extensions that must upload directly. */
+    engine: EngineContextInternal;
     /** Fetch + upload a texture from a glTF textureInfo object.
      *  Returns undefined if texInfo is null/undefined. */
     texture(texInfo: unknown, sRGB: boolean): Promise<Texture2D | undefined>;
@@ -115,8 +118,7 @@ export function makeImageFetcher(json: any, binChunk: DataView, baseUrl: string,
         if (!texInfo) {
             return Promise.resolve(null);
         }
-        const tex = json.textures[texInfo.index];
-        const imgIdx: number = getTextureImageIndex(tex);
+        const imgIdx: number = getTextureImageIndex(json.textures[texInfo.index]);
         if (imageCache) {
             let cached = imageCache.get(imgIdx);
             if (!cached) {

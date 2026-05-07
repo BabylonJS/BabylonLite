@@ -118,7 +118,7 @@ export function buildDefaultPbrTextures(
 
 /** Run all material-layer features and merge their fragments. */
 export async function runMatExts(mat: GltfMaterialData, exts: GltfFeature[], ctx: GltfMatExtCtx): Promise<Partial<PbrMaterialProps> | undefined> {
-    if (exts.length === 0) {
+    if (!exts.length) {
         return undefined;
     }
     const fragments = await Promise.all(exts.map((ext) => ext.applyMaterial!(mat, ctx)));

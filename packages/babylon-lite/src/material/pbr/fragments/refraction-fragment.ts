@@ -2,8 +2,8 @@
  * Refraction Fragment — KHR_materials_transmission + _volume + _ior + _specular.
  *
  * Ports the BJS `pbrBlockSubSurface.fx` refraction path:
- *   1. Snell refraction with IOR-scaled alphaG
- *      `refractionAlphaG = mix(alphaG, 0, clamp(ior*3-2, 0, 1))`
+ *   1. Snell refraction with BJS' inverse-ior-scaled alphaG
+ *      `refractionAlphaG = mix(alphaG, 0, clamp(inverseIor*3-2, 0, 1))`
  *   2. LOD from refractionAlphaG via BJS `getLodFromAlphaG` formula
  *      `log2(textureSize * refractionAlphaG) * lodScale`
  *   3. Beer-Lambert volume absorption (KHR_materials_volume):
@@ -45,10 +45,9 @@ let ior = max(material.refractionParams.y, 1.001);
 let etaRatio = 1.0 / ior;
 let refrDir_raw = refract(-V, N, etaRatio);
 let refrDir = rotateY(refrDir_raw, scene.envRotationY);
-
 // BJS: refractionAlphaG = mix(alphaG, 0, clamp(ior*3-2, 0, 1))
-// At IOR=1.0 → alphaG (no microfacet refraction change)
-// At IOR≥1.5 → 0 (perfect refraction, sharp)
+// At IOR=1.0 -> alphaG (no microfacet refraction change)
+// At IOR>=1.5 -> 0 (perfect refraction, sharp)
 let refrAlphaG = mix(alphaG, 0.0, clamp(ior * 3.0 - 2.0, 0.0, 1.0));
 // BJS getLodFromAlphaG:  log2(textureSize * alphaG) * lodGenerationScale
 let refrSpecLod = log2(cubemapDim * refrAlphaG) * scene.vImageInfos.z;
@@ -103,7 +102,6 @@ function writeRefractionUBO(data: Float32Array, mat: PbrMaterialProps, offsets: 
     const o = off / 4;
     data[o] = refr.intensity ?? 0;
     data[o + 1] = refr.indexOfRefraction ?? 1.5;
-    // Thickness (distance light travels through medium). Use the thickness max; falls back to 1.
     const thick = ss!.thickness;
     data[o + 2] = thick?.max ?? 1.0;
     data[o + 3] = refr.useThicknessAsDepth ? 1.0 : 0.0;

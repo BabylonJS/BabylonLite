@@ -12,6 +12,7 @@ import type { EnvironmentTextures } from "../../loader-env/load-env.js";
 import type { ComposedShader } from "../../shader/fragment-types.js";
 import type { EngineContextInternal } from "../../engine/engine.js";
 import type { RenderTargetSignature } from "../../engine/render-target.js";
+import type { PbrBindCtx, PbrExt } from "./pbr-flags.js";
 import { _getPbrExtsSorted, PBR2_HAS_UV2 } from "./pbr-flags.js";
 import { PBR_HAS_NORMAL_MAP, PBR_HAS_EMISSIVE, PBR_HAS_SPEC_GLOSS, PBR_HAS_DOUBLE_SIDED, PBR_HAS_COTANGENT_NORMAL, PBR_HAS_ALPHA_BLEND } from "./pbr-flags.js";
 import { targetSignatureKey } from "../../engine/render-target.js";
@@ -137,7 +138,7 @@ export function createPbrMeshBindGroup(
         entries.push({ binding: b++, resource: t.sampler });
     };
 
-    const ctx: import("./pbr-flags.js").PbrBindCtx = {
+    const ctx: PbrBindCtx = {
         features,
         features2,
         material,
@@ -147,7 +148,7 @@ export function createPbrMeshBindGroup(
 
     const sortedExts = _getPbrExtsSorted();
 
-    const extByFragId = new Map<string, import("./pbr-flags.js").PbrExt>();
+    const extByFragId = new Map<string, PbrExt>();
     const fragIds = composed.fragmentKey ? composed.fragmentKey.split("|").filter((s) => s.length > 0) : [];
     for (const fid of fragIds) {
         let match = sortedExts.find((e) => e.id === fid);
@@ -180,7 +181,7 @@ export function createPbrMeshBindGroup(
     if (hasSpecGloss) {
         addTex(material.specGlossTexture!);
     }
-    const seenExts = new Set<import("./pbr-flags.js").PbrExt>();
+    const seenExts = new Set<PbrExt>();
     for (const fid of fragIds) {
         const ext = extByFragId.get(fid);
         if (!ext || ext.phase === "vertex" || !ext.bind || seenExts.has(ext)) {
