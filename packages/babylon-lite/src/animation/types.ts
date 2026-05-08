@@ -106,9 +106,14 @@ export interface SkeletonData {
     readonly boneCount: number;
     readonly jointsBuffer: GPUBuffer;
     readonly weightsBuffer: GPUBuffer;
+    readonly joints?: Uint16Array | Uint8Array;
+    readonly weights?: Float32Array;
+    readonly boneMatrices?: Float32Array;
     /** Extra joints/weights for 8-bone skinning (JOINTS_1/WEIGHTS_1). */
     readonly joints1Buffer: GPUBuffer | null;
     readonly weights1Buffer: GPUBuffer | null;
+    readonly joints1?: Uint16Array | Uint8Array | null;
+    readonly weights1?: Float32Array | null;
 }
 
 /** Morph target GPU data — delta texture + weights UBO.
@@ -118,4 +123,6 @@ export interface MorphTargetData {
     readonly texture: GPUTexture;
     readonly count: number;
     readonly weightsBuffer: GPUBuffer;
+    readonly targets?: readonly { positions: Float32Array; normals: Float32Array | null }[];
+    readonly weights?: Float32Array;
 }

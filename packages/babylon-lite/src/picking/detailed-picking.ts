@@ -3,6 +3,7 @@ import type { MeshInternal } from "../mesh/mesh.js";
 import type { GpuPicker } from "./gpu-picker.js";
 import type { PickingInfo } from "./picking-info.js";
 import type { Ray } from "./ray.js";
+import { computeDeformedPositions, hasCpuDeformation } from "./deformed-geometry.js";
 
 /**
  * Enable detailed picking on a GPU picker.
@@ -21,7 +22,8 @@ function detailedPick(info: PickingInfo, ray: Ray): void {
         return;
     }
 
-    const positions = mi._cpuPositions;
+    const deformedPositions = hasCpuDeformation(mi) ? computeDeformedPositions(mi) : null;
+    const positions = deformedPositions ?? mi._cpuPositions;
     const indices = mi._cpuIndices;
 
     // Determine the world matrix — use thin instance matrix when applicable

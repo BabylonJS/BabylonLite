@@ -1549,15 +1549,30 @@
     "bjsGzipKB": 658.2
   },
   "scene113": {
-    "rawKB": 55.6,
-    "gzipKB": 21,
+    "rawKB": 58.2,
+    "gzipKB": 21.7,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene113-standard-renderable-BaYogAwn.js",
       "scene113-wgsl-helpers-WTsokIfK.js",
       "scene113.js"
     ],
-    "bjsRawKB": 1445.8,
-    "bjsGzipKB": 343.8
+    "bjsRawKB": 1461.3,
+    "bjsGzipKB": 347.5
+  },
+  "scene114": {
+    "rawKB": 74.6,
+    "gzipKB": 27.2,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene114-morph-fragment-C3jzgyD8.js",
+      "scene114-pbr-renderable-DHjPTlEx.js",
+      "scene114-singlelight-wgsl-CNmchTZy.js",
+      "scene114-skeleton-fragment-DyWEjC_k.js",
+      "scene114-unlit-fragment-CU6247L3.js",
+      "scene114.js"
+    ],
+    "bjsRawKB": 1786.2,
+    "bjsGzipKB": 431.9
   }
 }

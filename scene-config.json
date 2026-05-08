@@ -723,5 +723,14 @@
         "maxRawKB": 68,
         "description": "Visual picking validation: one detailed sphere pick places a tiny surface marker at the picked point and a small oriented box along the picked normal.",
         "tags": ["std", "procedural", "picking"]
+    },
+    {
+        "id": 114,
+        "slug": "scene114-morph-skeleton-picking",
+        "name": "Scene 114 — Morph/Skeleton Picking",
+        "maxMad": 0,
+        "maxRawKB": 86,
+        "description": "Visual picking validation on morphed and skinned geometry: GPU and detailed picks drive marker positions from the deformed rendered surface.",
+        "tags": ["pbr", "procedural", "morph", "skeleton", "picking"]
     }
 ]
