@@ -59,8 +59,8 @@ async function run(): Promise<void> {
         enableDetailedPicking(picker);
 
         // Pick center of canvas — should hit the sphere
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
+        const cx = canvas.clientWidth / 2;
+        const cy = canvas.clientHeight / 2;
         const centerInfo = await pickAsync(picker, cx, cy);
 
         results.centerPick = {

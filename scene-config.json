@@ -714,5 +714,14 @@
         "maxRawKB": 110,
         "description": "BabylonJS/Assets FlightHelmetKTX glTF model using KHR_texture_basisu KTX2 source textures for base color, normal, and occlusion/roughness/metallic maps.",
         "tags": ["pbr", "gltf", "env", "basis"]
+    },
+    {
+        "id": 113,
+        "slug": "scene113-picking-precision",
+        "name": "Scene 113 — Picking Precision",
+        "maxMad": 0,
+        "maxRawKB": 68,
+        "description": "Visual picking validation: one detailed sphere pick places a tiny surface marker at the picked point and a small oriented box along the picked normal.",
+        "tags": ["std", "procedural", "picking"]
     }
 ]

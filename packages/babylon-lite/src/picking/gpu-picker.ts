@@ -107,7 +107,7 @@ function computePickVP(out: Float32Array, vp: Float32Array, px: number, py: numb
     }
 }
 
-/** Pick the mesh at (x, y) canvas coordinates. Returns a PickingInfo. */
+/** Pick the mesh at CSS-space canvas coordinates, matching Babylon.js Scene.pick. Returns a PickingInfo. */
 export async function pickAsync(picker: GpuPicker, x: number, y: number): Promise<PickingInfo> {
     const scene = picker._scene;
     const engine = scene.engine as EngineContextInternal;
@@ -118,19 +118,27 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
         return createEmptyPickingInfo();
     }
 
-    const viewport = resolveCameraViewport(camera, canvas.width, canvas.height);
+    const backingWidth = canvas.width;
+    const backingHeight = canvas.height;
+    const clientWidth = canvas.clientWidth || backingWidth;
+    const clientHeight = canvas.clientHeight || backingHeight;
+    const scaleX = backingWidth / clientWidth;
+    const scaleY = backingHeight / clientHeight;
+    const pickX = x * scaleX;
+    const pickY = y * scaleY;
+    const viewport = resolveCameraViewport(camera, backingWidth, backingHeight);
     const w = viewport.width;
     const h = viewport.height;
     if (w === 0 || h === 0) {
         return createEmptyPickingInfo();
     }
 
-    if (x < viewport.x || y < viewport.y || x >= viewport.x + viewport.width || y >= viewport.y + viewport.height) {
+    if (pickX < viewport.x || pickY < viewport.y || pickX >= viewport.x + viewport.width || pickY >= viewport.y + viewport.height) {
         return createEmptyPickingInfo();
     }
 
-    const px = Math.max(0, Math.min(Math.floor(x - viewport.x), w - 1));
-    const py = Math.max(0, Math.min(Math.floor(y - viewport.y), h - 1));
+    const px = Math.max(0, Math.min(Math.floor(pickX - viewport.x), w - 1));
+    const py = Math.max(0, Math.min(Math.floor(pickY - viewport.y), h - 1));
     const aspect = w / h;
     const vp = getViewProjectionMatrix(camera, aspect);
 
@@ -280,6 +288,7 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
     if (picker._detailedPick) {
         const ray = createPickingRay(px, py, vp, w, h);
         if (ray) {
+            info.ray = ray;
             picker._detailedPick(info, ray);
         }
     }
