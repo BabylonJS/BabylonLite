@@ -1,11 +1,12 @@
 import type { EngineContextInternal } from "../engine/engine.js";
+import type { Mat4 } from "../math/types.js";
 import { SCENE_UBO_WGSL } from "../shader/scene-uniforms.js";
 import type { SpriteBlendMode } from "./sprite-2d.js";
-import type { BillboardSpriteSystem } from "./billboard-sprite.js";
-import { BILLBOARD_INSTANCE_STRIDE_BYTES } from "./billboard-sprite.js";
+import type { BillboardDepthMode, BillboardOrientation, BillboardSpriteSystem } from "./billboard-sprite.js";
+import { BILLBOARD_INSTANCE_FLOATS_PER_SPRITE, BILLBOARD_INSTANCE_STRIDE_BYTES } from "./billboard-sprite.js";
 
 export interface BillboardPipelineDeviceCache {
-    _shaderModule: GPUShaderModule | null;
+    _shaderModules: Map<BillboardOrientation, GPUShaderModule>;
     _pipelines: Map<string, GPURenderPipeline>;
 }
 
@@ -33,9 +34,21 @@ const BLEND_MODE_TABLE: Readonly<Record<SupportedBillboardBlendMode, { index: nu
     },
 };
 
+const DEPTH_MODE_TABLE: Readonly<Record<BillboardDepthMode, { index: number; compare: GPUCompareFunction; writeEnabled: boolean }>> = {
+    transparent: { index: 0, compare: "less-equal", writeEnabled: false },
+};
+
 export const BILLBOARD_SYSTEM_UBO_BYTES = 16;
 const BILLBOARD_SYSTEM_UBO_FLOATS = BILLBOARD_SYSTEM_UBO_BYTES / 4;
 export const BILLBOARD_INDEX_DATA: Readonly<Uint16Array> = new Uint16Array([0, 1, 2, 0, 2, 3]);
+
+export interface BillboardInstanceSortScratch {
+    _capacity: number;
+    _sortedInstanceData: Float32Array;
+    _sortIndices: Uint32Array;
+    _sortTempIndices: Uint32Array;
+    _sortDepths: Float32Array;
+}
 
 function getBlendModeEntry(blendMode: SpriteBlendMode): (typeof BLEND_MODE_TABLE)[SupportedBillboardBlendMode] {
     if (blendMode === "alpha" || blendMode === "premultiplied") {
@@ -44,7 +57,26 @@ function getBlendModeEntry(blendMode: SpriteBlendMode): (typeof BLEND_MODE_TABLE
     throw new Error(`Billboard pipeline: blendMode: "${blendMode}" is not supported yet.`);
 }
 
-function makeFacingBillboardWgsl(): string {
+function getDepthModeEntry(depthMode: BillboardDepthMode): (typeof DEPTH_MODE_TABLE)[BillboardDepthMode] {
+    return DEPTH_MODE_TABLE[depthMode];
+}
+
+function makeBillboardBasisWgsl(orientation: BillboardOrientation): string {
+    switch (orientation) {
+        case "facing":
+            return `struct BillboardBasis {
+right: vec3<f32>,
+up: vec3<f32>,
+};
+fn getBillboardBasis(_anchor: vec3<f32>) -> BillboardBasis {
+let cameraRight = normalize(vec3<f32>(scene.view[0][0], scene.view[1][0], scene.view[2][0]));
+let cameraUp = normalize(vec3<f32>(scene.view[0][1], scene.view[1][1], scene.view[2][1]));
+return BillboardBasis(cameraRight, -cameraUp);
+}`;
+    }
+}
+
+function makeBillboardWgsl(orientation: BillboardOrientation): string {
     return `${SCENE_UBO_WGSL}
 struct BillboardSystem {
 opacityMul: vec4<f32>,
@@ -52,6 +84,7 @@ opacityMul: vec4<f32>,
 @group(1) @binding(0) var<uniform> billboards: BillboardSystem;
 @group(1) @binding(1) var atlasTex: texture_2d<f32>;
 @group(1) @binding(2) var atlasSamp: sampler;
+${makeBillboardBasisWgsl(orientation)}
 struct VIn {
 @builtin(vertex_index) vid: u32,
 @location(0) iPos: vec3<f32>,
@@ -75,9 +108,8 @@ let local = (corner - in.iPivot) * in.iSize;
 let cosRot = cos(in.iRot);
 let sinRot = sin(in.iRot);
 let rotated = vec2<f32>(local.x * cosRot - local.y * sinRot, local.x * sinRot + local.y * cosRot);
-let cameraRight = normalize(vec3<f32>(scene.view[0][0], scene.view[1][0], scene.view[2][0]));
-let cameraUp = normalize(vec3<f32>(scene.view[0][1], scene.view[1][1], scene.view[2][1]));
-let worldPos = in.iPos + cameraRight * rotated.x - cameraUp * rotated.y;
+let basis = getBillboardBasis(in.iPos);
+let worldPos = in.iPos + basis.right * rotated.x + basis.up * rotated.y;
 var out: VOut;
 out.pos = scene.viewProjection * vec4<f32>(worldPos, 1.0);
 out.uv = mix(in.iUvMin, in.iUvMax, corner);
@@ -107,22 +139,22 @@ export function getBillboardPipelineCacheSize(cache: BillboardPipelineCache): nu
     return cache._lastDeviceCache?._pipelines.size ?? 0;
 }
 
-export function getOrCreateFacingBillboardPipeline(
+export function getOrCreateBillboardPipeline(
     engine: EngineContextInternal,
     cache: BillboardPipelineCache,
     format: GPUTextureFormat,
     sampleCount: 1 | 4,
-    blendMode: SpriteBlendMode,
+    system: BillboardSpriteSystem,
     depthStencilFormat: GPUTextureFormat,
     sceneBindGroupLayout: GPUBindGroupLayout
 ): GPURenderPipeline {
     const deviceCache = getBillboardPipelineDeviceCache(engine, cache);
-    const key = `${format}:${sampleCount}:${getBlendModeEntry(blendMode).index}:${depthStencilFormat}`;
+    const key = `${format}:${sampleCount}:${system._orientation}:${getBlendModeEntry(system.blendMode).index}:${getDepthModeEntry(system._depthMode).index}:${depthStencilFormat}`;
     const cached = deviceCache._pipelines.get(key);
     if (cached) {
         return cached;
     }
-    const pipeline = buildFacingBillboardPipeline(engine, deviceCache, format, sampleCount, blendMode, depthStencilFormat, sceneBindGroupLayout);
+    const pipeline = buildBillboardPipeline(engine, deviceCache, format, sampleCount, system, depthStencilFormat, sceneBindGroupLayout);
     deviceCache._pipelines.set(key, pipeline);
     return pipeline;
 }
@@ -133,6 +165,53 @@ export function createBillboardInstanceBuffer(device: GPUDevice, system: Billboa
         size: system._capacity * BILLBOARD_INSTANCE_STRIDE_BYTES,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
+}
+
+export function createBillboardInstanceSortScratch(): BillboardInstanceSortScratch {
+    return {
+        _capacity: 0,
+        _sortedInstanceData: new Float32Array(0),
+        _sortIndices: new Uint32Array(0),
+        _sortTempIndices: new Uint32Array(0),
+        _sortDepths: new Float32Array(0),
+    };
+}
+
+export function uploadSortedBillboardInstances(
+    device: GPUDevice,
+    system: BillboardSpriteSystem,
+    instanceBuffer: GPUBuffer,
+    scratch: BillboardInstanceSortScratch,
+    cameraViewMatrix: Mat4
+): void {
+    const count = system.count;
+    if (count === 0) {
+        return;
+    }
+    ensureBillboardInstanceSortScratch(scratch, count);
+    const sourceData = system._instanceData;
+    const sortedData = scratch._sortedInstanceData;
+    const indices = scratch._sortIndices;
+    const depths = scratch._sortDepths;
+    for (let index = 0; index < count; index++) {
+        const base = index * BILLBOARD_INSTANCE_FLOATS_PER_SPRITE;
+        const anchorX = sourceData[base]!;
+        const anchorY = sourceData[base + 1]!;
+        const anchorZ = sourceData[base + 2]!;
+        indices[index] = index;
+        depths[index] = cameraViewMatrix[2]! * anchorX + cameraViewMatrix[6]! * anchorY + cameraViewMatrix[10]! * anchorZ + cameraViewMatrix[14]!;
+    }
+    sortBillboardIndicesByDepth(indices, scratch._sortTempIndices, depths, count);
+    for (let outIndex = 0; outIndex < count; outIndex++) {
+        const sourceBase = indices[outIndex]! * BILLBOARD_INSTANCE_FLOATS_PER_SPRITE;
+        const destBase = outIndex * BILLBOARD_INSTANCE_FLOATS_PER_SPRITE;
+        for (let field = 0; field < BILLBOARD_INSTANCE_FLOATS_PER_SPRITE; field++) {
+            sortedData[destBase + field] = sourceData[sourceBase + field]!;
+        }
+    }
+    device.queue.writeBuffer(instanceBuffer, 0, sortedData.buffer, sortedData.byteOffset, count * BILLBOARD_INSTANCE_STRIDE_BYTES);
+    system._dirtyMin = 0;
+    system._dirtyMax = 0;
 }
 
 export function ensureBillboardInstanceBuffer(
@@ -170,6 +249,61 @@ export function uploadBillboardInstances(device: GPUDevice, system: BillboardSpr
     system._dirtyMin = 0;
     system._dirtyMax = 0;
     return system._version;
+}
+
+function ensureBillboardInstanceSortScratch(scratch: BillboardInstanceSortScratch, count: number): void {
+    if (scratch._capacity >= count) {
+        return;
+    }
+    scratch._capacity = count;
+    scratch._sortedInstanceData = new Float32Array(count * BILLBOARD_INSTANCE_FLOATS_PER_SPRITE);
+    scratch._sortIndices = new Uint32Array(count);
+    scratch._sortTempIndices = new Uint32Array(count);
+    scratch._sortDepths = new Float32Array(count);
+}
+
+function sortBillboardIndicesByDepth(indices: Uint32Array, tempIndices: Uint32Array, depths: Float32Array, count: number): void {
+    let source = indices;
+    let target = tempIndices;
+    for (let width = 1; width < count; width *= 2) {
+        for (let start = 0; start < count; start += width * 2) {
+            const mid = Math.min(start + width, count);
+            const end = Math.min(start + width * 2, count);
+            let left = start;
+            let right = mid;
+            let out = start;
+            while (left < mid && right < end) {
+                const leftIndex = source[left]!;
+                const rightIndex = source[right]!;
+                if (depths[leftIndex]! >= depths[rightIndex]!) {
+                    target[out] = leftIndex;
+                    left++;
+                } else {
+                    target[out] = rightIndex;
+                    right++;
+                }
+                out++;
+            }
+            while (left < mid) {
+                target[out] = source[left]!;
+                left++;
+                out++;
+            }
+            while (right < end) {
+                target[out] = source[right]!;
+                right++;
+                out++;
+            }
+        }
+        const swap = source;
+        source = target;
+        target = swap;
+    }
+    if (source !== indices) {
+        for (let index = 0; index < count; index++) {
+            indices[index] = source[index]!;
+        }
+    }
 }
 
 export function buildBillboardSystemUbo(system: BillboardSpriteSystem, ubo: Float32Array): void {
@@ -219,28 +353,33 @@ export function createBillboardSystemBindGroup(engine: EngineContextInternal, pi
 function getBillboardPipelineDeviceCache(engine: EngineContextInternal, cache: BillboardPipelineCache): BillboardPipelineDeviceCache {
     let deviceCache = cache._devices.get(engine.device);
     if (!deviceCache) {
-        deviceCache = { _shaderModule: null, _pipelines: new Map() };
+        deviceCache = { _shaderModules: new Map(), _pipelines: new Map() };
         cache._devices.set(engine.device, deviceCache);
     }
     cache._lastDeviceCache = deviceCache;
     return deviceCache;
 }
 
-function getShaderModule(engine: EngineContextInternal, cache: BillboardPipelineDeviceCache): GPUShaderModule {
-    cache._shaderModule ??= engine.device.createShaderModule({ code: makeFacingBillboardWgsl() });
-    return cache._shaderModule;
+function getShaderModule(engine: EngineContextInternal, cache: BillboardPipelineDeviceCache, orientation: BillboardOrientation): GPUShaderModule {
+    let module = cache._shaderModules.get(orientation);
+    if (!module) {
+        module = engine.device.createShaderModule({ code: makeBillboardWgsl(orientation) });
+        cache._shaderModules.set(orientation, module);
+    }
+    return module;
 }
 
-function buildFacingBillboardPipeline(
+function buildBillboardPipeline(
     engine: EngineContextInternal,
     cache: BillboardPipelineDeviceCache,
     format: GPUTextureFormat,
     sampleCount: 1 | 4,
-    blendMode: SpriteBlendMode,
+    system: BillboardSpriteSystem,
     depthStencilFormat: GPUTextureFormat,
     sceneBindGroupLayout: GPUBindGroupLayout
 ): GPURenderPipeline {
     const device = engine.device;
+    const depthEntry = getDepthModeEntry(system._depthMode);
     const billboardBindGroupLayout = device.createBindGroupLayout({
         entries: [
             { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
@@ -249,10 +388,10 @@ function buildFacingBillboardPipeline(
         ],
     });
     return device.createRenderPipeline({
-        label: "facing-billboard-sprite-pipeline",
+        label: `${system._orientation}-billboard-sprite-pipeline`,
         layout: device.createPipelineLayout({ bindGroupLayouts: [sceneBindGroupLayout, billboardBindGroupLayout] }),
         vertex: {
-            module: getShaderModule(engine, cache),
+            module: getShaderModule(engine, cache, system._orientation),
             entryPoint: "vs",
             buffers: [
                 {
@@ -271,12 +410,12 @@ function buildFacingBillboardPipeline(
             ],
         },
         fragment: {
-            module: getShaderModule(engine, cache),
+            module: getShaderModule(engine, cache, system._orientation),
             entryPoint: "fs",
-            targets: [{ format, blend: getBlendModeEntry(blendMode).descriptor, writeMask: GPUColorWrite.ALL }],
+            targets: [{ format, blend: getBlendModeEntry(system.blendMode).descriptor, writeMask: GPUColorWrite.ALL }],
         },
         primitive: { topology: "triangle-list", cullMode: "none" },
-        depthStencil: { format: depthStencilFormat, depthCompare: "less-equal", depthWriteEnabled: false },
+        depthStencil: { format: depthStencilFormat, depthCompare: depthEntry.compare, depthWriteEnabled: depthEntry.writeEnabled },
         multisample: { count: sampleCount },
     });
 }

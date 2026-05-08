@@ -183,7 +183,7 @@ export { createGridSpriteAtlas, loadSpriteAtlas } from "./sprite/shared/sprite-a
 export type { Sprite2DLayer, Sprite2DLayerOptions, Sprite2DProps, Sprite2DView, Sprite2DDepthMode, SpriteBlendMode } from "./sprite/sprite-2d.js";
 export { createSprite2DLayer, addSprite2DIndex, updateSprite2DIndex, removeSprite2DIndex, setSprite2DFrameIndex } from "./sprite/sprite-2d.js";
 export { addDepthHostedSpriteLayer } from "./sprite/sprite-scene.js";
-export type { BillboardSpriteSystem, BillboardSpriteSystemOptions, BillboardSpriteInit } from "./sprite/billboard-sprite.js";
+export type { BillboardSpriteSystem, BillboardSpriteSystemOptions, BillboardSpriteInit, BillboardOrientation, BillboardDepthMode } from "./sprite/billboard-sprite.js";
 export {
     createFacingBillboardSystem,
     addBillboardSpriteIndex,

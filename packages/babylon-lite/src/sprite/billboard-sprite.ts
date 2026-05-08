@@ -1,5 +1,5 @@
 /**
- * Facing billboard sprites: world-space, camera-facing quads backed by a SpriteAtlas.
+ * Billboard sprites: world-space quads backed by a SpriteAtlas.
  *
  * This module is pure state + standalone index API only. Scene integration lives in
  * `billboard-scene.ts` so 2D sprite paths and mesh-only scenes do not import the
@@ -17,8 +17,11 @@ export interface BillboardSpriteSystemOptions {
     order?: number;
 }
 
+export type BillboardOrientation = "facing";
+export type BillboardDepthMode = "transparent";
+
 export interface BillboardSpriteSystem {
-    readonly _entityType: "facing-billboard-sprite-system";
+    readonly _entityType: "billboard-sprite-system";
     readonly atlas: SpriteAtlas;
     readonly blendMode: SpriteBlendMode;
     opacity: number;
@@ -26,6 +29,10 @@ export interface BillboardSpriteSystem {
     order: number;
     count: number;
 
+    /** @internal Orientation shader path for this system. */
+    readonly _orientation: BillboardOrientation;
+    /** @internal Depth/blend pipeline path for this system. */
+    readonly _depthMode: BillboardDepthMode;
     /** @internal Capacity of the per-instance buffer in sprites. */
     _capacity: number;
     /** @internal Per-instance stride in floats. */
@@ -71,18 +78,24 @@ function assertBlendSupported(blendMode: SpriteBlendMode): void {
 }
 
 export function createFacingBillboardSystem(atlas: SpriteAtlas, opts: BillboardSpriteSystemOptions = {}): BillboardSpriteSystem {
+    return createBillboardSystem(atlas, "facing", "transparent", opts);
+}
+
+function createBillboardSystem(atlas: SpriteAtlas, orientation: BillboardOrientation, depthMode: BillboardDepthMode, opts: BillboardSpriteSystemOptions): BillboardSpriteSystem {
     const blendMode = opts.blendMode ?? "alpha";
     assertBlendSupported(blendMode);
     const capacity = Math.max(1, opts.capacity ?? DEFAULT_CAPACITY);
     const instanceData = new Float32Array(capacity * BILLBOARD_INSTANCE_FLOATS_PER_SPRITE);
     return {
-        _entityType: "facing-billboard-sprite-system",
+        _entityType: "billboard-sprite-system",
         atlas,
         blendMode,
         opacity: opts.opacity ?? 1,
         visible: opts.visible ?? true,
         order: opts.order ?? 200,
         count: 0,
+        _orientation: orientation,
+        _depthMode: depthMode,
         _capacity: capacity,
         _instanceFloatsPerSprite: BILLBOARD_INSTANCE_FLOATS_PER_SPRITE,
         _instanceStrideBytes: BILLBOARD_INSTANCE_STRIDE_BYTES,

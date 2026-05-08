@@ -20,9 +20,10 @@ import { BILLBOARD_SYSTEM_UBO_BYTES } from "../../packages/babylon-lite/src/spri
 import { createSceneContext, disposeScene } from "../../packages/babylon-lite/src/scene/scene";
 import { registerScene } from "../../packages/babylon-lite/src/scene/scene-core";
 import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
+import type { Mat4 } from "../../packages/babylon-lite/src/math/types";
 import type { SpriteAtlas } from "../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
 import type { Texture2D } from "../../packages/babylon-lite/src/texture/texture-2d";
-import type { EngineContext, EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
+import type { EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
 
 interface MockBuffer {
     destroy: ReturnType<typeof vi.fn>;
@@ -38,7 +39,7 @@ function mockBuffer(): MockBuffer {
     };
 }
 
-function makeMockEngine(): EngineContext {
+function makeMockEngine(): EngineContextInternal {
     const queue = { writeBuffer: vi.fn() };
     const device = {
         createBuffer: vi.fn(() => mockBuffer()),
@@ -59,14 +60,6 @@ function makeMockEngine(): EngineContext {
         context: {} as GPUCanvasContext,
         format: "bgra8unorm",
         alphaMode: "opaque",
-        _targets: {
-            msaaTexture: {} as GPUTexture,
-            msaaView: {} as GPUTextureView,
-            depthTexture: {} as GPUTexture,
-            depthView: {} as GPUTextureView,
-            width: 800,
-            height: 600,
-        } as EngineContextInternal["_targets"],
         _animFrameId: 0,
         _renderFn: null,
         _renderingContexts: [],
@@ -105,6 +98,22 @@ function makeDrawPassMock(): GPURenderPassEncoder {
     } as unknown as GPURenderPassEncoder;
 }
 
+function makeIdentityViewMatrix(): Mat4 {
+    const matrix = new Float32Array(16);
+    matrix[0] = 1;
+    matrix[5] = 1;
+    matrix[10] = 1;
+    matrix[15] = 1;
+    return matrix as Mat4;
+}
+
+function findInstanceUploadFloats(writeBuffer: ReturnType<typeof vi.fn>, spriteCount: number): Float32Array {
+    const byteLength = spriteCount * BILLBOARD_INSTANCE_STRIDE_BYTES;
+    const call = writeBuffer.mock.calls.find((candidate) => candidate[4] === byteLength);
+    expect(call).toBeTruthy();
+    return new Float32Array(call![2] as ArrayBuffer, call![3] as number, byteLength / 4);
+}
+
 describe("FacingBillboardSpriteSystem index API", () => {
     it("uses a 52-byte instance layout with position, size, UVs, rotation, pivot, and packed color", () => {
         const system = createFacingBillboardSystem(makeMockAtlas(), { capacity: 1 });
@@ -117,6 +126,9 @@ describe("FacingBillboardSpriteSystem index API", () => {
         });
 
         expect(index).toBe(0);
+        expect(system._entityType).toBe("billboard-sprite-system");
+        expect(system._orientation).toBe("facing");
+        expect(system._depthMode).toBe("transparent");
         expect(system._instanceFloatsPerSprite).toBe(BILLBOARD_INSTANCE_FLOATS_PER_SPRITE);
         expect(system._instanceStrideBytes).toBe(BILLBOARD_INSTANCE_STRIDE_BYTES);
         expect(system._instanceData.length).toBe(BILLBOARD_INSTANCE_FLOATS_PER_SPRITE);
@@ -235,6 +247,7 @@ describe("addFacingBillboardSystem", () => {
         expect(descriptor.depthStencil?.format).toBe("depth32float");
         expect(descriptor.depthStencil?.depthCompare).toBe("less-equal");
         expect(descriptor.depthStencil?.depthWriteEnabled).toBe(false);
+        expect(descriptor.label).toBe("facing-billboard-sprite-pipeline");
         const vertexBuffer = (descriptor.vertex.buffers as GPUVertexBufferLayout[])[0]!;
         expect(vertexBuffer.arrayStride).toBe(BILLBOARD_INSTANCE_STRIDE_BYTES);
         expect(vertexBuffer.attributes.map((attribute) => attribute.shaderLocation)).toEqual([0, 1, 2, 3, 4, 5, 6]);
@@ -243,12 +256,43 @@ describe("addFacingBillboardSystem", () => {
             (call[0] as GPUShaderModuleDescriptor).code.includes("cameraRight")
         )![0] as GPUShaderModuleDescriptor;
         expect(shaderDescriptor.code).toContain("scene.viewProjection");
+        expect(shaderDescriptor.code).toContain("getBillboardBasis");
         expect(shaderDescriptor.code).toContain("scene.view[0][0]");
 
         device.queue.writeBuffer.mockClear();
         binding.update?.({ targetWidth: 512, targetHeight: 256 });
         expect(device.queue.writeBuffer.mock.calls.some((call) => call[4] === BILLBOARD_INSTANCE_STRIDE_BYTES)).toBe(true);
         expect(device.queue.writeBuffer.mock.calls.some((call) => call[4] === BILLBOARD_SYSTEM_UBO_BYTES)).toBe(true);
+    });
+
+    it("uploads transparent billboards far-to-near without reordering logical instance data", async () => {
+        const engine = makeMockEngine();
+        const scene = createSceneContext(engine) as SceneContextInternal;
+        const system = createFacingBillboardSystem(makeMockAtlas(), { capacity: 3 });
+        addBillboardSpriteIndex(system, { position: [10, 0, 1], sizeWorld: [1, 1], frame: 0 });
+        addBillboardSpriteIndex(system, { position: [20, 0, 2], sizeWorld: [1, 1], frame: 0 });
+        addBillboardSpriteIndex(system, { position: [30, 0, 3], sizeWorld: [1, 1], frame: 0 });
+        addFacingBillboardSystem(scene, system);
+        await registerScene(engine, scene);
+
+        const device = engine.device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } };
+        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+        device.queue.writeBuffer.mockClear();
+
+        const cameraViewMatrix = makeIdentityViewMatrix();
+        binding.update?.({ targetWidth: 512, targetHeight: 256, cameraViewMatrix, cameraViewVersion: 7 });
+
+        const uploaded = findInstanceUploadFloats(device.queue.writeBuffer, 3);
+        expect([uploaded[2], uploaded[BILLBOARD_INSTANCE_FLOATS_PER_SPRITE + 2], uploaded[BILLBOARD_INSTANCE_FLOATS_PER_SPRITE * 2 + 2]]).toEqual([3, 2, 1]);
+        expect([
+            system._instanceData[2],
+            system._instanceData[BILLBOARD_INSTANCE_FLOATS_PER_SPRITE + 2],
+            system._instanceData[BILLBOARD_INSTANCE_FLOATS_PER_SPRITE * 2 + 2],
+        ]).toEqual([1, 2, 3]);
+
+        device.queue.writeBuffer.mockClear();
+        binding.update?.({ targetWidth: 512, targetHeight: 256, cameraViewMatrix, cameraViewVersion: 7 });
+        expect(device.queue.writeBuffer.mock.calls.some((call) => call[4] === 3 * BILLBOARD_INSTANCE_STRIDE_BYTES)).toBe(false);
     });
 
     it("draws with the billboard bind group at group 1 and disposes GPU buffers with the scene", async () => {

@@ -756,12 +756,12 @@ never pays for `viewProjection` on the CPU.
 
 The current implementation slice is deliberately narrower than the full
 billboard roadmap: it ships **Facing** billboards only, with the low-level
-index API and an explicit scene opt-in helper. Yaw-locked and axis-locked
-variants, handle objects, clip playback, parenting, picking, sorted
-transparent indirection, cutout/depth-write mode, and additive/multiply
-blend modes are additive follow-up modules. That split keeps the first
-billboard path small and keeps pure-2D sprite bundles from importing scene
-rendering code.
+index API, an explicit scene opt-in helper, and CPU-side transparent sorting
+for the current compact vertex-buffer upload. Yaw-locked and axis-locked
+variants, handle objects, clip playback, parenting, picking, storage-buffer
+sort indirection, cutout/depth-write mode, and additive/multiply blend modes
+are additive follow-up modules. That split keeps the first billboard path
+small and keeps pure-2D sprite bundles from importing scene rendering code.
 
 ```typescript
 // src/sprite/billboard-sprite.ts
@@ -776,8 +776,11 @@ export interface BillboardSpriteSystemOptions {
     order?: number;
 }
 
+export type BillboardOrientation = "facing";
+export type BillboardDepthMode = "transparent";
+
 export interface BillboardSpriteSystem {
-    readonly _entityType: "facing-billboard-sprite-system";
+    readonly _entityType: "billboard-sprite-system";
     readonly atlas: SpriteAtlas;
     readonly blendMode: SpriteBlendMode;
     opacity: number;
@@ -785,6 +788,8 @@ export interface BillboardSpriteSystem {
     order: number;
     count: number;
 
+    readonly _orientation: BillboardOrientation;
+    readonly _depthMode: BillboardDepthMode;
     _capacity: number;
     readonly _instanceFloatsPerSprite: number;
     readonly _instanceStrideBytes: number;
@@ -810,21 +815,25 @@ export interface BillboardSpriteInit {
 
 export function createFacingBillboardSystem(atlas: SpriteAtlas, opts?: BillboardSpriteSystemOptions): BillboardSpriteSystem;
 
-  // Index API — low-level, parallels ThinInstance and existing Sprite2DLayer index calls.
+// Index API — low-level, parallels ThinInstance and existing Sprite2DLayer index calls.
 export function addBillboardSpriteIndex(system: BillboardSpriteSystem, init: BillboardSpriteInit): number;
 export function updateBillboardSpriteIndex(system: BillboardSpriteSystem, index: number, patch: Partial<BillboardSpriteInit>): void;
 export function removeBillboardSpriteIndex(system: BillboardSpriteSystem, index: number): void;
-  export function setBillboardSpriteFrameIndex(system: BillboardSpriteSystem, index: number, frame: number): void;
+export function setBillboardSpriteFrameIndex(system: BillboardSpriteSystem, index: number, frame: number): void;
 
-  // src/sprite/billboard-scene.ts
-  export function addFacingBillboardSystem(scene: SceneContext, system: BillboardSpriteSystem): void;
+// src/sprite/billboard-scene.ts
+export function addFacingBillboardSystem(scene: SceneContext, system: BillboardSpriteSystem): void;
 ```
 
-  `addFacingBillboardSystem(scene, system)` is the scene integration point.
-  It queues a deferred renderable builder through `addDeferredSceneRenderables`
-  so `scene-core` and `addToScene` stay sprite-agnostic. A scene that never
-  imports `billboard-scene.ts` never imports `billboard-renderable.ts`,
-  `billboard-pipeline.ts`, `getSceneBindGroupLayout`, or any billboard WGSL.
+`addFacingBillboardSystem(scene, system)` is the scene integration point.
+It queues a deferred renderable builder through `addDeferredSceneRenderables`
+so `scene-core` and `addToScene` stay sprite-agnostic. A scene that never
+imports `billboard-scene.ts` never imports `billboard-renderable.ts`,
+`billboard-pipeline.ts`, `getSceneBindGroupLayout`, or any billboard WGSL.
+Internally, the shared renderable routes through `system._orientation` and
+`system._depthMode`; the current public factory sets `"facing"` and
+`"transparent"`, while later yaw/axis/cutout factories add new mode values
+without duplicating the upload or bind-group path.
 
 ### Picking — two pickers, not three
 
@@ -954,7 +963,7 @@ target dimensions; written via `device.queue.writeBuffer` only when the
 Total 48 bytes — `vec4<f32>` forces 16-byte struct alignment and 48 = 3 × 16 is naturally
 aligned; no padding required.
 
-#### Current FacingBillboardSpriteSystem instance layout (52 B = 13 floats)
+#### Current BillboardSpriteSystem instance layout (52 B = 13 floats)
 
 The first facing-billboard slice uses a compact per-instance vertex buffer,
 not a storage buffer or sort indirection. The buffer is bound as the sole
@@ -976,13 +985,30 @@ The current system UBO is 16 bytes: `opacityMul: vec4<f32>`. Straight
 alpha writes `(1, 1, 1, opacity)`; premultiplied writes
 `(opacity, opacity, opacity, opacity)`. The render pipeline uses the
 scene UBO at group 0 and the billboard UBO/atlas bind group at group 1,
-depth compare `less-equal`, depth write off, no culling, and alpha or
-premultiplied blending. Unsupported `additive`, `multiply`, and `cutout`
-blend modes throw during system creation in this slice.
+with pipeline keys including render target format, sample count,
+`_orientation`, blend mode, `_depthMode`, and depth format. The current
+`"transparent"` depth mode uses depth compare `less-equal`, depth write
+off, no culling, and alpha or premultiplied blending. Unsupported
+`additive`, `multiply`, and `cutout` blend modes throw during system
+creation in this slice.
+
+Transparent billboard systems sort per billboard before upload, not by
+mutating `system._instanceData`. When `DrawUpdateContext` supplies the active
+pass `cameraViewMatrix` and `cameraViewVersion`, the billboard renderable
+fills renderable-owned scratch arrays: view-space depths, stable index order,
+and a sorted 52-byte-instance staging buffer. Depth is the view-space z of
+each anchor (`view[2] * x + view[6] * y + view[10] * z + view[14]`), sorted
+descending so farther billboards upload first. The same compact GPU vertex
+buffer is written from the sorted staging buffer with one full
+`queue.writeBuffer` when either the system version or camera view identity /
+version changes. Repeated frames with unchanged system data and unchanged
+camera view skip the instance upload. If a render pass has no active camera,
+the renderable falls back to the existing dirty-range upload from
+`system._instanceData` in logical insertion order.
 
 #### Future target BillboardSpriteSystem (96 B = 24 floats)
 
-The later handle/picking/sorted-transparency roadmap moves billboard data
+The later handle/picking/storage-indirection roadmap moves billboard data
 to a storage buffer at `@group(1) @binding(3)` (not a vertex buffer — 3D
 sprite families read sprite data through a storage buffer indexed by a
 sort-indirection vertex attribute, see below). The 24-float layout:
@@ -1008,12 +1034,13 @@ pack helper writes 0.0.
 
 ##### Sort Indirection + Storage Buffer
 
-Billboard systems never reorder the packed sprite buffer. Sorting is
-expressed entirely through a separate `Uint32Array` indirection buffer of
-sprite indices, uploaded once per frame as a per-instance vertex
-attribute at `@location(0)`. The shader reads `sortIndex` and indexes
-into the packed sprite storage buffer to fetch the actual record. This
-keeps sort cost O(N), not O(N × stride).
+The future storage-buffer path keeps the same public invariant as the current
+CPU-staging path: billboard systems never reorder the packed sprite buffer.
+Sorting is expressed entirely through a separate `Uint32Array` indirection
+buffer of sprite indices, uploaded once per frame as a per-instance vertex
+attribute at `@location(0)`. The shader reads `sortIndex` and indexes into the
+packed sprite storage buffer to fetch the actual record. This keeps sort upload
+cost O(N), not O(N × stride).
 
 **Packed sprite buffer.** Allocated by `sprite-gpu.ts` with
 `usage: GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST`.

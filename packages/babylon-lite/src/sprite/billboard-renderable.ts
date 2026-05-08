@@ -1,6 +1,7 @@
 import type { EngineContextInternal } from "../engine/engine.js";
 import type { RenderTargetSignature } from "../engine/render-target.js";
-import type { DrawBinding, Renderable } from "../render/renderable.js";
+import type { DrawBinding, DrawUpdateContext, Renderable } from "../render/renderable.js";
+import type { Mat4 } from "../math/types.js";
 import { getSceneBindGroupLayout } from "../render/scene-helpers.js";
 import { createEmptyUniformBuffer, createMappedBuffer } from "../resource/gpu-buffers.js";
 import type { BillboardSpriteSystem } from "./billboard-sprite.js";
@@ -10,14 +11,16 @@ import {
     buildBillboardSystemUbo,
     clearBillboardPipelineCache,
     createBillboardInstanceBuffer,
+    createBillboardInstanceSortScratch,
     createBillboardPipelineCache,
     createBillboardSystemBindGroup,
     ensureBillboardInstanceBuffer,
-    getOrCreateFacingBillboardPipeline,
+    getOrCreateBillboardPipeline,
     uploadBillboardInstances,
+    uploadSortedBillboardInstances,
     writeBillboardSystemUboIfDirty,
 } from "./billboard-pipeline.js";
-import type { BillboardPipelineCache } from "./billboard-pipeline.js";
+import type { BillboardInstanceSortScratch, BillboardPipelineCache } from "./billboard-pipeline.js";
 
 let _sharedPipelineCache: BillboardPipelineCache | null = null;
 let _sharedPipelineCacheRefs = 0;
@@ -46,19 +49,23 @@ interface BillboardRenderableInternal extends Renderable {
     _uniformBuffer: GPUBuffer;
     _instanceBuffer: GPUBuffer;
     _instanceBufferCapacity: number;
+    _instanceSortScratch: BillboardInstanceSortScratch;
     _pipelineCache: BillboardPipelineCache;
     _bindGroups: Map<GPURenderPipeline, GPUBindGroup>;
     _uploadedVersion: number;
+    _uploadedCameraViewMatrix: Mat4 | null;
+    _uploadedCameraViewVersion: number;
+    _uploadedSorted: boolean;
     _uboUploaded: boolean;
     _lastUbo: Float32Array;
     _scratchUbo: Float32Array;
     _disposed: boolean;
 }
 
-export function buildFacingBillboardRenderable(engine: EngineContextInternal, system: BillboardSpriteSystem): { renderable: Renderable; dispose: () => void } {
+export function buildBillboardRenderable(engine: EngineContextInternal, system: BillboardSpriteSystem): { renderable: Renderable; dispose: () => void } {
     const indexBuffer = createMappedBuffer(engine, BILLBOARD_INDEX_DATA, GPUBufferUsage.INDEX);
-    const uniformBuffer = createEmptyUniformBuffer(engine, BILLBOARD_SYSTEM_UBO_BYTES, "facing-billboard-system-ubo");
-    const instanceBuffer = createBillboardInstanceBuffer(engine.device, system, "facing-billboard-instances");
+    const uniformBuffer = createEmptyUniformBuffer(engine, BILLBOARD_SYSTEM_UBO_BYTES, `${system._orientation}-billboard-system-ubo`);
+    const instanceBuffer = createBillboardInstanceBuffer(engine.device, system, `${system._orientation}-billboard-instances`);
     const renderable: BillboardRenderableInternal = {
         order: system.order,
         isTransparent: true,
@@ -69,9 +76,13 @@ export function buildFacingBillboardRenderable(engine: EngineContextInternal, sy
         _uniformBuffer: uniformBuffer,
         _instanceBuffer: instanceBuffer,
         _instanceBufferCapacity: system._capacity,
+        _instanceSortScratch: createBillboardInstanceSortScratch(),
         _pipelineCache: acquireSharedPipelineCache(),
         _bindGroups: new Map(),
         _uploadedVersion: -1,
+        _uploadedCameraViewMatrix: null,
+        _uploadedCameraViewVersion: -1,
+        _uploadedSorted: false,
         _uboUploaded: false,
         _lastUbo: new Float32Array(BILLBOARD_SYSTEM_UBO_BYTES / 4),
         _scratchUbo: new Float32Array(BILLBOARD_SYSTEM_UBO_BYTES / 4),
@@ -90,15 +101,15 @@ export function buildFacingBillboardRenderable(engine: EngineContextInternal, sy
 
 function bindSystem(renderable: BillboardRenderableInternal, engine: EngineContextInternal, target: RenderTargetSignature): DrawBinding {
     if (!target.depthStencilFormat) {
-        throw new Error("FacingBillboardSpriteSystem requires a depth-stencil render target.");
+        throw new Error("BillboardSpriteSystem requires a depth-stencil render target.");
     }
     const sampleCount = target.sampleCount === 1 ? 1 : 4;
-    const pipeline = getOrCreateFacingBillboardPipeline(
+    const pipeline = getOrCreateBillboardPipeline(
         engine,
         renderable._pipelineCache,
         target.colorFormat,
         sampleCount,
-        renderable._system.blendMode,
+        renderable._system,
         target.depthStencilFormat,
         getSceneBindGroupLayout(engine)
     );
@@ -110,8 +121,8 @@ function bindSystem(renderable: BillboardRenderableInternal, engine: EngineConte
     return {
         renderable,
         pipeline,
-        update() {
-            uploadSystem(renderable);
+        update(context) {
+            uploadSystem(renderable, context);
         },
         draw(pass) {
             return drawSystem(renderable, bindGroup, pass);
@@ -119,7 +130,7 @@ function bindSystem(renderable: BillboardRenderableInternal, engine: EngineConte
     };
 }
 
-function uploadSystem(renderable: BillboardRenderableInternal): void {
+function uploadSystem(renderable: BillboardRenderableInternal, context: DrawUpdateContext): void {
     if (renderable._disposed || !renderable._system.visible || renderable._system.count === 0) {
         return;
     }
@@ -128,14 +139,36 @@ function uploadSystem(renderable: BillboardRenderableInternal): void {
         renderable._system,
         renderable._instanceBuffer,
         renderable._instanceBufferCapacity,
-        "facing-billboard-instances"
+        `${renderable._system._orientation}-billboard-instances`
     );
     if (grown.reallocated) {
         renderable._instanceBuffer = grown.buffer;
         renderable._instanceBufferCapacity = grown.capacity;
         renderable._uploadedVersion = -1;
+        renderable._uploadedCameraViewMatrix = null;
+        renderable._uploadedCameraViewVersion = -1;
+        renderable._uploadedSorted = false;
     }
-    renderable._uploadedVersion = uploadBillboardInstances(renderable._engine.device, renderable._system, renderable._instanceBuffer, renderable._uploadedVersion);
+    if (context.cameraViewMatrix && context.cameraViewVersion !== undefined) {
+        if (
+            !renderable._uploadedSorted ||
+            renderable._uploadedVersion !== renderable._system._version ||
+            renderable._uploadedCameraViewMatrix !== context.cameraViewMatrix ||
+            renderable._uploadedCameraViewVersion !== context.cameraViewVersion
+        ) {
+            uploadSortedBillboardInstances(renderable._engine.device, renderable._system, renderable._instanceBuffer, renderable._instanceSortScratch, context.cameraViewMatrix);
+            renderable._uploadedVersion = renderable._system._version;
+            renderable._uploadedCameraViewMatrix = context.cameraViewMatrix;
+            renderable._uploadedCameraViewVersion = context.cameraViewVersion;
+            renderable._uploadedSorted = true;
+        }
+    } else {
+        const uploadedVersion = renderable._uploadedSorted ? -1 : renderable._uploadedVersion;
+        renderable._uploadedVersion = uploadBillboardInstances(renderable._engine.device, renderable._system, renderable._instanceBuffer, uploadedVersion);
+        renderable._uploadedCameraViewMatrix = null;
+        renderable._uploadedCameraViewVersion = -1;
+        renderable._uploadedSorted = false;
+    }
     buildBillboardSystemUbo(renderable._system, renderable._scratchUbo);
     renderable._uboUploaded = writeBillboardSystemUboIfDirty(
         renderable._engine.device,
@@ -169,3 +202,5 @@ function disposeRenderable(renderable: BillboardRenderableInternal): void {
     (renderable as unknown as { _system: BillboardSpriteSystem | null })._system = null;
     releaseSharedPipelineCache();
 }
+
+export const buildFacingBillboardRenderable = buildBillboardRenderable;

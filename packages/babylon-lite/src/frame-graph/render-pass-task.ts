@@ -34,6 +34,7 @@ import type { RenderTargetSignature } from "../engine/render-target.js";
 import type { SceneContext, SceneContextInternal } from "../scene/scene-core.js";
 import type { Material, MaterialInternal } from "../material/material.js";
 import type { RenderTarget } from "../engine/render-target.js";
+import type { Mat4 } from "../math/types.js";
 import { buildRenderTarget, disposeRenderTarget } from "../engine/render-target.js";
 import { getViewProjectionMatrix, getViewMatrix } from "../camera/camera.js";
 import { getSceneBindGroupLayout } from "../render/scene-helpers.js";
@@ -71,7 +72,7 @@ export interface RenderPassTask extends Task {
     _opaqueBindings: DrawBinding[];
     _transmissiveBindings: DrawBinding[];
     _transparentBindings: DrawBinding[];
-    _updateContext: { targetWidth: number; targetHeight: number };
+    _updateContext: MutableDrawUpdateContext;
 
     /** Cached opaque render bundle. Invalidated by renderable list mutations
      *  (`_lastVersion`) and visibility changes (`_lastVis`). */
@@ -103,6 +104,13 @@ export interface RenderPassTask extends Task {
      *  the scene (so its batch builder has run). */
     addToPass(mesh: Mesh, opts?: { material?: Material }): void;
     _pendingMeshes: { mesh: Mesh; material: Material }[];
+}
+
+interface MutableDrawUpdateContext {
+    targetWidth: number;
+    targetHeight: number;
+    cameraViewMatrix?: Mat4;
+    cameraViewVersion?: number;
 }
 
 /** Create a render pass task. GPU resources (target textures + descriptor)
@@ -380,6 +388,7 @@ function executePass(task: RenderPassTask): number {
     refreshTaskSceneBindGroup(task, eng);
 
     // Per-pass scene UBO write — uses task config camera if set, else scene.camera.
+    refreshTaskUpdateCameraContext(task, camera);
     writePassSceneUBO(task, eng, scene, camera);
     refreshSceneLightsUBO(eng, scene);
 
@@ -426,6 +435,16 @@ function executePass(task: RenderPassTask): number {
     draws += drawList(pass, task._transparentBindings, eng);
     pass.end();
     return draws;
+}
+
+function refreshTaskUpdateCameraContext(task: RenderPassTask, camera: Camera | null): void {
+    if (!camera) {
+        task._updateContext.cameraViewMatrix = undefined;
+        task._updateContext.cameraViewVersion = undefined;
+        return;
+    }
+    task._updateContext.cameraViewMatrix = getViewMatrix(camera);
+    task._updateContext.cameraViewVersion = camera.worldMatrixVersion;
 }
 
 function refreshTaskSceneBindGroup(task: RenderPassTask, eng: EngineContextInternal): void {

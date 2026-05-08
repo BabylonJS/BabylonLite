@@ -409,6 +409,15 @@
         "tags": ["sprites", "billboards", "depth"]
     },
     {
+        "id": 55,
+        "slug": "scene55-billboard-sorting",
+        "name": "Scene 55 — Billboard Sorting",
+        "maxMad": 0.6,
+        "maxRawKB": 65,
+        "description": "Overlapping transparent world-space billboards inserted near-to-far in Lite and far-to-near in the Babylon.js SpriteManager reference, exercising CPU-side per-billboard sorting before compact vertex-buffer upload.",
+        "tags": ["sprites", "billboards", "sorting"]
+    },
+    {
         "id": 60,
         "slug": "scene60-nme-flat",
         "name": "Scene 60 — NME Flat Colour",
