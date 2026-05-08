@@ -18,13 +18,16 @@ export {
 
 // ─── Frame graph ─────────────────────────────────────────────────────
 // Scene-owned ordered list of tasks. The default scene pass is a
-// RenderPassTask, and user tasks can render offscreen RTTs, overlays, etc.
+// RenderTask, and user tasks can render offscreen RTTs, overlays, etc.
 export { getFrameGraph } from "./scene/scene.js";
 export type { FrameGraph } from "./frame-graph/frame-graph.js";
-export { addTask, addTaskAtStart, addTaskBefore } from "./frame-graph/frame-graph-actions.js";
+export { addRenderPass, addTask, addTaskAtStart, addTaskBefore } from "./frame-graph/frame-graph-actions.js";
 export type { Task } from "./frame-graph/task.js";
-export type { RenderPassTask, RenderPassTaskConfig } from "./frame-graph/render-pass-task.js";
-export { createRenderPassTask, removeMeshFromTask } from "./frame-graph/render-pass-task.js";
+export type { Pass, RenderPassExecuteFunc } from "./frame-graph/pass.js";
+export { addPassDependencies } from "./frame-graph/pass.js";
+export type { RenderPass } from "./frame-graph/render-pass.js";
+export type { RenderTask, RenderTaskConfig } from "./frame-graph/render-task.js";
+export { createRenderTask, removeMeshFromTask } from "./frame-graph/render-task.js";
 export type { RenderTarget, RenderTargetDescriptor } from "./engine/render-target.js";
 export { createRenderTarget } from "./engine/render-target.js";
 export { createRenderTargetTexture } from "./texture/rtt.js";

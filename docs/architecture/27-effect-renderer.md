@@ -9,7 +9,7 @@ The effect renderer module provides a Lite-native equivalent of Babylon.js `Effe
 - behaviour is exposed through standalone functions;
 - uniforms, textures, and samplers are declared explicitly through `EffectBindingLayout`;
 - fullscreen geometry is the standard single triangle generated from `@builtin(vertex_index)`;
-- swapchain-only effects register as a direct engine rendering context, so no `SceneContext` or default scene `RenderPassTask` is needed;
+- swapchain-only effects register as a direct engine rendering context, so no `SceneContext` or default scene `RenderTask` is needed;
 - offscreen render-to-texture effects are scheduled as a `Task` in the existing scene `FrameGraph`;
 - frame-graph task targets are existing `RenderTarget`s;
 - user-facing resources remain Lite handles (`Texture2D`, `RenderTarget`), never raw WebGPU handles.

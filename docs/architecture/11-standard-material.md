@@ -415,7 +415,7 @@ export function buildSingleStandardRenderable(scene: SceneContext, mesh: Mesh): 
 
 `getOrCreateStandardPipeline` keeps a per-`StandardShaderBindings` `Map<targetSignatureKey(sig), GPURenderPipeline>`. BGLs are stable across signatures (only the pipeline depends on `sig`), so meshBGs validate against any pipeline produced for the same `(features)` bindings instance.
 
-Composed shaders are also cached per `(features, fragmentIds)` to avoid recomposition when only format/MSAA differs. The group-0 scene bind group is owned by `RenderPassTask`; Standard renderables bind only material/mesh/shadow groups.
+Composed shaders are also cached per `(features, fragmentIds)` to avoid recomposition when only format/MSAA differs. The group-0 scene bind group is owned by `RenderTask`; Standard renderables bind only material/mesh/shadow groups.
 
 Pipeline and composed shader caches are cleared on GPU device change.
 
@@ -426,7 +426,7 @@ Pipeline and composed shader caches are cleared on GPU device change.
 1. Groups meshes by feature bitmask (via `computeFeatures()`)
 2. For each group: builds fragment list from feature flags + `StdFragmentFactories` → `composeStandardShader(features, fragments)` → `getOrCreatePipeline()` → `createDynamicMeshGPU()`
 3. Creates one `Renderable` per group (order = 100, or 200 for transparent)
-4. Relies on `RenderPassTask` for the group-0 scene UBO and scene-owned lights UBO refresh
+4. Relies on `RenderTask` for the group-0 scene UBO and scene-owned lights UBO refresh
 5. Acquires textures for reference counting, registers cleanup disposables
 
 When thin instances are present, the draw function calls `tiSync(device, ti, pass, slot, hasInstanceColor)` to synchronize GPU buffers before each instanced draw, and uses `drawIndexed(indexCount, ti.count)` for instanced rendering.
@@ -602,7 +602,7 @@ registerScene(engine, scene)       → runs deferred builders and builds frame g
   → renderables + updater registered by buildScene
   render loop begins
     updater.update(engine)         → refreshes light/material state
-    RenderPassTask updates each DrawBinding with its target dimensions
+    RenderTask updates each DrawBinding with its target dimensions
     DrawBinding.draw(pass, engine) → dispatches draw calls per mesh
   mesh.material = newMat           → triggers single-rebuild path
     buildSingleStandardRenderable()→ recomputes features, gets pipeline, creates mesh GPU resources

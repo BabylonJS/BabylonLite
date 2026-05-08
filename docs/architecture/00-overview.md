@@ -41,7 +41,7 @@
 | [23-loader-hdr.md](23-loader-hdr.md)                               | HDR Loader              | RGBE parsing, SH extraction, GPU compute IBL                                                   |
 | [24-loader-babylon.md](24-loader-babylon.md)                       | .babylon Loader         | .babylon format parsing                                                                        |
 | [25-resource-pool.md](25-resource-pool.md)                         | Resource Pool           | GPU buffer/texture pooling                                                                     |
-| [27-frame-graph.md](27-frame-graph.md)                             | Frame Graph             | Task ordering, RenderPassTask, render targets, RTT texture flow                                |
+| [27-frame-graph.md](27-frame-graph.md)                             | Frame Graph             | Task ordering, RenderTask, render targets, RTT texture flow                                |
 
 ---
 
@@ -185,7 +185,7 @@ babylon-lite/
 │   │   │   ├── task.ts              # Frame-graph task interface
 │   │   │   ├── frame-graph.ts       # Ordered task list
 │   │   │   ├── frame-graph-actions.ts # addTask helpers
-│   │   │   └── render-pass-task.ts  # Render-pass task + per-pass scene UBO
+│   │   │   └── render-task.ts  # Render-pass task + per-pass scene UBO
 │   │   ├── texture/
 │   │   │   ├── texture-2d.ts      # 2D texture loader
 │   │   │   ├── solid-texture.ts   # 1×1 solid-color texture factory
@@ -831,7 +831,7 @@ drive the render loop.
 
 - Color target: `format = navigator.gpu.getPreferredCanvasFormat()` (typically `bgra8unorm`), `sampleCount = 4`
 - Depth target: `depth24plus-stencil8`, `sampleCount = 4`
-- Canvas render targets are owned by frame-graph `RenderPassTask`s. If `sampleCount > 1`, the task owns an MSAA color texture and resolves to the swapchain texture each frame.
+- Canvas render targets are owned by frame-graph `RenderTask`s. If `sampleCount > 1`, the task owns an MSAA color texture and resolves to the swapchain texture each frame.
 
 **Render loop** (`startEngine(engine)` after `registerScene(engine, scene)` — async, returns `Promise<void>`):
 
@@ -847,7 +847,7 @@ registerScene runs deferred builders → requestAnimationFrame → resize() → 
 3. For each registered rendering context, run `_record()`:
     - `scene._frameGraph.execute()` drains its ordered tasks
 
-- each `RenderPassTask` acquires/patches the swapchain or RTT views, writes its per-pass scene UBO, calls `DrawBinding.update({ targetWidth, targetHeight })`, and draws bucketed `DrawBinding`s
+- each `RenderTask` acquires/patches the swapchain or RTT views, writes its per-pass scene UBO, calls `DrawBinding.update({ targetWidth, targetHeight })`, and draws bucketed `DrawBinding`s
 
 4. Submit the command buffer
 
@@ -938,7 +938,7 @@ contribution = hemiColor * intensity
 
 **Pipeline caching**: Both materials cache pipelines per `(features, format, msaaSamples)` tuple. Meshes with the same features share a pipeline.
 
-**Bind group layout (scene group 0)**: binding 0 is the per-pass `SceneUniforms` UBO owned by `RenderPassTask`; binding 1 is the scene-owned `LightsUniforms` UBO.
+**Bind group layout (scene group 0)**: binding 0 is the per-pass `SceneUniforms` UBO owned by `RenderTask`; binding 1 is the scene-owned `LightsUniforms` UBO.
 
 **Bind group layout (PBR group 1)**: Bindings assigned sequentially — mesh UBO (world + per-mesh light indices), baseColor, [normal], ORM, [emissive], [BRDF LUT, IBL cube]. Binding count varies by features.
 
@@ -946,7 +946,7 @@ contribution = hemiColor * intensity
 
 ### 3.7 Renderable Architecture (`render/renderable.ts`)
 
-**Entity-owned pipelines**: Each material/entity creates its own pipeline and returns `Renderable` objects. Scene-owned `RenderPassTask`s call `renderable.bind(engine, target)` to create target-specific `DrawBinding`s; the engine/frame graph never imports material code.
+**Entity-owned pipelines**: Each material/entity creates its own pipeline and returns `Renderable` objects. Scene-owned `RenderTask`s call `renderable.bind(engine, target)` to create target-specific `DrawBinding`s; the engine/frame graph never imports material code.
 
 ```typescript
 interface DrawUpdateContext {
@@ -1229,7 +1229,7 @@ main.ts (e.g. scene1.ts)
         Each frame:
           _update(): callbacks, swaps, shadows, pre-passes, uniform updaters
           _record(): scene._frameGraph.execute()
-            RenderPassTask writes pass scene UBO and draws bound buckets
+            RenderTask writes pass scene UBO and draws bound buckets
           submit
 ```
 
@@ -1404,7 +1404,7 @@ For production builds, switch to `"./dist/index.js"`.
 | `src/frame-graph/task.ts`                          | Frame-graph task interface                         | —              |
 | `src/frame-graph/frame-graph.ts`                   | Ordered frame-graph task list                      | —              |
 | `src/frame-graph/frame-graph-actions.ts`           | Task insertion helpers                             | —              |
-| `src/frame-graph/render-pass-task.ts`              | Render-pass task, per-pass scene UBO, draw buckets | —              |
+| `src/frame-graph/render-task.ts`              | Render-pass task, per-pass scene UBO, draw buckets | —              |
 | `src/texture/texture-2d.ts`                        | 2D texture loader                                  | 60             |
 | `src/texture/solid-texture.ts`                     | 1×1 solid-color factory                            | —              |
 | `src/texture/cube-texture.ts`                      | 6-face cube texture loader                         | 141            |

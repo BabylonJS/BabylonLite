@@ -124,11 +124,9 @@ describe("registerScene / unregisterScene", () => {
             name: "pre-scene-task",
             engine,
             scene,
+            _passes: [],
             record(): void {
                 recorded = true;
-            },
-            execute(): number {
-                return 1;
             },
             dispose(): void {
                 return;

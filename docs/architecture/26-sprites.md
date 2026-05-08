@@ -216,7 +216,7 @@ walks `engine._renderingContexts` once per frame. The engine owns the
 command encoder and swapchain view for the frame; each context runs
 `_update()` and `_record()` against that current frame state. A
 `SceneContext` records through its `FrameGraph` (normally the default
-swapchain `RenderPassTask`), while a `SpriteRenderer` opens its own
+swapchain `RenderTask`), while a `SpriteRenderer` opens its own
 sprite pass directly on the swapchain. Pure-2D experiences
 (Lottie/Rive-class apps) create one or more `SpriteRenderer`s and
 register them on the engine — they never touch `SceneContext`. HUD-on-3D
@@ -1675,7 +1675,7 @@ startEngine(engine) per-frame:
               - For each dirty layer: writeBuffer dirty range; update layer UBO.
        b. Record draws: c._record()
             Scene context:
-              - Execute its frame graph. The default swapchain RenderPassTask
+              - Execute its frame graph. The default swapchain RenderTask
                 buckets and draws renderables sorted by `order`:
                   * meshes opaque (order 0)
                   * Sprite2D depth-hosted cutout / `"test-write"` (order 100)

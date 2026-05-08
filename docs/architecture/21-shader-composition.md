@@ -260,7 +260,7 @@ Composed shaders generate material-owned UBO specs only:
 - **Mesh UBO**: template `baseMeshUboFields` (group 1, binding 0)
 - **Material UBO**: template `baseMaterialUboFields` + fragment `uboFields` (group 1, binding 1) when `baseMaterialUboFields` is present; otherwise fragment `uboFields` are appended to the mesh UBO
 
-The canonical scene UBO is not composed from fragments. Material templates prepend `SCENE_UBO_WGSL` through the `/*SU*/` marker, and `RenderPassTask` writes the group-0 scene bind group per pass.
+The canonical scene UBO is not composed from fragments. Material templates prepend `SCENE_UBO_WGSL` through the `/*SU*/` marker, and `RenderTask` writes the group-0 scene bind group per pass.
 
 ### Deduplication — `dedup()`
 
@@ -322,7 +322,7 @@ All runtime material shaders use the canonical `SceneUniforms` declaration from 
 - environment rotation, SH irradiance, exposure/contrast/LOD image-processing fields
 - fog info/color
 
-Light data is not appended to `SceneUniforms`; Standard and PBR use the separate `render/lights-ubo.ts` buffer when direct lighting is active. Frame-graph `RenderPassTask` owns one scene UBO/bind group per pass so offscreen passes can write target-specific projection state (including Y-flip) without mutating global scene state.
+Light data is not appended to `SceneUniforms`; Standard and PBR use the separate `render/lights-ubo.ts` buffer when direct lighting is active. Frame-graph `RenderTask` owns one scene UBO/bind group per pass so offscreen passes can write target-specific projection state (including Y-flip) without mutating global scene state.
 
 ## State Machine / Lifecycle
 
