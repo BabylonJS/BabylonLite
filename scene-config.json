@@ -705,5 +705,14 @@
         "maxRawKB": 136,
         "description": "Stress scene for the scene-wide lights UBO: Standard, PBR, and NodeMaterial spheres on a shadow-receiving ground, 16 scene lights, per-mesh light inclusion sets, and three supported shadow generators.",
         "tags": ["std", "pbr", "nme", "procedural", "shadow"]
+    },
+    {
+        "id": 112,
+        "slug": "scene112-khr-texture-basisu",
+        "name": "Scene 112 — KHR_texture_basisu Flight Helmet",
+        "maxMad": 0.2,
+        "maxRawKB": 110,
+        "description": "BabylonJS/Assets FlightHelmetKTX glTF model using KHR_texture_basisu KTX2 source textures for base color, normal, and occlusion/roughness/metallic maps.",
+        "tags": ["pbr", "gltf", "env", "basis"]
     }
 ]

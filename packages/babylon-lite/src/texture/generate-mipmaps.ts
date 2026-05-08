@@ -78,11 +78,11 @@ function getPipeline(engine: EngineContextInternal, format: GPUTextureFormat): G
 
 /** Generate mip chain for a 2D texture via GPU blit. Works for cube faces via optional `face` layer index. */
 export function generateMipmaps(engine: EngineContextInternal, texture: GPUTexture, face?: number): void {
-    const device = engine.device;
     if (texture.mipLevelCount <= 1) {
         return;
     }
 
+    const device = engine.device;
     const pipeline = getPipeline(engine, texture.format);
     const encoder = device.createCommandEncoder();
     const vp = face != null ? { dimension: "2d" as const, baseArrayLayer: face, arrayLayerCount: 1 } : {};

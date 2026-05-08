@@ -468,7 +468,7 @@ function writePassSceneUBO(task: RenderTask, eng: EngineContextInternal, scene: 
     data[76] = img.exposure;
     data[77] = img.contrast;
     data[78] = envTextures?.lodGenerationScale ?? 0.8;
-    data[79] = img.toneMappingEnabled ? 1 : 0;
+    data[79] = +img.toneMappingEnabled;
     data[37] = eng.canvas.height;
     if (scene.clipPlane) {
         data[88] = scene.clipPlane[0];

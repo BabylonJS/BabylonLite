@@ -324,6 +324,8 @@ Before opening the pass each frame, the `RenderPass` before-execute hook install
 
 Then the task iterates `_passes` calling `_execute()`. Each `RenderPass._execute()` patches the swapchain view + clearColor + loadOp, calls `beginRenderPass`, runs `executePassBody(task, enc)` (the closure captured at record time), and ends the pass.
 
+Before opening the pass each frame, `RenderPassTask` calls `binding.update?.(_updateContext)` for opaque, transmissive, and transparent bindings. This refreshes dirty per-binding UBOs with the pass target dimensions while allowing opaque render bundles to stay cached.
+
 ## Per-Pass Scene UBO
 
 Each `RenderTask` owns:
@@ -436,7 +438,7 @@ Fixed-size eager RTTs are not reallocated by graph rebuilds because their GPU te
 | `src/frame-graph/render-pass.ts`         | `RenderPass` interface, `createRenderPass`, `setRenderPass*` setters                         |
 | `src/frame-graph/frame-graph.ts`         | Ordered task list and two-phase build/execute/dispose lifecycle                              |
 | `src/frame-graph/frame-graph-actions.ts` | Public task-insertion + `addRenderPass` actions                                              |
-| `src/frame-graph/render-task.ts`    | Render-pass task, per-pass scene UBO, target binding, draw buckets, per-pass-encoder body    |
+| `src/frame-graph/render-task.ts`         | Render task, per-pass scene UBO, target binding, draw buckets, per-pass-encoder body         |
 | `src/engine/render-target.ts`            | Render target descriptors, allocation, disposal, target signatures                           |
 | `src/texture/rtt.ts`                     | Eager render-target texture helper                                                           |
 | `src/render/renderable.ts`               | `Renderable`, `DrawBinding`, and `DrawUpdateContext` contracts consumed by render-pass tasks |

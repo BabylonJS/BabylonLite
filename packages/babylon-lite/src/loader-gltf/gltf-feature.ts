@@ -58,7 +58,7 @@ export interface GltfFeature {
     id: string;
     /** Pre-extract hook: runs before mesh extraction. Returns a map of glTF
      *  primitive objects to pre-decoded attribute/index data. Used by e.g. Draco. */
-    preMesh?(json: unknown, binChunk: DataView): Promise<Map<unknown, DecodedPrimitive>>;
+    preMesh?(json: unknown, binChunk: DataView, baseUrl: string): Promise<Map<unknown, DecodedPrimitive>>;
     /** Material-layer hook: contributes a partial PbrMaterialProps per material. */
     applyMaterial?(mat: GltfMaterialData, ctx: GltfMatExtCtx): Promise<Partial<PbrMaterialProps> | null>;
     /** Texture-wrap hook: given a textureInfo and an already-uploaded Texture2D,

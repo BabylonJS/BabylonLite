@@ -65,6 +65,8 @@ export const PBR2_HAS_UV2 = 1 << 12;
 /** Material has a sheen texture with a KHR_texture_transform. Sheen owns its
  *  own `sheenUVm`/`sheenUVt` UBO fields and applies txfUV locally. */
 export const PBR2_HAS_SHEEN_UV_TX = 1 << 13;
+/** Material participates in the opaque-scene refraction prepass and must be authored in linear space. */
+export const PBR2_LINEAR_IMAGE_PROCESSING = 1 << 14;
 
 // ─── Unified PBR Extension Registry ─────────────────────────────────
 /** @internal Bind-group phase, matching composer slot layout:

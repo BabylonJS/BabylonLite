@@ -52,6 +52,8 @@ export interface MeshGroupBuildResult {
 
 `DrawBinding.update(context)` is called once per frame per binding before the render pass is opened. The context contains the current pass target dimensions (`targetWidth`, `targetHeight`) so bindings can refresh target-size-dependent UBOs without rebuilding their pipelines or bind groups. Mesh/material UBO updates that do not need the target dimensions still use this hook and version-guard their writes.
 
+`DrawBinding.update(context)` is called once per frame per binding before the render pass is opened. The context contains the current pass target dimensions (`targetWidth`, `targetHeight`) so bindings can refresh target-size-dependent UBOs without rebuilding their pipelines or bind groups. Mesh/material UBO updates that do not need the target dimensions still use this hook and version-guard their writes.
+
 ### Frame graph (`frame-graph/`)
 
 ```typescript
@@ -166,7 +168,7 @@ Materials carry `_buildGroup: MeshGroupBuilder` on their props. `addToScene()` g
 | Babylon Lite                            | Babylon.js                                        |
 | --------------------------------------- | ------------------------------------------------- |
 | `FrameGraph` + `Task`                   | Frame graph / render graph scheduling             |
-| `RenderTask`                        | Render pass task that binds target + camera state |
+| `RenderTask`                            | Render pass task that binds target + camera state |
 | `Renderable.bind()`                     | Material/effect submesh binding for a target      |
 | `DrawBinding`                           | Prepared draw item / submesh draw packet          |
 | Task-owned scene UBO                    | Per-pass scene uniform state                      |
@@ -188,4 +190,4 @@ Materials carry `_buildGroup: MeshGroupBuilder` on their props. `addToScene()` g
 | `src/frame-graph/task.ts`                | Polymorphic frame-graph task interface                                                                                       |
 | `src/frame-graph/frame-graph.ts`         | Ordered task list, build/execute/dispose lifecycle                                                                           |
 | `src/frame-graph/frame-graph-actions.ts` | `addTask`, `addTaskAtStart`, `addTaskBefore` helpers                                                                         |
-| `src/frame-graph/render-task.ts`    | Render-pass task implementation, per-pass scene UBO, renderable bucketing, RTT/swapchain pass execution                      |
+| `src/frame-graph/render-task.ts`         | Render task implementation, per-pass scene UBO, renderable bucketing, RTT/swapchain pass execution                           |

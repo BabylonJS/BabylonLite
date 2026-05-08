@@ -18,22 +18,22 @@ const STAGE_FRAGMENT = 0x2;
 // ── BRDF functions (always present in PBR) ──────────────────────
 
 const BRDF_FUNCTIONS = `
-const PI: f32 = 3.14159265358979323846;
-fn distributionGGX(NdotH: f32, alphaG: f32) -> f32 {
-let a2 = alphaG * alphaG;
-let d = NdotH * NdotH * (a2 - 1.0) + 1.0;
-return a2 / (PI * d * d);
+const PI:f32=3.14159265358979323846;
+fn distributionGGX(NdotH:f32,alphaG:f32)->f32{
+let a2=alphaG*alphaG;
+let d=NdotH*NdotH*(a2-1.0)+1.0;
+return a2/(PI*d*d);
 }
-fn geometrySmithGGX(NdotL: f32, NdotV: f32, alphaG: f32) -> f32 {
-let a2 = alphaG * alphaG;
-let gl = NdotL * sqrt(NdotV * (NdotV - a2 * NdotV) + a2);
-let gv = NdotV * sqrt(NdotL * (NdotL - a2 * NdotL) + a2);
-return 0.5 / (gl + gv);
+fn geometrySmithGGX(NdotL:f32,NdotV:f32,alphaG:f32)->f32{
+let a2=alphaG*alphaG;
+let gl=NdotL*sqrt(NdotV*(NdotV-a2*NdotV)+a2);
+let gv=NdotV*sqrt(NdotL*(NdotL-a2*NdotL)+a2);
+return 0.5/(gl+gv);
 }
-fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>, F90: vec3<f32>) -> vec3<f32> {
-let t = 1.0 - cosTheta;
-let t2 = t * t;
-return F0 + (F90 - F0) * (t2 * t2 * t);
+fn fresnelSchlick(cosTheta:f32,F0:vec3<f32>,F90:vec3<f32>)->vec3<f32>{
+let t=1.0-cosTheta;
+let t2=t*t;
+return F0+(F90-F0)*(t2*t2*t);
 }
 `;
 
@@ -209,11 +209,11 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
     // The vertex template uses morphedPos/morphedNorm when morph fragment is present,
     // falling back to position/normal. The morph fragment's VR defines these vars.
     const tangentBlock = hasNormal
-        ? `let N_local = normalize(${normVar});
-let T_local = normalize(tangent.xyz);
-let B_local = cross(N_local, T_local) * tangent.w;
-out.worldTangent = (finalWorld * vec4<f32>(T_local, 0.0)).xyz;
-out.worldBitangent = (finalWorld * vec4<f32>(B_local, 0.0)).xyz;`
+        ? `let N_local=normalize(${normVar});
+let T_local=normalize(tangent.xyz);
+let B_local=cross(N_local,T_local)*tangent.w;
+out.worldTangent=(finalWorld*vec4<f32>(T_local,0.0)).xyz;
+out.worldBitangent=(finalWorld*vec4<f32>(B_local,0.0)).xyz;`
         : "";
 
     const vertexTemplate = `/*SU*/
@@ -248,29 +248,29 @@ return out;
     const normalRefCt = ext?.normalScaleMod ? "scaledNormalCT" : "normalMapSample";
     let normalBlock: string;
     if (hasNormal) {
-        normalBlock = `let normalMapRaw = textureSample(normalTexture, normalSampler_, ${normalUV}).rgb * 2.0 - 1.0;
-${normalScaleMod}let normalMapNorm = normalize(${normalRef});
-let N_geom = normalize(input.worldNormal);
-let TBN = mat3x3<f32>(input.worldTangent, input.worldBitangent, input.worldNormal);
-var N = normalize(TBN * normalMapNorm);`;
+        normalBlock = `let normalMapRaw=textureSample(normalTexture,normalSampler_,${normalUV}).rgb*2.0-1.0;
+${normalScaleMod}let normalMapNorm=normalize(${normalRef});
+let N_geom=normalize(input.worldNormal);
+let TBN=mat3x3<f32>(input.worldTangent,input.worldBitangent,input.worldNormal);
+var N=normalize(TBN*normalMapNorm);`;
     } else if (hasCotangentNormal) {
-        normalBlock = `let normalMapSample = textureSample(normalTexture, normalSampler_, ${normalUV}).rgb * 2.0 - 1.0;
-${normalScaleMod.replace(/normalMapRaw/g, "normalMapSample").replace(/scaledNormal/g, "scaledNormalCT")}let N_geom = normalize(input.worldNormal);
-let dp1 = dpdx(input.worldPos);
-let dp2 = dpdy(input.worldPos);
-let duv1 = dpdx(${normalUV});
-let duv2 = dpdy(${normalUV});
-let dp2perp = cross(dp2, N_geom);
-let dp1perp = cross(N_geom, dp1);
-let tangent_ct = dp2perp * duv1.x + dp1perp * duv2.x;
-let bitangent_ct = -(dp2perp * duv1.y + dp1perp * duv2.y);
-let det = max(dot(tangent_ct, tangent_ct), dot(bitangent_ct, bitangent_ct));
-let invmax = select(inverseSqrt(det), 0.0, det == 0.0);
-let cotangentFrame = mat3x3<f32>(tangent_ct * invmax, bitangent_ct * invmax, N_geom);
-var N = normalize(cotangentFrame * normalize(${normalRefCt}));`;
+        normalBlock = `let normalMapSample=textureSample(normalTexture,normalSampler_,${normalUV}).rgb*2.0-1.0;
+${normalScaleMod.replace(/normalMapRaw/g, "normalMapSample").replace(/scaledNormal/g, "scaledNormalCT")}let N_geom=normalize(input.worldNormal);
+let dp1=dpdx(input.worldPos);
+let dp2=dpdy(input.worldPos);
+let duv1=dpdx(${normalUV});
+let duv2=dpdy(${normalUV});
+let dp2perp=cross(dp2,N_geom);
+let dp1perp=cross(N_geom,dp1);
+let tangent_ct=dp2perp*duv1.x+dp1perp*duv2.x;
+let bitangent_ct=-(dp2perp*duv1.y+dp1perp*duv2.y);
+let det=max(dot(tangent_ct,tangent_ct),dot(bitangent_ct,bitangent_ct));
+let invmax=select(inverseSqrt(det),0.0,det==0.0);
+let cotangentFrame=mat3x3<f32>(tangent_ct*invmax,bitangent_ct*invmax,N_geom);
+var N=normalize(cotangentFrame*normalize(${normalRefCt}));`;
     } else {
-        normalBlock = `let N_geom = normalize(input.worldNormal);
-var N = N_geom;`;
+        normalBlock = `let N_geom=normalize(input.worldNormal);
+var N=N_geom;`;
     }
 
     // Anisotropy: tangent/bitangent frame (passed in from dynamic import, empty if not used)
@@ -279,43 +279,43 @@ var N = N_geom;`;
     // Base color decoding
     const vertexColorMod = ext?.baseColorMod ?? "";
     const baseColorDecode = hasGammaAlbedo
-        ? `var baseColor = pow(baseColorSample.rgb, vec3<f32>(2.2));
-var alpha = baseColorSample.a;${vertexColorMod}`
-        : `var baseColor = baseColorSample.rgb;
-var alpha = baseColorSample.a;${vertexColorMod}`;
+        ? `var baseColor=pow(baseColorSample.rgb,vec3<f32>(2.2));
+var alpha=baseColorSample.a;${vertexColorMod}`
+        : `var baseColor=baseColorSample.rgb;
+var alpha=baseColorSample.a;${vertexColorMod}`;
 
     // Roughness / metallic
     const specGlossUV = ext?.uvForSpecGloss ?? "input.uv";
     const roughnessMetallic = hasSpecGloss
-        ? `let specGloss = textureSample(specGlossTexture, specGlossSampler, ${specGlossUV});
-let roughness = clamp(1.0 - specGloss.a, 0.0, 1.0);
-let metallic = 0.0;`
-        : `let roughness = clamp(orm.g * material.roughnessFactor, 0.0, 1.0);
-let metallic = orm.b * material.metallicFactor;`;
+        ? `let specGloss=textureSample(specGlossTexture,specGlossSampler,${specGlossUV});
+let roughness=clamp(1.0-specGloss.a,0.0,1.0);
+let metallic=0.0;`
+        : `let roughness=clamp(orm.g*material.roughnessFactor,0.0,1.0);
+let metallic=orm.b*material.metallicFactor;`;
 
     // Emissive default (overridden by emissive-color fragment's AT slot)
     const emissiveUV = ext?.uvForEmissive ?? "input.uv";
     const emissiveDefault = hasEmissiveColor
         ? ``
         : hasEmissiveTexture
-          ? `let emissive = textureSample(emissiveTexture, emissiveSampler, ${emissiveUV}).rgb;`
-          : `let emissive = vec3<f32>(0.0);`;
+          ? `let emissive=textureSample(emissiveTexture,emissiveSampler,${emissiveUV}).rgb;`
+          : `let emissive=vec3<f32>(0.0);`;
 
     // Occlusion default (overridden by reflectance fragment's AT slot or ext occlusion override)
-    const occlusionDefault = hasReflectanceExt ? `` : ext?.occlusionOverride ? ext.occlusionOverride : hasOcclusion ? `let occlusion = orm.r;` : `let occlusion = 1.0;`;
+    const occlusionDefault = hasReflectanceExt ? `` : ext?.occlusionOverride ? ext.occlusionOverride : hasOcclusion ? `let occlusion=orm.r;` : `let occlusion=1.0;`;
 
     // F0 computation (overridden by reflectance fragment's MF slot)
     const f0Default = hasReflectanceExt
         ? ``
         : hasSpecGloss
-          ? `var colorF0 = specGloss.rgb;
-let colorF90 = vec3<f32>(1.0);
-let maxSpecular = max(colorF0.r, max(colorF0.g, colorF0.b));
-let surfaceAlbedo = baseColor * (1.0 - maxSpecular);`
-          : `let dielectricF0 = material.reflectance;
-var colorF0 = mix(vec3<f32>(dielectricF0), baseColor, metallic);
-let colorF90 = vec3<f32>(1.0);
-let surfaceAlbedo = baseColor * (1.0 - dielectricF0) * (1.0 - metallic);`;
+          ? `var colorF0=specGloss.rgb;
+let colorF90=vec3<f32>(1.0);
+let maxSpecular=max(colorF0.r,max(colorF0.g,colorF0.b));
+let surfaceAlbedo=baseColor*(1.0-maxSpecular);`
+          : `let dielectricF0=material.reflectance;
+var colorF0=mix(vec3<f32>(dielectricF0),baseColor,metallic);
+let colorF90=vec3<f32>(1.0);
+let surfaceAlbedo=baseColor*(1.0-dielectricF0)*(1.0-metallic);`;
 
     // Specular AA + geometric-curvature roughness factors (BJS getAARoughnessFactors).
     // AA_factor_x is the direct-light roughness floor (matches BJS `computeSheenLighting`
@@ -324,16 +324,16 @@ let surfaceAlbedo = baseColor * (1.0 - dielectricF0) * (1.0 - metallic);`;
     // without needing a define; zero on the no-curvature path makes them a no-op.
     const specularAABlock =
         hasSpecularAA || hasAnyNormal
-            ? `var AA_factor_x = 0.0;
-var AA_factor_y = 0.0;
-{ let nDfdx_AA = dpdx(N);
-  let nDfdy_AA = dpdy(N);
-  let slopeSquare_AA = max(dot(nDfdx_AA, nDfdx_AA), dot(nDfdy_AA, nDfdy_AA));
-  AA_factor_x = pow(saturate(slopeSquare_AA), 0.333);
-  AA_factor_y = sqrt(slopeSquare_AA) * 0.75;
-  alphaG += AA_factor_y; }`
-            : `var AA_factor_x = 0.0;
-var AA_factor_y = 0.0;`;
+            ? `var AA_factor_x=0.0;
+var AA_factor_y=0.0;
+{let nDfdx_AA=dpdx(N);
+let nDfdy_AA=dpdy(N);
+let slopeSquare_AA=max(dot(nDfdx_AA,nDfdx_AA),dot(nDfdy_AA,nDfdy_AA));
+AA_factor_x=pow(saturate(slopeSquare_AA),0.333);
+AA_factor_y=sqrt(slopeSquare_AA)*0.75;
+alphaG+=AA_factor_y;}`
+            : `var AA_factor_x=0.0;
+var AA_factor_y=0.0;`;
 
     // Direct lighting block — use the compact non-looping shader for one non-shadow light,
     // and the generic multi-light loop for multiple lights or shadow receivers.
@@ -341,8 +341,8 @@ var AA_factor_y = 0.0;`;
         ? multiLightLoop
         : hasSingleLight
           ? singleLightBlock
-          : `var directDiffuse = vec3<f32>(0.0);
-var directSpecular = vec3<f32>(0.0);
+          : `var directDiffuse=vec3<f32>(0.0);
+var directSpecular=vec3<f32>(0.0);
 /*BL*/`;
 
     // Tonemap: BJS TONEMAPPING_STANDARD (exponential) by default; caller-supplied
@@ -352,19 +352,19 @@ var directSpecular = vec3<f32>(0.0);
     const tonemapBlock = hasTonemap
         ? useAces
             ? acesTonemapCall
-            : `color *= scene.vImageInfos.x;
-color = 1.0 - exp2(-1.590579 * color);`
-        : `color *= scene.vImageInfos.x;`;
+            : `color*=scene.vImageInfos.x;
+color=1.0-exp2(-1.590579*color);`
+        : `color*=scene.vImageInfos.x;`;
 
     // Alpha output
     const alphaBlock = hasAlphaBlend
-        ? `var finalAlpha = alpha * material.materialAlpha;
-var luminanceOverAlpha = 0.0;
+        ? `var finalAlpha=alpha*material.materialAlpha;
+var luminanceOverAlpha=0.0;
 /*BA*/
-luminanceOverAlpha += dot(finalSpecularScaled, vec3<f32>(0.2126, 0.7152, 0.0722));
-finalAlpha = saturate(finalAlpha + luminanceOverAlpha * luminanceOverAlpha);
-return vec4<f32>(color, finalAlpha);`
-        : `return vec4<f32>(color, alpha * material.materialAlpha);`;
+luminanceOverAlpha+=dot(finalSpecularScaled,vec3<f32>(0.2126,0.7152,0.0722));
+finalAlpha=saturate(finalAlpha+luminanceOverAlpha*luminanceOverAlpha);
+return vec4<f32>(color,finalAlpha);`
+        : `return vec4<f32>(color,alpha*material.materialAlpha);`;
 
     const doubleSidedEntry = hasDoubleSided
         ? `@fragment fn main(input: FragmentInput, @builtin(front_facing) frontFacing: bool) -> @location(0) vec4<f32> {`
@@ -397,9 +397,9 @@ ${meshLightIndexHelper}
 ${fragmentHelpers}
 ${doubleSidedEntry}
 ${fragmentPrelude}/*SV*/
-let baseColorSample = textureSample(baseColorTexture, baseColorSampler, ${baseColorUV});
+let baseColorSample=textureSample(baseColorTexture,baseColorSampler,${baseColorUV});
 ${baseColorDecode}
-let orm = textureSample(ormTexture, ormSampler, ${ormUV}).rgb;
+let orm=textureSample(ormTexture,ormSampler,${ormUV}).rgb;
 ${occlusionDefault}
 ${roughnessMetallic}
 ${emissiveDefault}
@@ -408,24 +408,24 @@ ${normalBlock}
 ${doubleSidedFlip}
 ${anisotropyTBBlock}
 /*AC*/
-let V = normalize(scene.vEyePosition.xyz - input.worldPos);
-let NdotVUnclamped = dot(N, V);
-let NdotV = abs(NdotVUnclamped) + 0.0000001;
+let V=normalize(scene.vEyePosition.xyz-input.worldPos);
+let NdotVUnclamped=dot(N,V);
+let NdotV=abs(NdotVUnclamped)+0.0000001;
 ${f0Default}
 /*MF*/
-var alphaG = roughness * roughness + 0.0005;
+var alphaG=roughness*roughness+0.0005;
 ${specularAABlock}
 ${directLightBlock}
-var color = directDiffuse + directSpecular + emissive;
+var color=directDiffuse+directSpecular+emissive;
 /*AI*/
 /*NI*/
 ${tonemapBlock}
-color = pow(color, vec3<f32>(1.0 / 2.2));
-color = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
-let highContrast = color * color * (3.0 - 2.0 * color);
-if (scene.vImageInfos.y < 1.0) { color = mix(vec3<f32>(0.5), color, scene.vImageInfos.y); }
-else { color = mix(color, highContrast, scene.vImageInfos.y - 1.0); }
-color = max(color, vec3<f32>(0.0));
+color=pow(color,vec3<f32>(1.0/2.2));
+color=clamp(color,vec3<f32>(0.0),vec3<f32>(1.0));
+let highContrast=color*color*(3.0-2.0*color);
+if(scene.vImageInfos.y<1.0){color=mix(vec3<f32>(0.5),color,scene.vImageInfos.y);}
+else{color=mix(color,highContrast,scene.vImageInfos.y-1.0);}
+color=max(color,vec3<f32>(0.0));
 /*BC*/
 ${alphaBlock}
 }`;

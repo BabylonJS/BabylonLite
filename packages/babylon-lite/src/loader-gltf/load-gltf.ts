@@ -17,6 +17,7 @@ import { assembleMaterial, makeImageFetcher } from "./gltf-material.js";
 import type { DecodedPrimitive, GltfFeature, GltfLoadCtx } from "./gltf-feature.js";
 import type { TextureWrapFn } from "./gltf-pbr-builder.js";
 import { assemblePbrProps, buildDefaultPbrTextures, identityTexWrap, runMatExts, uploadTex } from "./gltf-pbr-builder.js";
+import type * as GltfPbrBuilderExt from "./gltf-pbr-builder-ext.js";
 /** Parsed mesh data ready for GPU upload. */
 export interface GltfMeshData {
     positions: Float32Array;
@@ -66,13 +67,13 @@ export async function loadGltf(engine: EngineContext, url: string): Promise<Asse
     // when no feature contributes one (common case) — keeps the hot path free
     // of per-texture work and lets bundlers tree-shake the helpers.
     const texWraps = features.filter((f) => f.wrapTexture).map((f) => f.wrapTexture!);
-    const wrapTex: TextureWrapFn = texWraps.length === 0 ? identityTexWrap : (tex, ti) => texWraps.reduce((acc, w) => w(acc, ti), tex);
+    const wrapTex: TextureWrapFn = !texWraps.length ? identityTexWrap : (tex, ti) => texWraps.reduce((acc, w) => w(acc, ti), tex);
 
     // Run every feature's pre-mesh hook (e.g. Draco decompression) and merge
     // their primitive-keyed decode caches. Features without `preMesh` contribute
     // nothing; the map stays empty when no primitive-level feature triggered.
     const decodedPrimitives = new Map<unknown, DecodedPrimitive>();
-    for (const frag of await Promise.all(features.flatMap((f) => (f.preMesh ? [f.preMesh(json, binChunk)] : [])))) {
+    for (const frag of await Promise.all(features.flatMap((f) => (f.preMesh ? [f.preMesh(json, binChunk, baseUrl)] : [])))) {
         for (const [k, v] of frag) {
             decodedPrimitives.set(k, v);
         }
@@ -194,6 +195,7 @@ const _features: GltfFeatureLoader[] = [
     // refraction render path is wired via fragments/refraction-fragment.ts (env-only V1).
     [(j) => ["transmission", "volume", "ior", "specular"].some((e) => hasMatExt(e)(j)), () => import("./gltf-ext-dielectric.js")],
     [hasExt("KHR_texture_transform"), () => import("./gltf-ext-uv-transform.js")],
+    [hasExt("KHR_texture_basisu"), () => import("./gltf-ext-basisu.js")],
     [needsOrmComposite, () => import("./gltf-ext-orm.js")],
     // Per-mesh features (predicates inlined to avoid eager imports)
     [(json) => !!json.skins?.length && anyPrimitive(json, (p) => p.attributes?.JOINTS_0 !== undefined), () => import("./gltf-feature-skeleton.js")],
@@ -344,7 +346,7 @@ async function extractAllMeshes(
                 uvs: uvData ? (uvData.data as Float32Array) : new Float32Array(posData.count * 2),
                 uv2s: uv2Data ? (uv2Data.data as Float32Array) : null,
                 colors: colorData ? (colorData.data as Float32Array) : null,
-                indices: idxData ? indices : new Uint16Array(0),
+                indices,
                 vertexCount: posData.count,
                 indexCount: idxData?.count ?? 0,
                 worldMatrix,
@@ -371,10 +373,6 @@ async function ensureMipmapModule(): Promise<void> {
     }
 }
 
-function uploadTextureSynced(engine: EngineContextInternal, bitmap: ImageBitmap | null, srgb: boolean, sampler: GPUSampler, fallbackBytes?: Uint8Array): Texture2D {
-    return uploadTex(engine, bitmap, srgb, sampler, _generateMipmaps!, fallbackBytes);
-}
-
 async function uploadMeshes(meshDatas: GltfMeshData[], features: GltfFeature[], ctx: GltfLoadCtx): Promise<Mesh[]> {
     const { engine, json, binChunk, baseUrl, matExts, wrapTex } = ctx;
     const sampler = getOrCreateSampler(engine, {
@@ -390,44 +388,38 @@ async function uploadMeshes(meshDatas: GltfMeshData[], features: GltfFeature[], 
     const meshFeatures = features.filter((f) => f.applyMesh);
 
     // Texture cache: shared textures uploaded once, keyed by (bitmap, srgb)
-    const texCache = new Map<string, Texture2D>();
+    const texCache = new Map<number, Texture2D>();
     let texId = 0;
     const bitmapIds = new Map<ImageBitmap, number>();
 
-    function getCachedTexture(bitmap: ImageBitmap | null, srgb: boolean): Texture2D {
-        if (!bitmap) {
-            return uploadTextureSynced(engine, null, srgb, sampler);
-        }
+    function getCachedTexture(bitmap: ImageBitmap, srgb: boolean): Texture2D {
         let id = bitmapIds.get(bitmap);
         if (id === undefined) {
-            id = texId++;
-            bitmapIds.set(bitmap, id);
+            bitmapIds.set(bitmap, (id = texId++));
         }
-        const key = `${id}:${srgb ? 1 : 0}`;
+        const key = id * 2 + +srgb;
         let tex = texCache.get(key);
         if (!tex) {
-            tex = uploadTextureSynced(engine, bitmap, srgb, sampler);
+            tex = uploadTex(engine, bitmap, srgb, sampler, _generateMipmaps!);
             texCache.set(key, tex);
         }
         return tex;
     }
 
     // Per-load image fetcher for ext modules (uses same image cache as core).
-    const extImageCache = matExts.length > 0 ? new Map<number, Promise<ImageBitmap>>() : null;
+    const extImageCache = matExts.length ? new Map<number, Promise<ImageBitmap>>() : null;
     const extFetchImg = extImageCache ? makeImageFetcher(json, binChunk, baseUrl, extImageCache) : null;
     const extCtx: GltfMatExtCtx = {
+        engine,
         async texture(texInfo, sRGB) {
             if (!texInfo || !extFetchImg) {
                 return undefined;
             }
             const img = await extFetchImg(texInfo);
-            if (!img) {
-                return undefined;
-            }
-            return wrapTex(getCachedTexture(img, sRGB), texInfo);
+            return img ? wrapTex(getCachedTexture(img, sRGB), texInfo) : undefined;
         },
         uploadImage(bitmap, sRGB) {
-            return uploadTextureSynced(engine, bitmap, sRGB, sampler);
+            return uploadTex(engine, bitmap, sRGB, sampler, _generateMipmaps!);
         },
     };
 
@@ -440,7 +432,7 @@ async function uploadMeshes(meshDatas: GltfMeshData[], features: GltfFeature[], 
             _needsPbrExt = true;
         }
     }
-    let _pbrExtPromise: Promise<typeof import("./gltf-pbr-builder-ext.js")> | null = null;
+    let _pbrExtPromise: Promise<typeof GltfPbrBuilderExt> | null = null;
     const _ensurePbrExt = () => (_pbrExtPromise ??= import("./gltf-pbr-builder-ext.js"));
 
     /** Default ORM upload: single MR-or-occlusion image, or 1×1 fallback baked from

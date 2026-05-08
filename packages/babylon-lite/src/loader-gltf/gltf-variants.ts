@@ -47,6 +47,7 @@ export async function loadVariantMaterials(
     const fetchImg = makeImageFetcher(json, binChunk, baseUrl, imageCache);
     const getCachedTex = (bitmap: ImageBitmap, srgb: boolean) => uploadTex(engine, bitmap, srgb, sampler, generateMipmaps);
     const extCtx: GltfMatExtCtx = {
+        engine,
         async texture(texInfo, sRGB) {
             if (!texInfo) {
                 return undefined;
