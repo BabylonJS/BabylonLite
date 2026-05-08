@@ -3,6 +3,7 @@ import type { MeshInternal } from "../mesh/mesh.js";
 import type { GpuPicker } from "./gpu-picker.js";
 import type { PickingInfo } from "./picking-info.js";
 import type { Ray } from "./ray.js";
+import { computeDeformedPositions, hasCpuDeformation } from "./deformed-geometry.js";
 
 /**
  * Enable detailed picking on a GPU picker.
@@ -21,7 +22,8 @@ function detailedPick(info: PickingInfo, ray: Ray): void {
         return;
     }
 
-    const positions = mi._cpuPositions;
+    const deformedPositions = hasCpuDeformation(mi) ? computeDeformedPositions(mi) : null;
+    const positions = deformedPositions ?? mi._cpuPositions;
     const indices = mi._cpuIndices;
 
     // Determine the world matrix — use thin instance matrix when applicable
@@ -74,6 +76,7 @@ function detailedPick(info: PickingInfo, ray: Ray): void {
             ray.direction[0],
             ray.direction[1],
             ray.direction[2],
+            ray.length,
             wax,
             way,
             waz,
@@ -94,15 +97,18 @@ function detailedPick(info: PickingInfo, ray: Ray): void {
     }
 
     if (closestFace >= 0) {
+        const bjsBu = 1 - closestBu - closestBv;
         info.faceId = closestFace;
-        info.bu = closestBu;
-        info.bv = closestBv;
+        info.bu = bjsBu;
+        info.bv = closestBu;
+        info.distance = closestT;
+        info.pickedPoint = [ray.origin[0] + ray.direction[0] * closestT, ray.origin[1] + ray.direction[1] * closestT, ray.origin[2] + ray.direction[2] * closestT];
     }
 }
 
-/** Möller–Trumbore ray-triangle intersection.
+/** Möller-Trumbore ray-triangle intersection with Babylon.js Ray epsilon semantics.
  *  Returns { t, u, v } or null if no intersection.
- *  u, v are barycentric coordinates (matching BJS convention). */
+ *  u and v are Möller weights for vertices 1 and 2; BJS exposes (1 - u - v, u). */
 function rayTriangleIntersect(
     ox: number,
     oy: number,
@@ -110,6 +116,7 @@ function rayTriangleIntersect(
     dx: number,
     dy: number,
     dz: number,
+    length: number,
     v0x: number,
     v0y: number,
     v0z: number,
@@ -120,7 +127,7 @@ function rayTriangleIntersect(
     v2y: number,
     v2z: number
 ): { t: number; u: number; v: number } | null {
-    const EPSILON = 1e-8;
+    const EPSILON = 0.001;
 
     // edge1 = v1 - v0, edge2 = v2 - v0
     const e1x = v1x - v0x,
@@ -136,7 +143,7 @@ function rayTriangleIntersect(
     const hz = dx * e2y - dy * e2x;
 
     const det = e1x * hx + e1y * hy + e1z * hz;
-    if (det > -EPSILON && det < EPSILON) {
+    if (det === 0) {
         return null; // parallel
     }
 
@@ -148,7 +155,7 @@ function rayTriangleIntersect(
         sz = oz - v0z;
 
     const u = (sx * hx + sy * hy + sz * hz) * invDet;
-    if (u < 0 || u > 1) {
+    if (u < -EPSILON || u > 1 + EPSILON) {
         return null;
     }
 
@@ -158,12 +165,12 @@ function rayTriangleIntersect(
     const qz = sx * e1y - sy * e1x;
 
     const v = (dx * qx + dy * qy + dz * qz) * invDet;
-    if (v < 0 || u + v > 1) {
+    if (v < -EPSILON || u + v > 1 + EPSILON) {
         return null;
     }
 
     const t = (e2x * qx + e2y * qy + e2z * qz) * invDet;
-    if (t < EPSILON) {
+    if (t > length || t < 0) {
         return null; // behind ray
     }
 

@@ -58,5 +58,17 @@ export function createSkeleton(
         weights1Buffer = createMappedBuffer(engine, weights1, GPUBufferUsage.VERTEX);
     }
 
-    return { boneTexture, boneCount, jointsBuffer, weightsBuffer, joints1Buffer, weights1Buffer };
+    return {
+        boneTexture,
+        boneCount,
+        jointsBuffer,
+        weightsBuffer,
+        joints,
+        weights,
+        boneMatrices: boneData,
+        joints1Buffer,
+        weights1Buffer,
+        joints1: joints1 ?? null,
+        weights1: weights1 ?? null,
+    };
 }

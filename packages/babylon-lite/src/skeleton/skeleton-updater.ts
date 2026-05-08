@@ -181,6 +181,10 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
                             morphUploadF32[2] = tc > 2 ? morphWeightScratch[2]! : 0;
                             morphUploadF32[3] = tc > 3 ? morphWeightScratch[3]! : 0;
                             for (const mb of bindings) {
+                                mb.weights[0] = morphUploadF32[0]!;
+                                mb.weights[1] = morphUploadF32[1]!;
+                                mb.weights[2] = morphUploadF32[2]!;
+                                mb.weights[3] = morphUploadF32[3]!;
                                 // Write only the weights vec4 (first 16 bytes); count/texWidth/rowsPerBand are immutable
                                 device.queue.writeBuffer(mb.weightsBuffer, 0, morphUploadF32.buffer, 0, 16);
                             }
@@ -240,6 +244,7 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
 
                 // Upload to GPU
                 const texWidth = skel.boneCount * 4;
+                skel.boneMatrices.set(boneData);
                 device.queue.writeTexture({ texture: skel.boneTexture }, boneData.buffer, { bytesPerRow: texWidth * 16 }, { width: texWidth, height: 1 });
             }
         },

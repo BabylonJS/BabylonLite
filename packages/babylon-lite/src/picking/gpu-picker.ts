@@ -3,13 +3,14 @@ import type { Mesh } from "../mesh/mesh.js";
 import type { MeshInternal } from "../mesh/mesh.js";
 import type { PickingInfo } from "./picking-info.js";
 import type { EngineContextInternal } from "../engine/engine.js";
+import type * as DeformedGeometry from "./deformed-geometry.js";
 import { createEmptyPickingInfo } from "./picking-info.js";
 import { createPickingRay } from "./ray.js";
 import { mat4Invert } from "../math/mat4.js";
 import { getPickingPipeline, getPickingTIPipeline, getPickingSceneBGL, getPickingMeshBGL, getPickingTIMeshBGL } from "./picking-pipeline.js";
 import { getViewProjectionMatrix, getCameraPosition } from "../camera/camera.js";
 import { resolveCameraViewport } from "../camera/viewport.js";
-import { createEmptyUniformBuffer, createUniformBuffer } from "../resource/gpu-buffers.js";
+import { createEmptyUniformBuffer, createMappedBuffer, createUniformBuffer } from "../resource/gpu-buffers.js";
 
 // ─── Scratch arrays — allocated once, reused across all picks ──────
 const _pickVP = new Float32Array(16);
@@ -107,7 +108,7 @@ function computePickVP(out: Float32Array, vp: Float32Array, px: number, py: numb
     }
 }
 
-/** Pick the mesh at (x, y) canvas coordinates. Returns a PickingInfo. */
+/** Pick the mesh at CSS-space canvas coordinates, matching Babylon.js Scene.pick. Returns a PickingInfo. */
 export async function pickAsync(picker: GpuPicker, x: number, y: number): Promise<PickingInfo> {
     const scene = picker._scene;
     const engine = scene.engine as EngineContextInternal;
@@ -118,19 +119,27 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
         return createEmptyPickingInfo();
     }
 
-    const viewport = resolveCameraViewport(camera, canvas.width, canvas.height);
+    const backingWidth = canvas.width;
+    const backingHeight = canvas.height;
+    const clientWidth = canvas.clientWidth || backingWidth;
+    const clientHeight = canvas.clientHeight || backingHeight;
+    const scaleX = backingWidth / clientWidth;
+    const scaleY = backingHeight / clientHeight;
+    const pickX = x * scaleX;
+    const pickY = y * scaleY;
+    const viewport = resolveCameraViewport(camera, backingWidth, backingHeight);
     const w = viewport.width;
     const h = viewport.height;
     if (w === 0 || h === 0) {
         return createEmptyPickingInfo();
     }
 
-    if (x < viewport.x || y < viewport.y || x >= viewport.x + viewport.width || y >= viewport.y + viewport.height) {
+    if (pickX < viewport.x || pickY < viewport.y || pickX >= viewport.x + viewport.width || pickY >= viewport.y + viewport.height) {
         return createEmptyPickingInfo();
     }
 
-    const px = Math.max(0, Math.min(Math.floor(x - viewport.x), w - 1));
-    const py = Math.max(0, Math.min(Math.floor(y - viewport.y), h - 1));
+    const px = Math.max(0, Math.min(Math.floor(pickX - viewport.x), w - 1));
+    const py = Math.max(0, Math.min(Math.floor(pickY - viewport.y), h - 1));
     const aspect = w / h;
     const vp = getViewProjectionMatrix(camera, aspect);
 
@@ -145,6 +154,14 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
     const meshes = scene.meshes;
     const meshCount = meshes.length;
     let nextId = 1;
+    let deformedGeometry: typeof DeformedGeometry | null = null;
+    for (let mi = 0; mi < meshCount; mi++) {
+        const mesh = meshes[mi] as MeshInternal;
+        if ((mesh.morphTargets || mesh.skeleton) && mesh._cpuPositions) {
+            deformedGeometry = await import("./deformed-geometry.js");
+            break;
+        }
+    }
 
     // ── Render pass (1×1 target) ─────────────────────────────────────
     const encoder = device.createCommandEncoder({ label: "pick" });
@@ -162,7 +179,6 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
     const tiMeshBGL = getPickingTIMeshBGL(engine);
 
     const tempBuffers: GPUBuffer[] = [];
-
     for (let mi = 0; mi < meshCount; mi++) {
         const mesh = meshes[mi]!;
         const gpu = (mesh as MeshInternal)._gpu;
@@ -194,11 +210,20 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
             _uboU32[0] = nextId;
             const meshUbo = createUniformBuffer(engine, _uboView);
             tempBuffers.push(meshUbo);
+            let positionBuffer = gpu.positionBuffer;
+            const meshInternal = mesh as MeshInternal;
+            if (deformedGeometry && (meshInternal.morphTargets || meshInternal.skeleton) && meshInternal._cpuPositions) {
+                const deformedPositions = deformedGeometry.computeDeformedPositions(meshInternal);
+                if (deformedPositions) {
+                    positionBuffer = createMappedBuffer(engine, deformedPositions, GPUBufferUsage.VERTEX);
+                    tempBuffers.push(positionBuffer);
+                }
+            }
 
             pass.setPipeline(regularPipeline);
             pass.setBindGroup(0, picker._sceneBG!);
             pass.setBindGroup(1, device.createBindGroup({ layout: meshBGL, entries: [{ binding: 0, resource: { buffer: meshUbo } }] }));
-            pass.setVertexBuffer(0, gpu.positionBuffer);
+            pass.setVertexBuffer(0, positionBuffer);
             pass.setIndexBuffer(gpu.indexBuffer, gpu.indexFormat);
             pass.drawIndexed(gpu.indexCount);
             nextId++;
@@ -280,6 +305,7 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
     if (picker._detailedPick) {
         const ray = createPickingRay(px, py, vp, w, h);
         if (ray) {
+            info.ray = ray;
             picker._detailedPick(info, ray);
         }
     }

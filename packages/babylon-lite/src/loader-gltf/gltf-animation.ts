@@ -261,6 +261,7 @@ export function parseAnimationData(
                 invMeshWorld,
                 boneTexture: mesh.skeleton.boneTexture,
                 boneCount: jointNodes.length,
+                boneMatrices: mesh.skeleton.boneMatrices,
             });
         }
     }
@@ -290,6 +291,7 @@ export function parseAnimationData(
             morphBindings.push({
                 nodeIdx,
                 weightsBuffer: mesh.morphTargets.weightsBuffer,
+                weights: mesh.morphTargets.weights,
                 targetCount: mesh.morphTargets.count,
             });
         }

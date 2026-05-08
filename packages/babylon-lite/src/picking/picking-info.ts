@@ -1,4 +1,5 @@
 import type { Mesh } from "../mesh/mesh.js";
+import type { Ray } from "./ray.js";
 
 /** Result of a GPU pick operation. */
 export interface PickingInfo {
@@ -11,6 +12,7 @@ export interface PickingInfo {
     bv: number;
     subMeshId: number;
     thinInstanceIndex: number;
+    ray: Ray | null;
 }
 
 /** Create an empty (miss) picking result. */
@@ -25,5 +27,6 @@ export function createEmptyPickingInfo(): PickingInfo {
         bv: 0,
         subMeshId: 0,
         thinInstanceIndex: -1,
+        ray: null,
     };
 }

@@ -24,6 +24,7 @@ export function createMorphTargets(
 ): MorphTargetData {
     const device = engine.device;
     const targetCount = Math.min(targets.length, 4); // max 4 (vec4 weights)
+    const weights = new Float32Array(4);
     const texWidth = Math.min(vertexCount, 2048);
     const rowsPerBand = Math.ceil(vertexCount / texWidth);
     // Each target has 2 bands: position deltas + normal deltas
@@ -65,7 +66,9 @@ export function createMorphTargets(
     const f32 = new Float32Array(uboData, 0, 4);
     const u32 = new Uint32Array(uboData, 16, 4);
     for (let i = 0; i < targetCount; i++) {
-        f32[i] = morphWeights?.[i] ?? 0;
+        const w = morphWeights?.[i] ?? 0;
+        f32[i] = w;
+        weights[i] = w;
     }
     u32[0] = targetCount;
     u32[1] = texWidth;
@@ -73,5 +76,5 @@ export function createMorphTargets(
 
     const weightsBuffer = createMappedBuffer(engine, new Uint8Array(uboData), GPUBufferUsage.UNIFORM);
 
-    return { texture, count: targetCount, weightsBuffer };
+    return { texture, count: targetCount, weightsBuffer, targets: targets.slice(0, targetCount), weights };
 }
