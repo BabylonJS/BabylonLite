@@ -33,7 +33,7 @@ export interface SkyboxCubeMapGPU {
  * Build the per-skybox GPU resources (mesh BGL + bind group + UBO + shader modules
  * + pipeline cache). The pipeline is created lazily by `getPipeline(engine, sig)`
  * once the target sig is known. The scene bind group is supplied per-pass by the
- * active RenderPassTask.
+ * active RenderTask.
  */
 export function buildSkyboxCubeMapGPU(engine: EngineContextInternal, worldMatrix: Float32Array, cubeView: GPUTextureView, cubeSampler: GPUSampler): SkyboxCubeMapGPU {
     const device = engine.device;

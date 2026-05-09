@@ -3,6 +3,8 @@ import { getFrameGraph } from "../scene/scene-core.js";
 import type { Task } from "./task.js";
 import type { FrameGraph } from "./frame-graph.js";
 import { _appendTask } from "./frame-graph.js";
+import type { RenderPass } from "./render-pass.js";
+import { createRenderPass } from "./render-pass.js";
 
 function resolveFg(target: FrameGraph | SceneContext): FrameGraph {
     return "_tasks" in (target as object) ? (target as FrameGraph) : getFrameGraph(target as SceneContext);
@@ -31,4 +33,19 @@ export function addTaskBefore(target: FrameGraph | SceneContext, task: Task, bef
         fg._tasks.splice(i, 0, task);
     }
     fg._ready = false;
+}
+
+/** Create a `RenderPass`, wire it to the task currently recording, and return
+ *  it. Must be called from inside `Task.record()` so the FG can associate the
+ *  new pass with the right task (mirrors BJS `frameGraph.addRenderPass`).
+ *
+ *  Configure the returned pass with `setRenderPassRenderTarget`,
+ *  `setRenderPassExecuteFunc`, etc. before the FG finishes building. */
+export function addRenderPass(target: FrameGraph | SceneContext, name: string): RenderPass {
+    const fg = resolveFg(target);
+    const task = fg._currentProcessedTask;
+    if (!task) {
+        throw new Error(`addRenderPass("${name}"): no task is currently recording (called outside Task.record?)`);
+    }
+    return createRenderPass(name, task);
 }

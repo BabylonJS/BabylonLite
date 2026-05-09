@@ -15,7 +15,7 @@ import type { SceneNode } from "./scene-node.js";
 import type { EnvironmentTextures } from "../loader-env/load-env.js";
 import type { FrameGraph } from "../frame-graph/frame-graph.js";
 import { createFrameGraph, _appendTask } from "../frame-graph/frame-graph.js";
-import { createRenderPassTask } from "../frame-graph/render-pass-task.js";
+import { createRenderTask } from "../frame-graph/render-task.js";
 import { createRenderTarget } from "../engine/render-target.js";
 import type { AssetContainer } from "../asset-container.js";
 import type { SceneLightGpuState } from "../render/lights-ubo.js";
@@ -99,7 +99,7 @@ export interface SceneContextInternal extends SceneContext, RenderingContext {
     _lightGpuState?: SceneLightGpuState;
 
     /** Frame graph driving this scene's rendering. Created eagerly by
-     *  `createSceneContext` with a default `RenderPassTask` that mirrors
+     *  `createSceneContext` with a default `RenderTask` that mirrors
      *  `_renderables` into the swapchain. User code may add additional tasks
      *  (offscreen RTTs, post-FX, UI overlays, etc.). */
     _frameGraph: FrameGraph;
@@ -211,7 +211,7 @@ export function createSceneContext(engine: EngineContext): SceneContext {
     });
     _appendTask(
         fg,
-        createRenderPassTask(
+        createRenderTask(
             {
                 name: "scene",
                 rt: swapRT,
