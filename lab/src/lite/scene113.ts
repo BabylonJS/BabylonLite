@@ -2,11 +2,10 @@
 // Performs one detailed GPU pick on a sphere, then visualizes the picked surface point
 // and interpolated normal with two small markers.
 
-import type { EngineContext, Mesh, PickingInfo } from "babylon-lite";
-import { addToScene, createArcRotateCamera, createBox, createEngine, createGpuPicker, createSceneContext, createSphere, createStandardMaterial, disposePicker, enableDetailedPicking, getPickedNormal, pickAsync, registerScene, startEngine } from "babylon-lite";
+import type { EngineContext, Mesh, PickingInfo, Vec3Tuple } from "babylon-lite";
+import { addToScene, createArcRotateCamera, createBox, createEngine, createGpuPicker, createSceneContext, createSphere, createStandardMaterial, disposePicker, enableDetailedPicking, getPickedNormal, normalizeVec3, pickAsync, registerScene, startEngine } from "babylon-lite";
 
 type ColorTuple = [number, number, number];
-type Vec3Tuple = [number, number, number];
 type QuatTuple = [number, number, number, number];
 
 const PICK_TARGET_X_RATIO = 0.625;
@@ -30,19 +29,15 @@ function createUnlitMaterial(color: ColorTuple) {
     return material;
 }
 
-function normalizeVec3(v: Vec3Tuple): Vec3Tuple {
-    const len = Math.hypot(v[0], v[1], v[2]);
-    return len < 1e-8 ? [0, 0, -1] : [v[0] / len, v[1] / len, v[2] / len];
-}
-
 function cross(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
     return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 }
 
 function computeNormalBasisQuaternion(normal: Vec3Tuple): QuatTuple {
-    const yAxis = normalizeVec3(normal);
+    const yAxis = normalizeVec3(normal[0], normal[1], normal[2], 1e-8);
     const reference: Vec3Tuple = Math.abs(yAxis[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
-    const xAxis = normalizeVec3(cross(reference, yAxis));
+    const xBasis = cross(reference, yAxis);
+    const xAxis = normalizeVec3(xBasis[0], xBasis[1], xBasis[2], 1e-8);
     const zAxis = cross(xAxis, yAxis);
 
     const m00 = xAxis[0];
@@ -133,7 +128,8 @@ function placeMarkers(info: PickingInfo, surfaceMarker: Mesh, normalMarker: Mesh
     }
 
     const point = info.pickedPoint;
-    const normal = normalizeVec3(getPickedNormal(info) ?? ([0, 0, -1] as Vec3Tuple));
+    const pickedNormal = getPickedNormal(info);
+    const normal = pickedNormal ? normalizeVec3(pickedNormal[0], pickedNormal[1], pickedNormal[2], 1e-8) : ([0, 0, -1] as Vec3Tuple);
     surfaceMarker.position.set(point[0], point[1], point[2]);
 
     normalMarker.position.set(point[0] + normal[0] * 0.38, point[1] + normal[1] * 0.38, point[2] + normal[2] * 0.38);

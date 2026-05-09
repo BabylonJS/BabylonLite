@@ -22,6 +22,7 @@ import {
     registerScene,
     startEngine,
 } from "babylon-lite";
+import { createBoxData } from "babylon-lite/mesh/create-box.js";
 import { createMeshFromData } from "babylon-lite/mesh/mesh-factories.js";
 import { createSkeleton } from "babylon-lite/skeleton/create-skeleton.js";
 
@@ -30,7 +31,8 @@ type Vec3Tuple = [number, number, number];
 
 const MORPH_DELTA_X = 1.35;
 const SKELETON_DELTA_X = 1.45;
-const MARKER_DISPLAY_SCALE = 135 / 255;
+const MARKER_DISPLAY_BYTE = 135;
+const MARKER_BOTTOM_SHADE = 46 / 135;
 
 function createUnlitPbr(engine: EngineContext, color: ColorTuple) {
     return createPbrMaterial({
@@ -47,10 +49,9 @@ function createUnlitPbr(engine: EngineContext, color: ColorTuple) {
 }
 
 function createMarkerMaterial(engine: EngineContext, color: ColorTuple) {
-    const displayColor: ColorTuple = [color[0] * MARKER_DISPLAY_SCALE, color[1] * MARKER_DISPLAY_SCALE, color[2] * MARKER_DISPLAY_SCALE];
-    const pbrInput: ColorTuple = [Math.pow(displayColor[0], 2.2), Math.pow(displayColor[1], 2.2), Math.pow(displayColor[2], 2.2)];
+    void color;
     return createPbrMaterial({
-        baseColorTexture: createSolidTexture2D(engine, pbrInput[0], pbrInput[1], pbrInput[2]),
+        baseColorTexture: createSolidTexture2D(engine, 1, 1, 1),
         ormTexture: createSolidTexture2D(engine, 1, 1, 0),
         unlit: true,
         unlitColor: [1, 1, 1],
@@ -71,6 +72,25 @@ function createQuadMesh(engine: EngineContext, name: string, color: ColorTuple):
     mesh.name = name;
     mesh.material = createUnlitPbr(engine, color);
     return mesh;
+}
+
+function toLinearColor(color: ColorTuple): ColorTuple {
+    return [Math.pow(color[0], 2.2), Math.pow(color[1], 2.2), Math.pow(color[2], 2.2)];
+}
+
+function createMarkerBoxMesh(engine: EngineContext, name: string, color: ColorTuple): Mesh {
+    const box = createBoxData(1);
+    const displayColor: ColorTuple = [Math.round(color[0] * MARKER_DISPLAY_BYTE) / 255, Math.round(color[1] * MARKER_DISPLAY_BYTE) / 255, Math.round(color[2] * MARKER_DISPLAY_BYTE) / 255];
+    const bright = toLinearColor(displayColor);
+    const dark = toLinearColor([displayColor[0] * MARKER_BOTTOM_SHADE, displayColor[1] * MARKER_BOTTOM_SHADE, displayColor[2] * MARKER_BOTTOM_SHADE]);
+    const colors = new Float32Array(box.vertexCount * 3);
+    for (let face = 0; face < 6; face++) {
+        const faceColor = face === 5 ? dark : bright;
+        for (let vertex = 0; vertex < 4; vertex++) {
+            colors.set(faceColor, (face * 4 + vertex) * 3);
+        }
+    }
+    return createMeshFromData(engine as EngineContextInternal, name, box.positions, box.normals, box.indices, box.uvs, undefined, undefined, colors);
 }
 
 function createMorphedQuad(engine: EngineContext): Mesh {
@@ -99,7 +119,7 @@ function createSkinnedQuad(engine: EngineContext): Mesh {
 }
 
 function createMarker(engine: EngineContext, name: string, color: ColorTuple): Mesh {
-    const marker = createBox(engine, 1);
+    const marker = createMarkerBoxMesh(engine, name, color);
     marker.name = name;
     marker.material = createMarkerMaterial(engine, color);
     marker.position.set(0, -100, 0);

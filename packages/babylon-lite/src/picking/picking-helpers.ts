@@ -1,5 +1,6 @@
 import type { PickingInfo } from "./picking-info.js";
 import type { MeshInternal } from "../mesh/mesh.js";
+import { normalizeVec3 } from "../math/normalize-vec3.js";
 
 /**
  * Get the interpolated normal at the picked point.
@@ -33,19 +34,12 @@ export function getPickedNormal(info: PickingInfo, useWorldCoordinates = false):
     const ny = info.bu * normals[i0 * 3 + 1]! + info.bv * normals[i1 * 3 + 1]! + bw * normals[i2 * 3 + 1]!;
     const nz = info.bu * normals[i0 * 3 + 2]! + info.bv * normals[i1 * 3 + 2]! + bw * normals[i2 * 3 + 2]!;
 
-    const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
-    if (len < 1e-10) {
-        return [0, 1, 0];
-    }
-    const invLen = 1 / len;
-
-    const localNormal: [number, number, number] = [nx * invLen, ny * invLen, nz * invLen];
+    const localNormal = normalizeVec3(nx, ny, nz);
     const wm = mi.worldMatrix;
     const wnx = wm[0]! * localNormal[0] + wm[4]! * localNormal[1] + wm[8]! * localNormal[2];
     const wny = wm[1]! * localNormal[0] + wm[5]! * localNormal[1] + wm[9]! * localNormal[2];
     const wnz = wm[2]! * localNormal[0] + wm[6]! * localNormal[1] + wm[10]! * localNormal[2];
-    const wLen = Math.sqrt(wnx * wnx + wny * wny + wnz * wnz);
-    const worldNormal: [number, number, number] = wLen < 1e-10 ? [0, 1, 0] : [wnx / wLen, wny / wLen, wnz / wLen];
+    const worldNormal = normalizeVec3(wnx, wny, wnz);
     const flip = info.ray ? worldNormal[0] * info.ray.direction[0] + worldNormal[1] * info.ray.direction[1] + worldNormal[2] * info.ray.direction[2] > 0 : false;
 
     if (!useWorldCoordinates) {

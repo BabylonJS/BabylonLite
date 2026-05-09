@@ -44,9 +44,6 @@ import { getSceneBindGroupLayout } from "../render/scene-helpers.js";
 import { createEmptyUniformBuffer } from "../resource/gpu-buffers.js";
 import { SCENE_UBO_BYTES } from "../shader/scene-uniforms-size.js";
 import { ensureSceneLightState, refreshSceneLightsUBO } from "../render/lights-ubo.js";
-import { setRenderPassBeforeExecute, setRenderPassExecuteFunc } from "./pass.js";
-import { createRenderPass, setRenderPassClear, setRenderPassRenderTarget } from "./render-pass.js";
-import type { RenderPass } from "./render-pass.js";
 import type { Task } from "./task.js";
 
 export interface RenderTaskConfig {
@@ -85,6 +82,10 @@ export interface RenderTask extends Task {
     _opaqueBundles: GPURenderBundle[];
     _lastVersion: number;
     _lastVis: number;
+
+    _renderPassDescriptor: GPURenderPassDescriptor;
+    _colorAttachment: GPURenderPassColorAttachment | null;
+    _depthAttachment: GPURenderPassDepthStencilAttachment | null;
 
     _targetSignature: RenderTargetSignature;
     _sampleCount: number;
@@ -153,6 +154,9 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
         _opaqueBundles: [],
         _lastVersion: -1,
         _lastVis: 0,
+        _renderPassDescriptor: { colorAttachments: [] },
+        _colorAttachment: null,
+        _depthAttachment: null,
         _targetSignature: targetSignature,
         _sampleCount: sampleCount,
         _sceneUBO: sceneUBO,
@@ -182,23 +186,17 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
             task._updateContext.targetHeight = task._config.rt._height;
             refreshTaskSceneBindGroup(task, eng);
             buildBindings(task, eng);
-
-            // Register one RenderPass with the FG; it owns the descriptor and
-            // (via `_executeFunc` below) the per-pass-encoder body. RenderTask
-            // is internal so it bypasses the `addRenderPass` action but still
-            // uses render-pass setters to keep metadata (dependencies, hooks)
-            // consistent with public pass construction.
-            const pass = createRenderPass(task.name, task);
-            setRenderPassRenderTarget(pass, task._config.rt);
-            setRenderPassBeforeExecute(pass, () => prepareRenderTaskPass(task, eng, sc));
-            setRenderPassExecuteFunc(pass, (enc) => executePassBody(task, enc));
+            buildRenderPassDescriptor(task, swapchain);
+        },
+        execute(): number {
+            return executePass(task, eng, sc, swapchain);
         },
         dispose(): void {
-            for (const p of task._passes) {
-                p._dispose();
-            }
             task._passes.length = 0;
             disposeRenderTarget(task._config.rt);
+            task._colorAttachment = null;
+            task._depthAttachment = null;
+            task._renderPassDescriptor = { colorAttachments: [] };
             task._opaqueBindings.length = 0;
             task._transmissiveBindings.length = 0;
             task._transparentBindings.length = 0;
@@ -303,6 +301,58 @@ function buildBindings(task: RenderTask, eng: EngineContextInternal): void {
     task._lastVersion = task.scene._renderableVersion;
 }
 
+function buildRenderPassDescriptor(task: RenderTask, swapchain: boolean): void {
+    const rt = task._config.rt;
+    const colorView = rt._colorView;
+    let colorAttachment: GPURenderPassColorAttachment | null = null;
+    if (colorView || swapchain) {
+        colorAttachment = {
+            view: colorView!,
+            loadOp: "clear",
+            storeOp: "store",
+        };
+    }
+
+    const depthFormat = rt.descriptor.depthStencilFormat;
+    const hasStencil = depthFormat ? depthFormat === "depth24plus-stencil8" || depthFormat === "depth32float-stencil8" || depthFormat === "stencil8" : false;
+    const depthView = rt._depthView;
+    let depthAttachment: GPURenderPassDepthStencilAttachment | null = null;
+    if (depthView) {
+        depthAttachment = {
+            view: depthView,
+            depthClearValue: 1.0,
+            depthLoadOp: "clear",
+            depthStoreOp: "store",
+            ...(hasStencil ? { stencilClearValue: 0, stencilLoadOp: "clear" as const, stencilStoreOp: "store" as const } : {}),
+        };
+    }
+
+    task._colorAttachment = colorAttachment;
+    task._depthAttachment = depthAttachment;
+    task._renderPassDescriptor = {
+        label: task.name,
+        colorAttachments: colorAttachment ? [colorAttachment] : [],
+        depthStencilAttachment: depthAttachment ?? undefined,
+    };
+}
+
+function patchPerFrame(task: RenderTask, eng: EngineContextInternal, swapchain: boolean): void {
+    const att = task._colorAttachment;
+    if (!att) {
+        return;
+    }
+    att.clearValue = task._autoFromScene ? task.scene.clearColor : task._config.clrColor!;
+    att.loadOp = task._config.clr !== false ? "clear" : "load";
+    if (swapchain) {
+        const swapView = eng._swapchainView;
+        if (task._sampleCount > 1) {
+            att.resolveTarget = swapView;
+        } else {
+            att.view = swapView;
+        }
+    }
+}
+
 function prepareRenderTaskPass(task: RenderTask, eng: EngineContextInternal, sc: SceneContextInternal): void {
     // Auto-resync when the source scene mutates.
     if (task._autoFromScene && task._lastVersion !== sc._renderableVersion) {
@@ -324,10 +374,15 @@ function prepareRenderTaskPass(task: RenderTask, eng: EngineContextInternal, sc:
     updateBindings(task._opaqueBindings, task._updateContext);
     updateBindings(task._transmissiveBindings, task._updateContext);
     updateBindings(task._transparentBindings, task._updateContext);
+}
 
-    for (const pass of task._passes) {
-        setRenderPassClear(pass as RenderPass, task._config.clr !== false, task._autoFromScene ? sc.clearColor : task._config.clrColor!);
-    }
+function executePass(task: RenderTask, eng: EngineContextInternal, sc: SceneContextInternal, swapchain: boolean): number {
+    prepareRenderTaskPass(task, eng, sc);
+    patchPerFrame(task, eng, swapchain);
+    const pass = eng._currentEncoder.beginRenderPass(task._renderPassDescriptor);
+    const draws = executePassBody(task, pass);
+    pass.end();
+    return draws;
 }
 
 /** Body of the registered `RenderPass`. Receives the live render-pass encoder

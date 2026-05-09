@@ -286,8 +286,8 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
     // Reconstruct world position from depth (using original full-res VP)
     const invVP = mat4Invert(vp);
     if (invVP) {
-        const ndcX = (2 * (px + 0.5)) / w - 1;
-        const ndcY = 1 - (2 * (py + 0.5)) / h;
+        const ndcX = (2 * (pickX - viewport.x)) / w - 1;
+        const ndcY = 1 - (2 * (pickY - viewport.y)) / h;
         const wx = invVP[0]! * ndcX + invVP[4]! * ndcY + invVP[8]! * depth + invVP[12]!;
         const wy = invVP[1]! * ndcX + invVP[5]! * ndcY + invVP[9]! * depth + invVP[13]!;
         const wz = invVP[2]! * ndcX + invVP[6]! * ndcY + invVP[10]! * depth + invVP[14]!;

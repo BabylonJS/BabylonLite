@@ -117,7 +117,9 @@ export { createMorphTargets } from "./morph/create-morph-targets.js";
 export type { MorphTargetData } from "./animation/types.js";
 
 // ─── Math ────────────────────────────────────────────────────────────
+export { normalizeVec3 } from "./math/normalize-vec3.js";
 export { mat4Translation, mat4Identity, mat4Scale, mat4Compose } from "./math/mat4.js";
+export type { Vec3, Vec3Tuple } from "./math/types.js";
 
 // ─── Thin Instances ──────────────────────────────────────────────────
 export { addThinInstance, removeThinInstance, setThinInstanceMatrix, setThinInstances, flushThinInstances, setThinInstanceColors } from "./mesh/thin-instance.js";

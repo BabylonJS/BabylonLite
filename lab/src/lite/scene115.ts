@@ -2,7 +2,7 @@
 // Freezes the animated Alien at frame 100, performs one detailed pick, and
 // moves visible markers to the picked point and picked normal for visual parity.
 
-import type { EngineContext, Mesh, PickingInfo } from "babylon-lite";
+import type { EngineContext, Mesh, PickingInfo, Vec3Tuple } from "babylon-lite";
 import {
     addToScene,
     createBox,
@@ -18,6 +18,7 @@ import {
     getPickedNormal,
     goToFrame,
     loadGltf,
+    normalizeVec3,
     onBeforeRender,
     pauseAnimation,
     pickAsync,
@@ -26,7 +27,6 @@ import {
 } from "babylon-lite";
 
 type ColorTuple = [number, number, number];
-type Vec3Tuple = [number, number, number];
 type QuatTuple = [number, number, number, number];
 
 const DEFAULT_SEEK_TIME = 100 / 60;
@@ -55,11 +55,6 @@ function createUnlitMaterial(color: ColorTuple) {
     return material;
 }
 
-function normalizeVec3(v: Vec3Tuple): Vec3Tuple {
-    const len = Math.hypot(v[0], v[1], v[2]);
-    return len < 1e-8 ? [0, 0, -1] : [v[0] / len, v[1] / len, v[2] / len];
-}
-
 function snapPickPoint(point: Vec3Tuple): Vec3Tuple {
     return [
         Math.round(point[0] / VISUAL_PICK_GRID) * VISUAL_PICK_GRID,
@@ -73,9 +68,10 @@ function cross(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
 }
 
 function computeNormalBasisQuaternion(normal: Vec3Tuple): QuatTuple {
-    const yAxis = normalizeVec3(normal);
+    const yAxis = normalizeVec3(normal[0], normal[1], normal[2], 1e-8);
     const reference: Vec3Tuple = Math.abs(yAxis[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
-    const xAxis = normalizeVec3(cross(reference, yAxis));
+    const xBasis = cross(reference, yAxis);
+    const xAxis = normalizeVec3(xBasis[0], xBasis[1], xBasis[2], 1e-8);
     const zAxis = cross(xAxis, yAxis);
 
     const m00 = xAxis[0];
@@ -167,7 +163,7 @@ function placeMarkers(info: PickingInfo, surfaceMarker: Mesh, normalMarker: Mesh
 
     const point = info.pickedPoint;
     const visualPoint = snapPickPoint(point);
-    const normal = getPickedNormal(info, true) ?? normalizeVec3(visualPoint);
+    const normal = getPickedNormal(info, true) ?? normalizeVec3(visualPoint[0], visualPoint[1], visualPoint[2], 1e-8);
     surfaceMarker.position.set(visualPoint[0] + normal[0] * SURFACE_MARKER_OFFSET, visualPoint[1] + normal[1] * SURFACE_MARKER_OFFSET, visualPoint[2] + normal[2] * SURFACE_MARKER_OFFSET);
 
     normalMarker.position.set(visualPoint[0] + normal[0] * NORMAL_MARKER_OFFSET, visualPoint[1] + normal[1] * NORMAL_MARKER_OFFSET, visualPoint[2] + normal[2] * NORMAL_MARKER_OFFSET);

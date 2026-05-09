@@ -3,6 +3,7 @@ import type { MeshInternal } from "../mesh/mesh.js";
 import type { GpuPicker } from "./gpu-picker.js";
 import type { PickingInfo } from "./picking-info.js";
 import type { Ray } from "./ray.js";
+import { normalizeVec3 } from "../math/normalize-vec3.js";
 import { computeDeformedPositions } from "./deformed-geometry.js";
 
 /**
@@ -154,14 +155,6 @@ async function detailedPick(info: PickingInfo, ray: Ray): Promise<void> {
 
 function clampBarycentric(value: number): number {
     return Math.abs(value) < 1e-12 ? 0 : value;
-}
-
-function normalizeVec3(x: number, y: number, z: number): [number, number, number] {
-    const len = Math.hypot(x, y, z);
-    if (len < 1e-10) {
-        return [0, 1, 0];
-    }
-    return [x / len, y / len, z / len];
 }
 
 function hasCpuDeformationData(mesh: MeshInternal): boolean {
