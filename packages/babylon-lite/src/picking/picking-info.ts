@@ -6,6 +6,10 @@ export interface PickingInfo {
     hit: boolean;
     distance: number;
     pickedPoint: [number, number, number] | null;
+    pickedNormal: [number, number, number] | null;
+    pickedNormalWorld: [number, number, number] | null;
+    pickedFaceNormal: [number, number, number] | null;
+    pickedFaceNormalWorld: [number, number, number] | null;
     pickedMesh: Mesh | null;
     faceId: number;
     bu: number;
@@ -21,6 +25,10 @@ export function createEmptyPickingInfo(): PickingInfo {
         hit: false,
         distance: 0,
         pickedPoint: null,
+        pickedNormal: null,
+        pickedNormalWorld: null,
+        pickedFaceNormal: null,
+        pickedFaceNormalWorld: null,
         pickedMesh: null,
         faceId: -1,
         bu: 0,

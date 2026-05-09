@@ -23,7 +23,7 @@ const _tiUboScratch = new Uint32Array(4);
 /** GPU-based picker — pure state. Use pickAsync() and disposePicker() standalone functions. */
 export interface GpuPicker {
     /** Optional hook for detailed picking (Phase 2). */
-    _detailedPick: ((info: PickingInfo, ray: { origin: [number, number, number]; direction: [number, number, number]; length: number }) => void) | null;
+    _detailedPick: ((info: PickingInfo, ray: { origin: [number, number, number]; direction: [number, number, number]; length: number }) => void | Promise<void>) | null;
     /** @internal */
     _scene: SceneContext;
     /** @internal 1×1 render targets (lazily created). */
@@ -286,8 +286,8 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
     // Reconstruct world position from depth (using original full-res VP)
     const invVP = mat4Invert(vp);
     if (invVP) {
-        const ndcX = (2 * px) / w - 1;
-        const ndcY = 1 - (2 * py) / h;
+        const ndcX = (2 * (px + 0.5)) / w - 1;
+        const ndcY = 1 - (2 * (py + 0.5)) / h;
         const wx = invVP[0]! * ndcX + invVP[4]! * ndcY + invVP[8]! * depth + invVP[12]!;
         const wy = invVP[1]! * ndcX + invVP[5]! * ndcY + invVP[9]! * depth + invVP[13]!;
         const wz = invVP[2]! * ndcX + invVP[6]! * ndcY + invVP[10]! * depth + invVP[14]!;
@@ -303,10 +303,10 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
     }
 
     if (picker._detailedPick) {
-        const ray = createPickingRay(px, py, vp, w, h);
+        const ray = createPickingRay(pickX - viewport.x, pickY - viewport.y, vp, w, h);
         if (ray) {
             info.ray = ray;
-            picker._detailedPick(info, ray);
+            await picker._detailedPick(info, ray);
         }
     }
 

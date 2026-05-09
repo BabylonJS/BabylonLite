@@ -1,6 +1,5 @@
 import type { PickingInfo } from "./picking-info.js";
 import type { MeshInternal } from "../mesh/mesh.js";
-import { computeDeformedNormals, hasCpuDeformation } from "./deformed-geometry.js";
 
 /**
  * Get the interpolated normal at the picked point.
@@ -8,13 +7,19 @@ import { computeDeformedNormals, hasCpuDeformation } from "./deformed-geometry.j
  * @param useWorldCoordinates - if true, transform normal by world matrix (default: false)
  */
 export function getPickedNormal(info: PickingInfo, useWorldCoordinates = false): [number, number, number] | null {
+    if (useWorldCoordinates && info.pickedNormalWorld) {
+        return info.pickedNormalWorld;
+    }
+    if (!useWorldCoordinates && info.pickedNormal) {
+        return info.pickedNormal;
+    }
+
     const mi = info.pickedMesh as MeshInternal | undefined;
     if (info.faceId < 0 || !mi || !mi._cpuNormals || !mi._cpuIndices) {
         return null;
     }
 
-    const deformedNormals = hasCpuDeformation(mi) ? computeDeformedNormals(mi) : null;
-    const normals = deformedNormals ?? mi._cpuNormals;
+    const normals = mi._cpuNormals;
     const indices = mi._cpuIndices;
     const face = info.faceId;
 
@@ -48,6 +53,13 @@ export function getPickedNormal(info: PickingInfo, useWorldCoordinates = false):
     }
 
     return flip ? [-worldNormal[0], -worldNormal[1], -worldNormal[2]] : worldNormal;
+}
+
+export function getPickedFaceNormal(info: PickingInfo, useWorldCoordinates = false): [number, number, number] | null {
+    if (useWorldCoordinates) {
+        return info.pickedFaceNormalWorld;
+    }
+    return info.pickedFaceNormal;
 }
 
 /**

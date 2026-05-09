@@ -47,9 +47,9 @@ export interface Sprite2DLayerOptions {
      * `Sprite2DProps.z` is omitted. Only meaningful for `depth: "test" | "test-write"` layers
      * (depth-hosted sprites added to a `SceneContext` via `addDepthHostedSpriteLayer`).
      *
-     * Depth-hosted layers store one Z per sprite (slot [10] of their 11-float instance buffer),
+     * Depth-hosted layers store one Z per sprite (slot [13] of their 14-float instance buffer),
      * so a single layer can mix sprites at different depths — e.g. one in front of a box, one
-     * behind it. Pure-2D layers (`depth: "none"`) use the 10-float HUD layout and carry no Z slot.
+     * behind it. Pure-2D layers (`depth: "none"`) use the 13-float HUD layout and carry no Z slot.
      * Defaults to `0.5`. Mutating `layer.layerZ` after sprites have been added does **not**
      * retroactively change them; it only affects sprites added afterwards. To move an existing
      * depth-hosted sprite, call `updateSprite2DIndex(layer, idx, { z: … })`.
@@ -75,15 +75,12 @@ export interface Sprite2DLayer {
 
     /** @internal Capacity of the per-instance buffer (in sprites). */
     _capacity: number;
-    /** @internal Per-instance stride in floats; 10 for pure-2D, 11 for depth-hosted. */
+    /** @internal Per-instance stride in floats; 13 for pure-2D, 14 for depth-hosted. */
     readonly _instanceFloatsPerSprite: number;
-    /** @internal Per-instance stride in bytes; 40 for pure-2D, 44 for depth-hosted. */
+    /** @internal Per-instance stride in bytes; 52 for pure-2D, 56 for depth-hosted. */
     readonly _instanceStrideBytes: number;
     /** @internal Per-instance CPU staging buffer; layout = `_instanceFloatsPerSprite` per sprite. */
     _instanceData: Float32Array;
-    /** @internal `Uint32` view aliased onto `_instanceData.buffer` for in-place packed-int writes
-     *  (color slot). Re-created whenever `_instanceData` is reallocated. */
-    _instanceDataU32: Uint32Array;
     /**
      * @internal CPU-only side buffer holding the **true** (un-hidden) size of every sprite,
      * laid out as `[w0, h0, w1, h1, …]` (`SAVED_SIZE_FLOATS_PER_SPRITE` = 2 floats per sprite).
@@ -119,7 +116,7 @@ export interface Sprite2DProps {
     clip?: unknown;
     /**
      * Per-sprite NDC depth (`0` = near, `1` = far). Only stored and consumed by depth-hosted
-     * layers (`depth: "test" | "test-write"`); pure-2D HUD layers use a 10-float layout and
+     * layers (`depth: "test" | "test-write"`); pure-2D HUD layers use a 13-float layout and
      * do not allocate a Z slot. When omitted on add for a depth-hosted layer, defaults to the
      * **owning layer's** `layerZ` at the moment of insertion. When omitted on update, the
      * sprite's existing Z is preserved. Mutate freely — the next binding update will re-upload
@@ -129,27 +126,23 @@ export interface Sprite2DProps {
 }
 
 /**
- * Pure-2D per-instance vertex layout (10 floats = 40 bytes, `depth: "none"`):
+ * Pure-2D per-instance vertex layout (13 floats = 52 bytes, `depth: "none"`):
  *   [0..1]  positionPx.xy   (float32x2 @ offset  0)
  *   [2..3]  sizePx.xy       (float32x2 @ offset  8)
  *   [4..5]  uvMin.xy        (float32x2 @ offset 16)
  *   [6..7]  uvMax.xy        (float32x2 @ offset 24)
  *   [8]     rotation        (float32   @ offset 32)
- *   [9]     colorRGBA       (unorm8x4  @ offset 36, packed via the aliased Uint32 view)
+ *   [9..12] colorRGBA       (float32x4 @ offset 36)
  *
- * Depth-hosted layers (`depth: "test" | "test-write"`) extend this to 11 floats = 44 bytes:
- *   [10]    z (NDC depth)   (float32   @ offset 40, consumed only by depth-hosted pipelines)
- *
- * The renderer treats slot [9] as a `unorm8x4` vertex attribute (4 bytes seen as RGBA on the
- * GPU). Float32Array is just a convenient homogeneous backing store; the bits are written
- * via the cached `_instanceDataU32` view on `layer._instanceData.buffer`.
+ * Depth-hosted layers (`depth: "test" | "test-write"`) extend this to 14 floats = 56 bytes:
+ *   [13]    z (NDC depth)   (float32   @ offset 52, consumed only by depth-hosted pipelines)
  *
  * Visibility (`visible: false`) is implemented by zeroing slots [2..3]; the sprite's true
  * size lives in `layer._savedSize` so a later `visible: true` (without re-supplying
  * `sizePx`) can restore it. See `_savedSize` for the invariant.
  */
-export const PURE_2D_INSTANCE_FLOATS_PER_SPRITE = 10;
-export const DEPTH_INSTANCE_FLOATS_PER_SPRITE = 11;
+export const PURE_2D_INSTANCE_FLOATS_PER_SPRITE = 13;
+export const DEPTH_INSTANCE_FLOATS_PER_SPRITE = 14;
 /** @internal Pure-2D per-sprite stride in bytes. */
 export const PURE_2D_INSTANCE_STRIDE_BYTES = PURE_2D_INSTANCE_FLOATS_PER_SPRITE * 4;
 /** @internal Depth-hosted per-sprite stride in bytes. */
@@ -197,7 +190,6 @@ export function createSprite2DLayer(atlas: SpriteAtlas, opts: Sprite2DLayerOptio
         _instanceFloatsPerSprite: instanceFloatsPerSprite,
         _instanceStrideBytes: instanceStrideBytes,
         _instanceData: instanceData,
-        _instanceDataU32: new Uint32Array(instanceData.buffer),
         _savedSize: new Float32Array(capacity * SAVED_SIZE_FLOATS_PER_SPRITE),
         _version: 0,
         _dirtyMin: 0,
@@ -213,20 +205,10 @@ function growCapacity(layer: Sprite2DLayer, minCapacity: number): void {
     const next = new Float32Array(cap * layer._instanceFloatsPerSprite);
     next.set(layer._instanceData);
     layer._instanceData = next;
-    layer._instanceDataU32 = new Uint32Array(next.buffer);
     const nextSaved = new Float32Array(cap * SAVED_SIZE_FLOATS_PER_SPRITE);
     nextSaved.set(layer._savedSize);
     layer._savedSize = nextSaved;
     layer._capacity = cap;
-}
-
-function packColor(r: number, g: number, b: number, a: number): number {
-    const ri = Math.max(0, Math.min(255, Math.round(r * 255)));
-    const gi = Math.max(0, Math.min(255, Math.round(g * 255)));
-    const bi = Math.max(0, Math.min(255, Math.round(b * 255)));
-    const ai = Math.max(0, Math.min(255, Math.round(a * 255)));
-    // Little-endian: byte 0 = R, byte 1 = G, byte 2 = B, byte 3 = A.
-    return (ri | (gi << 8) | (bi << 16) | (ai << 24)) >>> 0;
 }
 
 /**
@@ -251,7 +233,6 @@ function packColor(r: number, g: number, b: number, a: number): number {
  */
 function writeInstance(layer: Sprite2DLayer, slotIndex: number, props: Partial<Sprite2DProps>, prev: Float32Array | null): void {
     const data = layer._instanceData;
-    const u32 = layer._instanceDataU32;
     const base = slotIndex * layer._instanceFloatsPerSprite;
     const savedBase = slotIndex * SAVED_SIZE_FLOATS_PER_SPRITE; // [w, h] per sprite
     const isAdd = prev === null;
@@ -331,12 +312,12 @@ function writeInstance(layer: Sprite2DLayer, slotIndex: number, props: Partial<S
     const rotation = props.rotation ?? (prev ? prev[8]! : 0);
 
     // ── Per-instance Z (depth-hosted only) ──────────────────────────────────────────────
-    // Pure-2D layers intentionally have no slot [10]; `z` is accepted by the public API but
+    // Pure-2D layers intentionally have no slot [13]; `z` is accepted by the public API but
     // not allocated, uploaded, declared, or fetched by HUD pipelines.
     const hasDepthSlot = layer.depth !== "none";
-    const z = hasDepthSlot ? (props.z ?? (prev ? prev[10]! : layer.layerZ)) : 0;
+    const z = hasDepthSlot ? (props.z ?? (prev ? prev[13]! : layer.layerZ)) : 0;
 
-    // ── Write the 9 float slots (color is the 10th, written below via the U32 view) ────
+    // ── Write the float slots ──────────────────────────────────────────────────────────
     data[base + 0] = posX;
     data[base + 1] = posY;
     data[base + 2] = visible ? trueW : 0;
@@ -347,18 +328,23 @@ function writeInstance(layer: Sprite2DLayer, slotIndex: number, props: Partial<S
     data[base + 7] = vMax;
     data[base + 8] = rotation;
 
-    // ── Color (packed into slot [9] via the cached Uint32 view) ─────────────────────────
-    // Aliased write — the 4 bytes are the same the GPU samples as unorm8x4.
+    // ── Color (float32x4 to match Babylon.js SpriteRenderer's color precision) ─────────
     if (props.color) {
-        u32[base + 9] = packColor(props.color[0], props.color[1], props.color[2], props.color[3]);
+        data[base + 9] = props.color[0];
+        data[base + 10] = props.color[1];
+        data[base + 11] = props.color[2];
+        data[base + 12] = props.color[3];
     } else if (isAdd) {
-        u32[base + 9] = 0xffffffff; // opaque white
+        data[base + 9] = 1;
+        data[base + 10] = 1;
+        data[base + 11] = 1;
+        data[base + 12] = 1;
     }
-    // else: prev's color bits are already in `data[base+9]` — nothing to write.
+    // else: previous color floats are already in place — nothing to write.
 
-    // ── Per-instance Z (slot [10], depth-hosted layout only) ───────────────────────────
+    // ── Per-instance Z (slot [13], depth-hosted layout only) ───────────────────────────
     if (hasDepthSlot) {
-        data[base + 10] = z;
+        data[base + 13] = z;
     }
 }
 

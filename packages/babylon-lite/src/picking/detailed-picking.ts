@@ -3,7 +3,7 @@ import type { MeshInternal } from "../mesh/mesh.js";
 import type { GpuPicker } from "./gpu-picker.js";
 import type { PickingInfo } from "./picking-info.js";
 import type { Ray } from "./ray.js";
-import { computeDeformedPositions, hasCpuDeformation } from "./deformed-geometry.js";
+import { computeDeformedPositions } from "./deformed-geometry.js";
 
 /**
  * Enable detailed picking on a GPU picker.
@@ -15,15 +15,16 @@ export function enableDetailedPicking(picker: GpuPicker): void {
     picker._detailedPick = detailedPick;
 }
 
-function detailedPick(info: PickingInfo, ray: Ray): void {
+async function detailedPick(info: PickingInfo, ray: Ray): Promise<void> {
     const mesh = info.pickedMesh;
     const mi = mesh as MeshInternal | null;
     if (!mi || !mi._cpuPositions || !mi._cpuIndices) {
         return;
     }
 
-    const deformedPositions = hasCpuDeformation(mi) ? computeDeformedPositions(mi) : null;
+    const deformedPositions = hasCpuDeformationData(mi) ? computeDeformedPositions(mi) : null;
     const positions = deformedPositions ?? mi._cpuPositions;
+    const normals = mi._cpuNormals;
     const indices = mi._cpuIndices;
 
     // Determine the world matrix — use thin instance matrix when applicable
@@ -97,13 +98,76 @@ function detailedPick(info: PickingInfo, ray: Ray): void {
     }
 
     if (closestFace >= 0) {
-        const bjsBu = 1 - closestBu - closestBv;
+        const bjsBu = clampBarycentric(1 - closestBu - closestBv);
         info.faceId = closestFace;
         info.bu = bjsBu;
-        info.bv = closestBu;
+        info.bv = clampBarycentric(closestBu);
         info.distance = closestT;
         info.pickedPoint = [ray.origin[0] + ray.direction[0] * closestT, ray.origin[1] + ray.direction[1] * closestT, ray.origin[2] + ray.direction[2] * closestT];
+        if (normals) {
+            const i0 = indices[closestFace * 3]!;
+            const i1 = indices[closestFace * 3 + 1]!;
+            const i2 = indices[closestFace * 3 + 2]!;
+            const bw = 1 - info.bu - info.bv;
+            const localNormal = normalizeVec3(
+                info.bu * normals[i0 * 3]! + info.bv * normals[i1 * 3]! + bw * normals[i2 * 3]!,
+                info.bu * normals[i0 * 3 + 1]! + info.bv * normals[i1 * 3 + 1]! + bw * normals[i2 * 3 + 1]!,
+                info.bu * normals[i0 * 3 + 2]! + info.bv * normals[i1 * 3 + 2]! + bw * normals[i2 * 3 + 2]!
+            );
+            const worldNormal = normalizeVec3(
+                worldMatrix[0]! * localNormal[0] + worldMatrix[4]! * localNormal[1] + worldMatrix[8]! * localNormal[2],
+                worldMatrix[1]! * localNormal[0] + worldMatrix[5]! * localNormal[1] + worldMatrix[9]! * localNormal[2],
+                worldMatrix[2]! * localNormal[0] + worldMatrix[6]! * localNormal[1] + worldMatrix[10]! * localNormal[2]
+            );
+            const flip = worldNormal[0] * ray.direction[0] + worldNormal[1] * ray.direction[1] + worldNormal[2] * ray.direction[2] > 0;
+            info.pickedNormal = flip ? [-localNormal[0], -localNormal[1], -localNormal[2]] : localNormal;
+            info.pickedNormalWorld = flip ? [-worldNormal[0], -worldNormal[1], -worldNormal[2]] : worldNormal;
+        }
+
+        const i0 = indices[closestFace * 3]!;
+        const i1 = indices[closestFace * 3 + 1]!;
+        const i2 = indices[closestFace * 3 + 2]!;
+        const ax = positions[i0 * 3]!;
+        const ay = positions[i0 * 3 + 1]!;
+        const az = positions[i0 * 3 + 2]!;
+        const bx = positions[i1 * 3]!;
+        const by = positions[i1 * 3 + 1]!;
+        const bz = positions[i1 * 3 + 2]!;
+        const cx = positions[i2 * 3]!;
+        const cy = positions[i2 * 3 + 1]!;
+        const cz = positions[i2 * 3 + 2]!;
+        const faceNormal = normalizeVec3(
+            (by - ay) * (cz - az) - (bz - az) * (cy - ay),
+            (bz - az) * (cx - ax) - (bx - ax) * (cz - az),
+            (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+        );
+        const faceWorldNormal = normalizeVec3(
+            worldMatrix[0]! * faceNormal[0] + worldMatrix[4]! * faceNormal[1] + worldMatrix[8]! * faceNormal[2],
+            worldMatrix[1]! * faceNormal[0] + worldMatrix[5]! * faceNormal[1] + worldMatrix[9]! * faceNormal[2],
+            worldMatrix[2]! * faceNormal[0] + worldMatrix[6]! * faceNormal[1] + worldMatrix[10]! * faceNormal[2]
+        );
+        const flip = faceWorldNormal[0] * ray.direction[0] + faceWorldNormal[1] * ray.direction[1] + faceWorldNormal[2] * ray.direction[2] > 0;
+        info.pickedFaceNormal = flip ? [-faceNormal[0], -faceNormal[1], -faceNormal[2]] : faceNormal;
+        info.pickedFaceNormalWorld = flip ? [-faceWorldNormal[0], -faceWorldNormal[1], -faceWorldNormal[2]] : faceWorldNormal;
     }
+}
+
+function clampBarycentric(value: number): number {
+    return Math.abs(value) < 1e-12 ? 0 : value;
+}
+
+function normalizeVec3(x: number, y: number, z: number): [number, number, number] {
+    const len = Math.hypot(x, y, z);
+    if (len < 1e-10) {
+        return [0, 1, 0];
+    }
+    return [x / len, y / len, z / len];
+}
+
+function hasCpuDeformationData(mesh: MeshInternal): boolean {
+    const morph = mesh.morphTargets;
+    const skeleton = mesh.skeleton;
+    return (!!morph?.targets && !!morph.weights) || (!!skeleton?.boneMatrices && !!skeleton.joints && !!skeleton.weights);
 }
 
 /** Möller-Trumbore ray-triangle intersection with Babylon.js Ray epsilon semantics.

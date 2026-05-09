@@ -19,6 +19,7 @@ G.GPUColorWrite ??= { ALL: 0xf };
 
 import {
     DEPTH_INSTANCE_FLOATS_PER_SPRITE,
+    DEPTH_INSTANCE_STRIDE_BYTES,
     PURE_2D_INSTANCE_FLOATS_PER_SPRITE,
     PURE_2D_INSTANCE_STRIDE_BYTES,
     createSprite2DLayer,
@@ -162,7 +163,7 @@ describe("createSpriteRenderer", () => {
         expect(counters.buffersCreated).toBe(0);
     });
 
-    it("builds pure-2D pipelines with a 40-byte instance stride and no z attribute", () => {
+    it("builds pure-2D pipelines with a 52-byte instance stride and no z attribute", () => {
         const { engine } = makeMockEngine();
         createSpriteRenderer(engine, { layers: [createSprite2DLayer(makeMockAtlas())] });
 
@@ -327,17 +328,17 @@ describe("pipeline cache", () => {
 });
 
 describe("pure-2D instance layout", () => {
-    it("uses 10 floats per sprite and does not allocate a z slot", () => {
+    it("uses 13 floats per sprite and does not allocate a z slot", () => {
         const layer = createSprite2DLayer(makeMockAtlas(), { capacity: 1 });
         addSprite2DIndex(layer, { positionPx: [0, 0], sizePx: [10, 10], z: 0.91 });
 
         expect(layer._instanceFloatsPerSprite).toBe(PURE_2D_INSTANCE_FLOATS_PER_SPRITE);
         expect(layer._instanceStrideBytes).toBe(PURE_2D_INSTANCE_STRIDE_BYTES);
         expect(layer._instanceData.length).toBe(PURE_2D_INSTANCE_FLOATS_PER_SPRITE);
-        expect(layer._instanceData[10]).toBeUndefined();
+        expect(layer._instanceData[13]).toBeUndefined();
     });
 
-    it("allocates and uploads pure SpriteRenderer instances as 40 bytes per sprite", () => {
+    it("allocates and uploads pure SpriteRenderer instances as 52 bytes per sprite", () => {
         const { engine } = makeMockEngine();
         const layer = createSprite2DLayer(makeMockAtlas(), { capacity: 1 });
         addSprite2DIndex(layer, { positionPx: [10, 10], sizePx: [32, 32], frame: 0, z: 0.25 });
@@ -351,7 +352,7 @@ describe("pure-2D instance layout", () => {
         const instanceBufferCreate = device.createBuffer.mock.calls.find((call) => (call[0] as GPUBufferDescriptor).label === "sprite-layer-instances");
         expect((instanceBufferCreate![0] as GPUBufferDescriptor).size).toBe(PURE_2D_INSTANCE_STRIDE_BYTES);
         expect(device.queue.writeBuffer.mock.calls.some((call) => call[4] === PURE_2D_INSTANCE_STRIDE_BYTES)).toBe(true);
-        expect(device.queue.writeBuffer.mock.calls.some((call) => call[4] === 44)).toBe(false);
+        expect(device.queue.writeBuffer.mock.calls.some((call) => call[4] === DEPTH_INSTANCE_STRIDE_BYTES)).toBe(false);
     });
 });
 
@@ -380,19 +381,19 @@ describe("createSprite2DLayer guards", () => {
     });
 });
 
-describe("depth-hosted per-instance Z (slot [10] of the per-instance vertex buffer)", () => {
+describe("depth-hosted per-instance Z (slot [13] of the per-instance vertex buffer)", () => {
     it("addSprite2DIndex without `z` defaults to layer.layerZ", () => {
         const layer = createSprite2DLayer(makeMockAtlas(), { depth: "test", layerZ: 0.42 });
         addSprite2DIndex(layer, { positionPx: [0, 0], sizePx: [10, 10] });
         expect(layer._instanceFloatsPerSprite).toBe(DEPTH_INSTANCE_FLOATS_PER_SPRITE);
-        // Slot 10 of instance #0. `toBeCloseTo` accommodates Float32Array precision rounding.
-        expect(layer._instanceData[10]).toBeCloseTo(0.42);
+        // Slot 13 of instance #0. `toBeCloseTo` accommodates Float32Array precision rounding.
+        expect(layer._instanceData[13]).toBeCloseTo(0.42);
     });
 
-    it("addSprite2DIndex with explicit `z` writes that value into slot [10]", () => {
+    it("addSprite2DIndex with explicit `z` writes that value into slot [13]", () => {
         const layer = createSprite2DLayer(makeMockAtlas(), { depth: "test", layerZ: 0.5 });
         addSprite2DIndex(layer, { positionPx: [0, 0], sizePx: [10, 10], z: 0.91 });
-        expect(layer._instanceData[10]).toBeCloseTo(0.91);
+        expect(layer._instanceData[13]).toBeCloseTo(0.91);
     });
 
     it("each sprite carries its own `z` independently within the same layer", () => {
@@ -400,9 +401,9 @@ describe("depth-hosted per-instance Z (slot [10] of the per-instance vertex buff
         addSprite2DIndex(layer, { positionPx: [0, 0], sizePx: [10, 10], z: 0.6 });
         addSprite2DIndex(layer, { positionPx: [0, 0], sizePx: [10, 10], z: 0.87 });
         addSprite2DIndex(layer, { positionPx: [0, 0], sizePx: [10, 10], z: 0.95 });
-        expect(layer._instanceData[0 * DEPTH_INSTANCE_FLOATS_PER_SPRITE + 10]).toBeCloseTo(0.6);
-        expect(layer._instanceData[1 * DEPTH_INSTANCE_FLOATS_PER_SPRITE + 10]).toBeCloseTo(0.87);
-        expect(layer._instanceData[2 * DEPTH_INSTANCE_FLOATS_PER_SPRITE + 10]).toBeCloseTo(0.95);
+        expect(layer._instanceData[0 * DEPTH_INSTANCE_FLOATS_PER_SPRITE + 13]).toBeCloseTo(0.6);
+        expect(layer._instanceData[1 * DEPTH_INSTANCE_FLOATS_PER_SPRITE + 13]).toBeCloseTo(0.87);
+        expect(layer._instanceData[2 * DEPTH_INSTANCE_FLOATS_PER_SPRITE + 13]).toBeCloseTo(0.95);
     });
 
     it("mutating layer.layerZ does not retroactively change existing sprites' z", () => {
@@ -410,9 +411,9 @@ describe("depth-hosted per-instance Z (slot [10] of the per-instance vertex buff
         addSprite2DIndex(layer, { positionPx: [0, 0], sizePx: [10, 10] });
         layer.layerZ = 0.8;
         // Existing sprite still at the original 0.3 default it inherited at add time.
-        expect(layer._instanceData[10]).toBeCloseTo(0.3);
+        expect(layer._instanceData[13]).toBeCloseTo(0.3);
         // New sprite picks up the new layer default.
         addSprite2DIndex(layer, { positionPx: [0, 0], sizePx: [10, 10] });
-        expect(layer._instanceData[1 * DEPTH_INSTANCE_FLOATS_PER_SPRITE + 10]).toBeCloseTo(0.8);
+        expect(layer._instanceData[1 * DEPTH_INSTANCE_FLOATS_PER_SPRITE + 13]).toBeCloseTo(0.8);
     });
 });

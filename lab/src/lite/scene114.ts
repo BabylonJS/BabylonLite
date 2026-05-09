@@ -30,6 +30,7 @@ type Vec3Tuple = [number, number, number];
 
 const MORPH_DELTA_X = 1.35;
 const SKELETON_DELTA_X = 1.45;
+const MARKER_DISPLAY_SCALE = 135 / 255;
 
 function createUnlitPbr(engine: EngineContext, color: ColorTuple) {
     return createPbrMaterial({
@@ -46,13 +47,16 @@ function createUnlitPbr(engine: EngineContext, color: ColorTuple) {
 }
 
 function createMarkerMaterial(engine: EngineContext, color: ColorTuple) {
+    const displayColor: ColorTuple = [color[0] * MARKER_DISPLAY_SCALE, color[1] * MARKER_DISPLAY_SCALE, color[2] * MARKER_DISPLAY_SCALE];
+    const pbrInput: ColorTuple = [Math.pow(displayColor[0], 2.2), Math.pow(displayColor[1], 2.2), Math.pow(displayColor[2], 2.2)];
     return createPbrMaterial({
-        baseColorTexture: createSolidTexture2D(engine, color[0], color[1], color[2]),
+        baseColorTexture: createSolidTexture2D(engine, pbrInput[0], pbrInput[1], pbrInput[2]),
         ormTexture: createSolidTexture2D(engine, 1, 1, 0),
-        emissiveColor: [color[0] * 0.18, color[1] * 0.18, color[2] * 0.18],
+        unlit: true,
+        unlitColor: [1, 1, 1],
         metallicFactor: 0,
         roughnessFactor: 1,
-        directIntensity: 1,
+        directIntensity: 0,
         environmentIntensity: 0,
         doubleSided: true,
     });
@@ -137,8 +141,8 @@ function addConceptHelpers(scene: SceneContext, engine: EngineContext): void {
     addToScene(scene, createHelperBox(engine, "scene114-shift-influence-top", [1, 0.95, 0.18], [2.72, 0.04, -0.12], [0.1, 0.1, 0.1]));
 }
 
-function placeGpuMarker(info: PickingInfo, marker: Mesh): void {
-    if (!info.hit || !info.pickedPoint) {
+function placeGpuMarker(info: PickingInfo | null, marker: Mesh): void {
+    if (!info?.hit || !info.pickedPoint) {
         return;
     }
     const [x, y, z] = info.pickedPoint;
@@ -146,8 +150,8 @@ function placeGpuMarker(info: PickingInfo, marker: Mesh): void {
     marker.scaling.set(0.14, 0.14, 0.14);
 }
 
-function placeDetailedMarker(info: PickingInfo, marker: Mesh): void {
-    if (!info.hit || !info.pickedPoint) {
+function placeDetailedMarker(info: PickingInfo | null, marker: Mesh): void {
+    if (!info?.hit || !info.pickedPoint) {
         return;
     }
     const normal = getPickedNormal(info) ?? ([0, 0, 1] as Vec3Tuple);
@@ -166,7 +170,7 @@ async function pickInRegion(
     minFy: number,
     maxFy: number,
     detailed: boolean
-): Promise<PickingInfo> {
+): Promise<PickingInfo | null> {
     const picker = createGpuPicker(scene);
     if (detailed) {
         enableDetailedPicking(picker);
@@ -185,7 +189,7 @@ async function pickInRegion(
         }
     }
     disposePicker(picker);
-    return { hit: false, pickedMesh: null, pickedPoint: null, distance: 0, faceId: -1, bu: 0, bv: 0, subMeshId: 0, thinInstanceIndex: -1, ray: null };
+    return null;
 }
 
 async function waitFrames(frameCount: number): Promise<void> {
@@ -203,6 +207,8 @@ async function main(): Promise<void> {
 
     const camera = createArcRotateCamera(-Math.PI / 2, Math.PI / 2, 5.5, { x: 0.15, y: 0, z: 0 });
     camera.fov = 0.72;
+    camera.nearPlane = 1;
+    camera.farPlane = 10000;
     scene.camera = camera;
 
     addToScene(scene, createHemisphericLight([0, 1, 0], 0.7));
@@ -239,10 +245,10 @@ async function main(): Promise<void> {
     await waitFrames(4);
     canvas.dataset.drawCalls = String(engine.drawCallCount);
     canvas.dataset.initMs = String(performance.now() - __initStart);
-    canvas.dataset.morphGpuHit = morphGpuInfo.hit ? (morphGpuInfo.pickedMesh?.name ?? "") : "miss";
-    canvas.dataset.morphDetailedHit = morphDetailedInfo.hit ? (morphDetailedInfo.pickedMesh?.name ?? "") : "miss";
-    canvas.dataset.skeletonGpuHit = skeletonGpuInfo.hit ? (skeletonGpuInfo.pickedMesh?.name ?? "") : "miss";
-    canvas.dataset.skeletonDetailedHit = skeletonDetailedInfo.hit ? (skeletonDetailedInfo.pickedMesh?.name ?? "") : "miss";
+    canvas.dataset.morphGpuHit = morphGpuInfo?.hit ? (morphGpuInfo.pickedMesh?.name ?? "") : "miss";
+    canvas.dataset.morphDetailedHit = morphDetailedInfo?.hit ? (morphDetailedInfo.pickedMesh?.name ?? "") : "miss";
+    canvas.dataset.skeletonGpuHit = skeletonGpuInfo?.hit ? (skeletonGpuInfo.pickedMesh?.name ?? "") : "miss";
+    canvas.dataset.skeletonDetailedHit = skeletonDetailedInfo?.hit ? (skeletonDetailedInfo.pickedMesh?.name ?? "") : "miss";
     canvas.dataset.ready = "true";
 }
 
