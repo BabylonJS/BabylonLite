@@ -2,6 +2,7 @@ import type { EngineContextInternal } from "../engine/engine.js";
 import type { RenderTargetSignature } from "../engine/render-target.js";
 import type { DrawBinding, DrawUpdateContext, Renderable } from "../render/renderable.js";
 import type { Mat4 } from "../math/types.js";
+import { getViewMatrix } from "../camera/camera.js";
 import { getSceneBindGroupLayout } from "../render/scene-helpers.js";
 import { createEmptyUniformBuffer, createMappedBuffer } from "../resource/gpu-buffers.js";
 import type { BillboardSpriteSystem } from "./billboard-sprite.js";
@@ -150,17 +151,19 @@ function uploadSystem(renderable: BillboardRenderableInternal, context: DrawUpda
         renderable._uploadedCameraViewVersion = -1;
         renderable._uploadedSorted = false;
     }
-    if (renderable._system._depthMode === "transparent" && context.cameraViewMatrix && context.cameraViewVersion !== undefined) {
+    const camera = context.camera;
+    if (renderable._system._depthMode === "transparent" && camera) {
+        const cameraViewMatrix = getViewMatrix(camera);
         if (
             !renderable._uploadedSorted ||
             renderable._uploadedVersion !== renderable._system._version ||
-            renderable._uploadedCameraViewMatrix !== context.cameraViewMatrix ||
-            renderable._uploadedCameraViewVersion !== context.cameraViewVersion
+            renderable._uploadedCameraViewMatrix !== cameraViewMatrix ||
+            renderable._uploadedCameraViewVersion !== camera.worldMatrixVersion
         ) {
-            uploadSortedBillboardInstances(renderable._engine.device, renderable._system, renderable._instanceBuffer, renderable._instanceSortScratch, context.cameraViewMatrix);
+            uploadSortedBillboardInstances(renderable._engine.device, renderable._system, renderable._instanceBuffer, renderable._instanceSortScratch, cameraViewMatrix);
             renderable._uploadedVersion = renderable._system._version;
-            renderable._uploadedCameraViewMatrix = context.cameraViewMatrix;
-            renderable._uploadedCameraViewVersion = context.cameraViewVersion;
+            renderable._uploadedCameraViewMatrix = cameraViewMatrix;
+            renderable._uploadedCameraViewVersion = camera.worldMatrixVersion;
             renderable._uploadedSorted = true;
         }
     } else {

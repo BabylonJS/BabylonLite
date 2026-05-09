@@ -9,16 +9,14 @@
 import type { EngineContext } from "../engine/engine.js";
 import type { Mesh } from "../mesh/mesh.js";
 import type { RenderTargetSignature } from "../engine/render-target.js";
-import type { Mat4 } from "../math/types.js";
+import type { Camera } from "../camera/camera.js";
 
 /** Dynamic per-pass data available before a binding draws. */
 export interface DrawUpdateContext {
     readonly targetWidth: number;
     readonly targetHeight: number;
-    /** Active pass camera view matrix. Undefined for camera-less passes. */
-    readonly cameraViewMatrix?: Mat4;
-    /** Version associated with `cameraViewMatrix`. Undefined for camera-less passes. */
-    readonly cameraViewVersion?: number;
+    /** Active pass camera. Null for camera-less passes. */
+    readonly camera?: Camera | null;
 }
 
 /**

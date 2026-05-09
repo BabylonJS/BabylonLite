@@ -22,6 +22,7 @@ import { createSceneContext, disposeScene } from "../../packages/babylon-lite/sr
 import { registerScene } from "../../packages/babylon-lite/src/scene/scene-core";
 import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
 import type { Mat4 } from "../../packages/babylon-lite/src/math/types";
+import type { Camera } from "../../packages/babylon-lite/src/camera/camera";
 import type { SpriteAtlas } from "../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
 import type { Texture2D } from "../../packages/babylon-lite/src/texture/texture-2d";
 import type { EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
@@ -106,6 +107,18 @@ function makeIdentityViewMatrix(): Mat4 {
     matrix[10] = 1;
     matrix[15] = 1;
     return matrix as Mat4;
+}
+
+function makeIdentityCamera(worldMatrixVersion = 7): Camera {
+    const worldMatrix = makeIdentityViewMatrix();
+    return {
+        fov: Math.PI / 4,
+        nearPlane: 0.1,
+        farPlane: 100,
+        children: [],
+        worldMatrix,
+        worldMatrixVersion,
+    } as Camera;
 }
 
 function findInstanceUploadFloats(writeBuffer: ReturnType<typeof vi.fn>, spriteCount: number): Float32Array {
@@ -349,8 +362,8 @@ describe("addFacingBillboardSystem", () => {
         const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
         device.queue.writeBuffer.mockClear();
 
-        const cameraViewMatrix = makeIdentityViewMatrix();
-        binding.update?.({ targetWidth: 512, targetHeight: 256, cameraViewMatrix, cameraViewVersion: 7 });
+        const camera = makeIdentityCamera();
+        binding.update?.({ targetWidth: 512, targetHeight: 256, camera });
 
         const uploaded = findInstanceUploadFloats(device.queue.writeBuffer, 3);
         expect([uploaded[2], uploaded[BILLBOARD_INSTANCE_FLOATS_PER_SPRITE + 2], uploaded[BILLBOARD_INSTANCE_FLOATS_PER_SPRITE * 2 + 2]]).toEqual([3, 2, 1]);
@@ -361,7 +374,7 @@ describe("addFacingBillboardSystem", () => {
         ]).toEqual([1, 2, 3]);
 
         device.queue.writeBuffer.mockClear();
-        binding.update?.({ targetWidth: 512, targetHeight: 256, cameraViewMatrix, cameraViewVersion: 7 });
+        binding.update?.({ targetWidth: 512, targetHeight: 256, camera });
         expect(device.queue.writeBuffer.mock.calls.some((call) => call[4] === 3 * BILLBOARD_INSTANCE_STRIDE_BYTES)).toBe(false);
     });
 
@@ -379,8 +392,8 @@ describe("addFacingBillboardSystem", () => {
         const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
         device.queue.writeBuffer.mockClear();
 
-        const cameraViewMatrix = makeIdentityViewMatrix();
-        binding.update?.({ targetWidth: 512, targetHeight: 256, cameraViewMatrix, cameraViewVersion: 7 });
+        const camera = makeIdentityCamera();
+        binding.update?.({ targetWidth: 512, targetHeight: 256, camera });
 
         const uploaded = findInstanceUploadFloats(device.queue.writeBuffer, 3);
         expect([uploaded[2], uploaded[BILLBOARD_INSTANCE_FLOATS_PER_SPRITE + 2], uploaded[BILLBOARD_INSTANCE_FLOATS_PER_SPRITE * 2 + 2]]).toEqual([1, 2, 3]);
