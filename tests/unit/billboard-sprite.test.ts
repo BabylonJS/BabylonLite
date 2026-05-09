@@ -11,11 +11,12 @@ import {
     BILLBOARD_INSTANCE_STRIDE_BYTES,
     addBillboardSpriteIndex,
     createFacingBillboardSystem,
+    createAxisLockedBillboardSystem,
     removeBillboardSpriteIndex,
     setBillboardSpriteFrameIndex,
     updateBillboardSpriteIndex,
 } from "../../packages/babylon-lite/src/sprite/billboard-sprite";
-import { addFacingBillboardSystem } from "../../packages/babylon-lite/src/sprite/billboard-scene";
+import { addFacingBillboardSystem, addAxisLockedBillboardSystem } from "../../packages/babylon-lite/src/sprite/billboard-scene";
 import { BILLBOARD_SYSTEM_UBO_BYTES } from "../../packages/babylon-lite/src/sprite/billboard-pipeline";
 import { createSceneContext, disposeScene } from "../../packages/babylon-lite/src/scene/scene";
 import { registerScene } from "../../packages/babylon-lite/src/scene/scene-core";
@@ -129,6 +130,7 @@ describe("FacingBillboardSpriteSystem index API", () => {
         expect(system._entityType).toBe("billboard-sprite-system");
         expect(system._orientation).toBe("facing");
         expect(system._depthMode).toBe("transparent");
+        expect(system.alphaCutoff).toBe(0);
         expect(system._instanceFloatsPerSprite).toBe(BILLBOARD_INSTANCE_FLOATS_PER_SPRITE);
         expect(system._instanceStrideBytes).toBe(BILLBOARD_INSTANCE_STRIDE_BYTES);
         expect(system._instanceData.length).toBe(BILLBOARD_INSTANCE_FLOATS_PER_SPRITE);
@@ -192,10 +194,27 @@ describe("FacingBillboardSpriteSystem index API", () => {
         expect(system._savedSize[1]).toBe(5);
     });
 
-    it("rejects unsupported blend modes in the first slice", () => {
-        expect(() => createFacingBillboardSystem(makeMockAtlas(), { blendMode: "additive" })).toThrow(/later PR/);
-        expect(() => createFacingBillboardSystem(makeMockAtlas(), { blendMode: "multiply" })).toThrow(/later PR/);
-        expect(() => createFacingBillboardSystem(makeMockAtlas(), { blendMode: "cutout" })).toThrow(/later PR/);
+    it("supports cutout as a depth-write billboard mode with cutoff defaults", () => {
+        const cutout = createFacingBillboardSystem(makeMockAtlas(), { blendMode: "cutout" });
+        expect(cutout.blendMode).toBe("cutout");
+        expect(cutout._depthMode).toBe("cutout");
+        expect(cutout.alphaCutoff).toBe(0.5);
+        expect(cutout.order).toBe(100);
+
+        const explicit = createAxisLockedBillboardSystem(makeMockAtlas(), [0, 1, 0], { blendMode: "cutout", alphaCutoff: 0.35, order: 177 });
+        expect(explicit._depthMode).toBe("cutout");
+        expect(explicit.alphaCutoff).toBe(0.35);
+        expect(explicit.order).toBe(177);
+    });
+
+    it("rejects unsupported billboard blend modes", () => {
+        expect(() => createFacingBillboardSystem(makeMockAtlas(), { blendMode: "additive" })).toThrow(/not supported/);
+        expect(() => createFacingBillboardSystem(makeMockAtlas(), { blendMode: "multiply" })).toThrow(/not supported/);
+    });
+
+    it("rejects non-finite alpha cutoff values", () => {
+        expect(() => createFacingBillboardSystem(makeMockAtlas(), { blendMode: "cutout", alphaCutoff: NaN })).toThrow(/finite/);
+        expect(() => createFacingBillboardSystem(makeMockAtlas(), { blendMode: "cutout", alphaCutoff: Infinity })).toThrow(/finite/);
     });
 });
 
@@ -224,6 +243,20 @@ describe("addFacingBillboardSystem", () => {
         expect(scene._renderables[0]!.isTransparent).toBe(true);
         expect(scene._renderables[0]!.isTransmissive).toBe(false);
         expect(scene._renderables[0]!.order).toBe(230);
+    });
+
+    it("routes cutout billboards into the direct depth-write bucket", async () => {
+        const engine = makeMockEngine();
+        const scene = createSceneContext(engine) as SceneContextInternal;
+        const system = createFacingBillboardSystem(makeMockAtlas(), { blendMode: "cutout", order: 120 });
+        addFacingBillboardSystem(scene, system);
+
+        await registerScene(engine, scene);
+
+        expect(scene._renderables.length).toBe(1);
+        expect(scene._renderables[0]!.isTransparent).toBe(false);
+        expect(scene._renderables[0]!.isTransmissive).toBe(true);
+        expect(scene._renderables[0]!.order).toBe(120);
     });
 
     it("builds a scene-UBO billboard pipeline with depth test and no depth write", async () => {
@@ -265,6 +298,43 @@ describe("addFacingBillboardSystem", () => {
         expect(device.queue.writeBuffer.mock.calls.some((call) => call[4] === BILLBOARD_SYSTEM_UBO_BYTES)).toBe(true);
     });
 
+    it("builds a cutout billboard pipeline with alpha discard and depth write", async () => {
+        const engine = makeMockEngine();
+        const scene = createSceneContext(engine) as SceneContextInternal;
+        const system = createFacingBillboardSystem(makeMockAtlas(), { capacity: 1, blendMode: "cutout", alphaCutoff: 0.42 });
+        addBillboardSpriteIndex(system, { position: [1, 2, 3], sizeWorld: [2, 2], frame: 0 });
+        addFacingBillboardSystem(scene, system);
+        await registerScene(engine, scene);
+
+        const device = engine.device as unknown as {
+            createRenderPipeline: ReturnType<typeof vi.fn>;
+            createShaderModule: ReturnType<typeof vi.fn>;
+            queue: { writeBuffer: ReturnType<typeof vi.fn> };
+        };
+        device.createRenderPipeline.mockClear();
+        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+
+        expect(device.createRenderPipeline).toHaveBeenCalledTimes(1);
+        const descriptor = device.createRenderPipeline.mock.calls[0]![0] as GPURenderPipelineDescriptor;
+        expect(descriptor.depthStencil?.depthCompare).toBe("less-equal");
+        expect(descriptor.depthStencil?.depthWriteEnabled).toBe(true);
+        const target = (descriptor.fragment!.targets as GPUColorTargetState[])[0]!;
+        expect(target.blend).toBeUndefined();
+
+        const shaderDescriptor = device.createShaderModule.mock.calls.find((call) =>
+            (call[0] as GPUShaderModuleDescriptor).code.includes("discard")
+        )![0] as GPUShaderModuleDescriptor;
+        expect(shaderDescriptor.code).toContain("sampleColor.a < billboards.axis.w");
+        expect(shaderDescriptor.code).toContain("discard");
+
+        device.queue.writeBuffer.mockClear();
+        binding.update?.({ targetWidth: 512, targetHeight: 256 });
+        const uboCall = device.queue.writeBuffer.mock.calls.find((call) => call[4] === BILLBOARD_SYSTEM_UBO_BYTES);
+        expect(uboCall).toBeTruthy();
+        const uboData = new Float32Array(uboCall![2] as ArrayBuffer, uboCall![3] as number, BILLBOARD_SYSTEM_UBO_BYTES / 4);
+        expect(uboData[7]).toBeCloseTo(0.42);
+    });
+
     it("uploads transparent billboards far-to-near without reordering logical instance data", async () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContextInternal;
@@ -295,6 +365,27 @@ describe("addFacingBillboardSystem", () => {
         expect(device.queue.writeBuffer.mock.calls.some((call) => call[4] === 3 * BILLBOARD_INSTANCE_STRIDE_BYTES)).toBe(false);
     });
 
+    it("uploads cutout billboards in logical order without transparent sorting", async () => {
+        const engine = makeMockEngine();
+        const scene = createSceneContext(engine) as SceneContextInternal;
+        const system = createFacingBillboardSystem(makeMockAtlas(), { capacity: 3, blendMode: "cutout" });
+        addBillboardSpriteIndex(system, { position: [10, 0, 1], sizeWorld: [1, 1], frame: 0 });
+        addBillboardSpriteIndex(system, { position: [20, 0, 2], sizeWorld: [1, 1], frame: 0 });
+        addBillboardSpriteIndex(system, { position: [30, 0, 3], sizeWorld: [1, 1], frame: 0 });
+        addFacingBillboardSystem(scene, system);
+        await registerScene(engine, scene);
+
+        const device = engine.device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } };
+        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+        device.queue.writeBuffer.mockClear();
+
+        const cameraViewMatrix = makeIdentityViewMatrix();
+        binding.update?.({ targetWidth: 512, targetHeight: 256, cameraViewMatrix, cameraViewVersion: 7 });
+
+        const uploaded = findInstanceUploadFloats(device.queue.writeBuffer, 3);
+        expect([uploaded[2], uploaded[BILLBOARD_INSTANCE_FLOATS_PER_SPRITE + 2], uploaded[BILLBOARD_INSTANCE_FLOATS_PER_SPRITE * 2 + 2]]).toEqual([1, 2, 3]);
+    });
+
     it("draws with the billboard bind group at group 1 and disposes GPU buffers with the scene", async () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContextInternal;
@@ -313,5 +404,100 @@ describe("addFacingBillboardSystem", () => {
         const destroySpies = device.createBuffer.mock.results.map((result) => (result.value as MockBuffer).destroy);
         disposeScene(scene);
         expect(destroySpies.filter((destroy) => destroy.mock.calls.length > 0).length).toBeGreaterThanOrEqual(3);
+    });
+});
+
+describe("AxisLockedBillboardSpriteSystem", () => {
+    it("creates an axis-locked billboard system with normalized axis", () => {
+        const system = createAxisLockedBillboardSystem(makeMockAtlas(), [0, 3, 0], { capacity: 1 });
+        expect(system._entityType).toBe("billboard-sprite-system");
+        expect(system._orientation).toBe("axis-locked");
+        expect(system._depthMode).toBe("transparent");
+        expect(system._axis).toEqual([0, 1, 0]);
+    });
+
+    it("normalizes arbitrary axis vectors", () => {
+        const system = createAxisLockedBillboardSystem(makeMockAtlas(), [3, 4, 0], { capacity: 1 });
+        expect(system._axis[0]).toBeCloseTo(0.6);
+        expect(system._axis[1]).toBeCloseTo(0.8);
+        expect(system._axis[2]).toBeCloseTo(0);
+    });
+
+    it("rejects non-finite axis components", () => {
+        expect(() => createAxisLockedBillboardSystem(makeMockAtlas(), [NaN, 1, 0])).toThrow(/finite/);
+        expect(() => createAxisLockedBillboardSystem(makeMockAtlas(), [1, Infinity, 0])).toThrow(/finite/);
+    });
+
+    it("rejects zero-length axis vectors", () => {
+        expect(() => createAxisLockedBillboardSystem(makeMockAtlas(), [0, 0, 0])).toThrow(/non-zero/);
+        expect(() => createAxisLockedBillboardSystem(makeMockAtlas(), [1e-10, 0, 0])).toThrow(/non-zero/);
+    });
+
+    it("adds to scene and builds a renderable with axis-locked pipeline", async () => {
+        const engine = makeMockEngine();
+        const scene = createSceneContext(engine) as SceneContextInternal;
+        const system = createAxisLockedBillboardSystem(makeMockAtlas(), [0, 1, 0], { capacity: 1 });
+        addBillboardSpriteIndex(system, { position: [1, 2, 3], sizeWorld: [2, 2], frame: 0 });
+        addAxisLockedBillboardSystem(scene, system);
+        await registerScene(engine, scene);
+
+        expect(scene._renderables.length).toBe(1);
+        expect(scene._renderables[0]!.isTransparent).toBe(true);
+    });
+
+    it("generates axis-locked shader with billboards.axis and projectedRight", async () => {
+        const engine = makeMockEngine();
+        const scene = createSceneContext(engine) as SceneContextInternal;
+        const system = createAxisLockedBillboardSystem(makeMockAtlas(), [0, 1, 0], { capacity: 1 });
+        addBillboardSpriteIndex(system, { position: [1, 2, 3], sizeWorld: [2, 2], frame: 0 });
+        addAxisLockedBillboardSystem(scene, system);
+        await registerScene(engine, scene);
+
+        const device = engine.device as unknown as {
+            createRenderPipeline: ReturnType<typeof vi.fn>;
+            createShaderModule: ReturnType<typeof vi.fn>;
+        };
+        device.createRenderPipeline.mockClear();
+        scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+
+        expect(device.createRenderPipeline).toHaveBeenCalledTimes(1);
+        const descriptor = device.createRenderPipeline.mock.calls[0]![0] as GPURenderPipelineDescriptor;
+        expect(descriptor.label).toBe("axis-locked-billboard-sprite-pipeline");
+
+        const shaderDescriptor = device.createShaderModule.mock.calls.find((call) =>
+            (call[0] as GPUShaderModuleDescriptor).code.includes("billboards.axis")
+        )![0] as GPUShaderModuleDescriptor;
+        expect(shaderDescriptor.code).toContain("billboards.axis");
+        expect(shaderDescriptor.code).toContain("projectedRight");
+        expect(shaderDescriptor.code).toContain("lockAxis");
+        expect(shaderDescriptor.code).toContain("getBillboardBasis");
+    });
+
+    it("writes axis data to UBO after opacity", async () => {
+        const engine = makeMockEngine();
+        const scene = createSceneContext(engine) as SceneContextInternal;
+        const system = createAxisLockedBillboardSystem(makeMockAtlas(), [0.35, 1, 0.2], { capacity: 1, opacity: 0.75 });
+        addBillboardSpriteIndex(system, { position: [1, 2, 3], sizeWorld: [2, 2], frame: 0 });
+        addAxisLockedBillboardSystem(scene, system);
+        await registerScene(engine, scene);
+
+        const device = engine.device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } };
+        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+        device.queue.writeBuffer.mockClear();
+
+        binding.update?.({ targetWidth: 512, targetHeight: 256 });
+
+        const uboCall = device.queue.writeBuffer.mock.calls.find((call) => call[4] === BILLBOARD_SYSTEM_UBO_BYTES);
+        expect(uboCall).toBeTruthy();
+        const uboData = new Float32Array(uboCall![2] as ArrayBuffer, uboCall![3] as number, BILLBOARD_SYSTEM_UBO_BYTES / 4);
+        expect(uboData[0]).toBeCloseTo(1);
+        expect(uboData[1]).toBeCloseTo(1);
+        expect(uboData[2]).toBeCloseTo(1);
+        expect(uboData[3]).toBeCloseTo(0.75);
+        const axisLen = Math.sqrt(0.35 * 0.35 + 1 * 1 + 0.2 * 0.2);
+        expect(uboData[4]).toBeCloseTo(0.35 / axisLen);
+        expect(uboData[5]).toBeCloseTo(1 / axisLen);
+        expect(uboData[6]).toBeCloseTo(0.2 / axisLen);
+        expect(uboData[7]).toBe(0);
     });
 });

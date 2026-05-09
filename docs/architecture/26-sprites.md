@@ -70,12 +70,13 @@ The module exposes **two** sprite families:
     per-instance layout, packed buffer, and pipeline are **identical** to a
     pure-2D layer.
 
-2. **`*BillboardSpriteSystem`** — three orientation factories
-   (`Facing`, `YawLocked`, `AxisLocked`), each with its own WGSL composer,
-   pipeline, and dynamic-import chunk. World-coordinate quads, world-unit
-   size, perspective foreshortening, full depth participation. Drawn
-   inside the scene's 3D pass; not usable from the pure-2D path (no
-   camera).
+2. **`*BillboardSpriteSystem`** — two orientation factories
+   (`createFacingBillboardSystem` and `createAxisLockedBillboardSystem`),
+   each with its own WGSL composer, pipeline, and dynamic-import chunk.
+   World-coordinate quads, world-unit size, perspective foreshortening,
+   full depth participation. Drawn inside the scene's 3D pass; not usable
+   from the pure-2D path (no camera). Yaw-locked billboards are axis-locked
+   with [0, 1, 0] as the lock axis.
 
 `SpriteAtlas`, `SpriteFrame`, `SpriteClip`, `SpriteClipState`, the per-clip
 animation tick, the handle/index two-tier API, and parenting are all shared
@@ -108,10 +109,10 @@ across both families and orthogonal to family.
 
 ## Taxonomy — Two Sprite Families
 
-| Family                   | Variants                               | Coordinate space                                         | Size unit   | Depth                                   | Drawn by                                                                                                                                                              |
-| ------------------------ | -------------------------------------- | -------------------------------------------------------- | ----------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Sprite2DLayer`          | 1 (with optional `AnchorSource`)       | Pixels (layer-space; CPU-projected for anchored sprites) | Pixels      | Configurable per layer (composer-baked) | A `SpriteRenderer` registered on the engine (pure-2D, or HUD-on-3D registered after the scene), or — for `depth: "test" \| "test-write"` layers — the scene's 3D pass |
-| `*BillboardSpriteSystem` | 3: `Facing`, `YawLocked`, `AxisLocked` | World                                                    | World units | Read; write configurable                | The scene's 3D pass (no pure-2D path)                                                                                                                                 |
+| Family                   | Variants                         | Coordinate space                                         | Size unit   | Depth                                   | Drawn by                                                                                                                                                              |
+| ------------------------ | -------------------------------- | -------------------------------------------------------- | ----------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Sprite2DLayer`          | 1 (with optional `AnchorSource`) | Pixels (layer-space; CPU-projected for anchored sprites) | Pixels      | Configurable per layer (composer-baked) | A `SpriteRenderer` registered on the engine (pure-2D, or HUD-on-3D registered after the scene), or — for `depth: "test" \| "test-write"` layers — the scene's 3D pass |
+| `*BillboardSpriteSystem` | 2: `Facing`, `AxisLocked`        | World                                                    | World units | Read; write configurable                | The scene's 3D pass (no pure-2D path)                                                                                                                                 |
 
 ### Why anchored is no longer a family
 
@@ -179,10 +180,10 @@ cameraUp * sizeWorld.y`), which produces correct perspective
   size invariant under distance) — the entire reason each variant exists.
 
 - **Per-vertex camera basis.** Each billboard variant computes
-  `(right, up)` per vertex from the camera (`Facing`), or from world-up
-    - camera direction (`YawLocked`), or from a lock axis + camera direction
-      (`AxisLocked`). The pure-2D vertex shader has no camera basis input at
-      all and ships zero camera-basis code.
+  `(right, up)` per vertex from the camera (`Facing`), or from a lock axis
+  plus camera direction (`AxisLocked`, which includes yaw-locked as
+  `[0, 1, 0]`). The pure-2D vertex shader has no camera basis input at
+  all and ships zero camera-basis code.
 
 - **Depth-write semantics.** Cutout billboards write depth (so they cast/
   receive against opaque meshes); anchored sprites never write depth.
@@ -194,9 +195,10 @@ four corners" path (O(N×4) Mat4×Vec4 per frame against tree forests, the
 exact cost the billboard vertex-shader trick was invented to avoid).
 Splitting them is correct.
 
-The three orientation factories remain explicit (`Facing`, `YawLocked`,
-`AxisLocked`) — three vertex shaders, three pipelines, three dynamic-
-import chunks, no `axisLock?: 'none'|'y'|Vec3` flag.
+The two orientation factories remain explicit (`createFacingBillboardSystem`,
+`createAxisLockedBillboardSystem(atlas, axis, opts)`) — two vertex shaders,
+two pipelines, two dynamic-import chunks, no `axisLock?: 'none'|'y'|Vec3` flag.
+Yaw-locked billboards are just `createAxisLockedBillboardSystem(atlas, [0, 1, 0], opts)`.
 
 ### Modes deliberately not added
 
@@ -435,7 +437,8 @@ const scene = createSceneContext(engine);
 
 addToScene(scene, createDirectionalLight([0, -1, 0]));
 addToScene(scene, await loadGltf(engine, "world.glb"));
-addToScene(scene, createYawLockedBillboardSystem(treeAtlas));
+const trees = createAxisLockedBillboardSystem(treeAtlas, [0, 1, 0]);
+addAxisLockedBillboardSystem(scene, trees);
 
 // Depth-hosted anchored labels: same Sprite2DLayer factory, depth:"test"
 // routes it through addDepthHostedSpriteLayer → sprite-renderable, drawn
@@ -755,13 +758,17 @@ never pays for `viewProjection` on the CPU.
 ### Family 2 — `*BillboardSpriteSystem`
 
 The current implementation slice is deliberately narrower than the full
-billboard roadmap: it ships **Facing** billboards only, with the low-level
-index API, an explicit scene opt-in helper, and CPU-side transparent sorting
-for the current compact vertex-buffer upload. Yaw-locked and axis-locked
-variants, handle objects, clip playback, parenting, picking, storage-buffer
-sort indirection, cutout/depth-write mode, and additive/multiply blend modes
-are additive follow-up modules. That split keeps the first billboard path
-small and keeps pure-2D sprite bundles from importing scene rendering code.
+billboard roadmap: it ships **Facing** and **Axis-Locked** billboards (with
+yaw-locked as a special case of axis-locked using [0, 1, 0]), with
+the low-level index API, explicit scene opt-in helpers, and CPU-side
+transparent sorting for the current compact vertex-buffer upload. It also
+ships the production cutout path: alpha-tested, depth-writing billboard
+systems selected via `blendMode: "cutout"`.
+Handle objects, clip playback, parenting, picking,
+storage-buffer sort indirection, and additive/multiply blend modes are
+additive follow-up modules. That split
+keeps the first billboard path small and keeps pure-2D sprite bundles from
+importing scene rendering code.
 
 ```typescript
 // src/sprite/billboard-sprite.ts
@@ -771,18 +778,20 @@ import type { SpriteBlendMode } from "./sprite-2d.js";
 export interface BillboardSpriteSystemOptions {
     capacity?: number;
     blendMode?: SpriteBlendMode;
+  alphaCutoff?: number;
     opacity?: number;
     visible?: boolean;
     order?: number;
 }
 
-export type BillboardOrientation = "facing";
-export type BillboardDepthMode = "transparent";
+export type BillboardOrientation = "facing" | "axis-locked";
+export type BillboardDepthMode = "transparent" | "cutout";
 
 export interface BillboardSpriteSystem {
     readonly _entityType: "billboard-sprite-system";
     readonly atlas: SpriteAtlas;
     readonly blendMode: SpriteBlendMode;
+    alphaCutoff: number;
     opacity: number;
     visible: boolean;
     order: number;
@@ -790,6 +799,7 @@ export interface BillboardSpriteSystem {
 
     readonly _orientation: BillboardOrientation;
     readonly _depthMode: BillboardDepthMode;
+    readonly _axis: [number, number, number];
     _capacity: number;
     readonly _instanceFloatsPerSprite: number;
     readonly _instanceStrideBytes: number;
@@ -814,6 +824,7 @@ export interface BillboardSpriteInit {
 }
 
 export function createFacingBillboardSystem(atlas: SpriteAtlas, opts?: BillboardSpriteSystemOptions): BillboardSpriteSystem;
+export function createAxisLockedBillboardSystem(atlas: SpriteAtlas, axis: readonly [number, number, number], opts?: BillboardSpriteSystemOptions): BillboardSpriteSystem;
 
 // Index API — low-level, parallels ThinInstance and existing Sprite2DLayer index calls.
 export function addBillboardSpriteIndex(system: BillboardSpriteSystem, init: BillboardSpriteInit): number;
@@ -823,17 +834,27 @@ export function setBillboardSpriteFrameIndex(system: BillboardSpriteSystem, inde
 
 // src/sprite/billboard-scene.ts
 export function addFacingBillboardSystem(scene: SceneContext, system: BillboardSpriteSystem): void;
+export function addAxisLockedBillboardSystem(scene: SceneContext, system: BillboardSpriteSystem): void;
 ```
 
-`addFacingBillboardSystem(scene, system)` is the scene integration point.
-It queues a deferred renderable builder through `addDeferredSceneRenderables`
-so `scene-core` and `addToScene` stay sprite-agnostic. A scene that never
-imports `billboard-scene.ts` never imports `billboard-renderable.ts`,
-`billboard-pipeline.ts`, `getSceneBindGroupLayout`, or any billboard WGSL.
-Internally, the shared renderable routes through `system._orientation` and
-`system._depthMode`; the current public factory sets `"facing"` and
-`"transparent"`, while later yaw/axis/cutout factories add new mode values
-without duplicating the upload or bind-group path.
+`addFacingBillboardSystem(scene, system)` and
+`addAxisLockedBillboardSystem(scene, system)` are the scene integration
+points. They queue a deferred renderable builder through
+`addDeferredSceneRenderables` so `scene-core` and `addToScene` stay
+sprite-agnostic. A scene that never imports `billboard-scene.ts` never
+imports `billboard-renderable.ts`, `billboard-pipeline.ts`,
+`getSceneBindGroupLayout`, or any billboard WGSL. Internally, the shared
+renderable routes through `system._orientation` and `system._depthMode`; the
+current public factories set `"facing"` or `"axis-locked"`, derive
+`"transparent"` for `"alpha" | "premultiplied"`, and derive `"cutout"` for
+`blendMode: "cutout"`. Transparent systems are alpha-blended, depth-tested,
+depth-write disabled, and sorted far-to-near before upload. Cutout systems
+have no blend state, discard fragments whose sampled texture alpha is below
+`alphaCutoff`, write depth, and route through the non-transparent direct-draw
+bucket without transparent sorting.
+
+Yaw-locked billboards (world-Y axis constraint) are created via
+`createAxisLockedBillboardSystem(atlas, [0, 1, 0], opts)`.
 
 ### Picking — two pickers, not three
 
@@ -981,16 +1002,22 @@ system.count, 0, 0, 0)` for all active sprites.
 | 10..11          | `pivot`     | `float32x2`   | normalized [0,1] pivot                                  |
 | 12              | `color`     | `unorm8x4`    | packed little-endian RGBA tint in the Float32/U32 alias |
 
-The current system UBO is 16 bytes: `opacityMul: vec4<f32>`. Straight
-alpha writes `(1, 1, 1, opacity)`; premultiplied writes
-`(opacity, opacity, opacity, opacity)`. The render pipeline uses the
-scene UBO at group 0 and the billboard UBO/atlas bind group at group 1,
-with pipeline keys including render target format, sample count,
-`_orientation`, blend mode, `_depthMode`, and depth format. The current
-`"transparent"` depth mode uses depth compare `less-equal`, depth write
-off, no culling, and alpha or premultiplied blending. Unsupported
-`additive`, `multiply`, and `cutout` blend modes throw during system
-creation in this slice.
+The current system UBO is 32 bytes:
+
+- `opacityMul` at byte offset 0: `vec4<f32>`. Straight-alpha and cutout write `(1, 1, 1, opacity)`; premultiplied writes `(opacity, opacity, opacity, opacity)` so the shader is branch-free.
+- `axis` at byte offset 16: `vec4<f32>`. `xyz` is the normalized axis for axis-locked systems and zero for facing systems. `w` is the system `alphaCutoff` used only by cutout shaders.
+
+The render pipeline uses the scene UBO at group 0 and the billboard UBO/atlas
+bind group at group 1, with pipeline keys including render target format,
+sample count, `_orientation`, blend mode, `_depthMode`, and depth format. The
+shader module cache also keys by `_depthMode`: transparent shaders have no
+discard path, while cutout shaders sample texture alpha, discard below
+`billboards.axis.w`, and return the sampled color multiplied by tint and
+`opacityMul`. The `"transparent"` depth mode uses depth compare `less-equal`,
+depth write off, no culling, and alpha or premultiplied blending. The
+`"cutout"` depth mode uses depth compare `less-equal`, depth write on, no
+blend state, and no culling. Unsupported `additive` and `multiply` blend modes
+throw during system creation.
 
 Transparent billboard systems sort per billboard before upload, not by
 mutating `system._instanceData`. When `DrawUpdateContext` supplies the active
@@ -1002,9 +1029,10 @@ descending so farther billboards upload first. The same compact GPU vertex
 buffer is written from the sorted staging buffer with one full
 `queue.writeBuffer` when either the system version or camera view identity /
 version changes. Repeated frames with unchanged system data and unchanged
-camera view skip the instance upload. If a render pass has no active camera,
-the renderable falls back to the existing dirty-range upload from
-`system._instanceData` in logical insertion order.
+camera view skip the instance upload. Cutout billboard systems skip this
+transparent sort path entirely and upload dirty ranges directly from
+`system._instanceData` in logical insertion order, matching the direct
+depth-write bucket semantics used by depth-hosted sprite layers.
 
 #### Future target BillboardSpriteSystem (96 B = 24 floats)
 
@@ -1363,9 +1391,9 @@ Per-device, lazy. Key tuple:
 ## Shader Logic
 
 Composers (one per family / billboard variant) emit complete WGSL strings.
-Five composers total: `composeSprite2D` (covers both pure-2D and anchored
-layers — the WGSL is identical), `composeFacingBillboard`,
-`composeYawLockedBillboard`, `composeAxisLockedBillboard`.
+Three composers total: `composeSprite2D` (covers both pure-2D and anchored
+layers — the WGSL is identical), `composeFacingBillboard`, and
+`composeAxisLockedBillboard`.
 
 ### Sprite2DLayer Vertex Shader (covers pure 2D AND anchored)
 
@@ -1406,7 +1434,7 @@ wasted bytes for non-anchored sprites.
 
 ### Billboard Vertex Shaders
 
-Three vertex shaders, three pipelines, three dynamic-import chunks. No
+Two vertex shaders, two pipelines, two dynamic-import chunks. No
 runtime mode branch.
 
 #### Facing (spherical)
@@ -1432,7 +1460,7 @@ runtime mode branch.
 }
 ```
 
-#### Yaw-Locked (cylindrical, world-Y axis)
+#### Axis-Locked (arbitrary lock axis)
 
 ```wgsl
 @group(0) @binding(0) var<uniform> scene: Sprite3DSceneUBO;
@@ -1443,11 +1471,15 @@ runtime mode branch.
     let corner = cornerOf(in.vid);
     let local  = (corner - s.pivot) * s.sizePxOrWorld;
     let rotated = rotate2(local, s.sinCos);
-    let camPos = vec3<f32>(scene.cameraRight.w, scene.cameraUp.w, scene.cameraForward.w);
-    let toCam  = normalize(camPos - s.worldPos);
-    let up     = vec3<f32>(0.0, 1.0, 0.0);
-    let right  = normalize(cross(up, toCam));
-    let world  = s.worldPos + right * rotated.x + up * rotated.y;
+    // Project camera right onto the plane perpendicular to the lock axis.
+    let cameraRight = normalize(vec3<f32>(scene.view[0][0], scene.view[1][0], scene.view[2][0]));
+    let projectedRight = vec3<f32>(cameraRight.x, 0.0, cameraRight.z);
+    let projectedRightLen = length(projectedRight);
+    // Fallback to world X if camera is near-vertical.
+    let right = select(vec3<f32>(1.0, 0.0, 0.0), projectedRight / projectedRightLen, projectedRightLen > 1e-4);
+    let worldUp = vec3<f32>(0.0, 1.0, 0.0);
+    // Use -worldUp to match facing's texture orientation convention.
+    let world  = s.worldPos + right * rotated.x + (-worldUp) * rotated.y;
     var out: VSOut;
     out.pos    = scene.viewProjection * vec4<f32>(world, 1.0);
     out.uv     = cornerUV(corner, s.uvRect, s.flagsAndPad.x, s.flagsAndPad.y);
@@ -1543,7 +1575,7 @@ overlap between sprites in the same layer (cutout) or between layers
 that share the depth buffer. Within a depth-hosted layer, sprites draw in insertion
 order, and the per-instance Z (slot [10]) is used as the depth-test
 value. Pure-2D layers have no slot [10]. Billboards use the per-sprite sort indirection buffer described
-under [BillboardSpriteSystem (96 B = 24 floats)](#billboardspritesystem-96-b--24-floats).
+under [Future target BillboardSpriteSystem (96 B = 24 floats)](#future-target-billboardspritesystem-96-b--24-floats).
 
 ---
 
@@ -1666,7 +1698,7 @@ dispatch in `gpu-picker.ts` references it.
 
 ### Atlas + Layer Creation
 
-```
+```text
 loadSpriteAtlas(engine, url, opts) → SpriteAtlas
 
 createSprite2DLayer(atlas, { depth })
@@ -1675,8 +1707,8 @@ createSprite2DLayer(atlas, { depth })
         _deferredBuild,
         _version, _gpuVersion, _entityType: "sprite-2d-layer" }
 
-createYawLockedBillboardSystem(atlas, opts)
-  └─> { ..., _entityType: "billboard-sprite-system", _deferredBuild, ... }
+createAxisLockedBillboardSystem(atlas, axis, opts)
+  └─> { ..., _entityType: "billboard-sprite-system", _orientation: "axis-locked", _axis: normalized(axis), ... }
 ```
 
 ### Depth-Hosted Scene Admission
@@ -1686,7 +1718,7 @@ Depth-hosted sprite admission lives in the sprite module as an opt-in
 `addDeferredSceneRenderables` hook; `addToScene` remains sprite-agnostic.
 Renderable construction and depth-mode validation stay in `sprite-renderable.ts`:
 
-```
+```text
 addDepthHostedSpriteLayer(scene, layer)
   └─> rejects depth === "none"
   └─> addDeferredSceneRenderables(scene, builder)
@@ -1716,7 +1748,7 @@ overlays are entirely caller-managed.
 
 ### Per-Frame Render
 
-```
+```text
 startEngine(engine) per-frame:
   1. Acquire swap-chain view + create command encoder.
   2. For each context c in engine._renderingContexts (in registration order):
@@ -1955,8 +1987,8 @@ never reaches into layer internals.
 | `sprite.size` / `width` / `height`                | `init.sizePx` (Sprite2D) / `init.sizeWorld` (Billboard)               | Type encodes pixel-space vs. world-space                                          |
 | `sprite.color`                                    | `init.color` / `update*({ color: [r,g,b,a] })`                        | Per-sprite tint                                                                   |
 | `mesh.billboardMode = BILLBOARDMODE_ALL`          | `createFacingBillboardSystem`                                         | Explicit factory                                                                  |
-| `mesh.billboardMode = BILLBOARDMODE_Y`            | `createYawLockedBillboardSystem`                                      | Explicit factory                                                                  |
-| `mesh.billboardMode = BILLBOARDMODE_X/Z`          | `createAxisLockedBillboardSystem(atlas, [1,0,0])`                     | One factory covers all axes                                                       |
+| `mesh.billboardMode = BILLBOARDMODE_Y`            | `createAxisLockedBillboardSystem(atlas, [0,1,0])`                     | World-Y is the yaw-locked special case                                            |
+| `mesh.billboardMode = BILLBOARDMODE_X/Z`          | `createAxisLockedBillboardSystem(atlas, [1,0,0])`                     | Same factory covers all lock axes                                                 |
 | `SpriteManager.disableDepthWrite`                 | `Sprite2DLayer.depth` (`"test"` / `"test-write"`) + `SpriteBlendMode` | Composer-baked per layer                                                          |
 | `AdvancedDynamicTexture` + `Image`                | `Sprite2DLayer` overlay on a 3D `SceneContext`                        | Different scope — no GUI tree                                                     |
 | `scene.pickSprite(x, y)`                          | `pickSprite2D` / `pickBillboardSprite`                                | Two pickers, one per family                                                       |
@@ -2074,14 +2106,14 @@ Bundle-size ratchets:
 
 - **Pure-2D ceiling.** A pure-2D entry point that imports only `createEngine`, `loadSpriteAtlas`, `createSprite2DLayer`, `addSprite2D`, `createSpriteRenderer`, `registerSpriteRenderer`, and `startEngine` must NOT fetch any of: `scene/scene-core.js`, `sprite-anchor.js`, `sprite-3d-scene-ubo.js`, `sprite-billboard-*.js`, `camera/*`, `light/*`, `mesh/*`, `shadow/*`, `material/pbr/*`, `material/standard/*`, `picking/*`. This is the single most important ceiling — it is what justifies splitting `SpriteRenderer` into its own module separate from the scene.
 - **Anchored-only-no-billboard ceiling.** A scene with depth-hosted Sprite2D layers but no billboards must NOT fetch `sprite-3d-scene-ubo.js`, billboard renderables, or the GPU picker.
-- **Per-billboard-variant ceiling.** Each variant (`Facing`, `YawLocked`, `AxisLocked`) must NOT include the other two.
+- **Per-billboard-variant ceiling.** Each variant (`Facing`, `AxisLocked`) must NOT include the other.
 - **Mesh-only no-sprite ceiling.** A scene with no sprites must NOT fetch `sprite-2d.js`, `sprite-renderer.js`, or the body of `picking-contributors.js`.
 
 ---
 
 ## File Manifest
 
-```
+```text
 packages/babylon-lite/src/
 
   scene/
@@ -2113,9 +2145,6 @@ packages/babylon-lite/src/
       sprite-billboard-facing.ts                 # createFacingBillboardSystem
       sprite-billboard-facing-renderable.ts
       sprite-billboard-facing-shader.ts
-      sprite-billboard-yaw.ts                    # createYawLockedBillboardSystem
-      sprite-billboard-yaw-renderable.ts
-      sprite-billboard-yaw-shader.ts
       sprite-billboard-axis.ts                   # createAxisLockedBillboardSystem
       sprite-billboard-axis-renderable.ts
       sprite-billboard-axis-shader.ts
@@ -2168,7 +2197,6 @@ export type { AnchorSource, AnchoredSprite2DInit } from "./sprite/anchor/sprite-
 
 // Billboards.
 export { createFacingBillboardSystem } from "./sprite/billboard/sprite-billboard-facing.js";
-export { createYawLockedBillboardSystem } from "./sprite/billboard/sprite-billboard-yaw.js";
 export { createAxisLockedBillboardSystem } from "./sprite/billboard/sprite-billboard-axis.js";
 export {
     addBillboardSprite,

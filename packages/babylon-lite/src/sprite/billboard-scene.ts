@@ -9,3 +9,10 @@ export function addFacingBillboardSystem(scene: SceneContext, system: BillboardS
         return { renderables: [built.renderable], dispose: built.dispose };
     });
 }
+
+export function addAxisLockedBillboardSystem(scene: SceneContext, system: BillboardSpriteSystem): void {
+    addDeferredSceneRenderables(scene, (engine) => {
+        const built = buildBillboardRenderable(engine, system);
+        return { renderables: [built.renderable], dispose: built.dispose };
+    });
+}

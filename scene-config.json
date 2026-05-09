@@ -418,6 +418,24 @@
         "tags": ["sprites", "billboards", "sorting"]
     },
     {
+        "id": 56,
+        "slug": "scene56-axis-locked-billboards",
+        "name": "Scene 56 — Axis-Locked Billboards",
+        "maxMad": 0.6,
+        "maxRawKB": 75,
+        "description": "Axis-locked world-space billboards constrain rotation to an arbitrary normalized axis. BJS reference uses explicit meshes with axis-aligned basis vectors computed from the camera and lock axis.",
+        "tags": ["sprites", "billboards", "axis-locked"]
+    },
+    {
+        "id": 57,
+        "slug": "scene57-cutout-billboards",
+        "name": "Scene 57 — Cutout Billboards",
+        "maxMad": 0.6,
+        "maxRawKB": 75,
+        "description": "Hard-alpha world-space billboard cards rendered with blendMode: \"cutout\", alpha cutoff, and depth writes. Front cutout pixels occlude later overlapping cards and opaque geometry while transparent holes leave the background visible.",
+        "tags": ["sprites", "billboards", "depth"]
+    },
+    {
         "id": 60,
         "slug": "scene60-nme-flat",
         "name": "Scene 60 — NME Flat Colour",

@@ -186,12 +186,13 @@ export { addDepthHostedSpriteLayer } from "./sprite/sprite-scene.js";
 export type { BillboardSpriteSystem, BillboardSpriteSystemOptions, BillboardSpriteInit, BillboardOrientation, BillboardDepthMode } from "./sprite/billboard-sprite.js";
 export {
     createFacingBillboardSystem,
+    createAxisLockedBillboardSystem,
     addBillboardSpriteIndex,
     updateBillboardSpriteIndex,
     removeBillboardSpriteIndex,
     setBillboardSpriteFrameIndex,
 } from "./sprite/billboard-sprite.js";
-export { addFacingBillboardSystem } from "./sprite/billboard-scene.js";
+export { addFacingBillboardSystem, addAxisLockedBillboardSystem } from "./sprite/billboard-scene.js";
 export type { SpriteRenderer, SpriteRendererOptions } from "./sprite/sprite-renderer.js";
 export {
     createSpriteRenderer,

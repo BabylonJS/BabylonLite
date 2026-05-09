@@ -12,18 +12,20 @@ import type { SpriteBlendMode } from "./sprite-2d.js";
 export interface BillboardSpriteSystemOptions {
     capacity?: number;
     blendMode?: SpriteBlendMode;
+    alphaCutoff?: number;
     opacity?: number;
     visible?: boolean;
     order?: number;
 }
 
-export type BillboardOrientation = "facing";
-export type BillboardDepthMode = "transparent";
+export type BillboardOrientation = "facing" | "axis-locked";
+export type BillboardDepthMode = "transparent" | "cutout";
 
 export interface BillboardSpriteSystem {
     readonly _entityType: "billboard-sprite-system";
     readonly atlas: SpriteAtlas;
     readonly blendMode: SpriteBlendMode;
+    alphaCutoff: number;
     opacity: number;
     visible: boolean;
     order: number;
@@ -33,6 +35,8 @@ export interface BillboardSpriteSystem {
     readonly _orientation: BillboardOrientation;
     /** @internal Depth/blend pipeline path for this system. */
     readonly _depthMode: BillboardDepthMode;
+    /** @internal Normalized lock axis for axis-locked systems; zero for facing. */
+    readonly _axis: [number, number, number];
     /** @internal Capacity of the per-instance buffer in sprites. */
     _capacity: number;
     /** @internal Per-instance stride in floats. */
@@ -72,30 +76,58 @@ export const BILLBOARD_SAVED_SIZE_FLOATS_PER_SPRITE = 2;
 const DEFAULT_CAPACITY = 16;
 
 function assertBlendSupported(blendMode: SpriteBlendMode): void {
-    if (blendMode === "additive" || blendMode === "multiply" || blendMode === "cutout") {
-        throw new Error(`FacingBillboardSpriteSystem: blendMode: "${blendMode}" lands in a later PR. Use "alpha" or "premultiplied".`);
+    if (blendMode !== "alpha" && blendMode !== "premultiplied" && blendMode !== "cutout") {
+        throw new Error(`BillboardSpriteSystem: blendMode: "${blendMode}" is not supported. Use "alpha", "premultiplied", or "cutout".`);
     }
 }
 
-export function createFacingBillboardSystem(atlas: SpriteAtlas, opts: BillboardSpriteSystemOptions = {}): BillboardSpriteSystem {
-    return createBillboardSystem(atlas, "facing", "transparent", opts);
+function resolveAlphaCutoff(opts: BillboardSpriteSystemOptions, depthMode: BillboardDepthMode): number {
+    const cutoff = opts.alphaCutoff ?? (depthMode === "cutout" ? 0.5 : 0);
+    if (!Number.isFinite(cutoff)) {
+        throw new Error("BillboardSpriteSystem: alphaCutoff must be a finite number.");
+    }
+    return cutoff;
 }
 
-function createBillboardSystem(atlas: SpriteAtlas, orientation: BillboardOrientation, depthMode: BillboardDepthMode, opts: BillboardSpriteSystemOptions): BillboardSpriteSystem {
+function resolveBillboardDepthMode(blendMode: SpriteBlendMode): BillboardDepthMode {
+    return blendMode === "cutout" ? "cutout" : "transparent";
+}
+
+export function createFacingBillboardSystem(atlas: SpriteAtlas, opts: BillboardSpriteSystemOptions = {}): BillboardSpriteSystem {
+    return createBillboardSystem(atlas, "facing", [0, 0, 0], opts);
+}
+
+export function createAxisLockedBillboardSystem(atlas: SpriteAtlas, axis: readonly [number, number, number], opts: BillboardSpriteSystemOptions = {}): BillboardSpriteSystem {
+    if (!Number.isFinite(axis[0]) || !Number.isFinite(axis[1]) || !Number.isFinite(axis[2])) {
+        throw new Error("createAxisLockedBillboardSystem: axis components must be finite numbers.");
+    }
+    const lengthSq = axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2];
+    if (lengthSq < 1e-8) {
+        throw new Error("createAxisLockedBillboardSystem: axis must be non-zero.");
+    }
+    const invLength = 1 / Math.sqrt(lengthSq);
+    const normalized: [number, number, number] = [axis[0] * invLength, axis[1] * invLength, axis[2] * invLength];
+    return createBillboardSystem(atlas, "axis-locked", normalized, opts);
+}
+
+function createBillboardSystem(atlas: SpriteAtlas, orientation: BillboardOrientation, axis: [number, number, number], opts: BillboardSpriteSystemOptions): BillboardSpriteSystem {
     const blendMode = opts.blendMode ?? "alpha";
     assertBlendSupported(blendMode);
+    const depthMode = resolveBillboardDepthMode(blendMode);
     const capacity = Math.max(1, opts.capacity ?? DEFAULT_CAPACITY);
     const instanceData = new Float32Array(capacity * BILLBOARD_INSTANCE_FLOATS_PER_SPRITE);
     return {
         _entityType: "billboard-sprite-system",
         atlas,
         blendMode,
+        alphaCutoff: resolveAlphaCutoff(opts, depthMode),
         opacity: opts.opacity ?? 1,
         visible: opts.visible ?? true,
-        order: opts.order ?? 200,
+        order: opts.order ?? (depthMode === "transparent" ? 200 : 100),
         count: 0,
         _orientation: orientation,
         _depthMode: depthMode,
+        _axis: axis,
         _capacity: capacity,
         _instanceFloatsPerSprite: BILLBOARD_INSTANCE_FLOATS_PER_SPRITE,
         _instanceStrideBytes: BILLBOARD_INSTANCE_STRIDE_BYTES,

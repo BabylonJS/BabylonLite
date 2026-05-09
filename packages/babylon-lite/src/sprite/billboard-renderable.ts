@@ -66,10 +66,11 @@ export function buildBillboardRenderable(engine: EngineContextInternal, system: 
     const indexBuffer = createMappedBuffer(engine, BILLBOARD_INDEX_DATA, GPUBufferUsage.INDEX);
     const uniformBuffer = createEmptyUniformBuffer(engine, BILLBOARD_SYSTEM_UBO_BYTES, `${system._orientation}-billboard-system-ubo`);
     const instanceBuffer = createBillboardInstanceBuffer(engine.device, system, `${system._orientation}-billboard-instances`);
+    const isTransparent = system._depthMode === "transparent";
     const renderable: BillboardRenderableInternal = {
         order: system.order,
-        isTransparent: true,
-        isTransmissive: false,
+        isTransparent,
+        isTransmissive: !isTransparent,
         _engine: engine,
         _system: system,
         _indexBuffer: indexBuffer,
@@ -149,7 +150,7 @@ function uploadSystem(renderable: BillboardRenderableInternal, context: DrawUpda
         renderable._uploadedCameraViewVersion = -1;
         renderable._uploadedSorted = false;
     }
-    if (context.cameraViewMatrix && context.cameraViewVersion !== undefined) {
+    if (renderable._system._depthMode === "transparent" && context.cameraViewMatrix && context.cameraViewVersion !== undefined) {
         if (
             !renderable._uploadedSorted ||
             renderable._uploadedVersion !== renderable._system._version ||

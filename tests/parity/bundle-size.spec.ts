@@ -160,7 +160,12 @@ for (const scene of SCENES) {
             ).toBe(true);
         }
 
-        if (scene.slug === "scene54-facing-billboards" || scene.slug === "scene55-billboard-sorting") {
+        if (
+            scene.slug === "scene54-facing-billboards" ||
+            scene.slug === "scene55-billboard-sorting" ||
+            scene.slug === "scene56-axis-locked-billboards" ||
+            scene.slug === "scene57-cutout-billboards"
+        ) {
             expect(
                 runtimeModules.some((id) => /\/sprite\/billboard-renderable\.ts$/.test(id)),
                 `${scene.slug} MUST include billboard-renderable.ts; loaded modules: ${runtimeModules.join(", ")}`
@@ -168,9 +173,9 @@ for (const scene of SCENES) {
         }
 
         // Mesh-only / non-sprite 3D scenes must NOT pull in any sprite code.
-        // List excludes the sprite-using scenes (50, 51, 52, 53, 54, 55). 60-series are
+        // List excludes the sprite-using scenes (50, 51, 52, 53, 54, 55, 56, 57). 60-series are
         // NME demos with no sprites; 1-40 are core 3D.
-        const SPRITE_USING_IDS = new Set([50, 51, 52, 53, 54, 55]);
+        const SPRITE_USING_IDS = new Set([50, 51, 52, 53, 54, 55, 56, 57]);
         if (!SPRITE_USING_IDS.has(scene.id)) {
             const offenders = runtimeModules.filter((id) => /\/sprite\/(sprite-(2d|pipeline|renderer|renderable)|billboard-(sprite|scene|pipeline|renderable))\.ts$/.test(id));
             expect(offenders, `non-sprite ${scene.slug} must not load sprite modules; found: ${offenders.join(", ")}`).toEqual([]);
