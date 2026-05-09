@@ -252,16 +252,17 @@ export function parseAnimationData(
         // Create a binding for EACH mesh primitive of this skinned node
         for (const mi of meshIndices) {
             const mesh = meshes[mi];
-            if (!mesh?.skeleton) {
+            const skeleton = mesh?.skeleton;
+            if (!skeleton) {
                 continue;
             }
             skeletons.push({
                 jointNodes,
                 inverseBindMatrices,
                 invMeshWorld,
-                boneTexture: mesh.skeleton.boneTexture,
+                boneTexture: skeleton.boneTexture,
                 boneCount: jointNodes.length,
-                boneMatrices: mesh.skeleton.boneMatrices,
+                boneMatrices: skeleton.boneMatrices,
             });
         }
     }
@@ -285,14 +286,15 @@ export function parseAnimationData(
 
         for (const mi of meshIndices) {
             const mesh = meshes[mi];
-            if (!mesh?.morphTargets) {
+            const morphTargets = mesh?.morphTargets;
+            if (!morphTargets) {
                 continue;
             }
             morphBindings.push({
                 nodeIdx,
-                weightsBuffer: mesh.morphTargets.weightsBuffer,
-                weights: mesh.morphTargets.weights,
-                targetCount: mesh.morphTargets.count,
+                weightsBuffer: morphTargets.weightsBuffer,
+                weights: morphTargets.weights,
+                targetCount: morphTargets.count,
             });
         }
     }

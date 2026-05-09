@@ -85,7 +85,7 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
     const topoOrder = computeTopoOrder(nodes);
 
     // Per-skeleton bone scratch
-    const boneScratch = skeletons.map((s) => new Float32Array(s.boneCount * 16));
+    const boneScratch = skeletons.map((s) => s.boneMatrices);
 
     // Per-morph-binding scratch for weight evaluation
     const morphNodeMap = new Map<number, MorphBinding[]>();
@@ -97,7 +97,6 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
         }
         arr.push(mb);
     }
-    const morphWeightScratch = new Float32Array(8); // supports up to 8 weights evaluation
     // Only write first 16 bytes (weights vec4) — count/texWidth/rowsPerBand are immutable
     const morphUploadF32 = new Float32Array(4);
     // Pointer-channel scratch (sized to largest registered pointer arity).
@@ -175,16 +174,10 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
                         const bindings = morphNodeMap.get(ch.nodeIdx);
                         if (bindings) {
                             const tc = bindings[0]!.targetCount;
-                            evaluateSampler(sampler, t, tc, false, morphWeightScratch, 0);
-                            morphUploadF32[0] = morphWeightScratch[0]!;
-                            morphUploadF32[1] = tc > 1 ? morphWeightScratch[1]! : 0;
-                            morphUploadF32[2] = tc > 2 ? morphWeightScratch[2]! : 0;
-                            morphUploadF32[3] = tc > 3 ? morphWeightScratch[3]! : 0;
+                            morphUploadF32.fill(0);
+                            evaluateSampler(sampler, t, tc, false, morphUploadF32, 0);
                             for (const mb of bindings) {
-                                mb.weights[0] = morphUploadF32[0]!;
-                                mb.weights[1] = morphUploadF32[1]!;
-                                mb.weights[2] = morphUploadF32[2]!;
-                                mb.weights[3] = morphUploadF32[3]!;
+                                mb.weights.set(morphUploadF32);
                                 // Write only the weights vec4 (first 16 bytes); count/texWidth/rowsPerBand are immutable
                                 device.queue.writeBuffer(mb.weightsBuffer, 0, morphUploadF32.buffer, 0, 16);
                             }
@@ -244,7 +237,6 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
 
                 // Upload to GPU
                 const texWidth = skel.boneCount * 4;
-                skel.boneMatrices.set(boneData);
                 device.queue.writeTexture({ texture: skel.boneTexture }, boneData.buffer, { bytesPerRow: texWidth * 16 }, { width: texWidth, height: 1 });
             }
         },
