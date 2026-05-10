@@ -35,9 +35,11 @@ import {
 import { _registerPbrExt, _getPbrExts } from "./pbr-flags.js";
 import { createPbrComposer } from "./pbr-compose.js";
 import { computeMeshPbrFeatures } from "./pbr-mesh-features.js";
-import type { ShadowGenerator } from "../../shadow/shadow-generator.js";
-import type { ThinInstanceData } from "../../mesh/thin-instance.js";
+import { hasPbrOptionalFeature } from "./pbr-optional-flags.js";
+import type { PbrOptionalDeps, PbrOptionalFeatureFlags } from "./pbr-optional-flags.js";
+import type { getOrCreatePbrShadowBindGroup, PbrShadowLight } from "./pbr-shadow-bind-group.js";
 import type { PbrShadowLightSlot } from "./fragments/pbr-shadow-fragment.js";
+import type { syncThinInstanceBuffers as syncThinInstanceBuffersFn } from "../../mesh/thin-instance-gpu.js";
 import { writeMeshLightSelection } from "../../render/lights-ubo.js";
 import type { PbrLightMode } from "./pbr-compose.js";
 
@@ -48,7 +50,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     // Per-size scratch buffers for material UBO re-writes (zero allocation per frame).
     const materialScratch = new Map<number, Float32Array>();
     const hasEnv = !!envTextures;
-    const shadowLights: { lightIndex: number; shadowType: "esm" | "pcf"; gen: ShadowGenerator }[] = [];
+    const shadowLights: PbrShadowLight[] = [];
     for (let i = 0; i < scene.lights.length; i++) {
         const sg = scene.lights[i]!.shadowGenerator;
         if (sg) {
@@ -59,12 +61,14 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     let hasAnyAffectedLight = false;
     let needsSingleLightPath = false;
     let needsMultiLightPath = false;
+    const singleLightTypes = new Set<string>();
     for (const mesh of meshes) {
         const lr = writeMeshLightSelection(mesh, scene.lights);
         const affectedCount = lr > 0 ? 1 : -lr;
         hasAnyAffectedLight ||= affectedCount > 0;
         if (affectedCount === 1 && !(mesh.receiveShadows && hasSomeShadows)) {
             needsSingleLightPath = true;
+            singleLightTypes.add(getPackedLightType(scene.lights, lr - 1));
         } else if (affectedCount > 0) {
             needsMultiLightPath = true;
         }
@@ -126,14 +130,34 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
 
     // Light/shadow helpers stay dynamic so single-light and non-shadow bundles stay lean.
     let _createPbrShadowFragment: ((slots: PbrShadowLightSlot[]) => ShaderFragment) | null = null;
+    let _getOrCreatePbrShadowBindGroup: typeof getOrCreatePbrShadowBindGroup | null = null;
     let _singleLightWGSL = "";
     let _getSingleLightBlock: ((type: string) => string) | null = null;
     let _multiLightWGSL = "";
     let _multiLightLoop = "";
     if (needsSingleLightPath) {
-        const single = await import("./fragments/singlelight-wgsl.js");
-        _singleLightWGSL = single.SINGLE_LIGHT_STRUCTS;
-        _getSingleLightBlock = single.getSingleLightBlock;
+        const blocks = new Map<string, string>();
+        if (singleLightTypes.has("hemispheric")) {
+            const mod = await import("./fragments/singlelight-hemispheric-wgsl.js");
+            _singleLightWGSL ||= mod.SINGLE_LIGHT_STRUCTS;
+            blocks.set("hemispheric", mod.HEMISPHERIC_LIGHT_BLOCK);
+        }
+        if (singleLightTypes.has("directional")) {
+            const mod = await import("./fragments/singlelight-directional-wgsl.js");
+            _singleLightWGSL ||= mod.SINGLE_LIGHT_STRUCTS;
+            blocks.set("directional", mod.DIRECTIONAL_LIGHT_BLOCK);
+        }
+        if (singleLightTypes.has("spot")) {
+            const mod = await import("./fragments/singlelight-spot-wgsl.js");
+            _singleLightWGSL ||= mod.SINGLE_LIGHT_STRUCTS;
+            blocks.set("spot", mod.SPOT_LIGHT_BLOCK);
+        }
+        if (singleLightTypes.has("point")) {
+            const mod = await import("./fragments/singlelight-point-wgsl.js");
+            _singleLightWGSL ||= mod.SINGLE_LIGHT_STRUCTS;
+            blocks.set("point", mod.POINT_LIGHT_BLOCK);
+        }
+        _getSingleLightBlock = (type) => blocks.get(type) ?? "";
     }
     if (needsMultiLightPath) {
         const wgslMod = await import("./fragments/multilight-wgsl.js");
@@ -144,36 +168,11 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         if (hasSomeShadows) {
             const shadowMod = await import("./fragments/pbr-shadow-fragment.js");
             _createPbrShadowFragment = shadowMod.createPbrShadowFragment;
+            const shadowBindGroupMod = await import("./pbr-shadow-bind-group.js");
+            _getOrCreatePbrShadowBindGroup = shadowBindGroupMod.getOrCreatePbrShadowBindGroup;
         }
     }
 
-    // ── Per-mesh fragment creators (imported if any mesh needs them) ──
-    // Inline `if` blocks (rather than a descriptor array) keep the awaited `import()`
-    // sites literal AND let terser shorten each block independently, saving ~1 KB
-    // in scene1's pbr-renderable chunk. Registration runs sequentially in source
-    // order, which is the iteration order consumed by `_getPbrExts().values()` on
-    // the hot paths (composePbr, writeMaterialData, collectPbrBoundTextures,
-    // computeMeshPbrFeatures).
-    if (hasMetallicReflectance) {
-        const mod = await import("./fragments/reflectance-fragment.js");
-        _registerPbrExt(mod.reflectanceExt);
-    }
-    if (hasClearcoat) {
-        const mod = await import("./fragments/clearcoat-fragment.js");
-        _registerPbrExt(mod.clearcoatExt);
-    }
-    if (hasSheen) {
-        const mod = await import("./fragments/sheen-fragment.js");
-        _registerPbrExt(mod.sheenExt);
-    }
-    if (hasAnySubsurface) {
-        const mod = await import("./fragments/subsurface-fragment.js");
-        _registerPbrExt(mod.subsurfaceExt);
-    }
-    if (hasRefraction) {
-        const mod = await import("./fragments/refraction-fragment.js");
-        _registerPbrExt(mod.refractionExt);
-    }
     if (needsEmissiveColor) {
         const mod = await import("./fragments/emissive-fragment.js");
         _registerPbrExt(mod.emissiveColorExt);
@@ -182,47 +181,32 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         const mod = await import("./fragments/unlit-fragment.js");
         _registerPbrExt(mod.unlitExt);
     }
-    if (hasSomeSkeletons) {
-        const mod = await import("./fragments/skeleton-fragment.js");
-        _registerPbrExt(mod.skeletonExt);
-    }
-    if (hasSomeMorphs) {
-        const mod = await import("./fragments/morph-fragment.js");
-        _registerPbrExt(mod.morphExt);
-    }
-    if (hasAnyUvTransform) {
-        const mod = await import("./fragments/uv-transform-fragment.js");
-        _registerPbrExt(mod.uvTransformExt);
-    }
-
-    // Anisotropy needs its module reference retained (for ANISO_BRDF_FUNCTIONS /
-    // makeAnisotropyTBBlock / ANISO_DIRECT_DG / ANISO_BENT_NORMAL strings consumed
-    // by the template below), so it keeps the full module binding.
-    let _anisoExt: typeof import("./fragments/anisotropy-fragment.js") | null = null;
-    if (hasAnyAnisotropy) {
-        _anisoExt = await import("./fragments/anisotropy-fragment.js");
-        _registerPbrExt(_anisoExt.anisotropyExt);
-    }
-
-    // Lazy-load pbr-template-ext when any advanced features are present.
-    // Scene1 has none of these, so it won't pay the ~1.5KB cost.
-    let _createPbrTemplateExt: typeof import("./pbr-template-ext.js").createPbrTemplateExt | null = null;
-    const hasAnyExt = hasAnyUvTransform || hasAnyVertexColor || hasAnyUv2;
-    if (hasAnyExt) {
-        const extMod = await import("./pbr-template-ext.js");
-        _createPbrTemplateExt = extMod.createPbrTemplateExt;
-    }
 
     let _createThinInstanceFragment: ((hasColor: boolean) => ShaderFragment) | null = null;
-    let _syncThinInstanceBuffers:
-        | ((engine: EngineContextInternal, ti: ThinInstanceData, pass: GPURenderPassEncoder | GPURenderBundleEncoder, slot: number, hasColor: boolean) => number)
-        | null = null;
+    let _syncThinInstanceBuffers: typeof syncThinInstanceBuffersFn | null = null;
     if (hasSomeThinInstances) {
         const mod = await import("../../shader/fragments/thin-instance-fragment.js");
         _createThinInstanceFragment = mod.createThinInstanceFragment;
         const gpuMod = await import("../../mesh/thin-instance-gpu.js");
         _syncThinInstanceBuffers = gpuMod.syncThinInstanceBuffers;
     }
+
+    const optionalFlags: PbrOptionalFeatureFlags = {
+        hasMetallicReflectance,
+        hasClearcoat,
+        hasSheen,
+        hasAnyAnisotropy,
+        hasAnySubsurface,
+        hasRefraction,
+        hasSomeSkeletons,
+        hasSomeMorphs,
+        hasAnyUvTransform,
+        hasAnyUv2,
+        hasAnyVertexColor,
+    };
+    const optionalDeps: PbrOptionalDeps | null = hasPbrOptionalFeature(optionalFlags)
+        ? await import("./pbr-optional-exts.js").then((m) => m.loadPbrOptionalExts(optionalFlags))
+        : null;
 
     // ACES tonemap WGSL is dynamically imported only when requested (keeps standard-tonemap bundles lean).
     // Must be loaded before the composer is created so deps are fully resolved.
@@ -242,8 +226,8 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         multiLightLoop: _multiLightLoop,
         acesHelpers: _acesHelpers,
         acesTonemapCall: _acesTonemapCall,
-        createPbrTemplateExt: _createPbrTemplateExt,
-        anisoExt: _anisoExt,
+        createPbrTemplateExt: optionalDeps?.createPbrTemplateExt ?? null,
+        anisoExt: optionalDeps?.anisoExt ?? null,
         iblSkyboxCalc: _iblSkyboxCalc,
         createPbrShadowFragment: _createPbrShadowFragment,
         shadowLights,
@@ -253,7 +237,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     const featureCtx: import("./pbr-mesh-features.js").PbrFeatureCtx = { hasEnv, hasTonemap, hasSomeShadows };
     // Shadow bind group cache — within one scene build, all receiving meshes share the
     // same shadowLights array, so a BG keyed by shadowBGL alone is correct.
-    const shadowBGCache = new Map<GPUBindGroupLayout, GPUBindGroup>();
+    const shadowBGCache = hasSomeShadows ? new Map<GPUBindGroupLayout, GPUBindGroup>() : null;
     const syncThinInstanceBuffers = _syncThinInstanceBuffers;
 
     // Closure used both for the initial per-mesh build below AND for later
@@ -288,22 +272,8 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
 
         // Shadow bind group (group 2) — shared across receiving meshes via shadowBGCache.
         let shadowBindGroup: GPUBindGroup | null = null;
-        const meshShadowLights = mesh.receiveShadows ? shadowLights : [];
-        if (meshShadowLights.length > 0 && bindings.shadowBGL) {
-            let cached = shadowBGCache.get(bindings.shadowBGL);
-            if (!cached) {
-                const entries: GPUBindGroupEntry[] = [];
-                let b = 0;
-                for (const sl of meshShadowLights) {
-                    const sg = sl.gen;
-                    entries.push({ binding: b++, resource: sg.blurredTexture.createView() });
-                    entries.push({ binding: b++, resource: sg.blurredSampler });
-                    entries.push({ binding: b++, resource: { buffer: sg.shadowUBO } });
-                }
-                cached = device.createBindGroup({ layout: bindings.shadowBGL, entries });
-                shadowBGCache.set(bindings.shadowBGL, cached);
-            }
-            shadowBindGroup = cached;
+        if (_getOrCreatePbrShadowBindGroup && mesh.receiveShadows && shadowBGCache && bindings.shadowBGL) {
+            shadowBindGroup = _getOrCreatePbrShadowBindGroup(device, shadowBGCache, shadowLights, bindings.shadowBGL);
         }
 
         const boundTextures = collectPbrBoundTextures(mat);
