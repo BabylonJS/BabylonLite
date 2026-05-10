@@ -234,10 +234,10 @@ function buildSpritePipeline(
         { shaderLocation: 2, offset: 16, format: "float32x2" },
         { shaderLocation: 3, offset: 24, format: "float32x2" },
         { shaderLocation: 4, offset: 32, format: "float32" },
-        { shaderLocation: 5, offset: 36, format: "unorm8x4" },
+        { shaderLocation: 5, offset: 36, format: "float32x4" },
     ];
     if (hasDepth) {
-        instanceAttributes.push({ shaderLocation: 6, offset: 40, format: "float32" });
+        instanceAttributes.push({ shaderLocation: 6, offset: 52, format: "float32" });
     }
     const descriptor: GPURenderPipelineDescriptor = {
         layout: device.createPipelineLayout({ bindGroupLayouts }),
@@ -355,7 +355,7 @@ export function uploadSpriteInstances(device: GPUDevice, layer: Sprite2DLayer, i
  *   [8..11] opacityMul.rgba (pre-shaped per blend mode)
  *
  * Depth-hosted layers keep per-sprite NDC depth on the per-instance vertex buffer
- * (slot [10] of `Sprite2DLayer._instanceData`), not in this UBO — a single
+ * (slot [13] of `Sprite2DLayer._instanceData`), not in this UBO — a single
  * depth-hosted layer can mix sprites at different depths. Pure-2D layers have no
  * Z slot.
  *

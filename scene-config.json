@@ -714,5 +714,32 @@
         "maxRawKB": 110,
         "description": "BabylonJS/Assets FlightHelmetKTX glTF model using KHR_texture_basisu KTX2 source textures for base color, normal, and occlusion/roughness/metallic maps.",
         "tags": ["pbr", "gltf", "env", "basis"]
+    },
+    {
+        "id": 113,
+        "slug": "scene113-picking-precision",
+        "name": "Scene 113 — Picking Precision",
+        "maxMad": 0.3,
+        "maxRawKB": 68,
+        "description": "Visual picking validation: one detailed sphere pick places a tiny surface marker at the picked point and a small oriented box along the picked normal.",
+        "tags": ["std", "procedural", "picking"]
+    },
+    {
+        "id": 114,
+        "slug": "scene114-morph-skeleton-picking",
+        "name": "Scene 114 — Morph/Skeleton Picking",
+        "maxMad": 0.1,
+        "maxRawKB": 86,
+        "description": "Visual picking validation on morphed and skinned geometry: GPU and detailed picks drive marker positions from the deformed rendered surface.",
+        "tags": ["pbr", "procedural", "morph", "skeleton", "picking"]
+    },
+    {
+        "id": 115,
+        "slug": "scene115-alien-picking-frame100",
+        "name": "Scene 115 — Alien Picking Frame 100",
+        "maxMad": 0.01,
+        "maxRawKB": 120,
+        "description": "Precise picking validation on the animated Alien glTF at frame 100: BJS and Lite CPU PickInfo values drive a surface sphere and normal marker.",
+        "tags": ["pbr", "gltf", "anim", "skeleton", "picking"]
     }
 ]

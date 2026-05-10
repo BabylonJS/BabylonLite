@@ -78,8 +78,6 @@ export interface RenderTask extends Task {
     _opaqueBindings: DrawBinding[];
     _transmissiveBindings: DrawBinding[];
     _transparentBindings: DrawBinding[];
-    _updateContext: { targetWidth: number; targetHeight: number };
-
     /** Cached opaque render bundle. Invalidated by renderable list mutations
      *  (`_lastVersion`) and visibility changes (`_lastVis`). */
     _opaqueBundles: GPURenderBundle[];
@@ -88,6 +86,7 @@ export interface RenderTask extends Task {
 
     _targetSignature: RenderTargetSignature;
     _sampleCount: number;
+    _updateContext: { targetWidth: number; targetHeight: number };
 
     /** Per-task scene UBO + bind group. Created eagerly in createRenderTask
      *  so renderables can reference `_sceneBG` at `bind()` time. Written each
@@ -128,10 +127,9 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
     };
 
     const sceneBGL = getSceneBindGroupLayout(eng);
-    const sceneUBO = createEmptyUniformBuffer(eng, SCENE_UBO_BYTES, `${config.name}-scene-ubo`);
+    const sceneUBO = createEmptyUniformBuffer(eng, SCENE_UBO_BYTES);
     const lightsUBO = ensureSceneLightState(eng, sc)._buffer;
     const sceneBG = eng.device.createBindGroup({
-        label: `${config.name}-scene-bg`,
         layout: sceneBGL,
         entries: [
             { binding: 0, resource: { buffer: sceneUBO } },
@@ -149,17 +147,17 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
         _opaqueBindings: [],
         _transmissiveBindings: [],
         _transparentBindings: [],
-        _updateContext: { targetWidth: 0, targetHeight: 0 },
         _opaqueBundles: [],
         _lastVersion: -1,
         _lastVis: 0,
         _targetSignature: targetSignature,
         _sampleCount: sampleCount,
+        _updateContext: { targetWidth: 0, targetHeight: 0 },
         _sceneUBO: sceneUBO,
         _sceneBG: sceneBG,
         _lightsUBO: lightsUBO,
         _suData: new Float32Array(SCENE_UBO_BYTES / 4),
-        _su: [null, null, NaN, NaN, NaN, NaN, NaN],
+        _su: [],
         _pendingMeshes: [],
         addMesh(mesh, opts) {
             const material = opts?.material ?? mesh.material;
@@ -175,11 +173,11 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
             resolvePendingMeshes(task, sc);
             task._autoFromScene = task._renderables.length === 0;
             if (task._autoFromScene) {
-                mirrorSceneBuckets(task, sc);
+                task._renderables.push(...sc._renderables);
             }
-            buildRenderTarget(task._config.rt, eng);
-            task._updateContext.targetWidth = task._config.rt._width;
-            task._updateContext.targetHeight = task._config.rt._height;
+            buildRenderTarget(rt, eng);
+            updateContext.targetWidth = rt._width;
+            updateContext.targetHeight = rt._height;
             refreshTaskSceneBindGroup(task, eng);
             buildBindings(task, eng);
 
@@ -319,7 +317,7 @@ function prepareRenderTaskPass(task: RenderTask, eng: EngineContextInternal, sc:
     // extension raises MAX_LIGHTS after this task was first recorded).
     refreshTaskSceneBindGroup(task, eng);
     const camera = task._config.cam ?? sc.camera;
-    writePassSceneUBO(task, eng, sc, camera);
+    writePassSceneUBO(task, eng, sc, camera, task._targetSignature.flipY === true);
     refreshSceneLightsUBO(eng, sc);
     updateBindings(task._opaqueBindings, task._updateContext);
     updateBindings(task._transmissiveBindings, task._updateContext);
@@ -339,6 +337,10 @@ function executePassBody(task: RenderTask, pass: GPURenderPassEncoder): number {
     const scene = task.scene as SceneContextInternal;
     const camera = task._config.cam ?? scene.camera;
 
+    const sceneBG = task._sceneBG;
+    const opaqueBindings = task._opaqueBindings;
+    const opaqueBundles = task._opaqueBundles;
+
     const v = camera?.viewport;
     if (v) {
         const rw = rt._width;
@@ -351,28 +353,28 @@ function executePassBody(task: RenderTask, pass: GPURenderPassEncoder): number {
         pass.setScissorRect(x, y, w, h);
     }
     // Scene bind group (group 0) is task-owned and identical for every draw in this pass.
-    pass.setBindGroup(0, task._sceneBG);
+    pass.setBindGroup(0, sceneBG);
 
     // Opaque: cached render bundle. Invalidated by scene mutation (_renderableVersion)
     // or visibility version (_vis). The bundle records group(0) at its start so it can
     // be replayed standalone (executeBundles inherits no inherited state).
-    if (task._lastVersion !== scene._renderableVersion || task._lastVis !== _vis || task._opaqueBundles.length === 0) {
+    if (task._lastVersion !== scene._renderableVersion || task._lastVis !== _vis || opaqueBundles.length === 0) {
+        const desc = rt.descriptor;
         const be = eng.device.createRenderBundleEncoder({
-            label: `${task.name}-opaque`,
-            colorFormats: [rt.descriptor.colorFormat],
-            depthStencilFormat: rt.descriptor.depthStencilFormat,
-            sampleCount: rt.descriptor.sampleCount ?? 1,
+            colorFormats: [desc.colorFormat],
+            depthStencilFormat: desc.depthStencilFormat,
+            sampleCount: desc.sampleCount ?? 1,
         });
-        be.setBindGroup(0, task._sceneBG);
-        drawList(be, task._opaqueBindings, eng);
-        task._opaqueBundles[0] = be.finish();
+        be.setBindGroup(0, sceneBG);
+        drawList(be, opaqueBindings, eng);
+        opaqueBundles[0] = be.finish();
         task._lastVersion = scene._renderableVersion;
         task._lastVis = _vis;
     }
-    let draws = task._opaqueBindings.length;
-    pass.executeBundles(task._opaqueBundles);
+    let draws = opaqueBindings.length;
+    pass.executeBundles(opaqueBundles);
     // executeBundles invalidates pass bind-group state — rebind group 0 before further draws.
-    pass.setBindGroup(0, task._sceneBG);
+    pass.setBindGroup(0, sceneBG);
     draws += drawList(pass, task._transmissiveBindings, eng);
     draws += drawList(pass, task._transparentBindings, eng);
     return draws;
@@ -385,7 +387,6 @@ function refreshTaskSceneBindGroup(task: RenderTask, eng: EngineContextInternal)
     }
     task._lightsUBO = lightsUBO;
     task._sceneBG = eng.device.createBindGroup({
-        label: `${task.name}-scene-bg`,
         layout: getSceneBindGroupLayout(eng),
         entries: [
             { binding: 0, resource: { buffer: task._sceneUBO } },
@@ -398,7 +399,7 @@ function refreshTaskSceneBindGroup(task: RenderTask, eng: EngineContextInternal)
 
 /** Write the canonical SceneUniforms struct to the task-owned scene UBO.
  *  Bails before touching scratch/GPU when all inputs are unchanged. */
-function writePassSceneUBO(task: RenderTask, eng: EngineContextInternal, scene: SceneContextInternal, camera: Camera | null): void {
+function writePassSceneUBO(task: RenderTask, eng: EngineContextInternal, scene: SceneContextInternal, camera: Camera | null, flipY: boolean): void {
     if (!camera) {
         return;
     }
@@ -438,7 +439,7 @@ function writePassSceneUBO(task: RenderTask, eng: EngineContextInternal, scene: 
     data.set(viewProj, 0);
     // Y-flip for offscreen passes — negate row 1 of the projection (the multiplied
     // view*proj matrix). Row 1 of a column-major mat4 lives at indices 1,5,9,13.
-    if (task._targetSignature.flipY) {
+    if (flipY) {
         data[1] = -data[1]!;
         data[5] = -data[5]!;
         data[9] = -data[9]!;

@@ -3,6 +3,8 @@ import type { MeshInternal } from "../mesh/mesh.js";
 import type { GpuPicker } from "./gpu-picker.js";
 import type { PickingInfo } from "./picking-info.js";
 import type { Ray } from "./ray.js";
+import { normalizeVec3 } from "../math/normalize-vec3.js";
+import { computeDeformedPositions } from "./deformed-geometry.js";
 
 /**
  * Enable detailed picking on a GPU picker.
@@ -14,14 +16,16 @@ export function enableDetailedPicking(picker: GpuPicker): void {
     picker._detailedPick = detailedPick;
 }
 
-function detailedPick(info: PickingInfo, ray: Ray): void {
+async function detailedPick(info: PickingInfo, ray: Ray): Promise<void> {
     const mesh = info.pickedMesh;
     const mi = mesh as MeshInternal | null;
     if (!mi || !mi._cpuPositions || !mi._cpuIndices) {
         return;
     }
 
-    const positions = mi._cpuPositions;
+    const deformedPositions = hasCpuDeformationData(mi) ? computeDeformedPositions(mi) : null;
+    const positions = deformedPositions ?? mi._cpuPositions;
+    const normals = mi._cpuNormals;
     const indices = mi._cpuIndices;
 
     // Determine the world matrix — use thin instance matrix when applicable
@@ -74,6 +78,7 @@ function detailedPick(info: PickingInfo, ray: Ray): void {
             ray.direction[0],
             ray.direction[1],
             ray.direction[2],
+            ray.length,
             wax,
             way,
             waz,
@@ -94,15 +99,73 @@ function detailedPick(info: PickingInfo, ray: Ray): void {
     }
 
     if (closestFace >= 0) {
+        const bjsBu = clampBarycentric(1 - closestBu - closestBv);
         info.faceId = closestFace;
-        info.bu = closestBu;
-        info.bv = closestBv;
+        info.bu = bjsBu;
+        info.bv = clampBarycentric(closestBu);
+        info.distance = closestT;
+        info.pickedPoint = [ray.origin[0] + ray.direction[0] * closestT, ray.origin[1] + ray.direction[1] * closestT, ray.origin[2] + ray.direction[2] * closestT];
+        if (normals) {
+            const i0 = indices[closestFace * 3]!;
+            const i1 = indices[closestFace * 3 + 1]!;
+            const i2 = indices[closestFace * 3 + 2]!;
+            const bw = 1 - info.bu - info.bv;
+            const localNormal = normalizeVec3(
+                info.bu * normals[i0 * 3]! + info.bv * normals[i1 * 3]! + bw * normals[i2 * 3]!,
+                info.bu * normals[i0 * 3 + 1]! + info.bv * normals[i1 * 3 + 1]! + bw * normals[i2 * 3 + 1]!,
+                info.bu * normals[i0 * 3 + 2]! + info.bv * normals[i1 * 3 + 2]! + bw * normals[i2 * 3 + 2]!
+            );
+            const worldNormal = normalizeVec3(
+                worldMatrix[0]! * localNormal[0] + worldMatrix[4]! * localNormal[1] + worldMatrix[8]! * localNormal[2],
+                worldMatrix[1]! * localNormal[0] + worldMatrix[5]! * localNormal[1] + worldMatrix[9]! * localNormal[2],
+                worldMatrix[2]! * localNormal[0] + worldMatrix[6]! * localNormal[1] + worldMatrix[10]! * localNormal[2]
+            );
+            const flip = worldNormal[0] * ray.direction[0] + worldNormal[1] * ray.direction[1] + worldNormal[2] * ray.direction[2] > 0;
+            info.pickedNormal = flip ? [-localNormal[0], -localNormal[1], -localNormal[2]] : localNormal;
+            info.pickedNormalWorld = flip ? [-worldNormal[0], -worldNormal[1], -worldNormal[2]] : worldNormal;
+        }
+
+        const i0 = indices[closestFace * 3]!;
+        const i1 = indices[closestFace * 3 + 1]!;
+        const i2 = indices[closestFace * 3 + 2]!;
+        const ax = positions[i0 * 3]!;
+        const ay = positions[i0 * 3 + 1]!;
+        const az = positions[i0 * 3 + 2]!;
+        const bx = positions[i1 * 3]!;
+        const by = positions[i1 * 3 + 1]!;
+        const bz = positions[i1 * 3 + 2]!;
+        const cx = positions[i2 * 3]!;
+        const cy = positions[i2 * 3 + 1]!;
+        const cz = positions[i2 * 3 + 2]!;
+        const faceNormal = normalizeVec3(
+            (by - ay) * (cz - az) - (bz - az) * (cy - ay),
+            (bz - az) * (cx - ax) - (bx - ax) * (cz - az),
+            (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+        );
+        const faceWorldNormal = normalizeVec3(
+            worldMatrix[0]! * faceNormal[0] + worldMatrix[4]! * faceNormal[1] + worldMatrix[8]! * faceNormal[2],
+            worldMatrix[1]! * faceNormal[0] + worldMatrix[5]! * faceNormal[1] + worldMatrix[9]! * faceNormal[2],
+            worldMatrix[2]! * faceNormal[0] + worldMatrix[6]! * faceNormal[1] + worldMatrix[10]! * faceNormal[2]
+        );
+        const flip = faceWorldNormal[0] * ray.direction[0] + faceWorldNormal[1] * ray.direction[1] + faceWorldNormal[2] * ray.direction[2] > 0;
+        info.pickedFaceNormal = flip ? [-faceNormal[0], -faceNormal[1], -faceNormal[2]] : faceNormal;
+        info.pickedFaceNormalWorld = flip ? [-faceWorldNormal[0], -faceWorldNormal[1], -faceWorldNormal[2]] : faceWorldNormal;
     }
 }
 
-/** Möller–Trumbore ray-triangle intersection.
+function clampBarycentric(value: number): number {
+    return Math.abs(value) < 1e-12 ? 0 : value;
+}
+
+function hasCpuDeformationData(mesh: MeshInternal): boolean {
+    const morph = mesh.morphTargets;
+    const skeleton = mesh.skeleton;
+    return (!!morph?.targets && !!morph.weights) || (!!skeleton?.boneMatrices && !!skeleton.joints && !!skeleton.weights);
+}
+
+/** Möller-Trumbore ray-triangle intersection with Babylon.js Ray epsilon semantics.
  *  Returns { t, u, v } or null if no intersection.
- *  u, v are barycentric coordinates (matching BJS convention). */
+ *  u and v are Möller weights for vertices 1 and 2; BJS exposes (1 - u - v, u). */
 function rayTriangleIntersect(
     ox: number,
     oy: number,
@@ -110,6 +173,7 @@ function rayTriangleIntersect(
     dx: number,
     dy: number,
     dz: number,
+    length: number,
     v0x: number,
     v0y: number,
     v0z: number,
@@ -120,7 +184,7 @@ function rayTriangleIntersect(
     v2y: number,
     v2z: number
 ): { t: number; u: number; v: number } | null {
-    const EPSILON = 1e-8;
+    const EPSILON = 0.001;
 
     // edge1 = v1 - v0, edge2 = v2 - v0
     const e1x = v1x - v0x,
@@ -136,7 +200,7 @@ function rayTriangleIntersect(
     const hz = dx * e2y - dy * e2x;
 
     const det = e1x * hx + e1y * hy + e1z * hz;
-    if (det > -EPSILON && det < EPSILON) {
+    if (det === 0) {
         return null; // parallel
     }
 
@@ -148,7 +212,7 @@ function rayTriangleIntersect(
         sz = oz - v0z;
 
     const u = (sx * hx + sy * hy + sz * hz) * invDet;
-    if (u < 0 || u > 1) {
+    if (u < -EPSILON || u > 1 + EPSILON) {
         return null;
     }
 
@@ -158,12 +222,12 @@ function rayTriangleIntersect(
     const qz = sx * e1y - sy * e1x;
 
     const v = (dx * qx + dy * qy + dz * qz) * invDet;
-    if (v < 0 || u + v > 1) {
+    if (v < -EPSILON || u + v > 1 + EPSILON) {
         return null;
     }
 
     const t = (e2x * qx + e2y * qy + e2z * qz) * invDet;
-    if (t < EPSILON) {
+    if (t > length || t < 0) {
         return null; // behind ray
     }
 

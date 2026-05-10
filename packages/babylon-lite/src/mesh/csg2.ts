@@ -4,7 +4,8 @@ import type { EngineContextInternal } from "../engine/engine.js";
 import type { Material } from "../material/material.js";
 import type { Mat4 } from "../math/types.js";
 import type { Mesh, MeshInternal } from "./mesh.js";
-import { mat4Invert } from "../math/mat4.js";
+import { mat4Invert } from "../math/mat4-invert.js";
+import { normalizeVec3 } from "../math/normalize-vec3.js";
 import { createMeshFromData } from "./mesh-factories.js";
 
 declare const csg2SolidBrand: unique symbol;
@@ -93,23 +94,15 @@ function solidFromManifold(manifold: Manifold, numProp: number): Csg2Solid {
     return { _manifold: manifold, _numProp: numProp } as unknown as Csg2SolidInternal;
 }
 
-function normalize3(x: number, y: number, z: number): [number, number, number] {
-    const len = Math.hypot(x, y, z);
-    if (len <= 1e-20) {
-        return [0, 1, 0];
-    }
-    return [x / len, y / len, z / len];
-}
-
 function transformPoint(m: Mat4, x: number, y: number, z: number): [number, number, number] {
     return [m[0]! * x + m[4]! * y + m[8]! * z + m[12]!, m[1]! * x + m[5]! * y + m[9]! * z + m[13]!, m[2]! * x + m[6]! * y + m[10]! * z + m[14]!];
 }
 
 function transformNormal(m: Mat4, inv: Mat4 | null, x: number, y: number, z: number): [number, number, number] {
     if (inv) {
-        return normalize3(inv[0]! * x + inv[1]! * y + inv[2]! * z, inv[4]! * x + inv[5]! * y + inv[6]! * z, inv[8]! * x + inv[9]! * y + inv[10]! * z);
+        return normalizeVec3(inv[0]! * x + inv[1]! * y + inv[2]! * z, inv[4]! * x + inv[5]! * y + inv[6]! * z, inv[8]! * x + inv[9]! * y + inv[10]! * z, 1e-20);
     }
-    return normalize3(m[0]! * x + m[4]! * y + m[8]! * z, m[1]! * x + m[5]! * y + m[9]! * z, m[2]! * x + m[6]! * y + m[10]! * z);
+    return normalizeVec3(m[0]! * x + m[4]! * y + m[8]! * z, m[1]! * x + m[5]! * y + m[9]! * z, m[2]! * x + m[6]! * y + m[10]! * z, 1e-20);
 }
 
 function requireCpuGeometry(mesh: Mesh): GeometryBuffers {
