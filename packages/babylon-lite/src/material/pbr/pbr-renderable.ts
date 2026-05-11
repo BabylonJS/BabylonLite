@@ -41,6 +41,12 @@ import type { PbrLightMode } from "./pbr-compose.js";
 import type { MaterialOrView, MaterialRenderFeatures, MaterialView } from "../material.js";
 import { _computeMeshFeatures, MESH_HAS_INSTANCE_COLOR, MESH_HAS_THIN_INSTANCES, MESH_HAS_UV2, MESH_HAS_VERTEX_COLOR } from "../mesh-features.js";
 
+type SingleLightType = "hemispheric" | "directional" | "spot" | "point";
+interface SingleLightWgslModule {
+    SINGLE_LIGHT_STRUCTS: string;
+    getSingleLightBlock(): string;
+}
+
 /** Build PBR Renderable(s) + a SceneUniformUpdater from PBR meshes. */
 export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], envTextures: EnvironmentTextures | undefined): Promise<MeshGroupBuildResult> {
     const engine = scene.engine as EngineContextInternal;
@@ -59,12 +65,17 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     let hasAnyAffectedLight = false;
     let needsSingleLightPath = false;
     let needsMultiLightPath = false;
+    const singleLightTypes: SingleLightType[] = [];
     for (const mesh of meshes) {
         const lr = writeMeshLightSelection(mesh, scene.lights);
         const affectedCount = lr > 0 ? 1 : -lr;
         hasAnyAffectedLight ||= affectedCount > 0;
         if (affectedCount === 1 && !(mesh.receiveShadows && hasSomeShadows)) {
             needsSingleLightPath = true;
+            const type = getPackedSingleLightType(scene.lights, lr - 1);
+            if (!singleLightTypes.includes(type)) {
+                singleLightTypes.push(type);
+            }
         } else if (affectedCount > 0) {
             needsMultiLightPath = true;
         }
@@ -128,12 +139,16 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     let _createPbrShadowFragment: ((slots: PbrShadowLightSlot[]) => ShaderFragment) | null = null;
     let _singleLightWGSL = "";
     let _getSingleLightBlock: ((type: string) => string) | null = null;
+    const singleLightBlocks: Partial<Record<SingleLightType, () => string>> = {};
     let _multiLightWGSL = "";
     let _multiLightLoop = "";
     if (needsSingleLightPath) {
-        const single = await import("./fragments/singlelight-wgsl.js");
-        _singleLightWGSL = single.SINGLE_LIGHT_STRUCTS;
-        _getSingleLightBlock = single.getSingleLightBlock;
+        for (const type of singleLightTypes) {
+            const single = await importSingleLightWgsl(type);
+            _singleLightWGSL = single.SINGLE_LIGHT_STRUCTS;
+            singleLightBlocks[type] = single.getSingleLightBlock;
+        }
+        _getSingleLightBlock = (type) => singleLightBlocks[toSingleLightType(type)]?.() ?? "";
     }
     if (needsMultiLightPath) {
         const wgslMod = await import("./fragments/multilight-wgsl.js");
@@ -269,7 +284,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         const lr = writeMeshLightSelection(mesh, s.lights);
         const lightCount = lr > 0 ? 1 : -lr;
         const lightMode: PbrLightMode = lightCount === 0 ? 0 : lightCount === 1 && !(mesh.receiveShadows && hasSomeShadows) ? 1 : 2;
-        const singleLightType = lightMode === 1 ? getPackedLightType(s.lights, lr - 1) : "";
+        const singleLightType = lightMode === 1 ? getPackedSingleLightType(s.lights, lr - 1) : "";
         const meshFeatures = _computeMeshFeatures(mesh, mesh.receiveShadows && hasSomeShadows);
         const features = renderFeatures.features;
         const features2 = renderFeatures.features2 ?? 0;
@@ -436,18 +451,35 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     return { renderables, rebuildSingle };
 }
 
-function getPackedLightType(lights: SceneContext["lights"], packedIndex: number): string {
+function toSingleLightType(type: string): SingleLightType {
+    return type === "hemispheric" || type === "directional" || type === "spot" ? type : "point";
+}
+
+function getPackedSingleLightType(lights: SceneContext["lights"], packedIndex: number): SingleLightType {
     let packed = 0;
     for (const light of lights) {
         if (!(light as LightBaseInternal)._writeLightUbo) {
             continue;
         }
         if (packed === packedIndex) {
-            return light.lightType;
+            return toSingleLightType(light.lightType);
         }
         packed++;
     }
-    return "";
+    return "point";
+}
+
+async function importSingleLightWgsl(type: SingleLightType): Promise<SingleLightWgslModule> {
+    if (type === "hemispheric") {
+        return import("./fragments/singlelight-hemispheric-wgsl.js");
+    }
+    if (type === "directional") {
+        return import("./fragments/singlelight-directional-wgsl.js");
+    }
+    if (type === "spot") {
+        return import("./fragments/singlelight-spot-wgsl.js");
+    }
+    return import("./fragments/singlelight-point-wgsl.js");
 }
 
 /** Write material properties into a pre-allocated Float32Array.
