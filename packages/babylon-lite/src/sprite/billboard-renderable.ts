@@ -206,5 +206,3 @@ function disposeRenderable(renderable: BillboardRenderableInternal): void {
     (renderable as unknown as { _system: BillboardSpriteSystem | null })._system = null;
     releaseSharedPipelineCache();
 }
-
-export const buildFacingBillboardRenderable = buildBillboardRenderable;

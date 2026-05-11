@@ -50,7 +50,6 @@ export interface BillboardInstanceSortScratch {
     _capacity: number;
     _sortedInstanceData: Float32Array;
     _sortIndices: Uint32Array;
-    _sortTempIndices: Uint32Array;
     _sortDepths: Float32Array;
 }
 
@@ -142,8 +141,7 @@ struct VOut {
 };
 @vertex
 fn vs(in: VIn) -> VOut {
-var corners = array<vec2<f32>, 4>(vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(1.0, 1.0), vec2<f32>(0.0, 1.0));
-let corner = corners[in.vid];
+let corner = vec2<f32>(select(0.0, 1.0, in.vid == 1u || in.vid == 2u), select(0.0, 1.0, in.vid >= 2u));
 let local = (corner - in.iPivot) * in.iSize;
 let cosRot = cos(in.iRot);
 let sinRot = sin(in.iRot);
@@ -169,10 +167,6 @@ export function createBillboardPipelineCache(): BillboardPipelineCache {
 export function clearBillboardPipelineCache(cache: BillboardPipelineCache): void {
     cache._devices = new WeakMap();
     cache._lastDeviceCache = null;
-}
-
-export function getBillboardPipelineCacheSize(cache: BillboardPipelineCache): number {
-    return cache._lastDeviceCache?._pipelines.size ?? 0;
 }
 
 export function getOrCreateBillboardPipeline(
@@ -210,7 +204,6 @@ export function createBillboardInstanceSortScratch(): BillboardInstanceSortScrat
         _capacity: 0,
         _sortedInstanceData: new Float32Array(0),
         _sortIndices: new Uint32Array(0),
-        _sortTempIndices: new Uint32Array(0),
         _sortDepths: new Float32Array(0),
     };
 }
@@ -239,7 +232,7 @@ export function uploadSortedBillboardInstances(
         indices[index] = index;
         depths[index] = cameraViewMatrix[2]! * anchorX + cameraViewMatrix[6]! * anchorY + cameraViewMatrix[10]! * anchorZ + cameraViewMatrix[14]!;
     }
-    sortBillboardIndicesByDepth(indices, scratch._sortTempIndices, depths, count);
+    indices.subarray(0, count).sort((left, right) => depths[right]! - depths[left]! || left - right);
     for (let outIndex = 0; outIndex < count; outIndex++) {
         const sourceBase = indices[outIndex]! * BILLBOARD_INSTANCE_FLOATS_PER_SPRITE;
         const destBase = outIndex * BILLBOARD_INSTANCE_FLOATS_PER_SPRITE;
@@ -296,52 +289,7 @@ function ensureBillboardInstanceSortScratch(scratch: BillboardInstanceSortScratc
     scratch._capacity = count;
     scratch._sortedInstanceData = new Float32Array(count * BILLBOARD_INSTANCE_FLOATS_PER_SPRITE);
     scratch._sortIndices = new Uint32Array(count);
-    scratch._sortTempIndices = new Uint32Array(count);
     scratch._sortDepths = new Float32Array(count);
-}
-
-function sortBillboardIndicesByDepth(indices: Uint32Array, tempIndices: Uint32Array, depths: Float32Array, count: number): void {
-    let source = indices;
-    let target = tempIndices;
-    for (let width = 1; width < count; width *= 2) {
-        for (let start = 0; start < count; start += width * 2) {
-            const mid = Math.min(start + width, count);
-            const end = Math.min(start + width * 2, count);
-            let left = start;
-            let right = mid;
-            let out = start;
-            while (left < mid && right < end) {
-                const leftIndex = source[left]!;
-                const rightIndex = source[right]!;
-                if (depths[leftIndex]! >= depths[rightIndex]!) {
-                    target[out] = leftIndex;
-                    left++;
-                } else {
-                    target[out] = rightIndex;
-                    right++;
-                }
-                out++;
-            }
-            while (left < mid) {
-                target[out] = source[left]!;
-                left++;
-                out++;
-            }
-            while (right < end) {
-                target[out] = source[right]!;
-                right++;
-                out++;
-            }
-        }
-        const swap = source;
-        source = target;
-        target = swap;
-    }
-    if (source !== indices) {
-        for (let index = 0; index < count; index++) {
-            indices[index] = source[index]!;
-        }
-    }
 }
 
 export function buildBillboardSystemUbo(system: BillboardSpriteSystem, ubo: Float32Array): void {
