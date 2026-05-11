@@ -91,6 +91,7 @@ stages:
                 vmImage: "ubuntu-latest"
             steps:
                 - checkout: self
+                  persistCredentials: true
 
                 - task: UseNode@1
                   inputs:
@@ -107,7 +108,10 @@ stages:
                 - script: pnpm exec playwright install chromium
                   displayName: "Install Playwright browsers"
 
-                - script: git fetch origin master:refs/remotes/origin/master --depth=1
+                - script: |
+                      TARGET_BRANCH="${SYSTEM_PULLREQUEST_TARGETBRANCH:-refs/heads/master}"
+                      TARGET_BRANCH="${TARGET_BRANCH#refs/heads/}"
+                      git fetch origin "$TARGET_BRANCH:refs/remotes/origin/$TARGET_BRANCH" --depth=1
                   displayName: "Fetch master bundle baseline"
 
                 - script: pnpm build:bundle-scenes
