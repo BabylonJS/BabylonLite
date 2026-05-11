@@ -10,7 +10,7 @@ import { execFileSync } from "child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
-import { buildLiteSceneBundleInfo, outDir } from "./bundle-scenes-core";
+import { buildLiteSceneBundleInfo, outDir, writeMasterBundleManifest } from "./bundle-scenes-core";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TMP_DIR = resolve(ROOT, ".bundle-size-tmp/master-bundle-info-src");
@@ -66,6 +66,7 @@ async function main(): Promise<void> {
     });
     console.log(`Building master bundle info for ${scenes.length} scene(s) from ${ref}`);
 
+    writeMasterBundleManifest([ref]);
     extractRef(ref);
     rmSync(INFO_DIR, { recursive: true, force: true });
     mkdirSync(INFO_DIR, { recursive: true });

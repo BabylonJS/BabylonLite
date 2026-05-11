@@ -426,7 +426,7 @@ export const bundleInfoDir = resolve(outDir, "bundle-info");
 export const srcDir = resolve(ROOT, "packages/babylon-lite/src");
 const MANIFEST_GIT_PATH = "lab/public/bundle/manifest.json";
 const MANIFEST_FILE = "manifest.json";
-const LOCAL_MANIFEST_FILE = "local-manifest.json";
+const MASTER_MANIFEST_FILE = "master-manifest.json";
 const NAME_POLYFILL = 'var __name=(fn,name)=>(Object.defineProperty(fn,"name",{value:name,configurable:true}),fn);';
 
 interface BundleManifestEntry {
@@ -440,9 +440,9 @@ interface BundleManifestEntry {
 
 type BundleManifest = Record<string, BundleManifestEntry>;
 
-function readMasterBundleManifest(): { ref: string; manifest: BundleManifest } | null {
+function readMasterBundleManifest(refs = ["upstream/master", "origin/master", "master"]): { ref: string; manifest: BundleManifest } | null {
     const errors: string[] = [];
-    for (const ref of ["upstream/master", "origin/master", "master"]) {
+    for (const ref of refs) {
         try {
             const json = execFileSync("git", ["show", `${ref}:${MANIFEST_GIT_PATH}`], { cwd: ROOT, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
             return { ref, manifest: JSON.parse(json) as BundleManifest };
@@ -455,9 +455,9 @@ function readMasterBundleManifest(): { ref: string; manifest: BundleManifest } |
     return null;
 }
 
-function writeMasterBundleManifest(): void {
-    const masterManifestPath = resolve(outDir, MANIFEST_FILE);
-    const baseline = readMasterBundleManifest();
+export function writeMasterBundleManifest(refs?: string[]): void {
+    const masterManifestPath = resolve(outDir, MASTER_MANIFEST_FILE);
+    const baseline = readMasterBundleManifest(refs);
     if (!baseline) {
         rmSync(masterManifestPath, { force: true });
         return;
@@ -1002,8 +1002,8 @@ export async function buildBundleScenes(): Promise<void> {
         rmSync(sceneOutDir, { recursive: true, force: true });
     }
 
-    // Load existing manifest to check for cached BJS sizes
-    const manifestPath = resolve(outDir, LOCAL_MANIFEST_FILE);
+    // Load existing current manifest to check for cached BJS sizes.
+    const manifestPath = resolve(outDir, MANIFEST_FILE);
     let existingManifest: BundleManifest = {};
     if (existsSync(manifestPath)) {
         try {
@@ -1108,8 +1108,8 @@ export async function buildBundleScenes(): Promise<void> {
 async function measureLiveSizes(): Promise<BundleManifest> {
     const { chromium } = await import("@playwright/test");
     const { server, port } = await startStaticServer(labDir);
-    const manifestPath = resolve(outDir, LOCAL_MANIFEST_FILE);
-    const masterManifestPath = resolve(outDir, MANIFEST_FILE);
+    const manifestPath = resolve(outDir, MANIFEST_FILE);
+    const masterManifestPath = resolve(outDir, MASTER_MANIFEST_FILE);
     let masterManifest: BundleManifest = {};
     if (existsSync(masterManifestPath)) {
         try {

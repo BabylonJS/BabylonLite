@@ -13,7 +13,7 @@
  *
  * Ceilings are set ~5 KB above baseline to catch regressions while allowing
  * natural growth.  Per-scene ceilings live in scene-config.json (maxRawKB).
- * If lab/public/bundle/manifest.json is available, bundle-size increases
+ * If lab/public/bundle/master-manifest.json is available, bundle-size increases
  * relative to master are emitted as warnings only; ceilings remain the blocker.
  */
 import { test, expect } from "@playwright/test";
@@ -25,7 +25,7 @@ import { IGNORED_BUNDLE_MODULE_PATTERN, summarizeRuntimeBundle } from "../../scr
 
 const CONFIG_PATH = resolve(__dirname, "../../scene-config.json");
 const BUNDLE_INFO_DIR = resolve(__dirname, "../../lab/public/bundle/bundle-info");
-const MASTER_MANIFEST_PATH = resolve(__dirname, "../../lab/public/bundle/manifest.json");
+const MASTER_MANIFEST_PATH = resolve(__dirname, "../../lab/public/bundle/master-manifest.json");
 const allScenes: SceneConfig[] = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 const SCENES = allScenes.filter((s) => s.maxRawKB != null);
 

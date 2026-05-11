@@ -51,7 +51,7 @@ function serveReferenceImages(): Plugin {
                     }
                 }
                 if (url === "/lab-api/signature") {
-                    // Returns mtimes for bundle / perf manifests and per-scene parity images
+                    // Returns mtimes for current/master bundle and perf manifests plus per-scene parity images
                     // so the dashboard can auto-refresh only when data actually changes.
                     const sig: {
                         bundle: number | null;
@@ -66,8 +66,8 @@ function serveReferenceImages(): Plugin {
                             return null;
                         }
                     };
-                    sig.bundle = mtime(resolve(__dirname, "public/bundle/local-manifest.json"));
-                    sig.bundleMaster = mtime(resolve(__dirname, "public/bundle/manifest.json"));
+                    sig.bundle = mtime(resolve(__dirname, "public/bundle/manifest.json"));
+                    sig.bundleMaster = mtime(resolve(__dirname, "public/bundle/master-manifest.json"));
                     sig.perf = mtime(resolve(__dirname, "public/perf-manifest.json"));
                     try {
                         const cfgPath = resolve(__dirname, "../scene-config.json");

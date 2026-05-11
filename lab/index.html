@@ -3325,7 +3325,7 @@
         <div id="pitch-panel" class="docs-panel">
             <h3 class="docs-section-title">📊 <span>Babylon Lite vs Babylon.js — At a Glance</span></h3>
             <p style="color: #8b949e; font-size: 0.8rem; margin-bottom: 1.5rem">
-                Averages computed from live benchmarks across all test scenes. Data from <code>bundle/local-manifest.json</code> and <code>perf-manifest.json</code>.
+                Averages computed from live benchmarks across all test scenes. Data from <code>bundle/manifest.json</code> and <code>perf-manifest.json</code>.
             </p>
             <div id="pitch-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem"></div>
             <h3 class="docs-section-title" style="margin-top: 1.5rem">📋 <span>Per-Scene Breakdown</span></h3>
@@ -3395,7 +3395,7 @@
 
         <div id="panel-bundle" class="tab-panel">
             <div class="tab-hint">
-                💡 Bundle sizes shown below come from <code>local-manifest.json</code>. Deltas compare against master via <code>manifest.json</code>. To regenerate:
+                💡 Bundle sizes shown below come from <code>manifest.json</code>. Deltas compare against master via <code>master-manifest.json</code>. To regenerate:
                 <code>pnpm build:bundle-scenes</code><span id="bundle-master-status" class="bundle-master-status"></span>
             </div>
             <div class="perf-toolbar">
@@ -4890,10 +4890,10 @@
 
             function loadBundleManifest() {
                 Promise.all([
-                    fetch("/bundle/local-manifest.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) {
+                    fetch("/bundle/manifest.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) {
                         return r.json();
                     }),
-                    fetchOptionalJson("/bundle/manifest.json"),
+                    fetchOptionalJson("/bundle/master-manifest.json"),
                 ])
                     .then(function (r) {
                         var manifest = r[0];
@@ -5888,7 +5888,7 @@
 
             function loadPitchData() {
                 Promise.all([
-                    fetch("/bundle/local-manifest.json").then(function (r) {
+                    fetch("/bundle/manifest.json").then(function (r) {
                         return r.json();
                     }),
                     fetch("/perf-manifest.json").then(function (r) {
@@ -6402,12 +6402,14 @@
                             }
                         }
                     });
-                    var ordered = source === "local" ? common.concat(localOnly, masterOnly) : common.concat(masterOnly);
-                    var order = {};
-                    ordered.forEach(function (key, index) {
-                        order[key] = index;
+                    var groups = source === "local" ? [common, localOnly, masterOnly] : [common, masterOnly];
+                    var ranks = {};
+                    groups.forEach(function (group, rank) {
+                        group.forEach(function (key) {
+                            ranks[key] = rank;
+                        });
                     });
-                    return { order: order, fallback: ordered.length };
+                    return { ranks: ranks, fallback: groups.length };
                 }
                 function buildPartitionedOrderMaps() {
                     var local = state.sources.local;
@@ -6417,21 +6419,17 @@
                     var masterChunks = visibleChunksForSource(master);
                     var chunkOrder = buildPartitionedOrder(localChunks, masterChunks, function (c) { return chunkSortKey(c.file); }, state.source);
                     var moduleOrder = buildPartitionedOrder(buildModuleList(localChunks), buildModuleList(masterChunks), function (m) { return m.id; }, state.source);
-                    return { chunkOrder: chunkOrder.order, moduleOrder: moduleOrder.order, chunkFallback: chunkOrder.fallback, moduleFallback: moduleOrder.fallback };
+                    return { chunkRanks: chunkOrder.ranks, moduleRanks: moduleOrder.ranks, chunkFallback: chunkOrder.fallback, moduleFallback: moduleOrder.fallback };
                 }
-                function partitionedOrderFirst(cmp, orderMap, keyFn, fallback) {
+                function partitionedRankFirst(cmp, rankMap, keyFn, fallback) {
                     return function (a, b) {
                         var ak = keyFn(a);
                         var bk = keyFn(b);
-                        var ao = orderMap[ak];
-                        var bo = orderMap[bk];
-                        var ah = ao != null;
-                        var bh = bo != null;
-                        if (ah || bh) {
-                            if (!ah) ao = fallback;
-                            if (!bh) bo = fallback;
-                            if (ao !== bo) return ao - bo;
-                        }
+                        var ar = rankMap[ak];
+                        var br = rankMap[bk];
+                        if (ar == null) ar = fallback;
+                        if (br == null) br = fallback;
+                        if (ar !== br) return ar - br;
                         return cmp(a, b);
                     };
                 }
@@ -6522,12 +6520,12 @@
                 function makeChunkComparator() {
                     var cmp = baseChunkComparator();
                     var partitionedOrder = buildPartitionedOrderMaps();
-                    return partitionedOrder ? partitionedOrderFirst(cmp, partitionedOrder.chunkOrder, function (c) { return chunkSortKey(c.file); }, partitionedOrder.chunkFallback) : cmp;
+                    return partitionedOrder ? partitionedRankFirst(cmp, partitionedOrder.chunkRanks, function (c) { return chunkSortKey(c.file); }, partitionedOrder.chunkFallback) : cmp;
                 }
                 function makeModuleComparator(partitionedOrder) {
                     var cmp = baseModuleComparator();
                     partitionedOrder = partitionedOrder || buildPartitionedOrderMaps();
-                    return partitionedOrder ? partitionedOrderFirst(cmp, partitionedOrder.moduleOrder, function (m) { return m.id; }, partitionedOrder.moduleFallback) : cmp;
+                    return partitionedOrder ? partitionedRankFirst(cmp, partitionedOrder.moduleRanks, function (m) { return m.id; }, partitionedOrder.moduleFallback) : cmp;
                 }
 
                 function renderFlat(chunks, filter) {
@@ -6687,7 +6685,7 @@
                     body.innerHTML = '<div class="bf-empty">Loading…</div>';
                     document.getElementById("bf-overlay").classList.add("active");
 
-                    Promise.all([loadJson("/bundle/bundle-info/" + scene + ".json"), loadJson("/bundle/local-manifest.json"), loadJson("/bundle/master-bundle-info/" + scene + ".json"), loadJson("/bundle/manifest.json")]).then(function (results) {
+                    Promise.all([loadJson("/bundle/bundle-info/" + scene + ".json"), loadJson("/bundle/manifest.json"), loadJson("/bundle/master-bundle-info/" + scene + ".json"), loadJson("/bundle/master-manifest.json")]).then(function (results) {
                         var info = results[0];
                         var manifest = results[1] || {};
                         var masterInfo = results[2];
