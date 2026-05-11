@@ -131,6 +131,21 @@ stages:
                       testResultsFiles: "test-results/bundle-ceiling-junit.xml"
                       testRunTitle: "Bundle Size"
 
+                # Generate bundle-size delta comment for PR
+                - script: npx tsx scripts/report-bundle-size-deltas.ts
+                  condition: always()
+                  displayName: "Generate bundle-size delta comment"
+
+                - task: GitHubComment@0
+                  condition: and(always(), eq(variables['POST_BUNDLE_COMMENT'], 'true'))
+                  continueOnError: true
+                  displayName: "Post bundle-size changes to PR"
+                  inputs:
+                      gitHubConnection: "BabylonBotPAT"
+                      repositoryName: "$(Build.Repository.Name)"
+                      id: "$(System.PullRequest.PullRequestNumber)"
+                      comment: "$(BUNDLE_COMMENT_BODY)"
+
                 - script: pnpm build:lab-site
                   displayName: "Build static lab site"
                   env:
