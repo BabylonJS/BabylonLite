@@ -11,7 +11,7 @@ import type { Mesh, MeshGPU, MeshInternal } from "../mesh/mesh.js";
 import { initMeshTransform } from "../mesh/mesh.js";
 import { getOrCreateSampler } from "../resource/gpu-pool.js";
 import { createMappedBuffer } from "../resource/gpu-buffers.js";
-import { parseGlbContainer, resolveAccessor, buildParentMap, computeNodeWorldMatrix, getTextureImageIndex } from "./gltf-parser.js";
+import { resolveAccessor, buildParentMap, computeNodeWorldMatrix, getTextureImageIndex } from "./gltf-parser.js";
 import type { GltfMaterialData, GltfMatExtCtx } from "./gltf-material.js";
 import { assembleMaterial, makeImageFetcher } from "./gltf-material.js";
 import type { DecodedPrimitive, GltfFeature, GltfLoadCtx } from "./gltf-feature.js";
@@ -128,6 +128,7 @@ async function fetchGltfAsset(url: string): Promise<{ json: any; binChunk: DataV
     const baseUrl = url.substring(0, url.lastIndexOf("/") + 1);
     if (url.toLowerCase().endsWith(".glb")) {
         const buffer = await fetch(url).then((r) => r.arrayBuffer());
+        const { parseGlbContainer } = await import("./gltf-glb-parser.js");
         const { json, binChunk } = parseGlbContainer(buffer);
         return { json, binChunk, baseUrl };
     }
