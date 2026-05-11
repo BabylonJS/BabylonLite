@@ -245,3 +245,4 @@ Certain scene number ranges are reserved for specific feature areas. When adding
 |-------|-------------|-------|
 | 1–39 | General (unreserved) | Rendering, materials, lighting, loaders, etc. |
 | 40–49 | Physics | Havok V2, rigid bodies, constraints, ragdolls |
+| 120–129 | Gaussian Splatting | PLY splat clouds, splat renderers, sort workers |
