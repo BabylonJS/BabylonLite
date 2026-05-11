@@ -107,6 +107,9 @@ stages:
                 - script: pnpm exec playwright install chromium
                   displayName: "Install Playwright browsers"
 
+                - script: git fetch origin master:refs/remotes/origin/master --depth=1
+                  displayName: "Fetch master bundle baseline"
+
                 - script: pnpm build:bundle-scenes
                   displayName: "Build bundle scenes"
                   env:
