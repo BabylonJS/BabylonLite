@@ -1,7 +1,7 @@
 {
   "scene1": {
-    "rawKB": 89.4,
-    "gzipKB": 35.1,
+    "rawKB": 88.9,
+    "gzipKB": 34.7,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene1-background-dds-skybox-DZGFxdnh.js",
@@ -9,8 +9,8 @@
       "scene1-cubemap-skybox-material-DIGyRKNy.js",
       "scene1-generate-mipmaps-cn_rlOva.js",
       "scene1-gltf-glb-parser-BdYiApo0.js",
-      "scene1-ibl-fragment-DGV8JSPa.js",
-      "scene1-pbr-renderable-D5bFGZSR.js",
+      "scene1-ibl-fragment-SlmSTNRF.js",
+      "scene1-pbr-renderable-dsTcBSpf.js",
       "scene1-rgbd-decode-O-q0NvD4.js",
       "scene1-scene-uniforms-FTYH6Ct0.js",
       "scene1-singlelight-hemispheric-wgsl-CU6xMcAz.js",
