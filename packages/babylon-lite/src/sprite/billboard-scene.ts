@@ -1,13 +1,22 @@
 import type { SceneContext } from "../scene/scene-core.js";
 import { addDeferredSceneRenderables } from "../scene/scene-core.js";
 import type { BillboardSpriteSystem } from "./billboard-sprite.js";
-import { buildBillboardRenderable } from "./billboard-renderable.js";
 
-function addBillboardSystem(scene: SceneContext, system: BillboardSpriteSystem): void {
-    addDeferredSceneRenderables(scene, (engine) => {
+function addBillboardSystem(scene: SceneContext, system: BillboardSpriteSystem, orientation: BillboardSpriteSystem["_orientation"], helperName: string): void {
+    if (system._orientation !== orientation) {
+        throw new Error(`${helperName}: expected a ${orientation} BillboardSpriteSystem, got ${system._orientation}.`);
+    }
+    addDeferredSceneRenderables(scene, async (engine) => {
+        const { buildBillboardRenderable } = await import("./billboard-renderable.js");
         const built = buildBillboardRenderable(engine, system);
         return { renderables: [built.renderable], dispose: built.dispose };
     });
 }
 
-export { addBillboardSystem as addFacingBillboardSystem, addBillboardSystem as addAxisLockedBillboardSystem };
+export function addFacingBillboardSystem(scene: SceneContext, system: BillboardSpriteSystem): void {
+    addBillboardSystem(scene, system, "facing", "addFacingBillboardSystem");
+}
+
+export function addAxisLockedBillboardSystem(scene: SceneContext, system: BillboardSpriteSystem): void {
+    addBillboardSystem(scene, system, "axis-locked", "addAxisLockedBillboardSystem");
+}

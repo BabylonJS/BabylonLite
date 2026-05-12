@@ -198,8 +198,6 @@ export function createRenderPassTask(config: RenderPassTaskConfig, engine: Engin
                 mirrorSceneBuckets(task, sc);
                 buildBindings(task, eng);
             }
-            // Per-frame back-to-front sort for transparent bindings.
-            sortTransparentBindings(task);
             patchPerFrame(task, eng, swapchain);
             return executePass(task);
         },
@@ -393,6 +391,7 @@ function executePass(task: RenderPassTask): number {
     updateBindings(task._opaqueBindings, task._updateContext);
     updateBindings(task._transmissiveBindings, task._updateContext);
     updateBindings(task._transparentBindings, task._updateContext);
+    sortTransparentBindings(task);
 
     const pass = encoder.beginRenderPass(task._renderPassDescriptor);
     const v = camera?.viewport;

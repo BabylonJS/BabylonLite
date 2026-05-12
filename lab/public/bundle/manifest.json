@@ -457,7 +457,7 @@
   },
   "scene27": {
     "rawKB": 78.1,
-    "gzipKB": 29.6,
+    "gzipKB": 29.5,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene27-generate-mipmaps-CRoda_jc.js",
@@ -515,7 +515,7 @@
   },
   "scene30": {
     "rawKB": 86.5,
-    "gzipKB": 33.7,
+    "gzipKB": 33.6,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene30-generate-mipmaps-B63N3NKg.js",
@@ -1549,11 +1549,13 @@
     "bjsGzipKB": 658.2
   },
   "scene54": {
-    "rawKB": 57.4,
-    "gzipKB": 21.8,
+    "rawKB": 58.2,
+    "gzipKB": 22.7,
     "ignoredRawKB": 0,
     "runtimeChunks": [
-      "scene54-standard-renderable-CxxY16oa.js",
+      "scene54-billboard-renderable-xkF418Y_.js",
+      "scene54-scene-uniforms-FTYH6Ct0.js",
+      "scene54-standard-renderable-C6L5V-Pe.js",
       "scene54-wgsl-helpers-WTsokIfK.js",
       "scene54.js"
     ],
@@ -1561,21 +1563,24 @@
     "bjsGzipKB": 368.5
   },
   "scene55": {
-    "rawKB": 29.5,
-    "gzipKB": 11.3,
+    "rawKB": 30.3,
+    "gzipKB": 12.1,
     "ignoredRawKB": 0,
     "runtimeChunks": [
+      "scene55-billboard-renderable-DTBgDeSm.js",
       "scene55.js"
     ],
     "bjsRawKB": 1000.2,
     "bjsGzipKB": 240.4
   },
   "scene56": {
-    "rawKB": 57.7,
-    "gzipKB": 21.9,
+    "rawKB": 58.5,
+    "gzipKB": 22.8,
     "ignoredRawKB": 0,
     "runtimeChunks": [
-      "scene56-standard-renderable-L9dDRE5V.js",
+      "scene56-billboard-renderable-CrzPazS2.js",
+      "scene56-scene-uniforms-FTYH6Ct0.js",
+      "scene56-standard-renderable-CIH3th4n.js",
       "scene56-wgsl-helpers-WTsokIfK.js",
       "scene56.js"
     ],
@@ -1583,11 +1588,13 @@
     "bjsGzipKB": 1336.6
   },
   "scene57": {
-    "rawKB": 57.6,
-    "gzipKB": 21.8,
+    "rawKB": 58.5,
+    "gzipKB": 22.7,
     "ignoredRawKB": 0,
     "runtimeChunks": [
-      "scene57-standard-renderable-DVjJg_qI.js",
+      "scene57-billboard-renderable-CNdjctbC.js",
+      "scene57-scene-uniforms-FTYH6Ct0.js",
+      "scene57-standard-renderable-CumBs1nD.js",
       "scene57-wgsl-helpers-WTsokIfK.js",
       "scene57.js"
     ],

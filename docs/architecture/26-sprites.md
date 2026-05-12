@@ -6,8 +6,8 @@
 > module. Two sprite families are defined: `Sprite2DLayer` (the
 > foundation; pixel-coordinate quads, with an opt-in world-anchor adapter
 > for "2.5D" labels) and `*BillboardSpriteSystem` (world-coordinate,
-> perspective-correct, camera-oriented quads in three orientation
-> variants).
+> perspective-correct, camera-oriented quads in two current orientation
+> modes).
 >
 > The engine grows a small registration list. Two kinds of things implement
 > `RenderingContext` and can be registered with an engine: a `SceneContext`
@@ -72,15 +72,19 @@ The module exposes **two** sprite families:
 
 2. **`*BillboardSpriteSystem`** — two orientation factories
    (`createFacingBillboardSystem` and `createAxisLockedBillboardSystem`),
-   each with its own WGSL composer, pipeline, and dynamic-import chunk.
+   with distinct WGSL basis paths and pipeline keys inside the current compact
+   shared billboard renderable/pipeline module. That module is dynamically
+   imported only by the scene add helpers when a billboard system is actually
+   queued for a scene.
    World-coordinate quads, world-unit size, perspective foreshortening,
    full depth participation. Drawn inside the scene's 3D pass; not usable
    from the pure-2D path (no camera). Yaw-locked billboards are axis-locked
    with [0, 1, 0] as the lock axis.
 
-`SpriteAtlas`, `SpriteFrame`, `SpriteClip`, `SpriteClipState`, the per-clip
-animation tick, the handle/index two-tier API, and parenting are all shared
-across both families and orthogonal to family.
+`SpriteAtlas` and `SpriteFrame` are shared across both families. Clip
+animation, stable handle objects, and parenting are roadmap modules that must
+remain additive and separately importable so index-only scenes pay zero bytes
+for them.
 
 ### Pillars (front and centre)
 
@@ -89,10 +93,10 @@ across both families and orthogonal to family.
   the pipeline cache key. The per-frame draw walks fixed arrays, with
   no per-sprite mode test.
 - **Pay-for-use.** A pure-2D app's static import graph terminates at
-  `engine` + `sprite-atlas` + `sprite-animation` + `sprite-2d` +
-  `sprite-renderer`. It never imports `scene-core`, `Camera`, `Mesh`,
-  `LightBase`, `Sprite3DSceneUBO`, depth/MSAA targets, billboard
-  variants, or anchor projection code. Tree-shaking removes them all.
+  `engine` + `sprite-atlas` + `sprite-2d` + `sprite-renderer`. It never
+  imports `scene-core`, `Camera`, `Mesh`, `LightBase`, depth/MSAA targets,
+  billboard renderables/pipelines, or anchor projection code. Tree-shaking
+  removes them all.
 - **One engine loop, two registerable kinds.** `startEngine(engine)`
   walks `engine._renderingContexts` once per frame. Pure-2D apps
   register one or more `SpriteRenderer`s; HUD-on-3D apps register a
@@ -102,10 +106,11 @@ across both families and orthogonal to family.
   engine has no notion of "2D vs 3D" — it just iterates registrations;
   scene contexts execute their frame graph, and sprite renderers open a
   sprite-only swapchain pass.
-- **Extensions over hardcoding.** Anchoring is a tree-shakable
-  `sprite-anchor.ts` add-on imported only when a scene actually uses
-  world anchors. Billboard variants are independent dynamic-import
-  chunks; importing one doesn't pull the others.
+- **Extensions over hardcoding.** Anchoring remains a roadmap tree-shakable
+  add-on that should be imported only when a scene actually uses world anchors.
+  Billboard scene rendering is behind `billboard-scene.ts`;
+  importing a billboard system factory alone does not import the scene
+  renderable, pipeline, or WGSL body.
 
 ## Taxonomy — Two Sprite Families
 
@@ -152,7 +157,7 @@ That shape is wrong for three concrete reasons:
    UBO). The 3D scene UBO becomes a billboard-only artefact, which it
    morally always was.
 
-The "anchor" is a small interface:
+The roadmap "anchor" is a small interface:
 
 ```typescript
 export interface AnchorSource {
@@ -163,9 +168,9 @@ export interface AnchorSource {
 }
 ```
 
-`AnchorSource` lives in `sprite/anchor/sprite-anchor.ts` — a separate
-module. A scene that never instantiates an anchor never imports
-`sprite-anchor.ts` and pays zero bytes for camera-basis projection code.
+`AnchorSource` should live in a separate `sprite/anchor/sprite-anchor.ts`
+module. A scene that never instantiates an anchor must never import that module
+or pay bytes for camera-basis projection code.
 
 ### Why billboards remain a separate family
 
@@ -196,9 +201,9 @@ exact cost the billboard vertex-shader trick was invented to avoid).
 Splitting them is correct.
 
 The two orientation factories remain explicit (`createFacingBillboardSystem`,
-`createAxisLockedBillboardSystem(atlas, axis, opts)`) — two vertex shaders,
-two pipelines, two dynamic-import chunks, no `axisLock?: 'none'|'y'|Vec3` flag.
-Yaw-locked billboards are just `createAxisLockedBillboardSystem(atlas, [0, 1, 0], opts)`.
+`createAxisLockedBillboardSystem(atlas, axis, opts)`) — two shader basis paths,
+two pipeline keys, no `axisLock?: 'none'|'y'|Vec3` flag. Yaw-locked billboards
+are just `createAxisLockedBillboardSystem(atlas, [0, 1, 0], opts)`.
 
 ### Modes deliberately not added
 
@@ -356,7 +361,7 @@ drive the loop:
 const engine = await createEngine(canvas);
 const atlas = await loadSpriteAtlas(engine, "sprites.png", { gridSize: [32, 32] });
 const layer = createSprite2DLayer(atlas);
-addSprite2D(layer, { positionPx: [100, 200], sizePx: [64, 64], frame: 0 });
+addSprite2DIndex(layer, { positionPx: [100, 200], sizePx: [64, 64], frame: 0 });
 
 const sr = createSpriteRenderer(engine, {
     layers: [layer],
@@ -367,8 +372,8 @@ registerSpriteRenderer(sr);
 await startEngine(engine);
 ```
 
-The static import graph is exactly: `engine` + `sprite-atlas` +
-`sprite-animation` + `sprite-2d` + `sprite-renderer`. Nothing else.
+The static import graph is exactly: `engine` + `sprite-atlas` + `sprite-2d` +
+`sprite-renderer`. Nothing else.
 No `SceneContext`, no `addToScene`, no `registerScene`, no `Camera`, no
 `Mesh`, no `LightBase`, no depth/MSAA target allocator, no PBR, no
 Standard, no shadow generator, no animation-group walker, no anchor
@@ -481,14 +486,14 @@ Index API, with the per-layer instance layout fixed at creation. The
   Z. The layer uses the 11-float / 44-byte layout with slot [10] exposed to
   the shader as `@location(6) iZ`.
 
-The `addAnchoredSprite2D` helper attaches an `AnchorSource` and ensures
-the per-frame projection hook is installed.
+The world-anchor adapter described below is roadmap. The current depth-hosted
+slice accepts explicit per-sprite `z` values and does not expose anchor helpers.
 
 ---
 
 ## Public API Surface
 
-### Shared — Atlas, Frames, Animation
+### Shared — Atlas and Frames
 
 ```typescript
 // src/sprite/shared/sprite-atlas.ts
@@ -496,84 +501,48 @@ import type { EngineContext } from "../../engine/engine.js";
 import type { Texture2D, Texture2DOptions } from "../../texture/texture-2d.js";
 
 export type SpriteSampling = "linear" | "nearest";
-export type SpriteFrameRef = number | string;
 
 /** A single frame in an atlas. UVs in [0,1]; pivot in [0,1] of the frame. */
 export interface SpriteFrame {
     readonly name?: string;
-    readonly uvMin: [number, number];
-    readonly uvMax: [number, number];
-    readonly sourceSizePx: [number, number];
-    readonly pivot: [number, number];
-}
-
-export interface SpriteClip {
-    readonly name: string;
-    readonly frames: readonly number[]; // indices into atlas.frames
-    readonly fps: number;
-    readonly loop: boolean;
+    readonly uvMin: readonly [number, number];
+    readonly uvMax: readonly [number, number];
+    readonly sourceSizePx: readonly [number, number];
+    readonly pivot: readonly [number, number];
 }
 
 export interface SpriteAtlas {
     readonly texture: Texture2D;
-    readonly textureSizePx: [number, number];
+    readonly textureSizePx: readonly [number, number];
     readonly frames: readonly SpriteFrame[];
-    readonly clips: readonly SpriteClip[];
-    readonly sampling: SpriteSampling;
     readonly premultipliedAlpha: boolean;
-    /** @internal name -> frame index lookup */
-    readonly _frameByName: ReadonlyMap<string, number>;
-    /** @internal name -> clip index lookup */
-    readonly _clipByName: ReadonlyMap<string, number>;
 }
 
 export interface GridAtlasOptions {
     cellWidthPx: number;
     cellHeightPx: number;
-    columns?: number; // default: floor(textureWidth / cellWidthPx)
-    rows?: number; // default: floor(textureHeight / cellHeightPx)
+    columns?: number;
+    rows?: number;
     marginPx?: number;
     spacingPx?: number;
-    pivot?: [number, number]; // default [0.5, 0.5]
-    sampling?: SpriteSampling;
-    premultipliedAlpha?: boolean;
-    clips?: readonly SpriteClip[];
-}
-
-export interface NamedAtlasOptions {
-    sampling?: SpriteSampling;
+    pivot?: readonly [number, number];
     premultipliedAlpha?: boolean;
 }
 
-export interface LoadAtlasOptions extends NamedAtlasOptions {
-    /** Optional URL to a TexturePacker-style JSON. */
+export interface LoadAtlasOptions {
+    gridSize?: readonly [number, number];
+    /** Reserved for a future TexturePacker-style JSON loader. Throws today. */
     metadataUrl?: string;
-    /** Or an inline grid spec. */
-    gridSize?: [number, number];
+    sampling?: SpriteSampling;
+    premultipliedAlpha?: boolean;
+    premultiplyOnLoad?: boolean;
     textureOptions?: Texture2DOptions;
-    clips?: readonly SpriteClip[];
 }
 
 export function loadSpriteAtlas(engine: EngineContext, textureUrl: string, options?: LoadAtlasOptions): Promise<SpriteAtlas>;
 export function createGridSpriteAtlas(texture: Texture2D, options: GridAtlasOptions): SpriteAtlas;
-export function createNamedSpriteAtlas(texture: Texture2D, frames: readonly SpriteFrame[], clips?: readonly SpriteClip[], options?: NamedAtlasOptions): SpriteAtlas;
 /** @internal */
-export function resolveSpriteFrame(atlas: SpriteAtlas, frame: SpriteFrameRef): number;
-
-// src/sprite/shared/sprite-animation.ts
-
-export interface SpriteClipState {
-    clipIndex: number;
-    elapsedMs: number;
-    speed: number;
-    playing: boolean;
-    loopOverride: boolean | null;
-    onEnd?: () => void;
-}
-
-export function createSpriteClipState(opts?: Partial<SpriteClipState>): SpriteClipState;
-export function evaluateSpriteClip(atlas: SpriteAtlas, state: SpriteClipState): number;
-export function advanceSpriteClip(atlas: SpriteAtlas, state: SpriteClipState, deltaMs: number): number;
+export function resolveSpriteFrame(atlas: SpriteAtlas, frame: number): number;
 ```
 
 A `SpriteAtlas` is a shared resource: the same atlas may back multiple
@@ -582,19 +551,15 @@ once at `loadSpriteAtlas`. Layers hold a reference; the atlas is released
 only when no layer holds it (regular `Texture2D` lifetime).
 
 `SpriteFrame.pivot` is in normalised `[0, 1]` of the frame — `(0.5, 0.5)`
-centres the quad on the sprite's anchor. `SpriteClip.frames` is an array
-of indices into `atlas.frames`; a clip's `name` resolves through
-`atlas._clipByName`. `evaluateSpriteClip` is pure (no advancement);
-`advanceSpriteClip` adds `deltaMs * state.speed` to `state.elapsedMs`,
-handles loop / one-shot termination, fires `onEnd`, and returns the
-current frame index.
+centres the quad on the sprite's anchor. Frames are addressed by numeric index
+today. Named frames, clip animation, and TexturePacker metadata are roadmap
+additions and must land without adding bytes to numeric-index callers.
 
 ### Family 1 — `Sprite2DLayer` (foundation)
 
 ```typescript
 // src/sprite/sprite-2d.ts
-import type { SpriteAtlas, SpriteFrameRef } from "./shared/sprite-atlas.js";
-import type { SpriteClipState } from "./shared/sprite-animation.js";
+import type { SpriteAtlas } from "./shared/sprite-atlas.js";
 
 export type SpriteBlendMode = "alpha" | "premultiplied" | "additive" | "multiply" | "cutout";
 export type Sprite2DDepthMode = "none" | "test" | "test-write";
@@ -684,22 +649,20 @@ export function addSprite2DIndex(layer: Sprite2DLayer, props: Sprite2DProps): nu
 export function updateSprite2DIndex(layer: Sprite2DLayer, index: number, patch: Partial<Sprite2DProps>): void;
 export function removeSprite2DIndex(layer: Sprite2DLayer, index: number): void;
 export function setSprite2DFrameIndex(layer: Sprite2DLayer, index: number, frame: number): void;
-
-// Animation index API (later PR — landed alongside `sprite-animation.ts`).
-export function playSprite2DClipIndex(layer: Sprite2DLayer, index: number, clip: string, loop?: boolean): void;
-export function stopSprite2DClipIndex(layer: Sprite2DLayer, index: number): void;
 ```
 
 The Handle API (`addSprite2D` / `removeSprite2D`, returning a
-`Sprite2DHandle` with observable fields, stable id, and parenting) lives
-in `sprite/sprite-2d-handle.ts` — separately importable so Index-only
-scenes do not pull handle code (see [Handles](#handles-identity-and-parenting)).
+`Sprite2DHandle` with observable fields, stable id, and parenting) is roadmap.
+It should live in a separately importable module so Index-only scenes do not
+pull handle code (see [Handles](#handles-identity-and-parenting-roadmap)).
 
-### `AnchorSource` — opt-in 3D bridge for `Sprite2DLayer`
+### Roadmap — `AnchorSource` opt-in 3D bridge for `Sprite2DLayer`
+
+The APIs in this section are not part of the current root exports.
 
 ```typescript
 // src/sprite/anchor/sprite-anchor.ts — separate module, dynamic-imported on first use.
-import type { Sprite2DLayer, Sprite2DInit } from "../sprite-2d.js";
+import type { Sprite2DLayer, Sprite2DProps } from "../sprite-2d.js";
 import type { SceneContext } from "../../scene/scene-core.js";
 import type { IWorldMatrixProvider } from "../../scene/parenting.js";
 
@@ -715,7 +678,7 @@ export function createParentAnchor(parent: IWorldMatrixProvider, localOffset?: [
 
 /** Attach an AnchorSource to a sprite. The sprite's positionPx is overwritten each frame
  *  by the projection result. Layer must have depth !== "none" for occlusion against 3D geometry. */
-export interface AnchoredSprite2DInit extends Sprite2DInit {
+export interface AnchoredSprite2DInit extends Sprite2DProps {
     anchor: AnchorSource;
     offsetPx?: [number, number];
     /** NDC-z bias added after projection (positive = pushed toward camera). Default 0. */
@@ -778,7 +741,7 @@ import type { SpriteBlendMode } from "./sprite-2d.js";
 export interface BillboardSpriteSystemOptions {
     capacity?: number;
     blendMode?: SpriteBlendMode;
-  alphaCutoff?: number;
+    alphaCutoff?: number;
     opacity?: number;
     visible?: boolean;
     order?: number;
@@ -841,22 +804,32 @@ export function addAxisLockedBillboardSystem(scene: SceneContext, system: Billbo
 `addAxisLockedBillboardSystem(scene, system)` are the scene integration
 points. They queue a deferred renderable builder through
 `addDeferredSceneRenderables` so `scene-core` and `addToScene` stay
-sprite-agnostic. A scene that never imports `billboard-scene.ts` never
-imports `billboard-renderable.ts`, `billboard-pipeline.ts`,
-`getSceneBindGroupLayout`, or any billboard WGSL. Internally, the shared
-renderable routes through `system._orientation` and `system._depthMode`; the
-current public factories set `"facing"` or `"axis-locked"`, derive
-`"transparent"` for `"alpha" | "premultiplied"`, and derive `"cutout"` for
-`blendMode: "cutout"`. Transparent systems are alpha-blended, depth-tested,
-depth-write disabled, and sorted far-to-near before upload. Cutout systems
-have no blend state, discard fragments whose sampled texture alpha is below
-`alphaCutoff`, write depth, and route through the non-transparent direct-draw
-bucket without transparent sorting.
+sprite-agnostic. The builder dynamically imports `billboard-renderable.ts`,
+which imports `billboard-pipeline.ts`, `getSceneBindGroupLayout`, and the WGSL
+composer. A scene that never queues a billboard system never runtime-fetches
+that chunk. The scene helpers validate that a facing helper receives a facing
+system and that an axis-locked helper receives an axis-locked system before
+queuing deferred work.
+
+Internally, the shared renderable routes through `system._orientation` and
+`system._depthMode`; the current public factories set `"facing"` or
+`"axis-locked"`, derive `"transparent"` for `"alpha" | "premultiplied"`, and
+derive `"cutout"` for `blendMode: "cutout"`. Transparent systems are
+alpha-blended, depth-tested, depth-write disabled, maintain a `_worldCenter`
+for the scene's transparent bucket sort, and sort individual billboard
+instances far-to-near before upload. The render pass runs binding updates
+before transparent-bucket sorting so `_worldCenter` reflects any same-frame
+billboard mutations before draw order is chosen. Cutout systems have no blend state,
+discard fragments whose sampled texture alpha is below `alphaCutoff`, write
+depth, and route through the non-transparent direct-draw bucket without
+transparent sorting.
 
 Yaw-locked billboards (world-Y axis constraint) are created via
 `createAxisLockedBillboardSystem(atlas, [0, 1, 0], opts)`.
 
-### Picking — two pickers, not three
+### Roadmap — Picking
+
+The picking APIs below are not part of the current root exports.
 
 ```typescript
 // src/sprite/picking/pick-sprite-2d.ts — handles every Sprite2DLayer
@@ -887,12 +860,12 @@ A pure-2D app skips the scene entirely. It creates a `SpriteRenderer`,
 registers it on the engine, and lets `startEngine` drive the loop:
 
 ```typescript
-import { createEngine, loadSpriteAtlas, createSprite2DLayer, addSprite2D, createSpriteRenderer, registerSpriteRenderer, startEngine } from "babylon-lite";
+import { createEngine, loadSpriteAtlas, createSprite2DLayer, addSprite2DIndex, createSpriteRenderer, registerSpriteRenderer, startEngine } from "babylon-lite";
 
 const engine = await createEngine(canvas);
 const atlas = await loadSpriteAtlas(engine, "sprites.png", { gridSize: [32, 32] });
 const layer = createSprite2DLayer(atlas);
-addSprite2D(layer, { positionPx: [100, 200], sizePx: [64, 64], frame: 0 });
+addSprite2DIndex(layer, { positionPx: [100, 200], sizePx: [64, 64], frame: 0 });
 
 const sr = createSpriteRenderer(engine, {
     layers: [layer],
@@ -1021,14 +994,14 @@ throw during system creation.
 
 Transparent billboard systems sort per billboard before upload, not by
 mutating `system._instanceData`. When `DrawUpdateContext` supplies the active
-pass `cameraViewMatrix` and `cameraViewVersion`, the billboard renderable
+pass `camera`, the billboard renderable gets the cached camera view matrix and
 fills renderable-owned scratch arrays: view-space depths, stable index order,
 and a sorted 52-byte-instance staging buffer. Depth is the view-space z of
 each anchor (`view[2] * x + view[6] * y + view[10] * z + view[14]`), sorted
 descending so farther billboards upload first. The same compact GPU vertex
 buffer is written from the sorted staging buffer with one full
 `queue.writeBuffer` when either the system version or camera view identity /
-version changes. Repeated frames with unchanged system data and unchanged
+`camera.worldMatrixVersion` changes. Repeated frames with unchanged system data and unchanged
 camera view skip the instance upload. Cutout billboard systems skip this
 transparent sort path entirely and upload dirty ranges directly from
 `system._instanceData` in logical insertion order, matching the direct
@@ -1277,114 +1250,45 @@ layers always request `hasDepth = false` and `sampleCount = 1`, so their pipelin
 
 ### Bind Group Layouts
 
-**`Sprite2DSceneUBO`** (32 B) — `@group(0) @binding(0)` for every
-`Sprite2DLayer` regardless of caller. Allocated once per
-`SpriteRenderer` instance (or per `Sprite2DLayer` renderable for the
-in-scene depth-hosted path) and updated each frame from the supplied
-target metadata + (when a scene is present) the camera basis. Anchored
-sprites do not need a `viewProjection` in the shader because anchor
-projection runs CPU-side.
+`Sprite2DLayer` uses the `Layer` UBO described in the per-instance section
+above: 48 bytes at the sprite bind group's binding 0, plus atlas texture and
+sampler at bindings 1 and 2. Pure `SpriteRenderer` layers bind that group at
+group 0. Depth-hosted Sprite2D renderables bind the scene's existing group 0
+and the sprite layer group at group 1.
 
-```wgsl
-struct Sprite2DSceneUBO {
-    viewportPx: vec2<f32>,
-    invViewportPx: vec2<f32>,
-    viewPositionPx: vec2<f32>,
-    zoom: f32,
-    viewRotation: f32,
-};
-```
+Billboards do **not** allocate a separate sprite-only scene UBO in the current
+implementation. The render pass task already owns the canonical scene UBO and
+binds it at group 0; billboard WGSL reads `scene.viewProjection` and
+`scene.view` from that existing binding. Mesh-only scenes still pay zero
+billboard bytes because the billboard renderable/pipeline module is behind the
+dynamic import in `billboard-scene.ts`.
 
-**`Sprite3DSceneUBO`** — billboard-only. Allocated lazily by the first
-billboard system added; lives in `sprite/billboard/sprite-3d-scene-ubo.ts`.
-Pure-2D + anchored-only scenes never load it. Sprite billboard
-renderables bind it at `@group(0) @binding(0)` in place of the engine's
-main 3D `SceneUBO` — billboard vertex shaders only need `viewProjection`
-plus the camera basis and viewport, all of which this UBO carries.
+The billboard bind group is group 1:
 
-```wgsl
-// Lives in its own module (sprite-3d-scene-ubo.ts). Sprite-free scenes never
-// allocate this UBO and never import the module (dynamic import via the
-// billboard renderable builder). The engine's main `SceneUBO` is used by
-// mesh renderables only.
-struct Sprite3DSceneUBO {
-    viewProjection: mat4x4<f32>,   // pre-multiplied so sprite shaders avoid binding
-                                   // the engine SceneUBO and stay self-contained.
-    cameraRight: vec4<f32>,        // .xyz = camera right basis, .w = cameraPos.x
-    cameraUp: vec4<f32>,           // .xyz = camera up basis,    .w = cameraPos.y
-    cameraForward: vec4<f32>,      // .xyz = camera forward,     .w = cameraPos.z
-    viewportPx: vec2<f32>,
-    invViewportPx: vec2<f32>,
-};
-```
+| Binding | Resource              | Shader stages     | Notes                                              |
+| ------- | --------------------- | ----------------- | -------------------------------------------------- |
+| 0       | `BillboardSystem` UBO | vertex + fragment | 32 B: `opacityMul: vec4<f32>`, `axis: vec4<f32>`   |
+| 1       | atlas texture         | fragment          | `texture_2d<f32>` from `system.atlas.texture.view` |
+| 2       | atlas sampler         | fragment          | filtering sampler from the atlas texture           |
 
-The `Sprite3DSceneUBO` updater is registered into
-`stage.state._uniformUpdaters` exactly once, the first time any
-billboard family is added to the scene. Subsequent systems reuse the
-same UBO. If the user later removes the last billboard system, the
-updater stays registered for the remainder of the scene's lifetime (no
-per-frame `if` to check whether sprites still exist) — but the UBO and
-its updater were never created in the first place for sprite-free
-scenes, which is what the no-pay-if-unused rule requires.
-
-**`SpriteLayerUBO`** (32 B) — `@group(1) @binding(2)`, bound for
-Sprite2DLayer (any depth mode) and the facing/yaw billboard variants.
-Holds animation-friendly per-layer scalars; not in the pipeline cache key.
-
-```wgsl
-struct SpriteLayerUBO {
-    opacity: f32,
-    _pad: vec3<f32>,
-};
-```
-
-> **WGSL alignment.** `vec3<f32>` has 16-byte alignment, so the struct
-> pads to **32 bytes** total (opacity at offset 0; `_pad` at offset 16;
-> trailing pad rounds to a multiple of 16). Allocate the GPU buffer at
-> 32 B — a 16 B allocation will cause the WebGPU validator to reject the
-> bind group with `"buffer binding ... is too small"`.
-
-**`AxisLockedBillboardSystemUBO`** — bound at `@group(1) @binding(2)`,
-**replacing** `SpriteLayerUBO` for the axis-locked billboard variant.
-The shared fragment shader reads `opacity` from `@binding(2)` regardless
-of which struct sits there; the field is at the same offset in both, so
-the same fragment WGSL works for every family. The composer adjusts only
-the struct declaration line.
-
-```wgsl
-struct AxisLockedBillboardSystemUBO {
-    opacity: f32,         // offset 0 — must match SpriteLayerUBO.opacity for the shared fragment shader
-    alphaCutoff: f32,     // baked into the cutout WGSL literal at composition time; this UBO field is reserved for a future runtime-tunable cutoff
-    lockAxis: vec3<f32>,
-    _pad: f32,
-};
-```
-
-> **Implementer note.** The shared fragment shader declares
-> `@group(1) @binding(2) var<uniform> layer: SpriteLayerUBO;` for
-> non-axis-locked families and
-> `@group(1) @binding(2) var<uniform> layer: AxisLockedBillboardSystemUBO;`
-> for the axis-locked variant. Both structs expose `.opacity` at offset
-> 0, so `c.a = c.a * layer.opacity;` is identical in both shaders. The
-> axis-locked vertex shader additionally reads `layer.lockAxis`.
-
-Sprite renderables bind only `Sprite2DSceneUBO` or `Sprite3DSceneUBO` at
-group 0; the engine's main `SceneUBO` is not bound on sprite draws.
-Group 1 holds atlas tex/sampler, the per-layer or system UBO, and (for
-billboards) the packed sprite storage buffer.
+`BillboardSystem.axis.xyz` is the normalized lock axis for axis-locked systems
+and zero for facing systems. `axis.w` is the runtime `alphaCutoff` consumed only
+by cutout shaders. `opacityMul` is CPU-shaped per blend mode: straight-alpha
+and cutout write `(1, 1, 1, opacity)`, while premultiplied writes
+`(opacity, opacity, opacity, opacity)` so the fragment shader has no blend-mode
+branch.
 
 ### Pipeline Cache
 
-Per-device, lazy. Key tuple:
+Per-device, lazy. Current keys:
 
-`(family, blendMode, depth, swapChainFormat, msaaSamples, pixelSnap, alphaCutoff*)`
+- `Sprite2DLayer`: `(format, sampleCount, blendMode, hasDepth, depthWrite, depthStencilFormat)`.
+- `BillboardSpriteSystem`: `(format, sampleCount, orientation, blendMode, depthMode, depthStencilFormat)`.
 
-- `family`: `"sprite-2d" | "billboard-facing" | "billboard-yaw" | "billboard-axis"`.
-- `depth`: `"none" | "test" | "test-write"` — Sprite2D only; absent for billboards (which always use the scene's 3D depth state).
-- `pixelSnap`: bool — composer rewrites the snap line.
-- `alphaCutoff`: bool — present only when `blendMode === "cutout"`.
-- `opacity` is **not** in the key (per-layer UBO field, animatable).
-- `flipX` / `flipY` are **not** in the key (per-sprite bits in the instance layout).
+`alphaCutoff` and `opacity` are **not** in the billboard pipeline key. Both live
+in the 32-byte system UBO, so animating opacity or tuning cutoff is a UBO write,
+not a pipeline recompile. `flipX` / `flipY` are stored by swapping UV min/max in
+the per-instance data, not by changing pipelines.
 
 ---
 
@@ -1434,148 +1338,100 @@ wasted bytes for non-anchored sprites.
 
 ### Billboard Vertex Shaders
 
-Two vertex shaders, two pipelines, two dynamic-import chunks. No
-runtime mode branch.
+The current billboard path uses a compact 52-byte per-instance vertex buffer
+and `@builtin(vertex_index)` for the four quad corners. The shared composer
+emits one of two basis functions from `system._orientation`; the rest of the
+vertex shader is identical.
 
-#### Facing (spherical)
+#### Facing (spherical) basis
 
 ```wgsl
-@group(0) @binding(0) var<uniform> scene: Sprite3DSceneUBO;
-@group(1) @binding(2) var<uniform> layer: SpriteLayerUBO;
-
-@vertex fn vs(in: VSIn) -> VSOut {
-    let s     = sprites[in.sortIndex];
-    let corner = cornerOf(in.vid);
-    let local  = (corner - s.pivot) * s.sizePxOrWorld;
-    let rotated = rotate2(local, s.sinCos);
-    // Camera basis vectors live in the sprite-only UBO — never touched in sprite-free scenes.
-    let world = s.worldPos
-              + scene.cameraRight.xyz * rotated.x
-              + scene.cameraUp.xyz    * rotated.y;
-    var out: VSOut;
-    out.pos   = scene.viewProjection * vec4<f32>(world, 1.0);
-    out.uv    = cornerUV(corner, s.uvRect, s.flagsAndPad.x, s.flagsAndPad.y);
-    out.color = s.color;
-    return out;
+fn getBillboardBasis(_anchor: vec3<f32>) -> BillboardBasis {
+  let cameraRight = normalize(vec3<f32>(scene.view[0][0], scene.view[1][0], scene.view[2][0]));
+  let cameraUp = normalize(vec3<f32>(scene.view[0][1], scene.view[1][1], scene.view[2][1]));
+  return BillboardBasis(cameraRight, -cameraUp);
 }
 ```
 
-#### Axis-Locked (arbitrary lock axis)
+#### Axis-Locked basis
 
 ```wgsl
-@group(0) @binding(0) var<uniform> scene: Sprite3DSceneUBO;
-@group(1) @binding(2) var<uniform> layer: SpriteLayerUBO;
-
-@vertex fn vs(in: VSIn) -> VSOut {
-    let s      = sprites[in.sortIndex];
-    let corner = cornerOf(in.vid);
-    let local  = (corner - s.pivot) * s.sizePxOrWorld;
-    let rotated = rotate2(local, s.sinCos);
-    // Project camera right onto the plane perpendicular to the lock axis.
-    let cameraRight = normalize(vec3<f32>(scene.view[0][0], scene.view[1][0], scene.view[2][0]));
-    let projectedRight = vec3<f32>(cameraRight.x, 0.0, cameraRight.z);
-    let projectedRightLen = length(projectedRight);
-    // Fallback to world X if camera is near-vertical.
-    let right = select(vec3<f32>(1.0, 0.0, 0.0), projectedRight / projectedRightLen, projectedRightLen > 1e-4);
-    let worldUp = vec3<f32>(0.0, 1.0, 0.0);
-    // Use -worldUp to match facing's texture orientation convention.
-    let world  = s.worldPos + right * rotated.x + (-worldUp) * rotated.y;
-    var out: VSOut;
-    out.pos    = scene.viewProjection * vec4<f32>(world, 1.0);
-    out.uv     = cornerUV(corner, s.uvRect, s.flagsAndPad.x, s.flagsAndPad.y);
-    out.color  = s.color;
-    return out;
+fn getBillboardBasis(_anchor: vec3<f32>) -> BillboardBasis {
+  let lockAxis = normalize(billboards.axis.xyz);
+  let cameraRight = normalize(vec3<f32>(scene.view[0][0], scene.view[1][0], scene.view[2][0]));
+  let projectedRight = cameraRight - lockAxis * dot(cameraRight, lockAxis);
+  let projectedRightLen = length(projectedRight);
+  let safeProjectedRightLen = max(projectedRightLen, 1e-4);
+  let fallbackSeed = select(vec3<f32>(0.0, 0.0, 1.0), vec3<f32>(1.0, 0.0, 0.0), abs(lockAxis.z) > 0.999);
+  let fallbackRightRaw = cross(lockAxis, fallbackSeed);
+  let fallbackRight = fallbackRightRaw / max(length(fallbackRightRaw), 1e-4);
+  let right = select(fallbackRight, projectedRight / safeProjectedRightLen, projectedRightLen > 1e-4);
+  return BillboardBasis(right, -lockAxis);
 }
 ```
 
-#### Axis-Locked (arbitrary axis)
+#### Shared vertex body
 
 ```wgsl
-@group(0) @binding(0) var<uniform> scene: Sprite3DSceneUBO;
-// Axis-locked replaces SpriteLayerUBO@2 with the system UBO. Both expose `.opacity`
-// at offset 0 so the shared fragment shader still binds `layer` at @binding(2).
-@group(1) @binding(2) var<uniform> layer: AxisLockedBillboardSystemUBO;
-
-@vertex fn vs(in: VSIn) -> VSOut {
-    let s      = sprites[in.sortIndex];
-    let corner = cornerOf(in.vid);
-    let local  = (corner - s.pivot) * s.sizePxOrWorld;
-    let rotated = rotate2(local, s.sinCos);
-    let a      = normalize(layer.lockAxis);
-    let camPos = vec3<f32>(scene.cameraRight.w, scene.cameraUp.w, scene.cameraForward.w);
-    let toCam  = normalize(camPos - s.worldPos);
-    // Project camera direction onto the plane perpendicular to the axis.
-    let f      = normalize(toCam - a * dot(toCam, a));
-    let right  = normalize(cross(a, f));
-    let world  = s.worldPos + right * rotated.x + a * rotated.y;
-    var out: VSOut;
-    out.pos    = scene.viewProjection * vec4<f32>(world, 1.0);
-    out.uv     = cornerUV(corner, s.uvRect, s.flagsAndPad.x, s.flagsAndPad.y);
-    out.color  = s.color;
-    return out;
+@vertex
+fn vs(in: VIn) -> VOut {
+  let corner = vec2<f32>(select(0.0, 1.0, in.vid == 1u || in.vid == 2u), select(0.0, 1.0, in.vid >= 2u));
+  let local = (corner - in.iPivot) * in.iSize;
+  let cosRot = cos(in.iRot);
+  let sinRot = sin(in.iRot);
+  let rotated = vec2<f32>(local.x * cosRot - local.y * sinRot, local.x * sinRot + local.y * cosRot);
+  let basis = getBillboardBasis(in.iPos);
+  let worldPos = in.iPos + basis.right * rotated.x + basis.up * rotated.y;
+  var out: VOut;
+  out.pos = scene.viewProjection * vec4<f32>(worldPos, 1.0);
+  out.uv = mix(in.iUvMin, in.iUvMax, corner);
+  out.tint = in.iColor;
+  return out;
 }
 ```
 
-### Shared Fragment Shader
+### Billboard Fragment Shader
 
-The fragment shader is identical across all four families
-(Sprite2DLayer, Facing, Yaw, Axis billboards) because each family's
-vertex shader binds a struct at `@group(1) @binding(2)` whose first
-field is `opacity: f32` at offset 0. The composer emits exactly one of
-two `layer:` declarations (`SpriteLayerUBO` or
-`AxisLockedBillboardSystemUBO`); the body is identical.
+Transparent billboard shaders sample the atlas and return `sampleColor * tint *
+billboards.opacityMul`. Cutout billboard shaders use the same multiply but first
+discard fragments whose sampled alpha is below `billboards.axis.w`.
 
 ```wgsl
-@group(1) @binding(0) var atlasTex: texture_2d<f32>;
-@group(1) @binding(1) var atlasSamp: sampler;
-// `layer` is declared by each family's vertex shader at @group(1) @binding(2).
-// Its concrete struct type is SpriteLayerUBO for Sprite2D / Facing / Yaw,
-// and AxisLockedBillboardSystemUBO for axis-locked. Both expose `.opacity`
-// at offset 0, so the body below is identical in every emitted shader.
-
-@fragment fn fs(in: VSOut) -> @location(0) vec4<f32> {
-    var c = textureSample(atlasTex, atlasSamp, in.uv) * in.color;
-    c.a = c.a * layer.opacity;      // per-layer UBO field — animation-friendly, no pipeline impact
-    // CUTOFF block (cutout variant only — composer emits
-    //   `if (c.a < <ALPHA_CUTOFF>) { discard; }`
-    // where <ALPHA_CUTOFF> is the layer's `alphaCutoff` baked as a WGSL float
-    // literal at composition time and entered into the pipeline cache key).
-    // RETURN block: composer emits `return vec4<f32>(c.rgb * c.a, c.a);` for
-    // `multiply` only (its `dst-color` srcFactor does not apply alpha, so the
-    // shader must do it); every other mode emits `return c;`. In particular,
-    // `alpha` mode must NOT premultiply here because its blend factors are
-    // `(src-alpha, 1-src-alpha)` — the alpha multiplication is performed by
-    // the blend stage. Premultiplying in the shader on top would yield
-    // `src.rgb * src.a^2`.
-    return c;
+@fragment
+fn fs(in: VOut) -> @location(0) vec4<f32> {
+  let sampleColor = textureSample(atlasTex, atlasSamp, in.uv);
+  if (sampleColor.a < billboards.axis.w) {
+    discard;
+  }
+  return sampleColor * in.tint * billboards.opacityMul;
 }
 ```
 
-`CUTOFF` is a baked WGSL float literal (set-once at layer creation, enters
-the pipeline cache key). `opacity` is **not** baked — it is read from the
-per-layer UBO so that animating opacity per frame is a 4-byte UBO write,
-never a pipeline recompile. This matches how Lite handles mesh `alpha`.
+`alphaCutoff` and `opacity` both live in the billboard system UBO. Neither value
+is baked into WGSL or entered into the pipeline cache key.
 
 ---
 
 ## Sorting and Transparency
 
-| Family / variant                      | Drawn through                                                        | Render slot                                           | Per-instance Z                              | Blend     | Depth write |
-| ------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------- | --------- | ----------- |
-| Sprite2DLayer `depth: "none"`         | a `SpriteRenderer` registered on the engine                          | engine `_renderingContexts` (after the scene context) | none; no Z slot                             | per-blend | off         |
-| Sprite2DLayer `depth: "test"` blended | `addDepthHostedSpriteLayer` → `sprite-renderable.ts` (`order = 200`) | scene transparent queue (after opaque meshes)         | consumed; per-instance depth test, no write | per-blend | off         |
-| Sprite2DLayer `depth: "test"` cutout  | `addDepthHostedSpriteLayer` → `sprite-renderable.ts` (`order = 200`) | scene transparent queue (after opaque meshes)         | consumed; per-instance depth test, no write | none      | off         |
-| Sprite2DLayer `depth: "test-write"`   | `addDepthHostedSpriteLayer` → `sprite-renderable.ts` (`order = 100`) | direct draw after cached opaque meshes                | consumed; per-instance depth test + write   | per-blend | on          |
-| Billboard blended                     | `addToScene` → `billboard-renderable.ts` (`order = 200`)             | scene transparent queue                               | per-sprite view-Z (sort-indirection buffer) | per-blend | off         |
-| Billboard cutout                      | `addToScene` → `billboard-renderable.ts` (`order = 200`)             | scene transparent queue                               | per-sprite view-Z (sort-indirection buffer) | none      | on          |
+| Family / variant                      | Drawn through                                                               | Render slot                                           | Per-instance ordering                       | Blend     | Depth write |
+| ------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------- | --------- | ----------- |
+| Sprite2DLayer `depth: "none"`         | a `SpriteRenderer` registered on the engine                                 | engine `_renderingContexts` (after the scene context) | none; no Z slot                             | per-blend | off         |
+| Sprite2DLayer `depth: "test"` blended | `addDepthHostedSpriteLayer` → `sprite-renderable.ts` (`order = 200`)        | scene transparent queue (after opaque meshes)         | consumed; per-instance depth test, no write | per-blend | off         |
+| Sprite2DLayer `depth: "test"` cutout  | `addDepthHostedSpriteLayer` → `sprite-renderable.ts` (`order = 200`)        | scene transparent queue (after opaque meshes)         | consumed; per-instance depth test, no write | none      | off         |
+| Sprite2DLayer `depth: "test-write"`   | `addDepthHostedSpriteLayer` → `sprite-renderable.ts` (`order = 100`)        | direct draw after cached opaque meshes                | consumed; per-instance depth test + write   | per-blend | on          |
+| Billboard blended                     | `addFacingBillboardSystem` / `addAxisLockedBillboardSystem` (`order = 200`) | scene transparent queue                               | CPU-sorted far-to-near staging upload       | per-blend | off         |
+| Billboard cutout                      | `addFacingBillboardSystem` / `addAxisLockedBillboardSystem` (`order = 100`) | direct draw after cached opaque meshes                | logical insertion order; GPU depth resolves | none      | on          |
 
 Depth-hosted Sprite2D layers do **not** sort sprites individually — each
 layer becomes one `Renderable` and the GPU's depth test resolves
 overlap between sprites in the same layer (cutout) or between layers
 that share the depth buffer. Within a depth-hosted layer, sprites draw in insertion
 order, and the per-instance Z (slot [10]) is used as the depth-test
-value. Pure-2D layers have no slot [10]. Billboards use the per-sprite sort indirection buffer described
-under [Future target BillboardSpriteSystem (96 B = 24 floats)](#future-target-billboardspritesystem-96-b--24-floats).
+value. Pure-2D layers have no slot [10]. Current transparent billboard systems
+sort into renderable-owned scratch buffers and upload the sorted 52-byte
+instances without mutating `system._instanceData`. Cutout billboard systems skip
+the sort and upload dirty ranges in logical insertion order.
 
 ---
 
@@ -1643,7 +1499,7 @@ sprite picking code.
 | 72..79 | `_pad`          | 8 B trailing pad                                                 |
 
 Packing the camera position into the basis vectors' `w` channels keeps
-the UBO at 80 B and avoids re-binding the main `Sprite3DSceneUBO` in the
+the UBO at 80 B and avoids binding any separate billboard scene UBO in the
 pick pass.
 
 **Bind groups.** `@group(0)` = scene UBO (the pick-zoomed VP — same one
@@ -1800,7 +1656,11 @@ without having called `unregisterSpriteRenderer` first — it does both.
 
 ---
 
-## Handles, Identity, and Parenting
+## Handles, Identity, and Parenting (Roadmap)
+
+The current billboard implementation exposes the Index API only. The handle
+API described below is the planned extension point; it is not part of the
+current public root exports.
 
 Sprites in Babylon Lite use a **two-tier API** that mirrors the
 Index/Handle split common in data-oriented engines (and parallels Lite's
@@ -1808,19 +1668,17 @@ ThinInstance vs. Mesh split for 3D geometry).
 
 ### Two-tier API design
 
-| Tier           | Functions                                                                                                                                                                                       | Returns                                    | Use for                                                                                                                                                |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Index API**  | `addSprite2DIndex`, `updateSprite2DIndex`, `removeSprite2DIndex`, `setSprite2DFrameIndex`, `playSprite2DClipIndex`, `stopSprite2DClipIndex` (and `addBillboardSpriteIndex` etc. for billboards) | `number` (slot index)                      | Tile maps, scenery, particles, large fixed-layout HUDs. Maximum throughput, zero per-sprite GC. Indices are _not_ stable — `removeXIndex` swap-removes |
-| **Handle API** | `addSprite2D`, `removeSprite2D`, `addBillboardSprite`, `removeBillboardSprite` (and the matching `update*` / `setFrame` / `playClip` helpers)                                                   | `Sprite2DHandle` / `BillboardSpriteHandle` | Player characters, enemies, UI elements that move or are parented. Observable fields, stable id, optional parenting                                    |
+| Tier           | Functions                                                                                                                                     | Returns                                    | Use for                                                                                                                                                |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Index API**  | `addSprite2DIndex`, `updateSprite2DIndex`, `removeSprite2DIndex`, `setSprite2DFrameIndex` (and `addBillboardSpriteIndex` etc. for billboards) | `number` (slot index)                      | Tile maps, scenery, particles, large fixed-layout HUDs. Maximum throughput, zero per-sprite GC. Indices are _not_ stable — `removeXIndex` swap-removes |
+| **Handle API** | Roadmap: `addSprite2D`, `removeSprite2D`, `addBillboardSprite`, `removeBillboardSprite` and matching update helpers                           | `Sprite2DHandle` / `BillboardSpriteHandle` | Player characters, enemies, UI elements that move or are parented. Observable fields, stable id, optional parenting                                    |
 
 Mario analogy: `Index` is a scenario tile (set once, never updated, can
 spawn 10 000 of them); `Handle` is Mario himself (moves every frame,
 parented to a moving platform, owns animation state).
 
-The handle modules (`sprite-2d-handle.ts`,
-`billboard/sprite-billboard-handle.ts`) live in separate files so that
-scenes that only use the Index API never load handle code (see
-**Tree-shaking** below).
+The future handle modules will live in separate files so that scenes that only
+use the Index API never load handle code (see **Tree-shaking** below).
 
 ### Stable IDs (`_idToIndex` / `_indexToId`)
 
@@ -1939,12 +1797,11 @@ The handle modules and the walker modules are deliberately **separate
 files** so the static import graph of each renderable stays free of
 handle code:
 
-- **Renderable files** (`sprite-2d-renderable.ts`,
-  `billboard/sprite-billboard-*-renderable.ts`) statically import only
-  the family file (`sprite-2d.ts` etc.) — no handle modules, no walker
-  modules. They invoke the per-frame walker via the function-pointer
-  hook `layer._parentedHandlesWalker?.(layer)` — `null` for Index-only
-  scenes, zero call cost.
+- **Renderable files** (`sprite-renderable.ts`, `billboard-renderable.ts`)
+  statically import only the family state files (`sprite-2d.ts`,
+  `billboard-sprite.ts`) — no handle modules, no walker modules. Future handle
+  support should continue to use function-pointer hooks so Index-only scenes
+  pay zero handle-walker cost.
 - **Handle modules** statically import their corresponding walker
   module and assign it to `layer._parentedHandlesWalker` on the first
   `handle.parent = …` call. This means walker code is loaded only when
@@ -1977,13 +1834,13 @@ never reaches into layer internals.
 | ------------------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `SpriteManager` (2D usage)                        | `Sprite2DLayer` (any scene)                                           | No separate 2D scene type                                                         |
 | `SpriteManager` (3D usage, world-sized)           | `*BillboardSpriteSystem`                                              | Always world-space, perspective-correct                                           |
-| `SpritePackedManager`                             | `createNamedSpriteAtlas` + family factory                             | Atlas is a separate, reusable type                                                |
-| `Sprite`                                          | `*Init` interfaces + per-family helpers                               | Functional, returns index or handle                                               |
-| `sprite.cellIndex` / `cellRef`                    | `setSprite*Frame(layer, idx, frame)`                                  | `frame` is `number \| string`                                                     |
-| `sprite.playAnimation(from, to, loop, delay, cb)` | `playSprite*Clip(layer, idx, clipName, loop)`                         | Named clips on the atlas                                                          |
+| `SpritePackedManager`                             | Roadmap named-atlas wrapper + family factory                          | Current atlas path is numeric grid/load only                                      |
+| `Sprite`                                          | `*Init` interfaces + per-family index helpers                         | Current API returns mutable slot indices                                          |
+| `sprite.cellIndex` / `cellRef`                    | `setSprite*FrameIndex(layer, idx, frame)`                             | Current `frame` is numeric                                                        |
+| `sprite.playAnimation(from, to, loop, delay, cb)` | Roadmap clip helpers                                                  | Named clips are not implemented in this branch                                    |
 | `sprite.invertU` / `invertV`                      | `init.flipX` / `init.flipY`                                           |                                                                                   |
 | `sprite.angle`                                    | `init.rotation` (radians)                                             |                                                                                   |
-| `sprite.position`                                 | `init.positionPx` (pure 2D) / `AnchorSource` for world-anchored       | Anchoring is opt-in via `addAnchoredSprite2D`; same layer                         |
+| `sprite.position`                                 | `init.positionPx` (Sprite2D) / `init.position` (Billboard)            | World anchoring for Sprite2D is roadmap                                           |
 | `sprite.size` / `width` / `height`                | `init.sizePx` (Sprite2D) / `init.sizeWorld` (Billboard)               | Type encodes pixel-space vs. world-space                                          |
 | `sprite.color`                                    | `init.color` / `update*({ color: [r,g,b,a] })`                        | Per-sprite tint                                                                   |
 | `mesh.billboardMode = BILLBOARDMODE_ALL`          | `createFacingBillboardSystem`                                         | Explicit factory                                                                  |
@@ -1991,12 +1848,12 @@ never reaches into layer internals.
 | `mesh.billboardMode = BILLBOARDMODE_X/Z`          | `createAxisLockedBillboardSystem(atlas, [1,0,0])`                     | Same factory covers all lock axes                                                 |
 | `SpriteManager.disableDepthWrite`                 | `Sprite2DLayer.depth` (`"test"` / `"test-write"`) + `SpriteBlendMode` | Composer-baked per layer                                                          |
 | `AdvancedDynamicTexture` + `Image`                | `Sprite2DLayer` overlay on a 3D `SceneContext`                        | Different scope — no GUI tree                                                     |
-| `scene.pickSprite(x, y)`                          | `pickSprite2D` / `pickBillboardSprite`                                | Two pickers, one per family                                                       |
+| `scene.pickSprite(x, y)`                          | Roadmap `pickSprite2D` / `pickBillboardSprite`                        | Picking is not in the current root exports                                        |
 | `SpriteMap` (tile maps)                           | Out of scope                                                          | Future module                                                                     |
 | `SpriteManager` `epsilon` arg                     | _no equivalent_                                                       | Atlases must have transparent border / NPOT / padded sub-rects when bleed matters |
 | Quad VBO                                          | Vertexless (`vertex_index`)                                           | Eliminates the static quad buffer                                                 |
 
-### Anchored sizing — common porting pitfalls
+### Roadmap Anchored Sizing — Common Porting Pitfalls
 
 The CPU projection code in `sprite-anchor.ts` follows the same contract
 the GPU vertex shader would have used: `clipPos.w = cz` (camera-space
@@ -2040,21 +1897,20 @@ Imports:
 
 - `Texture2D`, `loadTexture2D` from `../texture/texture-2d.js`
 - `EngineContext` from `../engine/engine.js`
-- `createPipelineCache` from `../material/pipeline-cache.js`
 - (only in `addDepthHostedSpriteLayer` integration code, not in pure-2D bundles) `SceneContext` from `../scene/scene-core.js`, type-only
 - (only in `addDepthHostedSpriteLayer` integration code, not in pure-2D bundles) `addDeferredSceneRenderables` from `../scene/scene-core.js`
 - (only in `addDepthHostedSpriteLayer` integration code, not in pure-2D bundles) `buildSpriteRenderable` from `./sprite-renderable.js`
+- (only in `billboard-scene.ts`, not in pure-2D bundles) `SceneContext` and `addDeferredSceneRenderables` from `../scene/scene-core.js`
+- (only in the dynamic billboard renderable chunk) `getViewMatrix`, `getSceneBindGroupLayout`, GPU buffer helpers, and the billboard pipeline module
 
-Lazy / dynamic-imported (never on the static graph of `sprite-2d.ts`):
+Lazy / dynamic-imported:
 
-- `AnchorSource`, `addAnchoredSprite2D` from `../sprite/anchor/sprite-anchor.js` — pulled in only when the app uses anchored sprites.
-- `Sprite3DSceneUBO` from `../sprite/billboard/sprite-3d-scene-ubo.js` — pulled in only by the first billboard system.
-- `gpu-picker.ts`, `picking-contributors.ts`, `billboard-pick-contributor.ts`, `billboard-pick-pipeline.ts` — pulled in only when `pickBillboardSprite` is called.
+- `billboard-renderable.ts` and `billboard-pipeline.ts` — pulled in by `addFacingBillboardSystem` / `addAxisLockedBillboardSystem` only when `registerScene` runs the queued billboard builder.
 
 Depended on by:
 
-- `lab/src/lite/sceneN.ts` — sprite reference scenes (2D, mixed, anchored, billboard).
-- Future Particles module — reuses `SpriteAtlas`, `SpriteClip`, vertexless-quad pattern, and packed-instance-buffer helpers.
+- `lab/src/lite/scene50.ts` through `scene57.ts` — current 2D, HUD, depth-hosted, and billboard reference scenes.
+- Future Particles module — should reuse `SpriteAtlas`, the vertexless-quad pattern, and packed-instance-buffer helpers.
 
 NOT depended on:
 
@@ -2066,48 +1922,33 @@ NOT depended on:
 
 ### Unit (vitest)
 
-- `sprite-atlas.test.ts` — atlas loaders, frame resolution, named-frame lookup.
-- `sprite-animation.test.ts` — `evaluateSpriteClip`, `advanceSpriteClip`, loop / one-shot termination, `onEnd` firing.
-- `sprite-pack.test.ts` — capacity grow, swap-remove, dirty-range bounds. There is only one Sprite2D stride (80 B).
-- `sprite-2d-projection.test.ts` — pixel (0,0) → top-left NDC; pan + zoom + rotation correctness.
-- `sprite-anchor-projection.test.ts` — Asserts that a static `createWorldAnchor([wx,wy,wz])` on a `Sprite2DLayer { depth: "test" }` produces the exact pixel position a GPU vertex-stage projection of the same anchor would produce (golden test against the analytic clip-space maths).
-- `sprite-anchor-hook.test.ts` — Verifies the per-frame projection hook is installed exactly once per layer, runs before user `onBeforeRender` callbacks, and drops to a no-op when the anchored map empties.
-- `sprite-billboard-basis.test.ts` — Facing / Yaw / Axis basis math regression suite.
-- `sprite-sort.test.ts` — billboard-only (Sprite2D does not participate in per-sprite sort indirection).
-- `sprite-pick-2d.test.ts` — covers both overlay and depth-hosted layers. Anchored hit-test uses already-projected `positionPx`.
-- `sprite-pick-billboard-uv.test.ts` — UV inverse-projection at resolve time.
-- `pick-contributor-registry.test.ts` — `PickContributor` interface contract.
-- `mat3.test.ts` — 2D affine matrix decomposition / composition (used by Sprite2D parenting walker).
-- `sprite-handle-stable-id.test.ts` — `_idToIndex` / `_indexToId` survive swap-remove.
-- `sprite-handle-observable-write.test.ts` — observable field writes propagate to packed slot.
-- `sprite-handle-parent-2d.test.ts` — Spine-style 2D parenting: parent rotation/scale propagate.
-- `sprite-handle-anchor.test.ts` — `handle.anchor = createWorldAnchor([…])` lazy-imports `sprite-anchor.ts` and installs the projection.
-- `sprite-renderer.test.ts` — `createSpriteRenderer(engine, opts)` + `registerSpriteRenderer(sr)` + `startEngine(engine)` produces a deterministic frame with no `SceneContext` in scope; verifies `disposeSpriteRenderer` releases buffers/pipelines and that `unregisterSpriteRenderer` removes it from the engine's render list.
-- `rendering-context-registration.test.ts` — `engine._renderingContexts` is appended to in registration order; the first registered context's `clearValue` is used for the frame's `loadOp: "clear"`; subsequent contexts use `loadOp: "load"` automatically.
-- `sprite-depth-hosted-routing.test.ts` — `addDepthHostedSpriteLayer(scene, layer)` for a `Sprite2DLayer { depth: "test" | "test-write" }` pushes a `Renderable` (with `order = 200` for `"test"`, `order = 100` for `"test-write"`) into `scene._renderables`; for `depth: "none"`, the add helper rejects before queuing scene work and tells the caller to use `createSpriteRenderer`.
+- `sprite-renderer.test.ts` — pure-2D renderer lifecycle, layer membership, pipeline cache, and depth-mode guardrails.
+- `sprite-depth-hosted-routing.test.ts` — `addDepthHostedSpriteLayer(scene, layer)` routing, depth-stencil pipeline formats, upload sizes, bind-group compatibility, and disposal.
+- `billboard-sprite.test.ts` — compact billboard instance layout, scene helper routing, transparent CPU sorting, cutout depth-write pipeline state, and axis normalization.
+- `render-pass-task.test.ts` — transparent binding updates run before transparent-bucket sorting, so billboard `_worldCenter` changes affect same-frame draw order.
+- `rendering-context-registration.test.ts` — engine rendering-context registration, scene registration idempotence, disposal unregistering, and pre-registration frame-graph task recording.
 
 ### Visualization (Playwright)
 
 Existing scene families port across (the goldens are pixel-equivalent
 because the projection math is the same):
 
-- **Scene NN-sprites-2d** — pure `Sprite2DLayer` driven by a `SpriteRenderer` registered on the engine; no `SceneContext` exists.
-- **Scene NN-sprites-overlay** — a 3D scene plus a separately-registered `SpriteRenderer` for the HUD layers; HUD disposal wired via `onSceneDispose`.
-- **Scene NN-sprites-anchored** — `Sprite2DLayer { depth: "test" }` added to the scene via `addDepthHostedSpriteLayer`, with `createWorldAnchor` labels pinned to mesh anchors.
-- **Scene NN-sprites-billboard-yaw** — unchanged.
-- **Scene NN-sprites-billboard-facing** — unchanged.
-- **Scene NN-sprites-cutout-vs-blend** — unchanged.
-- **Scene NN-sprites-animated** — unchanged.
-- **Scene NN-sprites-mixed** — one scene with depth-hosted anchored labels behind 3D occluders AND a HUD `SpriteRenderer` registered after the scene. Verifies that the engine's per-context loop draws them in the right order (scene context first — meshes + depth-hosted sprites in `order` queues; HUD `SpriteRenderer` second — last over everything).
+- **Scene 50/51-sprite-grid** — pure `Sprite2DLayer` driven by a `SpriteRenderer` registered on the engine; no `SceneContext` exists.
+- **Scene 52-hud-on-3d** — a 3D scene plus a separately-registered `SpriteRenderer` for the HUD layers.
+- **Scene 53-depth-hosted-sprites** — `Sprite2DLayer { depth: "test" | "test-write" }` added to the scene via `addDepthHostedSpriteLayer`.
+- **Scene 54-facing-billboards** — facing billboard system, alpha blending, and depth test against opaque boxes.
+- **Scene 55-billboard-sorting** — transparent billboard CPU sorting before compact instance upload.
+- **Scene 56-axis-locked-billboards** — arbitrary-axis locked billboard basis math.
+- **Scene 57-cutout-billboards** — cutout billboard alpha discard, no blend state, and depth writes.
 
 ### Bundle Size Ceilings
 
 Bundle-size ratchets:
 
-- **Pure-2D ceiling.** A pure-2D entry point that imports only `createEngine`, `loadSpriteAtlas`, `createSprite2DLayer`, `addSprite2D`, `createSpriteRenderer`, `registerSpriteRenderer`, and `startEngine` must NOT fetch any of: `scene/scene-core.js`, `sprite-anchor.js`, `sprite-3d-scene-ubo.js`, `sprite-billboard-*.js`, `camera/*`, `light/*`, `mesh/*`, `shadow/*`, `material/pbr/*`, `material/standard/*`, `picking/*`. This is the single most important ceiling — it is what justifies splitting `SpriteRenderer` into its own module separate from the scene.
-- **Anchored-only-no-billboard ceiling.** A scene with depth-hosted Sprite2D layers but no billboards must NOT fetch `sprite-3d-scene-ubo.js`, billboard renderables, or the GPU picker.
-- **Per-billboard-variant ceiling.** Each variant (`Facing`, `AxisLocked`) must NOT include the other.
-- **Mesh-only no-sprite ceiling.** A scene with no sprites must NOT fetch `sprite-2d.js`, `sprite-renderer.js`, or the body of `picking-contributors.js`.
+- **Pure-2D ceiling.** A pure-2D entry point that imports only `createEngine`, `loadSpriteAtlas`, `createSprite2DLayer`, `addSprite2DIndex`, `createSpriteRenderer`, `registerSpriteRenderer`, and `startEngine` must NOT fetch any of: `scene/scene-core.js`, `sprite-anchor.js`, `billboard-renderable.js`, `billboard-pipeline.js`, `camera/*`, `light/*`, `mesh/*`, `shadow/*`, `material/pbr/*`, `material/standard/*`, `picking/*`. This is the single most important ceiling — it is what justifies splitting `SpriteRenderer` into its own module separate from the scene.
+- **Depth-hosted-no-billboard ceiling.** A scene with depth-hosted Sprite2D layers but no billboards must NOT fetch billboard renderables, billboard pipelines, or the GPU picker.
+- **Billboard scene-helper ceiling.** Importing billboard factory functions without queueing a billboard system into a scene must NOT runtime-fetch `billboard-renderable.ts` / `billboard-pipeline.ts`.
+- **Mesh-only no-sprite ceiling.** A scene with no sprites must NOT fetch `sprite-2d.js`, `sprite-renderer.js`, or billboard modules.
 
 ---
 
@@ -2121,43 +1962,19 @@ packages/babylon-lite/src/
 
   sprite/
     shared/
-      sprite-atlas.ts                            # SpriteAtlas, createGrid/Named/loadSpriteAtlas, internal resolveSpriteFrame
-      sprite-animation.ts                        # SpriteClipState, evaluate/advanceSpriteClip
-      sprite-gpu.ts                              # CPU→GPU dirty-range writeBuffer, capacity grow (dynamic-imported)
-      sprite-pack-2d.ts                          # 80-byte pack helper for Sprite2DLayer
-      sprite-pack-billboard.ts                   # 96-byte pack helper for billboards
-      sprite-3d-instance-wgsl.ts                 # Shared SPRITE_3D_DATA_WGSL + SPRITE_3D_VS_IN_WGSL helpers (billboards only)
-      sprite-billboard-handle-walk.ts            # walkParentedBillboardHandles
+      sprite-atlas.ts                            # SpriteAtlas, createGrid/loadSpriteAtlas, internal resolveSpriteFrame
 
     sprite-2d.ts                                 # createSprite2DLayer + Index API (no anchor code; foundation only)
-    sprite-2d-handle.ts                          # Sprite2DHandle + addSprite2D / removeSprite2D (Handle API)
-    sprite-2d-handle-walk.ts                     # walkParentedSprite2DHandles
     sprite-renderable.ts                         # Renderable builder for Sprite2DLayer depth-hosted layers
-    sprite-2d-shader.ts                         # composeSprite2D WGSL emitter (covers pure 2D AND anchored)
+    sprite-pipeline.ts                           # Sprite2D WGSL, pipeline cache, dirty upload helpers
     sprite-renderer.ts                           # createSpriteRenderer / registerSpriteRenderer / unregisterSpriteRenderer / disposeSpriteRenderer + (sampleCount, hasDepth) pipeline cache
 
-    anchor/
-      sprite-anchor.ts                           # AnchorSource + createWorldAnchor + createParentAnchor + addAnchoredSprite2D + setSprite2DAnchor + per-frame projection hook
+    billboard-sprite.ts                          # BillboardSpriteSystem factories + Index API + compact 52-byte instance storage
+    billboard-scene.ts                           # addFacingBillboardSystem / addAxisLockedBillboardSystem; dynamically imports the renderable builder
+    billboard-renderable.ts                      # Scene Renderable wrapper, transparent CPU sort, world-center maintenance, GPU resource lifetime
+    billboard-pipeline.ts                        # Billboard WGSL composer, pipeline cache, UBO and instance upload helpers
 
-    billboard/
-      sprite-billboard-shared.ts                 # BillboardSpriteSystem common helpers + Index API
-      sprite-billboard-handle.ts                 # BillboardSpriteHandle + addBillboardSprite / removeBillboardSprite
-      sprite-billboard-facing.ts                 # createFacingBillboardSystem
-      sprite-billboard-facing-renderable.ts
-      sprite-billboard-facing-shader.ts
-      sprite-billboard-axis.ts                   # createAxisLockedBillboardSystem
-      sprite-billboard-axis-renderable.ts
-      sprite-billboard-axis-shader.ts
-      sprite-3d-scene-ubo.ts                     # Sprite3DSceneUBO + updater (lazy; first billboard allocates)
-
-    picking/
-      pick-sprite-2d.ts                          # pickSprite2D — covers both overlay and depth-hosted layers
-      pick-billboard.ts                          # pickBillboardSprite — dynamic-imports gpu-picker.ts
-      billboard-pick-contributor.ts              # PickContributor implementation
-      billboard-pick-pipeline.ts                 # Per-(variant, isCutout) pick pipeline cache
-
-  picking/
-    picking-contributors.ts                      # Generic PickContributor interface + getOrCreatePickContributors / getPickContributors
+    # Roadmap modules: sprite animation, handles, anchors, and sprite picking.
 ```
 
 ### Public-API additions to `packages/babylon-lite/src/index.ts`
@@ -2178,38 +1995,31 @@ export { addToScene, registerScene, disposeScene, onSceneDispose } from "./scene
 
 // ─── Sprites ─────────────────────────────────────────────────────────
 // The engine-registerable sprite renderer — usable with OR without a SceneContext.
-export { createSpriteRenderer, registerSpriteRenderer, unregisterSpriteRenderer, disposeSpriteRenderer } from "./sprite/sprite-renderer.js";
+export {
+    createSpriteRenderer,
+    addSpriteRendererLayer,
+    removeSpriteRendererLayer,
+    registerSpriteRenderer,
+    unregisterSpriteRenderer,
+    disposeSpriteRenderer,
+} from "./sprite/sprite-renderer.js";
 export type { SpriteRenderer, SpriteRendererOptions } from "./sprite/sprite-renderer.js";
 
-export { loadSpriteAtlas, createGridSpriteAtlas, createNamedSpriteAtlas } from "./sprite/shared/sprite-atlas.js";
-export { createSpriteClipState } from "./sprite/shared/sprite-animation.js";
-export type { SpriteAtlas, SpriteFrame, SpriteClip, SpriteSampling, SpriteFrameRef, SpriteClipState } from "./sprite/shared/sprite-atlas.js";
-export type { SpriteBlendMode } from "./sprite/sprite-2d.js";
-
-export { createSprite2DLayer, addSprite2D, removeSprite2D, updateSprite2D, setSprite2DFrame, playSprite2DClip, stopSprite2DClip } from "./sprite/sprite-2d.js";
-export { addSprite2DIndex, updateSprite2DIndex, removeSprite2DIndex, setSprite2DFrameIndex, playSprite2DClipIndex, stopSprite2DClipIndex } from "./sprite/sprite-2d.js";
-export type { Sprite2DLayer, Sprite2DLayerOptions, Sprite2DInit, Sprite2DView, Sprite2DDepthMode } from "./sprite/sprite-2d.js";
-export type { Sprite2DHandle } from "./sprite/sprite-2d-handle.js";
-
-// Anchoring — separate import path; tree-shaken if unused.
-export { createWorldAnchor, createParentAnchor, addAnchoredSprite2D, setSprite2DAnchor } from "./sprite/anchor/sprite-anchor.js";
-export type { AnchorSource, AnchoredSprite2DInit } from "./sprite/anchor/sprite-anchor.js";
+export { loadSpriteAtlas, createGridSpriteAtlas } from "./sprite/shared/sprite-atlas.js";
+export type { SpriteAtlas, SpriteFrame, SpriteSampling, GridAtlasOptions, LoadAtlasOptions } from "./sprite/shared/sprite-atlas.js";
+export { createSprite2DLayer, addSprite2DIndex, updateSprite2DIndex, removeSprite2DIndex, setSprite2DFrameIndex } from "./sprite/sprite-2d.js";
+export type { Sprite2DLayer, Sprite2DLayerOptions, Sprite2DProps, Sprite2DView, Sprite2DDepthMode, SpriteBlendMode } from "./sprite/sprite-2d.js";
+export { addDepthHostedSpriteLayer } from "./sprite/sprite-scene.js";
 
 // Billboards.
-export { createFacingBillboardSystem } from "./sprite/billboard/sprite-billboard-facing.js";
-export { createAxisLockedBillboardSystem } from "./sprite/billboard/sprite-billboard-axis.js";
 export {
-    addBillboardSprite,
-    updateBillboardSprite,
-    removeBillboardSprite,
-    setBillboardSpriteFrame,
-    playBillboardSpriteClip,
-    stopBillboardSpriteClip,
-} from "./sprite/billboard/sprite-billboard-shared.js";
-export type { BillboardSpriteSystem, BillboardSpriteSystemOptions, BillboardSpriteInit } from "./sprite/billboard/sprite-billboard-shared.js";
-
-// Picking.
-export { pickSprite2D } from "./sprite/picking/pick-sprite-2d.js";
-export { pickBillboardSprite } from "./sprite/picking/pick-billboard.js";
-export type { SpritePickInfo } from "./sprite/picking/pick-sprite-2d.js";
+    createFacingBillboardSystem,
+    createAxisLockedBillboardSystem,
+    addBillboardSpriteIndex,
+    updateBillboardSpriteIndex,
+    removeBillboardSpriteIndex,
+    setBillboardSpriteFrameIndex,
+} from "./sprite/billboard-sprite.js";
+export { addFacingBillboardSystem, addAxisLockedBillboardSystem } from "./sprite/billboard-scene.js";
+export type { BillboardSpriteSystem, BillboardSpriteSystemOptions, BillboardSpriteInit, BillboardOrientation, BillboardDepthMode } from "./sprite/billboard-sprite.js";
 ```

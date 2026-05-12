@@ -244,6 +244,15 @@ describe("addFacingBillboardSystem", () => {
         expect(device.createBuffer).not.toHaveBeenCalled();
     });
 
+    it("rejects mismatched scene helpers before queuing deferred work", () => {
+        const engine = makeMockEngine();
+        const scene = createSceneContext(engine) as SceneContextInternal;
+
+        expect(() => addFacingBillboardSystem(scene, createAxisLockedBillboardSystem(makeMockAtlas(), [0, 1, 0]))).toThrow(/expected a facing/);
+        expect(() => addAxisLockedBillboardSystem(scene, createFacingBillboardSystem(makeMockAtlas()))).toThrow(/expected a axis-locked/);
+        expect(scene._deferredBuilders.length).toBe(0);
+    });
+
     it("routes into a transparent depth-tested scene renderable after registerScene", async () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContextInternal;
@@ -372,10 +381,15 @@ describe("addFacingBillboardSystem", () => {
             system._instanceData[BILLBOARD_INSTANCE_FLOATS_PER_SPRITE + 2],
             system._instanceData[BILLBOARD_INSTANCE_FLOATS_PER_SPRITE * 2 + 2],
         ]).toEqual([1, 2, 3]);
+        expect(scene._renderables[0]!._worldCenter).toEqual([20, 0, 2]);
 
         device.queue.writeBuffer.mockClear();
         binding.update?.({ targetWidth: 512, targetHeight: 256, camera });
         expect(device.queue.writeBuffer.mock.calls.some((call) => call[4] === 3 * BILLBOARD_INSTANCE_STRIDE_BYTES)).toBe(false);
+
+        updateBillboardSpriteIndex(system, 0, { position: [40, 0, 4] });
+        binding.update?.({ targetWidth: 512, targetHeight: 256, camera });
+        expect(scene._renderables[0]!._worldCenter).toEqual([30, 0, 3]);
     });
 
     it("uploads cutout billboards in logical order without transparent sorting", async () => {

@@ -57,6 +57,7 @@ interface BillboardRenderableInternal extends Renderable {
     _uploadedCameraViewMatrix: Mat4 | null;
     _uploadedCameraViewVersion: number;
     _uploadedSorted: boolean;
+    _centerVersion: number;
     _uboUploaded: boolean;
     _lastUbo: Float32Array;
     _scratchUbo: Float32Array;
@@ -85,14 +86,17 @@ export function buildBillboardRenderable(engine: EngineContextInternal, system: 
         _uploadedCameraViewMatrix: null,
         _uploadedCameraViewVersion: -1,
         _uploadedSorted: false,
+        _centerVersion: -1,
         _uboUploaded: false,
         _lastUbo: new Float32Array(BILLBOARD_SYSTEM_UBO_BYTES / 4),
         _scratchUbo: new Float32Array(BILLBOARD_SYSTEM_UBO_BYTES / 4),
         _disposed: false,
+        _worldCenter: [0, 0, 0],
         bind(engine, target) {
             return bindSystem(renderable, engine as EngineContextInternal, target);
         },
     };
+    refreshBillboardWorldCenter(renderable);
     return {
         renderable,
         dispose() {
@@ -133,7 +137,11 @@ function bindSystem(renderable: BillboardRenderableInternal, engine: EngineConte
 }
 
 function uploadSystem(renderable: BillboardRenderableInternal, context: DrawUpdateContext): void {
-    if (renderable._disposed || !renderable._system.visible || renderable._system.count === 0) {
+    if (renderable._disposed) {
+        return;
+    }
+    refreshBillboardWorldCenter(renderable);
+    if (!renderable._system.visible || renderable._system.count === 0) {
         return;
     }
     const grown = ensureBillboardInstanceBuffer(
@@ -181,6 +189,37 @@ function uploadSystem(renderable: BillboardRenderableInternal, context: DrawUpda
         renderable._lastUbo,
         renderable._uboUploaded
     );
+}
+
+function refreshBillboardWorldCenter(renderable: BillboardRenderableInternal): void {
+    const system = renderable._system;
+    if (renderable._centerVersion === system._version) {
+        return;
+    }
+    const center = renderable._worldCenter!;
+    if (system.count === 0) {
+        center[0] = 0;
+        center[1] = 0;
+        center[2] = 0;
+        renderable._centerVersion = system._version;
+        return;
+    }
+    const data = system._instanceData;
+    const stride = system._instanceFloatsPerSprite;
+    let centerX = 0;
+    let centerY = 0;
+    let centerZ = 0;
+    for (let index = 0; index < system.count; index++) {
+        const base = index * stride;
+        centerX += data[base]!;
+        centerY += data[base + 1]!;
+        centerZ += data[base + 2]!;
+    }
+    const invCount = 1 / system.count;
+    center[0] = centerX * invCount;
+    center[1] = centerY * invCount;
+    center[2] = centerZ * invCount;
+    renderable._centerVersion = system._version;
 }
 
 function drawSystem(renderable: BillboardRenderableInternal, bindGroup: GPUBindGroup, pass: GPURenderPassEncoder | GPURenderBundleEncoder): number {
