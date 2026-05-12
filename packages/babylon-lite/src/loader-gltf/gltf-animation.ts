@@ -11,7 +11,9 @@ import type { Mat4 } from "../math/types.js";
 import type { Mesh } from "../mesh/mesh.js";
 import type { GltfAnimationData, AnimationClip, AnimationSampler, AnimationChannel, NodeRest, SkeletonBinding, MorphBinding } from "../animation/types.js";
 import { INTERP_LINEAR, INTERP_STEP, INTERP_CUBICSPLINE, PATH_TRANSLATION, PATH_ROTATION, PATH_SCALE, PATH_WEIGHTS } from "../animation/types.js";
-import { mat4Invert, mat4Identity, mat4MultiplyInto } from "../math/mat4.js";
+import { mat4Identity } from "../math/mat4-identity.js";
+import { mat4Invert } from "../math/mat4-invert.js";
+import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
 import { resolveAccessor, computeNodeWorldMatrix, findParent } from "./gltf-parser.js";
 import type { SceneNode } from "../scene/scene-node.js";
 
@@ -252,15 +254,17 @@ export function parseAnimationData(
         // Create a binding for EACH mesh primitive of this skinned node
         for (const mi of meshIndices) {
             const mesh = meshes[mi];
-            if (!mesh?.skeleton) {
+            const skeleton = mesh?.skeleton;
+            if (!skeleton) {
                 continue;
             }
             skeletons.push({
                 jointNodes,
                 inverseBindMatrices,
                 invMeshWorld,
-                boneTexture: mesh.skeleton.boneTexture,
+                boneTexture: skeleton.boneTexture,
                 boneCount: jointNodes.length,
+                boneMatrices: skeleton.boneMatrices,
             });
         }
     }
@@ -284,13 +288,15 @@ export function parseAnimationData(
 
         for (const mi of meshIndices) {
             const mesh = meshes[mi];
-            if (!mesh?.morphTargets) {
+            const morphTargets = mesh?.morphTargets;
+            if (!morphTargets) {
                 continue;
             }
             morphBindings.push({
                 nodeIdx,
-                weightsBuffer: mesh.morphTargets.weightsBuffer,
-                targetCount: mesh.morphTargets.count,
+                weightsBuffer: morphTargets.weightsBuffer,
+                weights: morphTargets.weights,
+                targetCount: morphTargets.count,
             });
         }
     }

@@ -12,7 +12,7 @@
 import { build, type Plugin } from "vite";
 import { execFileSync } from "child_process";
 import { resolve, dirname, join, extname } from "path";
-import { rmSync, readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import { rmSync, readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from "fs";
 import { initialize as initMiniray, minify as minifyWgslMiniray } from "miniray";
 import { minify as terserMinify } from "terser";
 import { bytesToRoundedKB, IGNORED_BUNDLE_MODULE_PATTERN, summarizeRuntimeBundle, type RuntimeJsPayload } from "./bundle-size-accounting";
@@ -731,6 +731,13 @@ function elapsed(startMs: number): string {
     return `${((performance.now() - startMs) / 1000).toFixed(1)}s`;
 }
 
+function measurementBrowserArgs(): string[] {
+    const swiftShaderArgs = process.env.CI
+        ? ["--enable-features=Vulkan", "--use-vulkan=swiftshader", "--use-angle=swiftshader", "--disable-vulkan-fallback-to-gl-for-testing", "--ignore-gpu-blocklist"]
+        : [];
+    return ["--force-color-profile=srgb", "--enable-unsafe-webgpu", ...swiftShaderArgs];
+}
+
 export async function buildBundleScenes(): Promise<void> {
     const t0 = performance.now();
     // Do NOT wipe outDir — keep existing data live in the lab tab during the build.
@@ -869,7 +876,15 @@ export async function buildBundleScenes(): Promise<void> {
     const bjsScenesToBuild = BJS_SCENES.filter((bjsScene) => {
         const liteScene = bjsScene.replace("bjs-", "");
         const cached = existingManifest[liteScene];
-        return cached?.bjsRawKB == null;
+        if (cached?.bjsRawKB == null) {
+            return true;
+        }
+        const sourcePath = resolve(labDir, `src/bjs/${liteScene}.ts`);
+        const bundlePath = resolve(outDir, `${bjsScene}.js`);
+        if (!existsSync(bundlePath)) {
+            return true;
+        }
+        return statSync(sourcePath).mtimeMs > statSync(bundlePath).mtimeMs;
     });
 
     // Build sequentially — parallel Vite build() calls within the same process
@@ -971,7 +986,7 @@ async function measureLiveSizes(): Promise<BundleManifest> {
     try {
         const tBrowser = performance.now();
         console.log("Launching measurement browser...");
-        const browser = await chromium.launch({ channel: "chrome", headless: true });
+        const browser = await chromium.launch({ channel: "chrome", headless: true, args: measurementBrowserArgs() });
         console.log(`Browser launched in ${elapsed(tBrowser)}`);
 
         // Measure Lite scenes (write after each)
@@ -992,7 +1007,14 @@ async function measureLiveSizes(): Promise<BundleManifest> {
                 continue;
             }
             const tPage = performance.now();
-            const { rawKB, gzipKB } = await measurePage(browser, port, bjsScene, `bundle-${bjsScene}.html`, "/bundle/");
+            let rawKB: number;
+            let gzipKB: number;
+            try {
+                ({ rawKB, gzipKB } = await measurePage(browser, port, bjsScene, `bundle-${bjsScene}.html`, "/bundle/"));
+            } catch (err) {
+                console.warn(`  ${bjsScene}: skipped BJS measurement (${err instanceof Error ? err.message : String(err)})`);
+                break;
+            }
             if (manifest[liteScene]) {
                 manifest[liteScene].bjsRawKB = rawKB;
                 manifest[liteScene].bjsGzipKB = gzipKB;
@@ -1030,19 +1052,21 @@ async function measurePage(
     const jsPayloads: RuntimeJsPayload[] = [];
     const chunkFiles: string[] = [];
     const responseReads: Promise<void>[] = [];
+    const responseReadErrors: unknown[] = [];
 
     page.on("response", (resp: any) => {
         const url = resp.url();
         if (url.includes(bundlePath) && url.endsWith(".js") && resp.ok()) {
-            responseReads.push(
-                (async () => {
+            const read = (async () => {
                     const idx = url.indexOf(bundlePath);
                     const fileName = url.slice(idx + bundlePath.length).split("?")[0];
                     const body = await resp.body();
                     jsPayloads.push({ file: fileName, body });
                     chunkFiles.push(fileName);
-                })()
-            );
+                })().catch((err: unknown) => {
+                    responseReadErrors.push(err);
+                });
+            responseReads.push(read);
         }
     });
 
@@ -1054,6 +1078,9 @@ async function measurePage(
     }
 
     await Promise.all(responseReads);
+    if (responseReadErrors.length > 0) {
+        throw responseReadErrors[0];
+    }
     const summary = summarizeRuntimeBundle(jsPayloads, bundleInfoDir, scene);
 
     await page.close();

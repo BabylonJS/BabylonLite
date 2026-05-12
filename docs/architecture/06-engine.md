@@ -62,7 +62,7 @@ interface EngineContextInternal extends EngineContext {
 
 ### Render Targets
 
-The engine no longer owns per-frame color/depth render targets directly. Render targets are owned by registered rendering contexts, primarily scene frame-graph `RenderPassTask`s. The engine owns the canvas/swapchain and exposes the current swapchain view once per frame through `_swapchainView`.
+The engine no longer owns per-frame color/depth render targets directly. Render targets are owned by registered rendering contexts, primarily scene frame-graph `RenderTask`s. The engine owns the canvas/swapchain and exposes the current swapchain view once per frame through `_swapchainView`.
 
 ### Resize Logic
 
@@ -121,7 +121,7 @@ Each frame consists of:
 
 When `registerScene(engine, scene)` is called, the scene runs its deferred builders, builds material renderables, and rebuilds its frame graph. `startEngine(engine)` then begins the rAF loop and resolves after the first `renderFrame()` call completes.
 
-Swapchain MSAA/depth attachments are managed by the default scene `RenderPassTask` through render-target helpers, not by the engine render loop itself.
+Swapchain MSAA/depth attachments are managed by the default scene `RenderTask` through render-target helpers, not by the engine render loop itself.
 
 ## State Machine / Lifecycle
 

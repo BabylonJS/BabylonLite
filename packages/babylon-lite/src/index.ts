@@ -18,13 +18,16 @@ export {
 
 // ─── Frame graph ─────────────────────────────────────────────────────
 // Scene-owned ordered list of tasks. The default scene pass is a
-// RenderPassTask, and user tasks can render offscreen RTTs, overlays, etc.
+// RenderTask, and user tasks can render offscreen RTTs, overlays, etc.
 export { getFrameGraph } from "./scene/scene.js";
 export type { FrameGraph } from "./frame-graph/frame-graph.js";
-export { addTask, addTaskAtStart, addTaskBefore } from "./frame-graph/frame-graph-actions.js";
+export { addRenderPass, addTask, addTaskAtStart, addTaskBefore } from "./frame-graph/frame-graph-actions.js";
 export type { Task } from "./frame-graph/task.js";
-export type { RenderPassTask, RenderPassTaskConfig } from "./frame-graph/render-pass-task.js";
-export { createRenderPassTask, removeMeshFromTask } from "./frame-graph/render-pass-task.js";
+export type { Pass, RenderPassExecuteFunc } from "./frame-graph/pass.js";
+export { addPassDependencies } from "./frame-graph/pass.js";
+export type { RenderPass } from "./frame-graph/render-pass.js";
+export type { RenderTask, RenderTaskConfig } from "./frame-graph/render-task.js";
+export { createRenderTask, removeMeshFromTask } from "./frame-graph/render-task.js";
 export type { RenderTarget, RenderTargetDescriptor } from "./engine/render-target.js";
 export { createRenderTarget } from "./engine/render-target.js";
 export { createRenderTargetTexture } from "./texture/rtt.js";
@@ -78,7 +81,7 @@ export { loadKtxTexture2D } from "./texture/ktx-loader.js";
 export { loadBasisTexture2D } from "./texture/basis-loader.js";
 
 // ─── Materials ───────────────────────────────────────────────────────
-export { createStandardMaterial } from "./material/standard/standard-material.js";
+export { createStandardMaterial } from "./material/standard/create-standard-material.js";
 export { createPbrMaterial } from "./material/pbr/pbr-material.js";
 export { parseNodeMaterialFromSnippet } from "./material/node/node-material.js";
 export type { NodeMaterial, NodeInputHandle, ParseNodeMaterialOptions } from "./material/node/node-material.js";
@@ -114,7 +117,12 @@ export { createMorphTargets } from "./morph/create-morph-targets.js";
 export type { MorphTargetData } from "./animation/types.js";
 
 // ─── Math ────────────────────────────────────────────────────────────
-export { mat4Translation, mat4Identity, mat4Scale, mat4Compose } from "./math/mat4.js";
+export { normalizeVec3 } from "./math/normalize-vec3.js";
+export { mat4Translation } from "./math/mat4-translation.js";
+export { mat4Identity } from "./math/mat4-identity.js";
+export { mat4Scale } from "./math/mat4-scale.js";
+export { mat4Compose } from "./math/mat4-compose.js";
+export type { Vec3, Vec3Tuple } from "./math/types.js";
 
 // ─── Thin Instances ──────────────────────────────────────────────────
 export { addThinInstance, removeThinInstance, setThinInstanceMatrix, setThinInstances, flushThinInstances, setThinInstanceColors } from "./mesh/thin-instance.js";

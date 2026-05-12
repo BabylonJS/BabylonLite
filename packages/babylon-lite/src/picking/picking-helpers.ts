@@ -1,5 +1,6 @@
 import type { PickingInfo } from "./picking-info.js";
 import type { MeshInternal } from "../mesh/mesh.js";
+import { normalizeVec3 } from "../math/normalize-vec3.js";
 
 /**
  * Get the interpolated normal at the picked point.
@@ -7,6 +8,13 @@ import type { MeshInternal } from "../mesh/mesh.js";
  * @param useWorldCoordinates - if true, transform normal by world matrix (default: false)
  */
 export function getPickedNormal(info: PickingInfo, useWorldCoordinates = false): [number, number, number] | null {
+    if (useWorldCoordinates && info.pickedNormalWorld) {
+        return info.pickedNormalWorld;
+    }
+    if (!useWorldCoordinates && info.pickedNormal) {
+        return info.pickedNormal;
+    }
+
     const mi = info.pickedMesh as MeshInternal | undefined;
     if (info.faceId < 0 || !mi || !mi._cpuNormals || !mi._cpuIndices) {
         return null;
@@ -20,34 +28,32 @@ export function getPickedNormal(info: PickingInfo, useWorldCoordinates = false):
     const i1 = indices[face * 3 + 1]!;
     const i2 = indices[face * 3 + 2]!;
 
-    // Barycentric interpolation: P = (1 - bu - bv) * N0 + bu * N1 + bv * N2
-    const w = 1 - info.bu - info.bv;
-    const nx = w * normals[i0 * 3]! + info.bu * normals[i1 * 3]! + info.bv * normals[i2 * 3]!;
-    const ny = w * normals[i0 * 3 + 1]! + info.bu * normals[i1 * 3 + 1]! + info.bv * normals[i2 * 3 + 1]!;
-    const nz = w * normals[i0 * 3 + 2]! + info.bu * normals[i1 * 3 + 2]! + info.bv * normals[i2 * 3 + 2]!;
+    // BJS exposes bu for vertex 0 and bv for vertex 1; vertex 2 gets the remainder.
+    const bw = 1 - info.bu - info.bv;
+    const nx = info.bu * normals[i0 * 3]! + info.bv * normals[i1 * 3]! + bw * normals[i2 * 3]!;
+    const ny = info.bu * normals[i0 * 3 + 1]! + info.bv * normals[i1 * 3 + 1]! + bw * normals[i2 * 3 + 1]!;
+    const nz = info.bu * normals[i0 * 3 + 2]! + info.bv * normals[i1 * 3 + 2]! + bw * normals[i2 * 3 + 2]!;
 
-    // Normalize
-    const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
-    if (len < 1e-10) {
-        return [0, 1, 0];
-    }
-    const invLen = 1 / len;
+    const localNormal = normalizeVec3(nx, ny, nz);
+    const wm = mi.worldMatrix;
+    const wnx = wm[0]! * localNormal[0] + wm[4]! * localNormal[1] + wm[8]! * localNormal[2];
+    const wny = wm[1]! * localNormal[0] + wm[5]! * localNormal[1] + wm[9]! * localNormal[2];
+    const wnz = wm[2]! * localNormal[0] + wm[6]! * localNormal[1] + wm[10]! * localNormal[2];
+    const worldNormal = normalizeVec3(wnx, wny, wnz);
+    const flip = info.ray ? worldNormal[0] * info.ray.direction[0] + worldNormal[1] * info.ray.direction[1] + worldNormal[2] * info.ray.direction[2] > 0 : false;
 
     if (!useWorldCoordinates) {
-        return [nx * invLen, ny * invLen, nz * invLen];
+        return flip ? [-localNormal[0], -localNormal[1], -localNormal[2]] : localNormal;
     }
 
-    // Transform by world matrix (upper-left 3x3, then normalize)
-    const wm = mi.worldMatrix;
-    const wnx = wm[0]! * nx + wm[4]! * ny + wm[8]! * nz;
-    const wny = wm[1]! * nx + wm[5]! * ny + wm[9]! * nz;
-    const wnz = wm[2]! * nx + wm[6]! * ny + wm[10]! * nz;
-    const wLen = Math.sqrt(wnx * wnx + wny * wny + wnz * wnz);
-    if (wLen < 1e-10) {
-        return [0, 1, 0];
+    return flip ? [-worldNormal[0], -worldNormal[1], -worldNormal[2]] : worldNormal;
+}
+
+export function getPickedFaceNormal(info: PickingInfo, useWorldCoordinates = false): [number, number, number] | null {
+    if (useWorldCoordinates) {
+        return info.pickedFaceNormalWorld;
     }
-    const wInvLen = 1 / wLen;
-    return [wnx * wInvLen, wny * wInvLen, wnz * wInvLen];
+    return info.pickedFaceNormal;
 }
 
 /**
@@ -68,9 +74,9 @@ export function getPickedUV(info: PickingInfo): [number, number] | null {
     const i1 = indices[face * 3 + 1]!;
     const i2 = indices[face * 3 + 2]!;
 
-    const w = 1 - info.bu - info.bv;
-    const u = w * uvs[i0 * 2]! + info.bu * uvs[i1 * 2]! + info.bv * uvs[i2 * 2]!;
-    const v = w * uvs[i0 * 2 + 1]! + info.bu * uvs[i1 * 2 + 1]! + info.bv * uvs[i2 * 2 + 1]!;
+    const bw = 1 - info.bu - info.bv;
+    const u = info.bu * uvs[i0 * 2]! + info.bv * uvs[i1 * 2]! + bw * uvs[i2 * 2]!;
+    const v = info.bu * uvs[i0 * 2 + 1]! + info.bv * uvs[i1 * 2 + 1]! + bw * uvs[i2 * 2 + 1]!;
 
     return [u, v];
 }

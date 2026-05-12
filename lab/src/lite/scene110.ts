@@ -5,7 +5,7 @@
 // green material, into an offscreen 512x512 color texture. That texture is wired as
 // mesh B's diffuseTexture, so the box on screen displays whatever R1 rendered.
 //
-// Demonstrates: addToPass, addTaskAtStart, createRenderTargetTexture,
+// Demonstrates: addMesh, addTaskAtStart, createRenderTargetTexture,
 // per-pass material override, and that one Renderable per (mesh, material) is shared
 // across multiple passes.
 
@@ -18,7 +18,7 @@ import {
     createEngine,
     createFreeCamera,
     createHemisphericLight,
-    createRenderPassTask,
+    createRenderTask,
     createRenderTargetTexture,
     createSceneContext,
     createSphere,
@@ -71,13 +71,13 @@ async function main(): Promise<void> {
     const r1Cam = createFreeCamera({ x: 0, y: 0, z: -3 }, { x: 0, y: 0, z: 0 });
     r1Cam.nearPlane = 0.1;
     r1Cam.farPlane = 100;
-    const r1Task = createRenderPassTask({ name: "r1", rt: r1RT, clrColor: { r: 0.1, g: 0.1, b: 0.3, a: 1 }, cam: r1Cam, cs: true }, engine, scene);
+    const r1Task = createRenderTask({ name: "r1", rt: r1RT, clrColor: { r: 0.1, g: 0.1, b: 0.3, a: 1 }, cam: r1Cam, cs: true }, engine, scene);
     addTaskAtStart(scene, r1Task);
 
     // Override material for A in R1: green sphere on a blue background.
     const matA_R1 = createStandardMaterial();
     matA_R1.diffuseColor = [0.2, 1, 0.2];
-    r1Task.addToPass(meshA, { material: matA_R1 });
+    r1Task.addMesh(meshA, { material: matA_R1 });
 
     await registerScene(engine, scene);
     await startEngine(engine);

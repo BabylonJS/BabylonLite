@@ -62,10 +62,10 @@ export function createMorphTargets(
 
     // Weights UBO: vec4 weights + count + texWidth + rowsPerBand + pad = 32 bytes
     const uboData = new ArrayBuffer(32);
-    const f32 = new Float32Array(uboData, 0, 4);
+    const weights = new Float32Array(uboData, 0, 4);
     const u32 = new Uint32Array(uboData, 16, 4);
     for (let i = 0; i < targetCount; i++) {
-        f32[i] = morphWeights?.[i] ?? 0;
+        weights[i] = morphWeights?.[i] ?? 0;
     }
     u32[0] = targetCount;
     u32[1] = texWidth;
@@ -73,5 +73,5 @@ export function createMorphTargets(
 
     const weightsBuffer = createMappedBuffer(engine, new Uint8Array(uboData), GPUBufferUsage.UNIFORM);
 
-    return { texture, count: targetCount, weightsBuffer };
+    return { texture, count: targetCount, weightsBuffer, targets: targets.slice(0, targetCount), weights };
 }

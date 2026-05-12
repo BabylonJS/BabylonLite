@@ -31,11 +31,16 @@ export interface FrameGraph {
     _engine: EngineContextInternal;
     _scene: SceneContextInternal;
 
+    /** Set during `build()` while a single task's `record()` is running.
+     *  Used by `addRenderPass` to associate a
+     *  freshly-created pass with the task that is currently recording.
+     *  Mirrors BJS' implicit "currentProcessedTask" in `frameGraph.buildAsync`. */
+    _currentProcessedTask: Task | null;
+
     /** Build (or rebuild) every task in execute order. */
     build(): void;
 
-    /** Execute every task. Each task reads the current encoder via
-     *  `engine._currentEncoder`. Returns total draw calls.
+    /** Execute every task's recorded passes. Returns total draw calls.
      *  No-op (returns 0) if the graph hasn't been built yet. */
     execute(): number;
 
@@ -51,10 +56,26 @@ export function createFrameGraph(engine: EngineContext, scene: SceneContextInter
         _ready: false,
         _engine: eng,
         _scene: scene,
+        _currentProcessedTask: null,
 
         build(): void {
+            // Phase 1 — record. Each task creates its passes; `createRenderPass`
+            // appends each new pass to the currently-recording task's `_passes` list.
             for (let i = 0; i < fg._tasks.length; i++) {
-                fg._tasks[i]!.record();
+                const task = fg._tasks[i]!;
+                task._passes.length = 0;
+                fg._currentProcessedTask = task;
+                task.record();
+                fg._currentProcessedTask = null;
+            }
+            // Phase 2 — initialize. Runs after every task has finished recording
+            // so passes can safely reference resources allocated by other tasks
+            // (e.g. RTTs whose textures are wired up by a later task's `record`).
+            for (let i = 0; i < fg._tasks.length; i++) {
+                const passes = fg._tasks[i]!._passes;
+                for (let j = 0; j < passes.length; j++) {
+                    passes[j]!._initialize();
+                }
             }
             fg._ready = true;
         },
@@ -65,7 +86,13 @@ export function createFrameGraph(engine: EngineContext, scene: SceneContextInter
             }
             let drawCalls = 0;
             for (const task of fg._tasks) {
-                drawCalls += task.execute();
+                if (task.execute) {
+                    drawCalls += task.execute();
+                } else {
+                    for (const pass of task._passes) {
+                        drawCalls += pass._execute();
+                    }
+                }
             }
             return drawCalls;
         },
@@ -76,6 +103,7 @@ export function createFrameGraph(engine: EngineContext, scene: SceneContextInter
             }
             fg._tasks.length = 0;
             fg._ready = false;
+            fg._currentProcessedTask = null;
         },
     };
     return fg;

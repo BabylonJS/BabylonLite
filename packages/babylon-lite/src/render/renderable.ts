@@ -105,7 +105,7 @@ export interface MeshGroupBuildResult {
  *
  *  - `_rebuildSingle` is set by the group builder on first run (same compilation
  *    unit as `buildSingleX`). Used for per-mesh material swaps and per-pass
- *    material overrides (`RenderPassTask.addToPass`).
+ *    material overrides (`RenderTask.addMesh`).
  *
  * @param scene  - The scene context (for engine, camera, env textures, etc.)
  * @param meshes - All meshes that use this builder's material type.

@@ -178,16 +178,13 @@ export function createEffectRenderTask(config: EffectRenderTaskConfig, engine: E
         colorFormat: rt.descriptor.colorFormat,
         sampleCount,
     };
-    const colorAttachment: GPURenderPassColorAttachment = {
-        view: undefined!,
-        loadOp: "clear",
-        storeOp: "store",
-    };
+    const colorAttachment = { loadOp: "clear", storeOp: "store" } as GPURenderPassColorAttachment;
     const task: EffectRenderTaskInternal = {
         name: config.name,
         _config: config,
         engine: eng,
         scene: sc,
+        _passes: [],
         _rt: rt,
         _targetSignature: targetSignature,
         _renderPassDescriptor: { label: config.name, colorAttachments: [colorAttachment] },
@@ -198,19 +195,15 @@ export function createEffectRenderTask(config: EffectRenderTaskConfig, engine: E
             buildRenderTarget(rt, eng);
             task._pipeline = getEffectPipeline(effect, task._targetSignature);
             task._bindGroup = getEffectBindGroup(effect);
-            patchColorAttachment(task, eng);
         },
         execute(): number {
-            const encoder = eng._currentEncoder;
-            if (!encoder) {
-                return 0;
-            }
-            patchColorAttachment(task, eng);
             const pipeline = task._pipeline;
             if (!pipeline) {
                 throw new Error(`EffectRenderTask "${task.name}" executed before record().`);
             }
-            const pass = encoder.beginRenderPass(task._renderPassDescriptor);
+            task._bindGroup = getEffectBindGroup(effect);
+            applyColorAttachmentState(task._colorAttachment, rt, eng, task._config.clear !== false, task._config.clearColor!);
+            const pass = eng._currentEncoder.beginRenderPass(task._renderPassDescriptor);
             pass.setPipeline(pipeline);
             if (task._bindGroup) {
                 pass.setBindGroup(0, task._bindGroup);
@@ -220,10 +213,10 @@ export function createEffectRenderTask(config: EffectRenderTaskConfig, engine: E
             return 1;
         },
         dispose(): void {
+            task._passes.length = 0;
             disposeRenderTarget(task._rt);
             task._pipeline = null;
             task._bindGroup = null;
-            task._renderPassDescriptor = { colorAttachments: [] };
         },
     };
     return task;
@@ -388,10 +381,6 @@ function applyColorAttachmentState(att: GPURenderPassColorAttachment, rt: Render
         att.view = rt._colorView!;
         att.resolveTarget = undefined;
     }
-}
-
-function patchColorAttachment(task: EffectRenderTaskInternal, eng: EngineContextInternal): void {
-    applyColorAttachmentState(task._colorAttachment, task._rt, eng, task._config.clear !== false, task._config.clearColor!);
 }
 
 function ensureRtCanvasSize(rt: RenderTarget, eng: EngineContextInternal): void {

@@ -48,7 +48,9 @@ export interface MeshGroupBuildResult {
 }
 ```
 
-`Renderable.bind(engine, target)` is the key split: material modules resolve the pipeline for the pass target once and return a `DrawBinding` closure. The `RenderPassTask` owns the scene bind group (group 0), so renderables never set bind group 0 themselves.
+`Renderable.bind(engine, target)` is the key split: material modules resolve the pipeline for the pass target once and return a `DrawBinding` closure. The `RenderTask` owns the scene bind group (group 0), so renderables never set bind group 0 themselves.
+
+`DrawBinding.update(context)` is called once per frame per binding before the render pass is opened. The context contains the current pass target dimensions (`targetWidth`, `targetHeight`) so bindings can refresh target-size-dependent UBOs without rebuilding their pipelines or bind groups. Mesh/material UBO updates that do not need the target dimensions still use this hook and version-guard their writes.
 
 `DrawBinding.update(context)` is called once per frame per binding before the render pass is opened. The context contains the current pass target dimensions (`targetWidth`, `targetHeight`) so bindings can refresh target-size-dependent UBOs without rebuilding their pipelines or bind groups. Mesh/material UBO updates that do not need the target dimensions still use this hook and version-guard their writes.
 
@@ -59,8 +61,8 @@ export interface Task {
     readonly name: string;
     readonly engine: EngineContextInternal;
     readonly scene: SceneContextInternal;
+    _passes: Pass[];
     record(): void;
-    execute(): number;
     dispose(): void;
 }
 
@@ -73,14 +75,14 @@ export interface FrameGraph {
 }
 ```
 
-`createSceneContext()` eagerly creates a `FrameGraph` with one default `RenderPassTask` named `"scene"` that renders into the swapchain. User code can add tasks with `addTask()`, `addTaskAtStart()`, or `addTaskBefore()`.
+`createSceneContext()` eagerly creates a `FrameGraph` with one default `RenderTask` named `"scene"` that renders into the swapchain. User code can add tasks with `addTask()`, `addTaskAtStart()`, or `addTaskBefore()`.
 
-### RenderPassTask
+### RenderTask
 
-`RenderPassTask` begins a WebGPU render pass, buckets/binds renderables, writes its per-task scene UBO, draws, and ends the pass.
+`RenderTask` begins a WebGPU render pass, buckets/binds renderables, writes its per-task scene UBO, draws, and ends the pass.
 
 ```typescript
-export interface RenderPassTaskConfig {
+export interface RenderTaskConfig {
     name: string;
     rt: RenderTarget;
     clrColor?: GPUColorDict;
@@ -104,7 +106,7 @@ Important fields:
 ```text
 createSceneContext(engine)
   -> createFrameGraph(engine, scene)
-  -> append default swapchain RenderPassTask
+  -> append default swapchain RenderTask
   -> build frame graph
 
 startEngine/registerScene frame:
@@ -115,12 +117,13 @@ startEngine/registerScene frame:
     -> shared uniform updaters
   scene._record()
     -> frameGraph.execute()
-      -> each task.execute()
+      -> _executeTask(task)
+        -> each pass._execute()
 ```
 
-`FrameGraph.build()` calls `record()` on every task. `record()` is where `RenderPassTask` builds the render target, stores the current target dimensions in its update context, builds the pass descriptor, auto-fills from scene renderables when `_renderables` is empty, resolves pending `addToPass()` material overrides, and creates per-target `DrawBinding` lists.
+`FrameGraph.build()` calls `record()` on every task. `record()` is where `RenderTask` builds the render target, stores the current target dimensions in its update context, builds the pass descriptor, auto-fills from scene renderables when `_renderables` is empty, resolves pending `addMesh()` material overrides, and creates per-target `DrawBinding` lists.
 
-## RenderPassTask Buckets
+## RenderTask Buckets
 
 At record/re-sync time, a render pass task partitions bindings into:
 
@@ -134,7 +137,7 @@ Opaque and transmissive bindings are sorted by `renderable.order`. Transparent b
 
 ## Per-Pass Scene UBO
 
-Each `RenderPassTask` owns:
+Each `RenderTask` owns:
 
 - `_sceneUBO`
 - `_sceneBG`
@@ -158,14 +161,14 @@ The frame graph never imports material-specific shader code.
 
 Materials carry `_buildGroup: MeshGroupBuilder` on their props. `addToScene()` groups meshes by builder, and deferred builders run before rendering to produce renderables.
 
-`MeshGroupBuildResult.rebuildSingle` is also stored on the builder as `_rebuildSingle`, so material swaps and `RenderPassTask.addToPass(mesh, { material })` can rebuild one mesh with an optional per-pass material override.
+`MeshGroupBuildResult.rebuildSingle` is also stored on the builder as `_rebuildSingle`, so material swaps and `RenderTask.addMesh(mesh, { material })` can rebuild one mesh with an optional per-pass material override.
 
 ## Babylon.js Equivalence Map
 
 | Babylon Lite                            | Babylon.js                                        |
 | --------------------------------------- | ------------------------------------------------- |
 | `FrameGraph` + `Task`                   | Frame graph / render graph scheduling             |
-| `RenderPassTask`                        | Render pass task that binds target + camera state |
+| `RenderTask`                            | Render pass task that binds target + camera state |
 | `Renderable.bind()`                     | Material/effect submesh binding for a target      |
 | `DrawBinding`                           | Prepared draw item / submesh draw packet          |
 | Task-owned scene UBO                    | Per-pass scene uniform state                      |
@@ -176,7 +179,7 @@ Materials carry `_buildGroup: MeshGroupBuilder` on their props. `addToScene()` g
 
 - `render/renderable.ts` imports only engine/mesh/render-target types.
 - `frame-graph/frame-graph.ts` depends on `Task`, `EngineContextInternal`, and `SceneContextInternal`.
-- `frame-graph/render-pass-task.ts` depends on render targets, camera matrices, canonical scene UBO helpers, and the `Renderable`/`DrawBinding` contracts.
+- `frame-graph/render-task.ts` depends on render targets, camera matrices, canonical scene UBO helpers, and the `Renderable`/`DrawBinding` contracts.
 - Material modules depend on `Renderable` and return target-bindable renderables; the frame graph does not depend on material modules.
 
 ## File Manifest
@@ -187,4 +190,4 @@ Materials carry `_buildGroup: MeshGroupBuilder` on their props. `addToScene()` g
 | `src/frame-graph/task.ts`                | Polymorphic frame-graph task interface                                                                                       |
 | `src/frame-graph/frame-graph.ts`         | Ordered task list, build/execute/dispose lifecycle                                                                           |
 | `src/frame-graph/frame-graph-actions.ts` | `addTask`, `addTaskAtStart`, `addTaskBefore` helpers                                                                         |
-| `src/frame-graph/render-pass-task.ts`    | Render-pass task implementation, per-pass scene UBO, renderable bucketing, RTT/swapchain pass execution                      |
+| `src/frame-graph/render-task.ts`         | Render task implementation, per-pass scene UBO, renderable bucketing, RTT/swapchain pass execution                           |

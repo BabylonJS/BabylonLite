@@ -308,6 +308,7 @@
                 top: 2.5rem;
                 background: #0d1117;
                 z-index: 10;
+                flex-wrap: wrap;
             }
             .parity-toolbar p {
                 color: #8b949e;
@@ -808,6 +809,26 @@
                 color: #8b949e;
                 font-size: 0.8rem;
                 flex: 1;
+            }
+            .scene-search {
+                min-width: 220px;
+                max-width: 360px;
+                flex: 1 1 260px;
+                padding: 0.48rem 0.7rem;
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                background: #0d1117;
+                color: #e6edf3;
+                font: inherit;
+                font-size: 0.8rem;
+            }
+            .scene-search:focus {
+                outline: none;
+                border-color: #58a6ff;
+                box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.18);
+            }
+            .scene-search::placeholder {
+                color: #6e7681;
             }
             .perf-filter-pills {
                 display: flex;
@@ -1814,6 +1835,9 @@
                 display: block !important;
                 opacity: 0.4;
                 filter: grayscale(0.6);
+            }
+            .filter-hidden {
+                display: none !important;
             }
             body.show-hidden .scene-hidden .card-hide-btn {
                 opacity: 1;
@@ -3315,6 +3339,7 @@
             <div class="tab-hint">💡 Live scenes served from Vite dev server. Start with: <code>pnpm dev</code></div>
             <div class="perf-toolbar">
                 <div class="perf-filter-pills" id="source-filter-pills"></div>
+                <input id="source-search" class="scene-search" type="search" placeholder="Filter source scenes…" aria-label="Filter source scenes" oninput="setSceneSearch('source', this.value)" />
             </div>
             <div class="grid" id="source-grid"></div>
         </div>
@@ -3325,6 +3350,7 @@
                 shown in <span style="color: #f85149">red</span>.
             </div>
             <div class="parity-toolbar">
+                <input id="parity-search" class="scene-search" type="search" placeholder="Filter parity scenes…" aria-label="Filter parity scenes" oninput="setSceneSearch('parity', this.value)" />
                 <div style="flex: 1"></div>
                 <button class="btn parity-sort-btn active" onclick="sortParityGrid('num')" data-sort="num" title="Sort by scene number">Scene #</button>
                 <button class="btn parity-sort-btn" onclick="sortParityGrid('asc')" data-sort="asc" title="Sort by MAD ascending">MAD ↑</button>
@@ -3350,6 +3376,7 @@
             </div>
             <div class="perf-toolbar">
                 <div class="perf-filter-pills" id="bundle-filter-pills"></div>
+                <input id="bundle-search" class="scene-search" type="search" placeholder="Filter bundle scenes…" aria-label="Filter bundle scenes" oninput="setSceneSearch('bundle', this.value)" />
                 <div style="flex: 1"></div>
                 <button class="btn bundle-sort-btn active" onclick="sortBundleGrid('num')" data-sort="num" title="Sort by scene number">Scene #</button>
                 <button class="btn bundle-sort-btn" onclick="sortBundleGrid('asc')" data-sort="asc" title="Sort by Lite min size ascending">Size ↑</button>
@@ -3405,6 +3432,7 @@
             </div>
             <div class="perf-toolbar">
                 <div class="perf-filter-pills" id="perf-filter-pills"></div>
+                <input id="perf-search" class="scene-search" type="search" placeholder="Filter perf scenes…" aria-label="Filter perf scenes" oninput="setSceneSearch('perf', this.value)" />
                 <div style="flex: 1"></div>
                 <button class="btn" id="perf-filter-btn" onclick="togglePerfFilter()" title="Show only scenes where BJS beats Lite on any metric">⚠ Regressions Only</button>
                 <span id="perf-status" class="perf-status"></span>
@@ -3424,6 +3452,7 @@
                 <span id="perfreg-manifest-status" style="color: #3fb950"></span>
             </div>
             <div class="perf-toolbar">
+                <input id="perfreg-search" class="scene-search" type="search" placeholder="Filter regression scenes…" aria-label="Filter regression scenes" oninput="setSceneSearch('perfreg', this.value)" />
                 <div style="flex: 1"></div>
                 <button class="btn perfreg-sort-btn active" onclick="sortPerfRegGrid('num')" data-sort="num" title="Sort by scene number">Scene #</button>
                 <button class="btn perfreg-sort-btn" onclick="sortPerfRegGrid('worst')" data-sort="worst" title="Worst regressions first">Δ ↓</button>
@@ -3504,6 +3533,90 @@
                 el.innerHTML = '<span class="filter-label">Filter:</span>' + pills.join("");
             }
 
+            function escapeAttr(s) {
+                return String(s).replace(/[&<>"]/g, function (c) {
+                    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+                });
+            }
+
+            function normalizeSearchText(s) {
+                return String(s || "")
+                    .toLowerCase()
+                    .replace(/\s+/g, " ")
+                    .trim();
+            }
+
+            function buildSceneSearchText(s) {
+                return normalizeSearchText(
+                    [
+                        "scene" + s.id,
+                        "#" + s.id,
+                        s.name,
+                        s.description,
+                        s.note,
+                        (s.tags || []).join(" "),
+                    ].join(" ")
+                );
+            }
+
+            function sceneSearchAttr(s) {
+                return escapeAttr(buildSceneSearchText(s));
+            }
+
+            var activeSceneSearch = {
+                source: "",
+                parity: "",
+                bundle: "",
+                perf: "",
+                perfreg: "",
+            };
+
+            function getSceneSearchQuery(tabName) {
+                return normalizeSearchText(activeSceneSearch[tabName] || "");
+            }
+
+            function cardMatchesSearch(card, tabName) {
+                var query = getSceneSearchQuery(tabName);
+                return textMatchesSearch(card.dataset.search || "", query);
+            }
+
+            function textMatchesSearch(text, query) {
+                query = normalizeSearchText(query);
+                if (!query) return true;
+                var haystack = normalizeSearchText(text);
+                return query.split(" ").every(function (term) {
+                    return !term || haystack.indexOf(term) >= 0;
+                });
+            }
+
+            function syncSceneSearchInputs() {
+                Object.keys(activeSceneSearch).forEach(function (tabName) {
+                    var el = document.getElementById(tabName + "-search");
+                    if (el && el.value !== activeSceneSearch[tabName]) {
+                        el.value = activeSceneSearch[tabName];
+                    }
+                });
+            }
+
+            function setSceneSearch(tabName, value, skipSave) {
+                _scrollRestoreToken++;
+                activeSceneSearch[tabName] = value || "";
+                syncSceneSearchInputs();
+                if (tabName === "source") {
+                    applySourceFilters();
+                } else if (tabName === "bundle") {
+                    applyBundleFilters();
+                } else if (tabName === "parity") {
+                    applyParityFilter();
+                    requestAnimationFrame(queueVisibleParityDiffs);
+                } else if (tabName === "perf") {
+                    applyPerfFilters();
+                } else if (tabName === "perfreg") {
+                    renderPerfRegGrid();
+                }
+                if (!skipSave) saveLabState();
+            }
+
             // ── Init functions for each tab ──
             function initSourceGrid(config) {
                 var grid = document.getElementById("source-grid");
@@ -3518,6 +3631,8 @@
                             sceneKey +
                             '" data-tags="' +
                             s.tags.join(" ") +
+                            '" data-search="' +
+                            sceneSearchAttr(s) +
                             '">' +
                             renderHideBtn(sceneKey) +
                             '<div class="card-image">' +
@@ -3717,6 +3832,8 @@
                             sceneKey +
                             '" data-tags="' +
                             s.tags.join(" ") +
+                            '" data-search="' +
+                            sceneSearchAttr(s) +
                             '">' +
                             renderHideBtn(sceneKey) +
                             '<div class="card-image">' +
@@ -3759,6 +3876,8 @@
                             sceneKey +
                             '" data-tags="' +
                             s.tags.join(" ") +
+                            '" data-search="' +
+                            sceneSearchAttr(s) +
                             '" style="position: relative">' +
                             renderHideBtn(sceneKey) +
                             '<div class="perf-scene-header">' +
@@ -4006,7 +4125,11 @@
             function paritySceneFromConfig(s) {
                 return {
                     n: s.id,
+                    id: s.id,
                     name: s.name,
+                    description: s.description || "",
+                    note: s.note || "",
+                    tags: s.tags || [],
                     maxMad: s.maxMad,
                     skipParity: !!s.skipParity,
                     golden: "/reference/" + s.slug + "/babylon-ref-golden.png",
@@ -4032,6 +4155,8 @@
                     s.n +
                     '" data-max-mad="' +
                     s.maxMad +
+                    '" data-search="' +
+                    sceneSearchAttr(s) +
                     '"' +
                     skippedAttrs +
                     ' style="position: relative">' +
@@ -4156,8 +4281,12 @@
                     perfFilters: activePerfTags,
                     paritySort: null,
                     bundleSort: null,
+                    perfRegSort: null,
+                    sceneSearch: activeSceneSearch,
                     parityFilterActive: parityFilterActive,
+                    bundleOverFilterActive: bundleOverFilterActive,
                     perfFilterActive: perfFilterActive,
+                    perfRegFilterActive: window._perfRegFilterRegressionsOnly,
                     pitchSortKey: pitchSortKey,
                     pitchSortAsc: pitchSortAsc,
                 };
@@ -4165,6 +4294,8 @@
                 if (activeParityBtn) state.paritySort = activeParityBtn.dataset.sort;
                 var activeBundleBtn = document.querySelector(".bundle-sort-btn.active");
                 if (activeBundleBtn) state.bundleSort = activeBundleBtn.dataset.sort;
+                var activePerfRegBtn = document.querySelector(".perfreg-sort-btn.active");
+                if (activePerfRegBtn) state.perfRegSort = activePerfRegBtn.dataset.sort;
                 localStorage.setItem(LAB_STATE_KEY, JSON.stringify(state));
             }
 
@@ -4177,22 +4308,32 @@
                     return;
                 }
 
+                if (state.sceneSearch) {
+                    Object.keys(activeSceneSearch).forEach(function (tabName) {
+                        if (typeof state.sceneSearch[tabName] === "string") {
+                            activeSceneSearch[tabName] = state.sceneSearch[tabName];
+                        }
+                    });
+                    syncSceneSearchInputs();
+                }
+
                 // Restore source tag filters
                 if (state.sourceFilters) {
                     activeSourceTags = state.sourceFilters;
                     document.querySelectorAll("#source-filter-pills .pill-toggle").forEach(function (el) {
                         el.classList.toggle("active", !!activeSourceTags[el.dataset.filter]);
                     });
-                    applySourceFilters();
                 }
+                applySourceFilters();
                 // Restore bundle tag filters
                 if (state.bundleFilters) {
                     activeBundleTags = state.bundleFilters;
                     document.querySelectorAll("#bundle-filter-pills .pill-toggle").forEach(function (el) {
                         el.classList.toggle("active", !!activeBundleTags[el.dataset.filter]);
                     });
-                    applyBundleFilters();
                 }
+                bundleOverFilterActive = !!state.bundleOverFilterActive;
+                applyBundleFilters();
                 // Restore perf tag filters
                 if (state.perfFilters) {
                     activePerfTags = state.perfFilters;
@@ -4200,11 +4341,8 @@
                         el.classList.toggle("active", !!activePerfTags[el.dataset.filter]);
                     });
                 }
-                // Restore perf regression filter toggle
-                if (state.perfFilterActive) {
-                    perfFilterActive = false; // togglePerfFilter will flip it
-                    togglePerfFilter();
-                }
+                // Restore perf filter toggle
+                perfFilterActive = !!state.perfFilterActive;
                 applyPerfFilters();
                 // Restore parity sort
                 if (state.paritySort) {
@@ -4215,10 +4353,16 @@
                     sortBundleGrid(state.bundleSort, true);
                 }
                 // Restore parity failure filter
-                if (state.parityFilterActive) {
-                    parityFilterActive = false; // toggleParityFilter will flip it
-                    toggleParityFilter();
+                parityFilterActive = !!state.parityFilterActive;
+                applyParityFilter();
+                if (state.perfRegSort) {
+                    document.querySelectorAll(".perfreg-sort-btn").forEach(function (b) {
+                        b.classList.toggle("active", b.dataset.sort === state.perfRegSort);
+                    });
                 }
+                window._perfRegFilterRegressionsOnly = !!state.perfRegFilterActive;
+                var perfRegBtn = document.getElementById("perfreg-filter-btn");
+                if (perfRegBtn) perfRegBtn.classList.toggle("active", window._perfRegFilterRegressionsOnly);
                 // Restore pitch table sort
                 if (state.pitchSortKey) {
                     pitchSortKey = state.pitchSortKey;
@@ -4227,12 +4371,135 @@
             }
 
             // ── Tab switching with localStorage persistence + scroll memory ──
+            var SCROLL_STATE_KEY = "lab-scroll-state";
             var _currentTab = "source";
+            var _scrollRestoreToken = 0;
+
+            function readScrollState() {
+                try {
+                    return JSON.parse(localStorage.getItem(SCROLL_STATE_KEY) || "{}") || {};
+                } catch (e) {
+                    return {};
+                }
+            }
+
+            function writeScrollState(state) {
+                localStorage.setItem(SCROLL_STATE_KEY, JSON.stringify(state));
+            }
+
+            function getTabPanel(tabName) {
+                return document.getElementById("panel-" + tabName);
+            }
+
+            function getScrollAnchorLine() {
+                var tabs = document.querySelector(".tabs");
+                return tabs ? tabs.getBoundingClientRect().bottom + 4 : 0;
+            }
+
+            function isScrollAnchorVisible(el) {
+                if (!el || el.offsetParent === null) return false;
+                var rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            }
+
+            function findVisibleScrollAnchor(tabName) {
+                var panel = getTabPanel(tabName);
+                if (!panel) return null;
+                var line = getScrollAnchorLine();
+                var candidates = panel.querySelectorAll("[data-scene]");
+                var best = null;
+                var bestDistance = Infinity;
+                candidates.forEach(function (el) {
+                    if (!isScrollAnchorVisible(el)) return;
+                    var rect = el.getBoundingClientRect();
+                    if (rect.top <= line && rect.bottom >= line) {
+                        best = el;
+                        bestDistance = 0;
+                        return;
+                    }
+                    var distance = rect.top > line ? rect.top - line : line - rect.bottom;
+                    if (distance < bestDistance) {
+                        best = el;
+                        bestDistance = distance;
+                    }
+                });
+                return best;
+            }
+
+            function saveTabScroll(tabName) {
+                if (!tabName) return;
+                var state = readScrollState();
+                var saved = { y: Math.max(0, Math.round(window.scrollY || 0)) };
+                var anchor = findVisibleScrollAnchor(tabName);
+                if (anchor && anchor.dataset.scene) {
+                    saved.scene = anchor.dataset.scene;
+                    saved.offset = Math.round(-anchor.getBoundingClientRect().top);
+                }
+                state[tabName] = saved;
+                writeScrollState(state);
+                localStorage.setItem("lab-scroll-" + tabName, String(saved.y));
+            }
+
+            function getSavedTabScroll(tabName) {
+                var state = readScrollState();
+                if (state[tabName]) return state[tabName];
+                return {
+                    y: parseInt(localStorage.getItem("lab-scroll-" + tabName) || "0", 10) || 0,
+                };
+            }
+
+            function waitForTabContent(tabName) {
+                if (tabName === "parity") {
+                    var config = window.SCENE_CONFIG || null;
+                    if (!config) return Promise.resolve();
+                    return initParityGrid(config).then(function () {
+                        applyHiddenState();
+                        ensureParityGridInitialized();
+                    });
+                }
+                return Promise.resolve();
+            }
+
+            function applySavedTabScroll(tabName, saved) {
+                var target = saved.y || 0;
+                if (saved.scene) {
+                    var panel = getTabPanel(tabName);
+                    var anchor = panel && panel.querySelector('[data-scene="' + saved.scene + '"]');
+                    if (isScrollAnchorVisible(anchor)) {
+                        target = window.scrollY + anchor.getBoundingClientRect().top + (saved.offset || 0);
+                    }
+                }
+                window.scrollTo(0, Math.max(0, Math.round(target)));
+            }
+
+            function queueTabScrollRestore(tabName) {
+                var saved = getSavedTabScroll(tabName);
+                var token = ++_scrollRestoreToken;
+                waitForTabContent(tabName).then(function () {
+                    var frameAttempts = 0;
+                    function restoreFrame() {
+                        if (token !== _scrollRestoreToken || _currentTab !== tabName) return;
+                        applySavedTabScroll(tabName, saved);
+                        frameAttempts++;
+                        if (frameAttempts < 3) {
+                            requestAnimationFrame(restoreFrame);
+                        }
+                    }
+                    requestAnimationFrame(restoreFrame);
+                    [80, 240, 600].forEach(function (delay) {
+                        setTimeout(function () {
+                            if (token !== _scrollRestoreToken || _currentTab !== tabName) return;
+                            applySavedTabScroll(tabName, saved);
+                            if (tabName === "parity") requestAnimationFrame(queueVisibleParityDiffs);
+                        }, delay);
+                    });
+                });
+            }
 
             function activateTab(tabName, restoreScroll) {
                 // Save scroll position of the tab we're leaving
                 if (_currentTab && _currentTab !== tabName) {
-                    localStorage.setItem("lab-scroll-" + _currentTab, String(window.scrollY));
+                    saveTabScroll(_currentTab);
                 }
                 document.querySelectorAll(".tab").forEach(function (t) {
                     t.classList.remove("active");
@@ -4255,14 +4522,13 @@
                 }
                 // Restore scroll position of the tab we're switching to
                 if (restoreScroll !== false) {
-                    var savedScroll = parseInt(localStorage.getItem("lab-scroll-" + tabName) || "0", 10);
-                    window.scrollTo(0, savedScroll);
+                    queueTabScrollRestore(tabName);
                 }
             }
 
             // Persist scroll and filter/sort state on navigating away
             window.addEventListener("beforeunload", function () {
-                localStorage.setItem("lab-scroll-" + _currentTab, String(window.scrollY));
+                saveTabScroll(_currentTab);
                 saveLabState();
             });
 
@@ -4679,6 +4945,10 @@
                         if (activeBtn && activeBtn.dataset.sort !== "num") {
                             sortBundleGrid(activeBtn.dataset.sort, true);
                         }
+                        applyBundleFilters();
+                        if (_currentTab === "bundle") {
+                            queueTabScrollRestore("bundle");
+                        }
                     })
                     .catch(function () {});
             }
@@ -4699,6 +4969,10 @@
                             var num = key.replace("scene", "");
                             renderPerfManifest(num, manifest[key].lite, manifest[key].bjs);
                             count++;
+                        }
+                        applyPerfFilters();
+                        if (_currentTab === "perf") {
+                            queueTabScrollRestore("perf");
                         }
                         var el = document.getElementById("perf-manifest-status");
                         if (el) el.textContent = "\ud83d\udcca " + count + " scenes (pnpm test:perf to refresh)";
@@ -4733,6 +5007,9 @@
             function perfRegLabel(e) {
                 return perfRegVerdict(e) === "inconclusive" ? "inconclusive" : fmtDelta(e.avgDeltaPct);
             }
+            function perfRegSearchText(key, e) {
+                return normalizeSearchText(["scene" + e.id, "#" + e.id, e.name, key, perfRegVerdict(e)].join(" "));
+            }
             function renderPerfRegGrid() {
                 var grid = document.getElementById("perfreg-grid");
                 if (!grid) return;
@@ -4759,13 +5036,18 @@
                 }
 
                 var shown = 0;
+                var searchQuery = getSceneSearchQuery("perfreg");
                 keys.forEach(function (key) {
                     var e = manifest.scenes[key];
                     var verdict = perfRegVerdict(e);
+                    var searchText = perfRegSearchText(key, e);
+                    if (!textMatchesSearch(searchText, searchQuery)) return;
                     if (window._perfRegFilterRegressionsOnly && (verdict !== "slower" || e.avgDeltaPct <= limit)) return;
                     shown++;
                     var card = document.createElement("div");
                     card.className = "perf-scene-card";
+                    card.dataset.scene = "scene" + e.id;
+                    card.dataset.search = searchText;
                     var color = perfRegColor(e, limit);
                     var runs = e.runs
                         ? e.runs
@@ -4825,6 +5107,7 @@
                         "</table>";
                     grid.appendChild(card);
                 });
+                applyHiddenState();
 
                 var status = document.getElementById("perfreg-status");
                 if (status) status.textContent = shown + " / " + keys.length + " scenes";
@@ -4834,12 +5117,14 @@
                     b.classList.toggle("active", b.dataset.sort === mode);
                 });
                 renderPerfRegGrid();
+                saveLabState();
             }
             function togglePerfRegFilter() {
                 window._perfRegFilterRegressionsOnly = !window._perfRegFilterRegressionsOnly;
                 var btn = document.getElementById("perfreg-filter-btn");
                 if (btn) btn.classList.toggle("active", window._perfRegFilterRegressionsOnly);
                 renderPerfRegGrid();
+                saveLabState();
             }
             function loadPerfRegManifest() {
                 fetch("/perf-regression-manifest.json?t=" + Date.now())
@@ -4856,6 +5141,9 @@
                         var el = document.getElementById("perfreg-manifest-status");
                         if (el) el.textContent = "\ud83d\udcca " + count + " scenes (limit \u00b1" + (manifest.regressionPct || 5) + "%)";
                         renderPerfRegGrid();
+                        if (_currentTab === "perfreg") {
+                            queueTabScrollRestore("perfreg");
+                        }
                     })
                     .catch(function () {
                         document.getElementById("perfreg-status").textContent = "Failed to load perf-regression-manifest.json";
@@ -4883,11 +5171,7 @@
                     loadBundleManifest();
                     loadPerfManifest();
                     loadPerfRegManifest();
-                    // Restore scroll position now that content is rendered
-                    var savedScroll = parseInt(localStorage.getItem("lab-scroll-" + _currentTab) || "0", 10);
-                    requestAnimationFrame(function () {
-                        window.scrollTo(0, savedScroll);
-                    });
+                    queueTabScrollRestore(_currentTab);
                     startAutoRefresh();
                 })
                 .catch(function () {
@@ -5067,48 +5351,35 @@
             var bundleOverFilterActive = false;
             function toggleBundleOverFilter() {
                 bundleOverFilterActive = !bundleOverFilterActive;
-                var btn = document.getElementById("bundle-filter-btn");
-                var cards = document.querySelectorAll("#bundle-grid > .card");
-                if (bundleOverFilterActive) {
-                    btn.style.background = "#3d1117";
-                    btn.style.borderColor = "#f85149";
-                    cards.forEach(function (c) {
-                        var raw = parseFloat(c.dataset.rawKb || "0");
-                        var gz = parseFloat(c.dataset.gzipKb || "0");
-                        var maxRaw = parseFloat(c.dataset.maxRawKb || "Infinity");
-                        var maxGz = parseFloat(c.dataset.maxGzipKb || "Infinity");
-                        c.style.display = raw > maxRaw || gz > maxGz ? "" : "none";
-                    });
-                } else {
-                    btn.style.background = "";
-                    btn.style.borderColor = "";
-                    // Re-apply tag filters (handles the non-over-filter hidden state correctly)
-                    applyBundleFilters();
-                }
+                applyBundleFilters();
+                saveLabState();
             }
 
             function applyParityFilter() {
                 var btn = document.getElementById("parity-filter-btn");
                 var cards = document.querySelectorAll("#parity-grid .diff-card");
-                if (parityFilterActive) {
-                    btn.style.background = "#3d1117";
-                    btn.style.borderColor = "#f85149";
-                    cards.forEach(function (c) {
-                        if (c.dataset.skipParity === "1") {
-                            c.style.display = "none";
-                            return;
-                        }
-                        var mad = parseFloat(c.dataset.mad || "0");
-                        var maxMad = parseFloat(c.dataset.maxMad || "1");
-                        c.style.display = mad > maxMad ? "" : "none";
-                    });
-                } else {
-                    btn.style.background = "";
-                    btn.style.borderColor = "";
-                    cards.forEach(function (c) {
-                        c.style.display = "";
-                    });
+                if (btn) {
+                    if (parityFilterActive) {
+                        btn.style.background = "#3d1117";
+                        btn.style.borderColor = "#f85149";
+                    } else {
+                        btn.style.background = "";
+                        btn.style.borderColor = "";
+                    }
                 }
+                cards.forEach(function (c) {
+                    var show = cardMatchesSearch(c, "parity");
+                    if (show && parityFilterActive) {
+                        if (c.dataset.skipParity === "1") {
+                            show = false;
+                        } else {
+                            var mad = parseFloat(c.dataset.mad || "0");
+                            var maxMad = parseFloat(c.dataset.maxMad || "1");
+                            show = mad > maxMad;
+                        }
+                    }
+                    c.classList.toggle("filter-hidden", !show);
+                });
             }
 
             function toggleParityFilter() {
@@ -5290,16 +5561,14 @@
                     return activeSourceTags[k];
                 });
                 cards.forEach(function (c) {
-                    if (activeList.length === 0) {
-                        c.style.display = "";
-                        return;
+                    var show = cardMatchesSearch(c, "source");
+                    if (show && activeList.length > 0) {
+                        var tags = (c.dataset.tags || "").split(" ");
+                        show = activeList.every(function (t) {
+                            return tags.indexOf(t) >= 0;
+                        });
                     }
-                    var tags = (c.dataset.tags || "").split(" ");
-                    c.style.display = activeList.every(function (t) {
-                        return tags.indexOf(t) >= 0;
-                    })
-                        ? ""
-                        : "none";
+                    c.classList.toggle("filter-hidden", !show);
                 });
             }
 
@@ -5314,14 +5583,27 @@
             var perfFilterActive = false;
             var activePerfTags = {};
 
+            function updatePerfFilterButton() {
+                var btn = document.getElementById("perf-filter-btn");
+                if (!btn) return;
+                if (perfFilterActive) {
+                    btn.style.background = "#3d1117";
+                    btn.style.borderColor = "#f85149";
+                } else {
+                    btn.style.background = "";
+                    btn.style.borderColor = "";
+                }
+            }
+
             function applyPerfFilters() {
-                var cards = document.querySelectorAll(".perf-grid .perf-scene-card");
+                var cards = document.querySelectorAll("#perf-grid .perf-scene-card");
                 var activeList = Object.keys(activePerfTags).filter(function (k) {
                     return activePerfTags[k];
                 });
+                updatePerfFilterButton();
                 cards.forEach(function (c) {
-                    var show = true;
-                    if (activeList.length > 0) {
+                    var show = cardMatchesSearch(c, "perf");
+                    if (show && activeList.length > 0) {
                         var tags = (c.dataset.tags || "").split(" ");
                         show = activeList.every(function (t) {
                             return tags.indexOf(t) >= 0;
@@ -5330,7 +5612,7 @@
                     if (show && perfFilterActive) {
                         show = parseInt(c.dataset.regressions || "0", 10) > 0;
                     }
-                    c.style.display = show ? "" : "none";
+                    c.classList.toggle("filter-hidden", !show);
                 });
             }
 
@@ -5344,14 +5626,6 @@
 
             function togglePerfFilter() {
                 perfFilterActive = !perfFilterActive;
-                var btn = document.getElementById("perf-filter-btn");
-                if (perfFilterActive) {
-                    btn.style.background = "#3d1117";
-                    btn.style.borderColor = "#f85149";
-                } else {
-                    btn.style.background = "";
-                    btn.style.borderColor = "";
-                }
                 applyPerfFilters();
                 saveLabState();
             }
@@ -5363,15 +5637,32 @@
                 var activeList = Object.keys(activeBundleTags).filter(function (k) {
                     return activeBundleTags[k];
                 });
+                var btn = document.getElementById("bundle-filter-btn");
+                if (btn) {
+                    if (bundleOverFilterActive) {
+                        btn.style.background = "#3d1117";
+                        btn.style.borderColor = "#f85149";
+                    } else {
+                        btn.style.background = "";
+                        btn.style.borderColor = "";
+                    }
+                }
                 cards.forEach(function (c) {
-                    var show = true;
-                    if (activeList.length > 0) {
+                    var show = cardMatchesSearch(c, "bundle");
+                    if (show && activeList.length > 0) {
                         var tags = (c.dataset.tags || "").split(" ");
                         show = activeList.every(function (t) {
                             return tags.indexOf(t) >= 0;
                         });
                     }
-                    c.style.display = show ? "" : "none";
+                    if (show && bundleOverFilterActive) {
+                        var raw = parseFloat(c.dataset.rawKb || "0");
+                        var gz = parseFloat(c.dataset.gzipKb || "0");
+                        var maxRaw = parseFloat(c.dataset.maxRawKb || "Infinity");
+                        var maxGz = parseFloat(c.dataset.maxGzipKb || "Infinity");
+                        show = raw > maxRaw || gz > maxGz;
+                    }
+                    c.classList.toggle("filter-hidden", !show);
                 });
             }
 

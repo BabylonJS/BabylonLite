@@ -241,7 +241,7 @@ The frame/pass bind group layout is:
 
 | Group | Binding | Owner | Contents |
 |-------|---------|-------|----------|
-| 0 | 0 | `RenderPassTask` | Per-pass `SceneUniforms` (camera, fog, image processing, environment) |
+| 0 | 0 | `RenderTask` | Per-pass `SceneUniforms` (camera, fog, image processing, environment) |
 | 0 | 1 | `SceneContextInternal` via `scene-light-state.ts` | Scene-wide `LightsUniforms` packed from `scene.lights` |
 
 Material/mesh bind groups never contain light buffers. Mesh UBOs append:
@@ -410,7 +410,7 @@ spot.angle = Math.PI / 4;
 ### Lights UBO Lifecycle
 
 1. **Creation:** `ensureSceneLightState(engine, scene)` allocates a `getLightsUboSize()` UBO and stores it on `SceneContextInternal._lightGpuState`.
-2. **Group-0 binding:** every `RenderPassTask` binds its task-owned scene UBO at binding 0 and the scene-owned lights UBO at binding 1.
+2. **Group-0 binding:** every `RenderTask` binds its task-owned scene UBO at binding 0 and the scene-owned lights UBO at binding 1.
 3. **Per-frame refresh:** `refreshSceneLightsUBO(engine, scene)` compares the aggregate light version and light count, then writes the shared UBO only when needed.
 4. **Light filtering:** only lights with `_writeLightUbo` defined are packed; up to `MAX_LIGHTS`.
 5. **Resize for cap changes:** if `MAX_LIGHTS` changes and the UBO byte size changes, `ensureSceneLightState()` destroys/recreates the scene light buffer and render-pass tasks rebuild their group-0 bind group.

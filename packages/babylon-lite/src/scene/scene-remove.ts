@@ -1,8 +1,8 @@
 import type { SceneContext, SceneContextInternal } from "./scene-core.js";
 import type { Mesh } from "../mesh/mesh.js";
 import { disposeMeshGpu } from "../mesh/mesh-dispose.js";
-import { removeMeshFromTask } from "../frame-graph/render-pass-task.js";
-import type { RenderPassTask } from "../frame-graph/render-pass-task.js";
+import { removeMeshFromTask } from "../frame-graph/render-task.js";
+import type { RenderTask } from "../frame-graph/render-task.js";
 
 /** Remove a mesh from the scene and destroy its GPU resources.
  *  Standalone function for tree-shaking — only included when actually used. */
@@ -26,10 +26,10 @@ export function removeFromScene(scene: SceneContext, mesh: Mesh): void {
     // Frame-graph eviction: the scene always has a frame graph (created in
     // createSceneContext). Walk its render-pass tasks and drop any binding whose
     // source mesh matches. Tasks identified by having a `_config` field
-    // (RenderPassTask shape).
+    // (RenderTask shape).
     for (const task of sc._frameGraph._tasks) {
         if ("_config" in (task as object)) {
-            removeMeshFromTask(task as RenderPassTask, mesh);
+            removeMeshFromTask(task as RenderTask, mesh);
         }
     }
     disposeMeshGpu(mesh);
