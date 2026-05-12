@@ -384,6 +384,9 @@ export async function registerScene(engine: EngineContext, scene: SceneContext):
     await buildScene(scene);
     ctx._renderables.sort(byOrder);
     ctx._frameGraph.build();
+    if ((engine as EngineContextInternal)._renderingContexts.length > 0) {
+        (await import("./swapchain-overlay.js")).configureSwapchainOverlayScene(engine as EngineContextInternal, ctx);
+    }
     registerRenderingContext(engine, ctx);
 }
 
