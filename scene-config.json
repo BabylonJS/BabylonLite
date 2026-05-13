@@ -365,8 +365,8 @@
         "id": 50,
         "slug": "scene50-sprite-grid",
         "name": "Scene 50 — Sprite Grid",
-        "maxMad": 0.1,
-        "maxRawKB": 21,
+        "maxMad": 0.02,
+        "maxRawKB": 20,
         "description": "25×10 grid of icon sprites with cycled tints and rotated thirds, rendered via the pure-2D sprite API. BJS SpriteManager oracle.",
         "tags": ["sprites", "2d"],
         "skipPerf": true
@@ -375,8 +375,8 @@
         "id": 51,
         "slug": "scene51-sprite-grid",
         "name": "Scene 51 — Soft-Edged Sprite Grid (Premultiplied)",
-        "maxMad": 0.5,
-        "maxRawKB": 21,
+        "maxMad": 0.1,
+        "maxRawKB": 20,
         "description": "25×10 grid of radial-gradient sprites with anti-aliased edges, rendered via the premultiplied sprite codepath. BJS SpriteRenderer with ALPHA_PREMULTIPLIED blendMode + pre-baked premultiplied atlas as the parity oracle.",
         "tags": ["sprites", "2d", "premultiplied"],
         "skipPerf": true
@@ -386,7 +386,7 @@
         "slug": "scene52-hud-on-3d",
         "name": "Scene 52 — HUD on 3D",
         "maxMad": 0.02,
-        "maxRawKB": 65,
+        "maxRawKB": 60,
         "description": "3D scene (sphere + StandardMaterial under a directional light) with a pure-2D HUD sprite overlay rendered AFTER the 3D pass via createSpriteRenderer + registerSpriteRenderer. HUD layer uses depth: \"none\". BJS reference renders the same 3D scene plus a pixel-space SpriteRenderer HUD for parity.",
         "tags": ["sprites", "2d", "hud"]
     },
@@ -395,7 +395,7 @@
         "slug": "scene53-depth-hosted-sprites",
         "name": "Scene 53 — Depth-Hosted Sprites Mixed With 3D",
         "maxMad": 0.02,
-        "maxRawKB": 65,
+        "maxRawKB": 60,
         "description": "Two boxes at different camera-distances + a Sprite2DLayer added via addToScene with depth: \"test-write\" and per-instance z. The front box occludes the sprite; the sprite occludes the back box. BJS reference uses SpriteManager sprites projected to the same pixel centers and depths for parity.",
         "tags": ["sprites", "2d", "depth"]
     },
@@ -404,7 +404,7 @@
         "slug": "scene54-facing-billboards",
         "name": "Scene 54 — Facing Billboards",
         "maxMad": 0.02,
-        "maxRawKB": 75,
+        "maxRawKB": 65,
         "description": "World-space camera-facing rectangular sprite cards rendered through the opt-in FacingBillboardSpriteSystem path from an off-axis camera, depth-tested against diagonal opaque boxes with transparent alpha and no depth write. BJS reference uses SpriteManager.",
         "tags": ["sprites", "billboards", "depth"]
     },
@@ -413,7 +413,7 @@
         "slug": "scene55-billboard-sorting",
         "name": "Scene 55 — Billboard Sorting",
         "maxMad": 0.02,
-        "maxRawKB": 65,
+        "maxRawKB": 35,
         "description": "Overlapping transparent world-space billboards inserted near-to-far in Lite and far-to-near in the Babylon.js SpriteManager reference, exercising CPU-side per-billboard sorting before compact vertex-buffer upload.",
         "tags": ["sprites", "billboards", "sorting"]
     },
@@ -422,7 +422,7 @@
         "slug": "scene56-axis-locked-billboards",
         "name": "Scene 56 — Axis-Locked Billboards",
         "maxMad": 0.02,
-        "maxRawKB": 75,
+        "maxRawKB": 65,
         "description": "Axis-locked world-space billboards constrain rotation to an arbitrary normalized axis. BJS reference uses explicit meshes with axis-aligned basis vectors computed from the camera and lock axis.",
         "tags": ["sprites", "billboards", "axis-locked"]
     },
@@ -431,7 +431,7 @@
         "slug": "scene57-cutout-billboards",
         "name": "Scene 57 — Cutout Billboards",
         "maxMad": 0.02,
-        "maxRawKB": 75,
+        "maxRawKB": 65,
         "description": "Hard-alpha world-space billboard cards rendered with blendMode: \"cutout\", alpha cutoff, and depth writes. Front cutout pixels occlude later overlapping cards and opaque geometry while transparent holes leave the background visible.",
         "tags": ["sprites", "billboards", "depth"]
     },
