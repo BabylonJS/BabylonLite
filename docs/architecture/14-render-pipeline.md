@@ -30,6 +30,7 @@ export interface Renderable {
     readonly order: number;
     readonly isTransparent: boolean;
     readonly isTransmissive?: boolean;
+    readonly isDynamicDepthWrite?: boolean;
     readonly mesh?: Mesh;
     _sortDistance?: number;
     _worldCenter?: [number, number, number];
@@ -127,13 +128,13 @@ startEngine/registerScene frame:
 
 At record/re-sync time, a render pass task partitions bindings into:
 
-| Bucket       | Source flag                         | Draw path                                                           |
-| ------------ | ----------------------------------- | ------------------------------------------------------------------- |
-| Opaque       | `!isTransparent && !isTransmissive` | Cached `GPURenderBundle` when visibility/version state is unchanged |
-| Transmissive | `isTransmissive`                    | Direct draw after opaque bundle                                     |
-| Transparent  | `isTransparent`                     | Direct draw, distance-sorted back-to-front per pass                 |
+| Bucket      | Source flag                                                 | Draw path                                                           |
+| ----------- | ----------------------------------------------------------- | ------------------------------------------------------------------- | -------------------- | ------------------------------- |
+| Opaque      | `!isTransparent && !isTransmissive && !isDynamicDepthWrite` | Cached `GPURenderBundle` when visibility/version state is unchanged |
+| Direct      | `isTransmissive                                             |                                                                     | isDynamicDepthWrite` | Direct draw after opaque bundle |
+| Transparent | `isTransparent`                                             | Direct draw, distance-sorted back-to-front per pass                 |
 
-Opaque and transmissive bindings are sorted by `renderable.order`. Transparent bindings must remain distance-sorted and are not pipeline-sorted.
+Opaque and direct bindings are sorted by `renderable.order`. Transparent bindings must remain distance-sorted and are not pipeline-sorted. `isTransmissive` is reserved for true refractive surfaces; mutable non-transparent depth writers use `isDynamicDepthWrite` so they still appear in the opaque-scene refraction RTT.
 
 ## Per-Pass Scene UBO
 
@@ -165,15 +166,15 @@ Materials carry `_buildGroup: MeshGroupBuilder` on their props. `addToScene()` g
 
 ## Babylon.js Equivalence Map
 
-| Babylon Lite                            | Babylon.js                                        |
-| --------------------------------------- | ------------------------------------------------- |
-| `FrameGraph` + `Task`                   | Frame graph / render graph scheduling             |
-| `RenderTask`                            | Render pass task that binds target + camera state |
-| `Renderable.bind()`                     | Material/effect submesh binding for a target      |
-| `DrawBinding`                           | Prepared draw item / submesh draw packet          |
-| Task-owned scene UBO                    | Per-pass scene uniform state                      |
-| Opaque/transmissive/transparent buckets | Rendering group draw lists                        |
-| `renderable.order`                      | Rendering order / group sorting                   |
+| Babylon Lite                      | Babylon.js                                        |
+| --------------------------------- | ------------------------------------------------- |
+| `FrameGraph` + `Task`             | Frame graph / render graph scheduling             |
+| `RenderTask`                      | Render pass task that binds target + camera state |
+| `Renderable.bind()`               | Material/effect submesh binding for a target      |
+| `DrawBinding`                     | Prepared draw item / submesh draw packet          |
+| Task-owned scene UBO              | Per-pass scene uniform state                      |
+| Opaque/direct/transparent buckets | Rendering group draw lists                        |
+| `renderable.order`                | Rendering order / group sorting                   |
 
 ## Dependencies
 

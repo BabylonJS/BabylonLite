@@ -3,7 +3,7 @@
  * binds the scene's `RenderTarget`, and draws renderables into it.
  *
  *   - `record()` builds bucketed `DrawBinding` lists from `_renderables`
- *     (opaque / transmissive / transparent), sorts opaque + transmissive by
+ *     (opaque / direct / transparent), sorts opaque + direct by
  *     `order`, then creates a `RenderPass` wired to the task's render target.
  *     The pass owns its
  *     `GPURenderPassDescriptor` and the per-pass-encoder body lives in a
@@ -73,7 +73,7 @@ export interface RenderTask extends Task {
      *  this list at `record()` (or re-sync when auto-filled and `_renderableVersion` changes). */
     _renderables: Renderable[];
     _opaqueBindings: DrawBinding[];
-    _transmissiveBindings: DrawBinding[];
+    _directBindings: DrawBinding[];
     _transparentBindings: DrawBinding[];
     /** Cached opaque render bundle. Invalidated by renderable list mutations
      *  (`_lastVersion`) and visibility changes (`_lastVis`). */
@@ -149,7 +149,7 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
         _autoFromScene: false,
         _renderables: [],
         _opaqueBindings: [],
-        _transmissiveBindings: [],
+        _directBindings: [],
         _transparentBindings: [],
         _opaqueBundles: [],
         _lastVersion: -1,
@@ -192,7 +192,7 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
             task._passes.length = 0;
             disposeRenderTarget(rt);
             task._opaqueBindings.length = 0;
-            task._transmissiveBindings.length = 0;
+            task._directBindings.length = 0;
             task._transparentBindings.length = 0;
             task._renderables.length = 0;
             task._opaqueBundles.length = 0;
@@ -211,7 +211,7 @@ export function removeMeshFromTask(task: RenderTask, mesh: object): void {
             removed = true;
         }
     }
-    for (const arr of [task._opaqueBindings, task._transmissiveBindings, task._transparentBindings]) {
+    for (const arr of [task._opaqueBindings, task._directBindings, task._transparentBindings]) {
         for (let i = arr.length - 1; i >= 0; i--) {
             if (arr[i]!.renderable.mesh === mesh) {
                 arr.splice(i, 1);
@@ -273,23 +273,23 @@ function sortTransparentBindings(task: RenderTask): void {
 /** (Re)bucket task._renderables into bound lists. */
 function buildBindings(task: RenderTask, eng: EngineContextInternal, targetSignature: RenderTargetSignature): void {
     const opaque = task._opaqueBindings;
-    const transmissive = task._transmissiveBindings;
+    const direct = task._directBindings;
     const transparent = task._transparentBindings;
     opaque.length = 0;
-    transmissive.length = 0;
+    direct.length = 0;
     transparent.length = 0;
     for (const r of task._renderables) {
         const binding = r.bind(eng, targetSignature);
         if (r.isTransparent) {
             transparent.push(binding);
-        } else if (r.isTransmissive) {
-            transmissive.push(binding);
+        } else if (r.isTransmissive || r.isDynamicDepthWrite) {
+            direct.push(binding);
         } else {
             opaque.push(binding);
         }
     }
     opaque.sort((a, b) => a.renderable.order - b.renderable.order);
-    transmissive.sort((a, b) => a.renderable.order - b.renderable.order);
+    direct.sort((a, b) => a.renderable.order - b.renderable.order);
     task._opaqueBundles.length = 0;
     task._lastVersion = task.scene._renderableVersion;
 }
@@ -344,7 +344,7 @@ function prepareRenderTaskPass(
     // depths during their update.
     (context as MutableDrawUpdateContext).camera = camera;
     updateBindings(task._opaqueBindings, context);
-    updateBindings(task._transmissiveBindings, context);
+    updateBindings(task._directBindings, context);
     updateBindings(task._transparentBindings, context);
     // Per-frame back-to-front sort for transparent bindings — must run AFTER
     // updateBindings so renderables that compute `_worldCenter` inside their
@@ -383,7 +383,7 @@ function executePass(
 
 /** Body of the registered `RenderPass`. Receives the live render-pass encoder
  *  and issues all draws (viewport/scissor, group(0) bind, opaque bundle replay,
- *  then direct-draws transmissive + transparent). Returns the draw count. */
+ *  then direct-draws non-transparent direct + transparent). Returns the draw count. */
 function executePassBody(task: RenderTask, pass: GPURenderPassEncoder): number {
     const eng = task.engine;
     const cfg = task._config;
@@ -428,7 +428,7 @@ function executePassBody(task: RenderTask, pass: GPURenderPassEncoder): number {
     pass.executeBundles(opaqueBundles);
     // executeBundles invalidates pass bind-group state — rebind group 0 before further draws.
     pass.setBindGroup(0, sceneBG);
-    draws += drawList(pass, task._transmissiveBindings, eng);
+    draws += drawList(pass, task._directBindings, eng);
     draws += drawList(pass, task._transparentBindings, eng);
     return draws;
 }

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import type { Camera } from "../../packages/babylon-lite/src/camera/camera";
 import type { EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
+import { selectOpaqueSceneRefractionRenderables } from "../../packages/babylon-lite/src/material/pbr/pbr-refraction-setup";
 import type { Mat4 } from "../../packages/babylon-lite/src/math/types";
 import type { DrawBinding, DrawUpdateContext, Renderable } from "../../packages/babylon-lite/src/render/renderable";
 import { createSceneContext, registerScene } from "../../packages/babylon-lite/src/scene/scene";
@@ -112,6 +113,30 @@ function makeTransparentRenderable(id: string, initialCenter: [number, number, n
     return renderable;
 }
 
+function makeDrawOrderRenderable(
+    id: string,
+    flags: Partial<Pick<Renderable, "order" | "isTransparent" | "isTransmissive" | "isDynamicDepthWrite">>,
+    drawOrder: string[]
+): Renderable {
+    const renderable: Renderable = {
+        order: flags.order ?? 100,
+        isTransparent: flags.isTransparent ?? false,
+        isTransmissive: flags.isTransmissive ?? false,
+        isDynamicDepthWrite: flags.isDynamicDepthWrite ?? false,
+        bind(): DrawBinding {
+            return {
+                renderable,
+                pipeline: { id } as unknown as GPURenderPipeline,
+                draw(): number {
+                    drawOrder.push(id);
+                    return 1;
+                },
+            };
+        },
+    };
+    return renderable;
+}
+
 describe("RenderPassTask transparent sorting", () => {
     it("uses world centers refreshed by binding updates before sorting transparent draws", async () => {
         const engine = makeMockEngine();
@@ -128,5 +153,33 @@ describe("RenderPassTask transparent sorting", () => {
         scene._record();
 
         expect(drawOrder).toEqual(["far-after-update", "near-after-update"]);
+    });
+
+    it("direct-draws dynamic depth-write renderables without marking them transmissive", async () => {
+        const engine = makeMockEngine();
+        const scene = createSceneContext(engine) as SceneContextInternal;
+        scene.camera = makeCamera();
+        const drawOrder: string[] = [];
+
+        scene._renderables.push(
+            makeDrawOrderRenderable("opaque", { order: 100 }, drawOrder),
+            makeDrawOrderRenderable("dynamic-depth-write", { order: 110, isDynamicDepthWrite: true }, drawOrder),
+            makeDrawOrderRenderable("transmissive", { order: 140, isTransmissive: true }, drawOrder),
+            makeDrawOrderRenderable("transparent", { order: 200, isTransparent: true }, drawOrder)
+        );
+
+        await registerScene(engine, scene);
+        scene._record();
+
+        expect(drawOrder).toEqual(["opaque", "dynamic-depth-write", "transmissive", "transparent"]);
+    });
+
+    it("keeps dynamic depth-write renderables in the opaque refraction RTT and excludes true transmissive surfaces", () => {
+        const drawOrder: string[] = [];
+        const opaque = makeDrawOrderRenderable("opaque", { order: 100 }, drawOrder);
+        const dynamicDepthWrite = makeDrawOrderRenderable("dynamic-depth-write", { order: 110, isDynamicDepthWrite: true }, drawOrder);
+        const transmissive = makeDrawOrderRenderable("transmissive", { order: 140, isTransmissive: true }, drawOrder);
+
+        expect(selectOpaqueSceneRefractionRenderables([opaque, dynamicDepthWrite, transmissive])).toEqual([opaque, dynamicDepthWrite]);
     });
 });

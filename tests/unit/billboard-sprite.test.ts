@@ -13,6 +13,7 @@ import {
     clearBillboardSprites,
     createFacingBillboardSystem,
     createAxisLockedBillboardSystem,
+    isBillboardBlendMode,
     removeBillboardSpriteIndex,
     setBillboardSpriteFrameIndex,
     updateBillboardSpriteIndex,
@@ -166,7 +167,7 @@ describe("FacingBillboardSpriteSystem index API", () => {
         expect(system._instanceData[4]).toBe(3);
     });
 
-    it("updates frame UVs without changing size or pivot", () => {
+    it("setBillboardSpriteFrameIndex updates UVs while preserving the current pivot", () => {
         const system = createFacingBillboardSystem(makeMockAtlas(), { capacity: 1 });
         addBillboardSpriteIndex(system, { position: [0, 0, 0], sizeWorld: [2, 3], pivot: [0.1, 0.2], frame: 0 });
 
@@ -177,6 +178,11 @@ describe("FacingBillboardSpriteSystem index API", () => {
         expect(system._instanceData[4]).toBe(3);
         expect(system._instanceData[10]).toBeCloseTo(0.1);
         expect(system._instanceData[11]).toBeCloseTo(0.2);
+
+        updateBillboardSpriteIndex(system, 0, { frame: 0, pivot: [0.75, 0.25] });
+        expect(Array.from(system._instanceData.slice(5, 9))).toEqual([0, 0, 0.25, 0.25]);
+        expect(system._instanceData[10]).toBeCloseTo(0.75);
+        expect(system._instanceData[11]).toBeCloseTo(0.25);
     });
 
     it("preserves and clears flip state across frame updates", () => {
@@ -246,6 +252,13 @@ describe("FacingBillboardSpriteSystem index API", () => {
         expect(() => createFacingBillboardSystem(makeMockAtlas(), { blendMode: "multiply" as never })).toThrow(/not supported/);
     });
 
+    it("exposes the supported billboard blend-mode predicate", () => {
+        expect(isBillboardBlendMode("alpha")).toBe(true);
+        expect(isBillboardBlendMode("premultiplied")).toBe(true);
+        expect(isBillboardBlendMode("cutout")).toBe(true);
+        expect(isBillboardBlendMode("additive")).toBe(false);
+    });
+
     it("rejects non-finite alpha cutoff values", () => {
         expect(() => createFacingBillboardSystem(makeMockAtlas(), { blendMode: "cutout", alphaCutoff: NaN })).toThrow(/finite/);
         expect(() => createFacingBillboardSystem(makeMockAtlas(), { blendMode: "cutout", alphaCutoff: Infinity })).toThrow(/finite/);
@@ -295,6 +308,7 @@ describe("addFacingBillboardSystem", () => {
         expect(scene._renderables.length).toBe(1);
         expect(scene._renderables[0]!.isTransparent).toBe(true);
         expect(scene._renderables[0]!.isTransmissive).toBe(false);
+        expect(scene._renderables[0]!.isDynamicDepthWrite).toBe(false);
         expect(scene._renderables[0]!.order).toBe(230);
     });
 
@@ -308,7 +322,8 @@ describe("addFacingBillboardSystem", () => {
 
         expect(scene._renderables.length).toBe(1);
         expect(scene._renderables[0]!.isTransparent).toBe(false);
-        expect(scene._renderables[0]!.isTransmissive).toBe(true);
+        expect(scene._renderables[0]!.isTransmissive).toBe(false);
+        expect(scene._renderables[0]!.isDynamicDepthWrite).toBe(true);
         expect(scene._renderables[0]!.order).toBe(120);
     });
 
@@ -424,6 +439,33 @@ describe("addFacingBillboardSystem", () => {
         updateBillboardSpriteIndex(system, 0, { position: [200, 0, 4] });
         binding.update?.({ targetWidth: 512, targetHeight: 256, camera });
         expect(scene._renderables[0]!._worldCenter).toEqual([150, 0, 6]);
+    });
+
+    it("ignores hidden billboards when refreshing world center and skips all-hidden draws", async () => {
+        const engine = makeMockEngine();
+        const scene = createSceneContext(engine) as SceneContextInternal;
+        const system = createFacingBillboardSystem(makeMockAtlas(), { capacity: 2 });
+        const visibleIndex = addBillboardSpriteIndex(system, { position: [1, 2, 3], sizeWorld: [1, 1], frame: 0 });
+        addBillboardSpriteIndex(system, { position: [1000, 0, 1000], sizeWorld: [1, 1], frame: 0, visible: false });
+        addFacingBillboardSystem(scene, system);
+        await registerScene(engine, scene);
+
+        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+        const camera = makeIdentityCamera();
+        binding.update?.({ targetWidth: 512, targetHeight: 256, camera });
+        expect(scene._renderables[0]!._worldCenter).toEqual([1, 2, 3]);
+
+        const visiblePass = makeDrawPassMock();
+        expect(binding.draw(visiblePass, engine)).toBe(1);
+        expect(visiblePass.drawIndexed).toHaveBeenCalledWith(6, 2, 0, 0, 0);
+
+        updateBillboardSpriteIndex(system, visibleIndex, { visible: false });
+        binding.update?.({ targetWidth: 512, targetHeight: 256, camera });
+        expect(scene._renderables[0]!._worldCenter).toEqual([0, 0, 0]);
+
+        const hiddenPass = makeDrawPassMock();
+        expect(binding.draw(hiddenPass, engine)).toBe(0);
+        expect(hiddenPass.drawIndexed).not.toHaveBeenCalled();
     });
 
     it("uploads transparent billboards in logical order when no camera is supplied", async () => {

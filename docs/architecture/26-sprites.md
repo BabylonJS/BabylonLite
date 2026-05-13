@@ -26,7 +26,8 @@
 > explicitly import this function when they want scene-hosted sprites, its
 > static `sprite-renderable` import is limited to that opt-in graph. The
 > builder inserts a generic `Renderable` into the scene, and the frame graph
-> then buckets it alongside meshes by `isTransparent` / `isTransmissive`.
+> then buckets it alongside meshes by `isTransparent` / `isTransmissive` /
+> `isDynamicDepthWrite`.
 >
 > This document contains the full specification needed to implement the
 > module from scratch — public API, internal architecture, GPU layouts,
@@ -596,7 +597,7 @@ export interface Sprite2DLayerOptions {
     /**
      * Default per-instance NDC depth (`0` = near, `1` = far) for sprites added to this
      * layer when their `Sprite2DProps.z` is omitted. Only stored and consumed by `depth: "test" |
-     * "test-write"` layers; HUD/pure-2D layers use a 10-float layout and allocate no
+     * "test-write"` layers; HUD/pure-2D layers use a 13-float layout and allocate no
      * per-instance Z attribute. Defaults to `0.5`. Mutating `layer.layerZ` after
      * sprites have been added does **not** retroactively change them — call
      * `updateSprite2DIndex(layer, idx, { z: … })` to move an existing sprite.
@@ -616,7 +617,7 @@ export interface Sprite2DLayer {
     pivot: [number, number];
     /** Default per-instance Z applied to newly added sprites whose `Sprite2DProps.z` is omitted. */
     layerZ: number;
-    count: number;
+    readonly count: number;
 }
 
 export interface Sprite2DProps {
@@ -648,6 +649,7 @@ export function createSprite2DLayer(atlas: SpriteAtlas, opts?: Sprite2DLayerOpti
 export function addSprite2DIndex(layer: Sprite2DLayer, props: Sprite2DProps): number;
 export function updateSprite2DIndex(layer: Sprite2DLayer, index: number, patch: Partial<Sprite2DProps>): void;
 export function removeSprite2DIndex(layer: Sprite2DLayer, index: number): void;
+export function clearSprite2DLayer(layer: Sprite2DLayer): void;
 export function setSprite2DFrameIndex(layer: Sprite2DLayer, index: number, frame: number): void;
 ```
 
@@ -748,6 +750,7 @@ export interface BillboardSpriteSystemOptions {
 }
 
 export type BillboardBlendMode = Extract<SpriteBlendMode, "alpha" | "premultiplied" | "cutout">;
+export function isBillboardBlendMode(blendMode: SpriteBlendMode): blendMode is BillboardBlendMode;
 export type BillboardOrientation = "facing" | "axis-locked";
 export type BillboardDepthMode = "transparent" | "cutout";
 
@@ -758,7 +761,7 @@ export interface BillboardSpriteSystem {
     alphaCutoff: number;
     opacity: number;
     visible: boolean;
-    order: number;
+    readonly order: number;
     readonly count: number;
 
     readonly _orientation: BillboardOrientation;
@@ -801,6 +804,14 @@ export function addFacingBillboardSystem(scene: SceneContext, system: BillboardS
 export function addAxisLockedBillboardSystem(scene: SceneContext, system: BillboardSpriteSystem): void;
 ```
 
+`BillboardSpriteSystem.order` is construction-time state: the renderable copies
+it when the scene helper builds GPU resources during `registerScene`. Create a
+new system when the render order must change after registration.
+
+`setBillboardSpriteFrameIndex` updates UVs only and preserves the sprite's
+current pivot. Callers that want atlas-driven pivot changes during animation
+should use `updateBillboardSpriteIndex(system, index, { frame, pivot })`.
+
 `addFacingBillboardSystem(scene, system)` and
 `addAxisLockedBillboardSystem(scene, system)` are the scene integration
 points. They queue a deferred renderable builder through
@@ -825,8 +836,8 @@ transparent renderables. The render pass runs binding updates before
 transparent-bucket sorting so `_worldCenter` reflects any same-frame
 billboard mutations before draw order is chosen. Cutout systems have no blend state,
 discard fragments whose sampled texture alpha is below `alphaCutoff`, write
-depth, and route through the non-transparent direct-draw bucket without
-transparent sorting.
+depth, and route through the non-transparent direct-draw bucket with
+`isDynamicDepthWrite` rather than `isTransmissive`.
 
 Yaw-locked billboards (world-Y axis constraint) are created via
 `createAxisLockedBillboardSystem(atlas, [0, 1, 0], opts)`.
@@ -977,7 +988,7 @@ system.count, 0, 0, 0)` for all active sprites.
 The current system UBO is 32 bytes:
 
 - `opacityMul` at byte offset 0: `vec4<f32>`. Straight-alpha and cutout write `(1, 1, 1, opacity)`; premultiplied writes `(opacity, opacity, opacity, opacity)` so the shader is branch-free.
-- `axis` at byte offset 16: `vec4<f32>`. `xyz` is the normalized axis for axis-locked systems and zero for facing systems. `w` is the system `alphaCutoff` used only by cutout shaders.
+- `axisAndCutoff` at byte offset 16: `vec4<f32>`. `xyz` is the normalized axis for axis-locked systems and zero for facing systems. `w` is the system `alphaCutoff` used only by cutout shaders.
 
 The render pipeline uses the scene UBO at group 0 and the billboard UBO/atlas
 bind group at group 1, with pipeline keys including render target format,
@@ -1602,8 +1613,9 @@ calls the statically imported `buildSpriteRenderable`, builds the pipeline (cach
 allocates the per-layer GPU instance buffer + UBO, and creates bind groups. The
 depth-hosted `Renderable` (one per Sprite2D layer added through
 `addDepthHostedSpriteLayer`) is pushed into `scene._renderables` with `order = 100`
-(cutout / `depth: "test-write"`) or `order = 200` (blended / `depth: "test"`) so the
-scene's existing renderable loop picks it up alongside opaque and transparent meshes.
+and `isDynamicDepthWrite = true` for `depth: "test-write"`, or `order = 200` for
+blended / `depth: "test"`, so the scene's existing renderable loop picks it up
+alongside opaque and transparent meshes.
 
 `registerScene` does **not** create or own any `SpriteRenderer`. HUD
 overlays are entirely caller-managed.
@@ -1674,10 +1686,10 @@ ThinInstance vs. Mesh split for 3D geometry).
 
 ### Two-tier API design
 
-| Tier           | Functions                                                                                                                                     | Returns                                    | Use for                                                                                                                                                |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Index API**  | `addSprite2DIndex`, `updateSprite2DIndex`, `removeSprite2DIndex`, `setSprite2DFrameIndex` (and `addBillboardSpriteIndex` etc. for billboards) | `number` (slot index)                      | Tile maps, scenery, particles, large fixed-layout HUDs. Maximum throughput, zero per-sprite GC. Indices are _not_ stable — `removeXIndex` swap-removes |
-| **Handle API** | Roadmap: `addSprite2D`, `removeSprite2D`, `addBillboardSprite`, `removeBillboardSprite` and matching update helpers                           | `Sprite2DHandle` / `BillboardSpriteHandle` | Player characters, enemies, UI elements that move or are parented. Observable fields, stable id, optional parenting                                    |
+| Tier           | Functions                                                                                                                                                           | Returns                                    | Use for                                                                                                                                                |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Index API**  | `addSprite2DIndex`, `updateSprite2DIndex`, `removeSprite2DIndex`, `clearSprite2DLayer`, `setSprite2DFrameIndex` (and `addBillboardSpriteIndex` etc. for billboards) | `number` (slot index)                      | Tile maps, scenery, particles, large fixed-layout HUDs. Maximum throughput, zero per-sprite GC. Indices are _not_ stable — `removeXIndex` swap-removes |
+| **Handle API** | Roadmap: `addSprite2D`, `removeSprite2D`, `addBillboardSprite`, `removeBillboardSprite` and matching update helpers                                                 | `Sprite2DHandle` / `BillboardSpriteHandle` | Player characters, enemies, UI elements that move or are parented. Observable fields, stable id, optional parenting                                    |
 
 Mario analogy: `Index` is a scenario tile (set once, never updated, can
 spawn 10 000 of them); `Handle` is Mario himself (moves every frame,
@@ -2013,7 +2025,7 @@ export type { SpriteRenderer, SpriteRendererOptions } from "./sprite/sprite-rend
 
 export { loadSpriteAtlas, createGridSpriteAtlas } from "./sprite/shared/sprite-atlas.js";
 export type { SpriteAtlas, SpriteFrame, SpriteSampling, GridAtlasOptions, LoadAtlasOptions } from "./sprite/shared/sprite-atlas.js";
-export { createSprite2DLayer, addSprite2DIndex, updateSprite2DIndex, removeSprite2DIndex, setSprite2DFrameIndex } from "./sprite/sprite-2d.js";
+export { createSprite2DLayer, addSprite2DIndex, updateSprite2DIndex, removeSprite2DIndex, clearSprite2DLayer, setSprite2DFrameIndex } from "./sprite/sprite-2d.js";
 export type { Sprite2DLayer, Sprite2DLayerOptions, Sprite2DProps, Sprite2DView, Sprite2DDepthMode, SpriteBlendMode } from "./sprite/sprite-2d.js";
 export { addDepthHostedSpriteLayer } from "./sprite/sprite-scene.js";
 
@@ -2026,6 +2038,7 @@ export {
     removeBillboardSpriteIndex,
     clearBillboardSprites,
     setBillboardSpriteFrameIndex,
+    isBillboardBlendMode,
 } from "./sprite/billboard-sprite.js";
 export { addFacingBillboardSystem, addAxisLockedBillboardSystem } from "./sprite/billboard-scene.js";
 export type {

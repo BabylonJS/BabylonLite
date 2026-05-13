@@ -2,7 +2,8 @@ import type { EngineContextInternal } from "../engine/engine.js";
 import type { Mat4 } from "../math/types.js";
 import { SCENE_UBO_WGSL } from "../shader/scene-uniforms.js";
 import type { BillboardBlendMode, BillboardDepthMode, BillboardOrientation, BillboardSpriteSystem } from "./billboard-sprite.js";
-import { BILLBOARD_INSTANCE_FLOATS_PER_SPRITE, BILLBOARD_INSTANCE_STRIDE_BYTES } from "./billboard-sprite.js";
+import { BILLBOARD_INSTANCE_FLOATS_PER_SPRITE, BILLBOARD_INSTANCE_STRIDE_BYTES, isBillboardBlendMode } from "./billboard-sprite.js";
+import type { SpriteBlendMode } from "./sprite-2d.js";
 
 export interface BillboardPipelineDeviceCache {
     _shaderModules: Map<string, GPUShaderModule>;
@@ -38,6 +39,14 @@ const DEPTH_MODE_TABLE: Readonly<Record<BillboardDepthMode, { index: number; com
     cutout: { index: 1, compare: "less-equal", writeEnabled: true },
 };
 
+const BILLBOARD_POSITION_OFFSET_BYTES = 0;
+const BILLBOARD_SIZE_OFFSET_BYTES = 12;
+const BILLBOARD_UV_MIN_OFFSET_BYTES = 20;
+const BILLBOARD_UV_MAX_OFFSET_BYTES = 28;
+const BILLBOARD_ROTATION_OFFSET_BYTES = 36;
+const BILLBOARD_PIVOT_OFFSET_BYTES = 40;
+const BILLBOARD_COLOR_OFFSET_BYTES = 48;
+
 export const BILLBOARD_SYSTEM_UBO_BYTES = 32;
 const BILLBOARD_SYSTEM_UBO_FLOATS = BILLBOARD_SYSTEM_UBO_BYTES / 4;
 export const BILLBOARD_INDEX_DATA: Readonly<Uint16Array> = new Uint16Array([0, 1, 2, 0, 2, 3]);
@@ -49,8 +58,8 @@ export interface BillboardInstanceSortScratch {
     _sortDepths: Float32Array;
 }
 
-function getBlendModeEntry(blendMode: BillboardBlendMode): (typeof BLEND_MODE_TABLE)[BillboardBlendMode] {
-    if (blendMode === "alpha" || blendMode === "premultiplied" || blendMode === "cutout") {
+function getBlendModeEntry(blendMode: SpriteBlendMode): (typeof BLEND_MODE_TABLE)[BillboardBlendMode] {
+    if (isBillboardBlendMode(blendMode)) {
         return BLEND_MODE_TABLE[blendMode];
     }
     throw new Error(`Billboard pipeline: blendMode: "${blendMode}" is not supported yet.`);
@@ -159,7 +168,7 @@ export function createBillboardPipelineCache(): BillboardPipelineCache {
     };
 }
 
-export function clearBillboardPipelineCache(cache: BillboardPipelineCache): void {
+export function resetBillboardPipelineCache(cache: BillboardPipelineCache): void {
     cache._devices = new WeakMap();
 }
 
@@ -390,13 +399,13 @@ function buildBillboardPipeline(
                     arrayStride: BILLBOARD_INSTANCE_STRIDE_BYTES,
                     stepMode: "instance",
                     attributes: [
-                        { shaderLocation: 0, offset: 0, format: "float32x3" },
-                        { shaderLocation: 1, offset: 12, format: "float32x2" },
-                        { shaderLocation: 2, offset: 20, format: "float32x2" },
-                        { shaderLocation: 3, offset: 28, format: "float32x2" },
-                        { shaderLocation: 4, offset: 36, format: "float32" },
-                        { shaderLocation: 5, offset: 40, format: "float32x2" },
-                        { shaderLocation: 6, offset: 48, format: "float32x4" },
+                        { shaderLocation: 0, offset: BILLBOARD_POSITION_OFFSET_BYTES, format: "float32x3" },
+                        { shaderLocation: 1, offset: BILLBOARD_SIZE_OFFSET_BYTES, format: "float32x2" },
+                        { shaderLocation: 2, offset: BILLBOARD_UV_MIN_OFFSET_BYTES, format: "float32x2" },
+                        { shaderLocation: 3, offset: BILLBOARD_UV_MAX_OFFSET_BYTES, format: "float32x2" },
+                        { shaderLocation: 4, offset: BILLBOARD_ROTATION_OFFSET_BYTES, format: "float32" },
+                        { shaderLocation: 5, offset: BILLBOARD_PIVOT_OFFSET_BYTES, format: "float32x2" },
+                        { shaderLocation: 6, offset: BILLBOARD_COLOR_OFFSET_BYTES, format: "float32x4" },
                     ],
                 },
             ],

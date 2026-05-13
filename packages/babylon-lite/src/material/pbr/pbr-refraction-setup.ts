@@ -1,5 +1,6 @@
 import type { EngineContext, EngineContextInternal } from "../../engine/engine.js";
 import type { AssetContainer } from "../../asset-container.js";
+import type { Renderable } from "../../render/renderable.js";
 import type { SceneContext } from "../../scene/scene.js";
 import type { SceneContextInternal } from "../../scene/scene.js";
 import type { Texture2D } from "../../texture/texture-2d.js";
@@ -19,6 +20,10 @@ export function enablePbrOpaqueRefraction(scene: SceneContext, engine: EngineCon
 
 export function usePbrOpaqueRefraction(container: AssetContainer): void {
     useOpaqueSceneRefraction(container);
+}
+
+export function selectOpaqueSceneRefractionRenderables(renderables: readonly Renderable[]): Renderable[] {
+    return renderables.filter((r) => !r.isTransmissive);
 }
 
 function setupPbrRefraction(scene: SceneContext, engine: EngineContextInternal): Texture2D {
@@ -85,7 +90,7 @@ function setupPbrRefraction(scene: SceneContext, engine: EngineContextInternal):
     sc._deferredBuilders.push(() => {
         sc._deferredBuilders.push(() => {
             pass._renderables.length = 0;
-            pass._renderables.push(...sc._renderables.filter((r) => !r.isTransmissive));
+            pass._renderables.push(...selectOpaqueSceneRefractionRenderables(sc._renderables));
             sc._frameGraph.build();
         });
     });

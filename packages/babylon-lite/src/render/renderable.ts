@@ -54,9 +54,12 @@ export interface Renderable {
     readonly order: number;
     /** Whether this renderable is transparent (auto-derived from material). */
     readonly isTransparent: boolean;
-    /** Whether this renderable is transmissive (refraction through surface). Opaque write-depth
-     *  but rendered AFTER the opaque-scene RTT is built. Defaults to false. */
+    /** Whether this renderable is a true transmissive/refractive surface. These non-transparent
+     *  surfaces draw directly after the opaque-scene RTT is built and are excluded from that RTT. */
     readonly isTransmissive?: boolean;
+    /** Whether this non-transparent renderable must direct-draw after cached opaque bundles because
+     *  its mutable depth-writing contents cannot be safely captured in a reusable opaque bundle. */
+    readonly isDynamicDepthWrite?: boolean;
     /** Reference to the source mesh (for distance sort + material-change detection). */
     readonly mesh?: Mesh;
     /** Scratch: squared distance from camera for transparent sorting. */

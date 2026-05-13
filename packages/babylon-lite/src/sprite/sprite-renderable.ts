@@ -26,12 +26,12 @@ import {
     LAYER_UBO_BYTES,
     SHARED_SPRITE_INDEX_DATA,
     buildSpriteLayerUbo,
-    clearSpritePipelineCache,
     createSpriteInstanceBuffer,
     createSpriteLayerBindGroup,
     createSpritePipelineCache,
     ensureSpriteInstanceBuffer,
     getOrCreateSpritePipeline,
+    resetSpritePipelineCache,
     uploadSpriteInstances,
     writeSpriteLayerUboIfDirty,
 } from "./sprite-pipeline.js";
@@ -59,7 +59,7 @@ function releaseSharedPipelineCache(): void {
     }
     _sharedPipelineCacheRefs--;
     if (_sharedPipelineCacheRefs === 0 && _sharedPipelineCache) {
-        clearSpritePipelineCache(_sharedPipelineCache);
+        resetSpritePipelineCache(_sharedPipelineCache);
         _sharedPipelineCache = null;
     }
 }
@@ -103,13 +103,14 @@ export function buildSpriteRenderable(engine: EngineContextInternal, layer: Spri
     const instanceBuffer = createSpriteInstanceBuffer(engine.device, layer, "sprite-depth-hosted-instances");
 
     const isTransparent = layer.depth === "test";
-    const isDirectDepthWrite = layer.depth === "test-write";
+    const isDynamicDepthWrite = layer.depth === "test-write";
     const renderable: SpriteRenderableInternal = {
         // Depth-write sprite layers are mutable instanced batches, so route them through
         // the direct-draw phase after cached opaque meshes and before transparent draws.
         order: isTransparent ? 200 : 100,
         isTransparent,
-        isTransmissive: isDirectDepthWrite,
+        isTransmissive: false,
+        isDynamicDepthWrite,
         _engine: engine,
         _layer: layer,
         _indexBuffer: indexBuffer,

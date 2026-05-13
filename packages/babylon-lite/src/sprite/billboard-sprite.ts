@@ -11,6 +11,10 @@ import type { SpriteBlendMode } from "./sprite-2d.js";
 
 export type BillboardBlendMode = Extract<SpriteBlendMode, "alpha" | "premultiplied" | "cutout">;
 
+export function isBillboardBlendMode(blendMode: SpriteBlendMode): blendMode is BillboardBlendMode {
+    return blendMode === "alpha" || blendMode === "premultiplied" || blendMode === "cutout";
+}
+
 export interface BillboardSpriteSystemOptions {
     capacity?: number;
     blendMode?: BillboardBlendMode;
@@ -30,7 +34,7 @@ export interface BillboardSpriteSystem {
     alphaCutoff: number;
     opacity: number;
     visible: boolean;
-    order: number;
+    readonly order: number;
     readonly count: number;
 
     /** @internal Orientation shader path for this system. */
@@ -76,7 +80,7 @@ export const BILLBOARD_SAVED_SIZE_FLOATS_PER_SPRITE = 2;
 const DEFAULT_CAPACITY = 16;
 
 function assertBlendSupported(blendMode: SpriteBlendMode): asserts blendMode is BillboardBlendMode {
-    if (blendMode !== "alpha" && blendMode !== "premultiplied" && blendMode !== "cutout") {
+    if (!isBillboardBlendMode(blendMode)) {
         throw new Error(`BillboardSpriteSystem: blendMode: "${blendMode}" is not supported. Use "alpha", "premultiplied", or "cutout".`);
     }
 }

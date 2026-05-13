@@ -10,13 +10,13 @@ import {
     BILLBOARD_INDEX_DATA,
     BILLBOARD_SYSTEM_UBO_BYTES,
     buildBillboardSystemUbo,
-    clearBillboardPipelineCache,
     createBillboardInstanceBuffer,
     createBillboardInstanceSortScratch,
     createBillboardPipelineCache,
     createBillboardSystemBindGroup,
     ensureBillboardInstanceBuffer,
     getOrCreateBillboardPipeline,
+    resetBillboardPipelineCache,
     uploadBillboardInstances,
     uploadSortedBillboardInstances,
     writeBillboardSystemUboIfDirty,
@@ -38,7 +38,7 @@ function releaseSharedPipelineCache(): void {
     }
     _sharedPipelineCacheRefs--;
     if (_sharedPipelineCacheRefs === 0 && _sharedPipelineCache) {
-        clearBillboardPipelineCache(_sharedPipelineCache);
+        resetBillboardPipelineCache(_sharedPipelineCache);
         _sharedPipelineCache = null;
     }
 }
@@ -58,6 +58,7 @@ interface BillboardRenderableInternal extends Renderable {
     _uploadedCameraViewVersion: number;
     _uploadedSorted: boolean;
     _centerVersion: number;
+    _drawableCount: number;
     _uboUploaded: boolean;
     _lastUbo: Float32Array;
     _scratchUbo: Float32Array;
@@ -72,7 +73,8 @@ export function buildBillboardRenderable(engine: EngineContextInternal, system: 
     const renderable: BillboardRenderableInternal = {
         order: system.order,
         isTransparent,
-        isTransmissive: !isTransparent,
+        isTransmissive: false,
+        isDynamicDepthWrite: !isTransparent,
         _engine: engine,
         _system: system,
         _indexBuffer: indexBuffer,
@@ -87,6 +89,7 @@ export function buildBillboardRenderable(engine: EngineContextInternal, system: 
         _uploadedCameraViewVersion: -1,
         _uploadedSorted: false,
         _centerVersion: -1,
+        _drawableCount: 0,
         _uboUploaded: false,
         _lastUbo: new Float32Array(BILLBOARD_SYSTEM_UBO_BYTES / 4),
         _scratchUbo: new Float32Array(BILLBOARD_SYSTEM_UBO_BYTES / 4),
@@ -202,6 +205,7 @@ function refreshBillboardWorldCenter(renderable: BillboardRenderableInternal): v
         center[0] = 0;
         center[1] = 0;
         center[2] = 0;
+        renderable._drawableCount = 0;
         renderable._centerVersion = system._version;
         return;
     }
@@ -213,8 +217,14 @@ function refreshBillboardWorldCenter(renderable: BillboardRenderableInternal): v
     let maxX = -Infinity;
     let maxY = -Infinity;
     let maxZ = -Infinity;
+    let drawableCount = 0;
     for (let index = 0; index < system.count; index++) {
         const base = index * stride;
+        const width = data[base + 3]!;
+        const height = data[base + 4]!;
+        if (width === 0 || height === 0) {
+            continue;
+        }
         const x = data[base]!;
         const y = data[base + 1]!;
         const z = data[base + 2]!;
@@ -236,15 +246,27 @@ function refreshBillboardWorldCenter(renderable: BillboardRenderableInternal): v
         if (z > maxZ) {
             maxZ = z;
         }
+        drawableCount++;
     }
-    center[0] = (minX + maxX) * 0.5;
-    center[1] = (minY + maxY) * 0.5;
-    center[2] = (minZ + maxZ) * 0.5;
+    if (drawableCount === 0) {
+        center[0] = 0;
+        center[1] = 0;
+        center[2] = 0;
+    } else {
+        center[0] = (minX + maxX) * 0.5;
+        center[1] = (minY + maxY) * 0.5;
+        center[2] = (minZ + maxZ) * 0.5;
+    }
+    renderable._drawableCount = drawableCount;
     renderable._centerVersion = system._version;
 }
 
 function drawSystem(renderable: BillboardRenderableInternal, bindGroup: GPUBindGroup, pass: GPURenderPassEncoder | GPURenderBundleEncoder): number {
-    if (renderable._disposed || !renderable._system.visible || renderable._system.count === 0) {
+    if (renderable._disposed) {
+        return 0;
+    }
+    refreshBillboardWorldCenter(renderable);
+    if (!renderable._system.visible || renderable._system.count === 0 || renderable._drawableCount === 0) {
         return 0;
     }
     pass.setBindGroup(1, bindGroup);
