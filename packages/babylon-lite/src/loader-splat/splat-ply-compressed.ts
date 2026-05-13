@@ -182,24 +182,60 @@ function readChunks(header: PlyHeader, dv: DataView, offsetRef: { value: number 
             }
             const v = dv.getFloat32(offsetRef.value + p.offset, true);
             switch (p.name) {
-                case "min_x": c.minX = v; break;
-                case "min_y": c.minY = v; break;
-                case "min_z": c.minZ = v; break;
-                case "max_x": c.maxX = v; break;
-                case "max_y": c.maxY = v; break;
-                case "max_z": c.maxZ = v; break;
-                case "min_scale_x": c.minSX = v; break;
-                case "min_scale_y": c.minSY = v; break;
-                case "min_scale_z": c.minSZ = v; break;
-                case "max_scale_x": c.maxSX = v; break;
-                case "max_scale_y": c.maxSY = v; break;
-                case "max_scale_z": c.maxSZ = v; break;
-                case "min_r": c.minR = v; break;
-                case "min_g": c.minG = v; break;
-                case "min_b": c.minB = v; break;
-                case "max_r": c.maxR = v; break;
-                case "max_g": c.maxG = v; break;
-                case "max_b": c.maxB = v; break;
+                case "min_x":
+                    c.minX = v;
+                    break;
+                case "min_y":
+                    c.minY = v;
+                    break;
+                case "min_z":
+                    c.minZ = v;
+                    break;
+                case "max_x":
+                    c.maxX = v;
+                    break;
+                case "max_y":
+                    c.maxY = v;
+                    break;
+                case "max_z":
+                    c.maxZ = v;
+                    break;
+                case "min_scale_x":
+                    c.minSX = v;
+                    break;
+                case "min_scale_y":
+                    c.minSY = v;
+                    break;
+                case "min_scale_z":
+                    c.minSZ = v;
+                    break;
+                case "max_scale_x":
+                    c.maxSX = v;
+                    break;
+                case "max_scale_y":
+                    c.maxSY = v;
+                    break;
+                case "max_scale_z":
+                    c.maxSZ = v;
+                    break;
+                case "min_r":
+                    c.minR = v;
+                    break;
+                case "min_g":
+                    c.minG = v;
+                    break;
+                case "min_b":
+                    c.minB = v;
+                    break;
+                case "max_r":
+                    c.maxR = v;
+                    break;
+                case "max_g":
+                    c.maxG = v;
+                    break;
+                case "max_b":
+                    c.maxB = v;
+                    break;
             }
         }
         out.push(c);
@@ -236,16 +272,28 @@ function unpackRot(value: number, out: [number, number, number, number]): void {
     const m = Math.sqrt(Math.max(0, 1.0 - (a * a + b * b + c * c)));
     switch (value >>> 30) {
         case 0:
-            out[0] = a; out[1] = b; out[2] = c; out[3] = m;
+            out[0] = a;
+            out[1] = b;
+            out[2] = c;
+            out[3] = m;
             break;
         case 1:
-            out[0] = m; out[1] = b; out[2] = c; out[3] = a;
+            out[0] = m;
+            out[1] = b;
+            out[2] = c;
+            out[3] = a;
             break;
         case 2:
-            out[0] = b; out[1] = m; out[2] = c; out[3] = a;
+            out[0] = b;
+            out[1] = m;
+            out[2] = c;
+            out[3] = a;
             break;
         default:
-            out[0] = b; out[1] = c; out[2] = m; out[3] = a;
+            out[0] = b;
+            out[1] = c;
+            out[2] = m;
+            out[3] = a;
             break;
     }
 }
@@ -325,7 +373,10 @@ export function convertCompressedPlyToParsedSplat(data: ArrayBuffer): ParsedSpla
                     break;
                 case "packed_rotation":
                     unpackRot(value, tmpQuat);
-                    r0 = tmpQuat[3]; r1 = tmpQuat[0]; r2 = tmpQuat[1]; r3 = tmpQuat[2];
+                    r0 = tmpQuat[3];
+                    r1 = tmpQuat[0];
+                    r2 = tmpQuat[1];
+                    r3 = tmpQuat[2];
                     break;
                 case "packed_scale":
                     unpack111011(value, tmpScl);
@@ -340,24 +391,63 @@ export function convertCompressedPlyToParsedSplat(data: ArrayBuffer): ParsedSpla
                     rgba[2] = lerp(chunk!.minB, chunk!.maxB, tmpRgba[2]) * 255;
                     rgba[3] = tmpRgba[3] * 255;
                     break;
-                case "x": position[0] = value; break;
-                case "y": position[1] = value; break;
-                case "z": position[2] = value; break;
-                case "scale_0": scale[0] = Math.exp(value); break;
-                case "scale_1": scale[1] = Math.exp(value); break;
-                case "scale_2": scale[2] = Math.exp(value); break;
-                case "red": case "diffuse_red": rgba[0] = value; break;
-                case "green": case "diffuse_green": rgba[1] = value; break;
-                case "blue": case "diffuse_blue": rgba[2] = value; break;
-                case "f_dc_0": rgba[0] = (0.5 + SH_C0 * value) * 255; break;
-                case "f_dc_1": rgba[1] = (0.5 + SH_C0 * value) * 255; break;
-                case "f_dc_2": rgba[2] = (0.5 + SH_C0 * value) * 255; break;
-                case "f_dc_3": rgba[3] = (0.5 + SH_C0 * value) * 255; break;
-                case "opacity": rgba[3] = (1 / (1 + Math.exp(-value))) * 255; break;
-                case "rot_0": r0 = value; break;
-                case "rot_1": r1 = value; break;
-                case "rot_2": r2 = value; break;
-                case "rot_3": r3 = value; break;
+                case "x":
+                    position[0] = value;
+                    break;
+                case "y":
+                    position[1] = value;
+                    break;
+                case "z":
+                    position[2] = value;
+                    break;
+                case "scale_0":
+                    scale[0] = Math.exp(value);
+                    break;
+                case "scale_1":
+                    scale[1] = Math.exp(value);
+                    break;
+                case "scale_2":
+                    scale[2] = Math.exp(value);
+                    break;
+                case "red":
+                case "diffuse_red":
+                    rgba[0] = value;
+                    break;
+                case "green":
+                case "diffuse_green":
+                    rgba[1] = value;
+                    break;
+                case "blue":
+                case "diffuse_blue":
+                    rgba[2] = value;
+                    break;
+                case "f_dc_0":
+                    rgba[0] = (0.5 + SH_C0 * value) * 255;
+                    break;
+                case "f_dc_1":
+                    rgba[1] = (0.5 + SH_C0 * value) * 255;
+                    break;
+                case "f_dc_2":
+                    rgba[2] = (0.5 + SH_C0 * value) * 255;
+                    break;
+                case "f_dc_3":
+                    rgba[3] = (0.5 + SH_C0 * value) * 255;
+                    break;
+                case "opacity":
+                    rgba[3] = (1 / (1 + Math.exp(-value))) * 255;
+                    break;
+                case "rot_0":
+                    r0 = value;
+                    break;
+                case "rot_1":
+                    r1 = value;
+                    break;
+                case "rot_2":
+                    r2 = value;
+                    break;
+                case "rot_3":
+                    r3 = value;
+                    break;
                 default:
                     if (plySH && prop.name.startsWith("f_rest_")) {
                         const shIdx = parseInt(prop.name.slice(7), 10);

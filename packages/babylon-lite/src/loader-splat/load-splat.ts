@@ -69,5 +69,3 @@ export async function loadSplat(scene: SceneContext, url: string): Promise<Gauss
     const name = url.substring(url.lastIndexOf("/") + 1) || "splat";
     return await attachParsedSplat(scene, name, parsed);
 }
-
-

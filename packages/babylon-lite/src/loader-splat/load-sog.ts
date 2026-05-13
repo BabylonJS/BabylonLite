@@ -178,13 +178,37 @@ function parseSogDatas(data: SOGRootData, images: WebPImage[]): ParsedSplat {
         const mode = quatBits[i * 4 + 3]! - 252;
         const t = a * a + b * b + c * c;
         const d = Math.sqrt(Math.max(0, 1 - t));
-        let q0 = 0, q1 = 0, q2 = 0, q3 = 0;
+        let q0 = 0,
+            q1 = 0,
+            q2 = 0,
+            q3 = 0;
         switch (mode) {
-            case 0: q0 = d; q1 = a; q2 = b; q3 = c; break;
-            case 1: q0 = a; q1 = d; q2 = b; q3 = c; break;
-            case 2: q0 = a; q1 = b; q2 = d; q3 = c; break;
-            case 3: q0 = a; q1 = b; q2 = c; q3 = d; break;
-            default: throw new Error(`loadSOG: invalid quaternion mode ${mode}`);
+            case 0:
+                q0 = d;
+                q1 = a;
+                q2 = b;
+                q3 = c;
+                break;
+            case 1:
+                q0 = a;
+                q1 = d;
+                q2 = b;
+                q3 = c;
+                break;
+            case 2:
+                q0 = a;
+                q1 = b;
+                q2 = d;
+                q3 = c;
+                break;
+            case 3:
+                q0 = a;
+                q1 = b;
+                q2 = c;
+                q3 = d;
+                break;
+            default:
+                throw new Error(`loadSOG: invalid quaternion mode ${mode}`);
         }
         rot[i * 32 + 28 + 0] = q0 * 127.5 + 127.5;
         rot[i * 32 + 28 + 1] = q1 * 127.5 + 127.5;

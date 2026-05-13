@@ -114,11 +114,7 @@ function parseSpz(data: ArrayBuffer): ParsedSplat {
     if (version >= 3) {
         const sqrt12 = Math.SQRT1_2;
         for (let i = 0; i < splatCount; i++) {
-            const comp =
-                ubuf[byteOffset + 0]! +
-                (ubuf[byteOffset + 1]! << 8) +
-                (ubuf[byteOffset + 2]! << 16) +
-                (ubuf[byteOffset + 3]! << 24);
+            const comp = ubuf[byteOffset + 0]! + (ubuf[byteOffset + 1]! << 8) + (ubuf[byteOffset + 2]! << 16) + (ubuf[byteOffset + 3]! << 24);
             const cmask = (1 << 9) - 1;
             const rotation: [number, number, number, number] = [0, 0, 0, 0];
             const iLargest = comp >>> 30;
@@ -198,9 +194,7 @@ export async function loadSPZ(scene: SceneContext, url: string): Promise<Gaussia
     const raw = new Uint8Array(await response.arrayBuffer());
     // SPZ files are conventionally gzip-wrapped; auto-detect the magic.
     const isGzip = raw[0] === 0x1f && raw[1] === 0x8b;
-    const data: ArrayBuffer = isGzip
-        ? ((await decompressGzip(raw)).buffer as ArrayBuffer)
-        : (raw.buffer as ArrayBuffer);
+    const data: ArrayBuffer = isGzip ? ((await decompressGzip(raw)).buffer as ArrayBuffer) : (raw.buffer as ArrayBuffer);
     const parsed = parseSpz(data);
     applyUpAxisCorrection(parsed);
     const friendly = url.substring(url.lastIndexOf("/") + 1) || "spz";

@@ -89,7 +89,7 @@ function buildShFlipMask(shDegree: number): Uint8Array {
             if (m === 0) {
                 flip = (l & 1) === 1;
             } else if (m < 0) {
-                flip = ((l + (-m)) & 1) === 0;
+                flip = ((l + -m) & 1) === 0;
             } else {
                 flip = ((l + m) & 1) === 1;
             }
