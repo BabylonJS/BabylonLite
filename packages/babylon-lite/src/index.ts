@@ -194,6 +194,8 @@ export { addDepthHostedSpriteLayer } from "./sprite/sprite-scene.js";
 // ─── World-space billboards ────────────────────────────────────────
 export type {
     BillboardSpriteSystem,
+    FacingBillboardSpriteSystem,
+    AxisLockedBillboardSpriteSystem,
     BillboardSpriteSystemOptions,
     BillboardSpriteInit,
     BillboardOrientation,

@@ -288,15 +288,6 @@ describe("addFacingBillboardSystem", () => {
         expect(device.createBuffer).not.toHaveBeenCalled();
     });
 
-    it("rejects mismatched scene helpers before queuing deferred work", () => {
-        const engine = makeMockEngine();
-        const scene = createSceneContext(engine) as SceneContextInternal;
-
-        expect(() => addFacingBillboardSystem(scene, createAxisLockedBillboardSystem(makeMockAtlas(), [0, 1, 0]))).toThrow(/expected a facing/);
-        expect(() => addAxisLockedBillboardSystem(scene, createFacingBillboardSystem(makeMockAtlas()))).toThrow(/expected an axis-locked/);
-        expect(scene._deferredBuilders.length).toBe(0);
-    });
-
     it("routes into a transparent depth-tested scene renderable after registerScene", async () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContextInternal;

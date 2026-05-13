@@ -755,7 +755,7 @@ export function isBillboardBlendMode(blendMode: SpriteBlendMode): blendMode is B
 export type BillboardOrientation = "facing" | "axis-locked";
 export type BillboardDepthMode = "transparent" | "cutout";
 
-export interface BillboardSpriteSystem {
+export interface BillboardSpriteSystem<TOrientation extends BillboardOrientation = BillboardOrientation> {
     readonly _entityType: "billboard-sprite-system";
     readonly atlas: SpriteAtlas;
     readonly blendMode: BillboardBlendMode;
@@ -765,7 +765,7 @@ export interface BillboardSpriteSystem {
     readonly order: number;
     readonly count: number;
 
-    readonly _orientation: BillboardOrientation;
+    readonly _orientation: TOrientation;
     readonly _depthMode: BillboardDepthMode;
     readonly _axis: readonly [number, number, number];
     _capacity: number;
@@ -777,6 +777,9 @@ export interface BillboardSpriteSystem {
     _dirtyMin: number;
     _dirtyMax: number;
 }
+
+export type FacingBillboardSpriteSystem = BillboardSpriteSystem<"facing">;
+export type AxisLockedBillboardSpriteSystem = BillboardSpriteSystem<"axis-locked">;
 
 export interface BillboardSpriteInit {
     position: [number, number, number];
@@ -790,8 +793,8 @@ export interface BillboardSpriteInit {
     visible?: boolean;
 }
 
-export function createFacingBillboardSystem(atlas: SpriteAtlas, opts?: BillboardSpriteSystemOptions): BillboardSpriteSystem;
-export function createAxisLockedBillboardSystem(atlas: SpriteAtlas, axis: readonly [number, number, number], opts?: BillboardSpriteSystemOptions): BillboardSpriteSystem;
+export function createFacingBillboardSystem(atlas: SpriteAtlas, opts?: BillboardSpriteSystemOptions): FacingBillboardSpriteSystem;
+export function createAxisLockedBillboardSystem(atlas: SpriteAtlas, axis: readonly [number, number, number], opts?: BillboardSpriteSystemOptions): AxisLockedBillboardSpriteSystem;
 
 // Index API — low-level, parallels ThinInstance and existing Sprite2DLayer index calls.
 export function addBillboardSpriteIndex(system: BillboardSpriteSystem, init: BillboardSpriteInit): number;
@@ -801,8 +804,8 @@ export function clearBillboardSprites(system: BillboardSpriteSystem): void;
 export function setBillboardSpriteFrameIndex(system: BillboardSpriteSystem, index: number, frame: number): void;
 
 // src/sprite/billboard-scene.ts
-export function addFacingBillboardSystem(scene: SceneContext, system: BillboardSpriteSystem): void;
-export function addAxisLockedBillboardSystem(scene: SceneContext, system: BillboardSpriteSystem): void;
+export function addFacingBillboardSystem(scene: SceneContext, system: FacingBillboardSpriteSystem): void;
+export function addAxisLockedBillboardSystem(scene: SceneContext, system: AxisLockedBillboardSpriteSystem): void;
 ```
 
 `BillboardSpriteSystem.order` is construction-time state: the renderable copies
@@ -820,9 +823,9 @@ points. They queue a deferred renderable builder through
 sprite-agnostic. The builder dynamically imports `billboard-renderable.ts`,
 which imports `billboard-pipeline.ts`, `getSceneBindGroupLayout`, and the WGSL
 composer. A scene that never queues a billboard system never runtime-fetches
-that chunk. The scene helpers validate that a facing helper receives a facing
-system and that an axis-locked helper receives an axis-locked system before
-queuing deferred work.
+that chunk. The helper signatures use orientation-specific system types so
+normal TypeScript callers cannot pass an axis-locked system to the facing
+helper or vice versa.
 
 Internally, the shared renderable routes through `system._orientation` and
 `system._depthMode`; the current public factories set `"facing"` or
@@ -2044,6 +2047,8 @@ export {
 export { addFacingBillboardSystem, addAxisLockedBillboardSystem } from "./sprite/billboard-scene.js";
 export type {
     BillboardSpriteSystem,
+  FacingBillboardSpriteSystem,
+  AxisLockedBillboardSpriteSystem,
     BillboardSpriteSystemOptions,
     BillboardSpriteInit,
     BillboardOrientation,

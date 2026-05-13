@@ -27,7 +27,7 @@ export interface BillboardSpriteSystemOptions {
 export type BillboardOrientation = "facing" | "axis-locked";
 export type BillboardDepthMode = "transparent" | "cutout";
 
-export interface BillboardSpriteSystem {
+export interface BillboardSpriteSystem<TOrientation extends BillboardOrientation = BillboardOrientation> {
     readonly _entityType: "billboard-sprite-system";
     readonly atlas: SpriteAtlas;
     readonly blendMode: BillboardBlendMode;
@@ -38,7 +38,7 @@ export interface BillboardSpriteSystem {
     readonly count: number;
 
     /** @internal Orientation shader path for this system. */
-    readonly _orientation: BillboardOrientation;
+    readonly _orientation: TOrientation;
     /** @internal Depth/blend pipeline path for this system. */
     readonly _depthMode: BillboardDepthMode;
     /** @internal Normalized lock axis for axis-locked systems; zero for facing. */
@@ -60,6 +60,9 @@ export interface BillboardSpriteSystem {
     /** @internal Dirty max index exclusive. */
     _dirtyMax: number;
 }
+
+export type FacingBillboardSpriteSystem = BillboardSpriteSystem<"facing">;
+export type AxisLockedBillboardSpriteSystem = BillboardSpriteSystem<"axis-locked">;
 
 export interface BillboardSpriteInit {
     position: [number, number, number];
@@ -151,11 +154,15 @@ function resolveBillboardDepthMode(blendMode: BillboardBlendMode): BillboardDept
     return blendMode === "cutout" ? "cutout" : "transparent";
 }
 
-export function createFacingBillboardSystem(atlas: SpriteAtlas, opts: BillboardSpriteSystemOptions = {}): BillboardSpriteSystem {
+export function createFacingBillboardSystem(atlas: SpriteAtlas, opts: BillboardSpriteSystemOptions = {}): FacingBillboardSpriteSystem {
     return createBillboardSystem(atlas, "facing", [0, 0, 0], opts);
 }
 
-export function createAxisLockedBillboardSystem(atlas: SpriteAtlas, axis: readonly [number, number, number], opts: BillboardSpriteSystemOptions = {}): BillboardSpriteSystem {
+export function createAxisLockedBillboardSystem(
+    atlas: SpriteAtlas,
+    axis: readonly [number, number, number],
+    opts: BillboardSpriteSystemOptions = {}
+): AxisLockedBillboardSpriteSystem {
     if (!Number.isFinite(axis[0]) || !Number.isFinite(axis[1]) || !Number.isFinite(axis[2])) {
         throw new Error("createAxisLockedBillboardSystem: axis components must be finite numbers.");
     }
@@ -168,12 +175,12 @@ export function createAxisLockedBillboardSystem(atlas: SpriteAtlas, axis: readon
     return createBillboardSystem(atlas, "axis-locked", normalized, opts);
 }
 
-function createBillboardSystem(
+function createBillboardSystem<TOrientation extends BillboardOrientation>(
     atlas: SpriteAtlas,
-    orientation: BillboardOrientation,
+    orientation: TOrientation,
     axis: readonly [number, number, number],
     opts: BillboardSpriteSystemOptions
-): BillboardSpriteSystem {
+): BillboardSpriteSystem<TOrientation> {
     const blendMode = opts.blendMode ?? "alpha";
     assertBlendSupported(blendMode);
     const depthMode = resolveBillboardDepthMode(blendMode);
