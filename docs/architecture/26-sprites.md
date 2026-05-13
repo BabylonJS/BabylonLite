@@ -751,7 +751,6 @@ export interface BillboardSpriteSystemOptions {
 }
 
 export type BillboardBlendMode = Extract<SpriteBlendMode, "alpha" | "premultiplied" | "cutout">;
-export function isBillboardBlendMode(blendMode: SpriteBlendMode): blendMode is BillboardBlendMode;
 export type BillboardOrientation = "facing" | "axis-locked";
 export type BillboardDepthMode = "transparent" | "cutout";
 
@@ -2042,13 +2041,11 @@ export {
     removeBillboardSpriteIndex,
     clearBillboardSprites,
     setBillboardSpriteFrameIndex,
-    isBillboardBlendMode,
 } from "./sprite/billboard-sprite.js";
 export { addFacingBillboardSystem, addAxisLockedBillboardSystem } from "./sprite/billboard-scene.js";
 export type {
-    BillboardSpriteSystem,
-  FacingBillboardSpriteSystem,
-  AxisLockedBillboardSpriteSystem,
+    FacingBillboardSpriteSystem,
+    AxisLockedBillboardSpriteSystem,
     BillboardSpriteSystemOptions,
     BillboardSpriteInit,
     BillboardOrientation,

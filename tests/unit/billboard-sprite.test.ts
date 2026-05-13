@@ -13,7 +13,6 @@ import {
     clearBillboardSprites,
     createFacingBillboardSystem,
     createAxisLockedBillboardSystem,
-    isBillboardBlendMode,
     removeBillboardSpriteIndex,
     setBillboardSpriteFrameIndex,
     updateBillboardSpriteIndex,
@@ -247,31 +246,13 @@ describe("FacingBillboardSpriteSystem index API", () => {
         expect(explicit.order).toBe(177);
     });
 
-    it("rejects unsupported billboard blend modes", () => {
-        expect(() => createFacingBillboardSystem(makeMockAtlas(), { blendMode: "additive" as never })).toThrow(/not supported/);
-        expect(() => createFacingBillboardSystem(makeMockAtlas(), { blendMode: "multiply" as never })).toThrow(/not supported/);
-    });
-
-    it("exposes the supported billboard blend-mode predicate", () => {
-        expect(isBillboardBlendMode("alpha")).toBe(true);
-        expect(isBillboardBlendMode("premultiplied")).toBe(true);
-        expect(isBillboardBlendMode("cutout")).toBe(true);
-        expect(isBillboardBlendMode("additive")).toBe(false);
-    });
-
     it("rejects non-finite alpha cutoff values", () => {
         expect(() => createFacingBillboardSystem(makeMockAtlas(), { blendMode: "cutout", alphaCutoff: NaN })).toThrow(/finite/);
         expect(() => createFacingBillboardSystem(makeMockAtlas(), { blendMode: "cutout", alphaCutoff: Infinity })).toThrow(/finite/);
     });
 
-    it("rejects non-finite opacity and per-sprite values", () => {
+    it("rejects non-finite opacity values", () => {
         expect(() => createFacingBillboardSystem(makeMockAtlas(), { opacity: NaN })).toThrow(/opacity.*finite/);
-        const system = createFacingBillboardSystem(makeMockAtlas(), { capacity: 1 });
-        expect(() => addBillboardSpriteIndex(system, { position: [NaN, 0, 0], sizeWorld: [1, 1] })).toThrow(/position.*finite/);
-        expect(() => addBillboardSpriteIndex(system, { position: [0, 0, 0], sizeWorld: [Infinity, 1] })).toThrow(/sizeWorld.*finite/);
-        addBillboardSpriteIndex(system, { position: [0, 0, 0], sizeWorld: [1, 1] });
-        expect(() => updateBillboardSpriteIndex(system, 0, { color: [1, 1, 1, NaN] })).toThrow(/color.*finite/);
-        expect(() => updateBillboardSpriteIndex(system, 0, { rotation: Infinity })).toThrow(/rotation.*finite/);
     });
 });
 

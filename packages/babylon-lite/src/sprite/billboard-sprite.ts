@@ -11,10 +11,6 @@ import type { SpriteBlendMode } from "./sprite-2d.js";
 
 export type BillboardBlendMode = Extract<SpriteBlendMode, "alpha" | "premultiplied" | "cutout">;
 
-export function isBillboardBlendMode(blendMode: SpriteBlendMode): blendMode is BillboardBlendMode {
-    return blendMode === "alpha" || blendMode === "premultiplied" || blendMode === "cutout";
-}
-
 export interface BillboardSpriteSystemOptions {
     capacity?: number;
     blendMode?: BillboardBlendMode;
@@ -82,54 +78,6 @@ export const BILLBOARD_SAVED_SIZE_FLOATS_PER_SPRITE = 2;
 
 const DEFAULT_CAPACITY = 16;
 
-function assertBlendSupported(blendMode: SpriteBlendMode): asserts blendMode is BillboardBlendMode {
-    if (!isBillboardBlendMode(blendMode)) {
-        throw new Error(`BillboardSpriteSystem: blendMode: "${blendMode}" is not supported. Use "alpha", "premultiplied", or "cutout".`);
-    }
-}
-
-function assertFiniteNumber(label: string, value: number): void {
-    if (!Number.isFinite(value)) {
-        throw new Error(`${label} must contain finite numbers.`);
-    }
-}
-
-function assertFiniteTuple2(label: string, value: readonly [number, number]): void {
-    assertFiniteNumber(label, value[0]);
-    assertFiniteNumber(label, value[1]);
-}
-
-function assertFiniteTuple3(label: string, value: readonly [number, number, number]): void {
-    assertFiniteNumber(label, value[0]);
-    assertFiniteNumber(label, value[1]);
-    assertFiniteNumber(label, value[2]);
-}
-
-function assertFiniteTuple4(label: string, value: readonly [number, number, number, number]): void {
-    assertFiniteNumber(label, value[0]);
-    assertFiniteNumber(label, value[1]);
-    assertFiniteNumber(label, value[2]);
-    assertFiniteNumber(label, value[3]);
-}
-
-function validateBillboardSpritePatch(helperName: string, patch: Partial<BillboardSpriteInit>): void {
-    if (patch.position) {
-        assertFiniteTuple3(`${helperName}: props.position`, patch.position);
-    }
-    if (patch.sizeWorld) {
-        assertFiniteTuple2(`${helperName}: props.sizeWorld`, patch.sizeWorld);
-    }
-    if (patch.rotation !== undefined) {
-        assertFiniteNumber(`${helperName}: props.rotation`, patch.rotation);
-    }
-    if (patch.pivot) {
-        assertFiniteTuple2(`${helperName}: props.pivot`, patch.pivot);
-    }
-    if (patch.color) {
-        assertFiniteTuple4(`${helperName}: props.color`, patch.color);
-    }
-}
-
 function setBillboardCount(system: BillboardSpriteSystem, count: number): void {
     (system as { count: number }).count = count;
 }
@@ -182,7 +130,6 @@ function createBillboardSystem<TOrientation extends BillboardOrientation>(
     opts: BillboardSpriteSystemOptions
 ): BillboardSpriteSystem<TOrientation> {
     const blendMode = opts.blendMode ?? "alpha";
-    assertBlendSupported(blendMode);
     const depthMode = resolveBillboardDepthMode(blendMode);
     const capacity = Math.max(1, opts.capacity ?? DEFAULT_CAPACITY);
     const instanceData = new Float32Array(capacity * BILLBOARD_INSTANCE_FLOATS_PER_SPRITE);
@@ -342,7 +289,6 @@ export function addBillboardSpriteIndex(system: BillboardSpriteSystem, props: Bi
     if (props.sizeWorld === undefined) {
         throw new Error("addBillboardSpriteIndex: props.sizeWorld is required.");
     }
-    validateBillboardSpritePatch("addBillboardSpriteIndex", props);
     const index = system.count;
     if (index >= system._capacity) {
         growCapacity(system, index + 1);
@@ -357,7 +303,6 @@ export function updateBillboardSpriteIndex(system: BillboardSpriteSystem, index:
     if (index < 0 || index >= system.count) {
         throw new Error(`updateBillboardSpriteIndex: index ${index} out of range [0, ${system.count})`);
     }
-    validateBillboardSpritePatch("updateBillboardSpriteIndex", patch);
     const base = index * BILLBOARD_INSTANCE_FLOATS_PER_SPRITE;
     const prev = system._instanceData.subarray(base, base + BILLBOARD_INSTANCE_FLOATS_PER_SPRITE);
     writeInstance(system, index, patch, prev);

@@ -2,8 +2,7 @@ import type { EngineContextInternal } from "../engine/engine.js";
 import type { Mat4 } from "../math/types.js";
 import { SCENE_UBO_WGSL } from "../shader/scene-uniforms.js";
 import type { BillboardBlendMode, BillboardDepthMode, BillboardOrientation, BillboardSpriteSystem } from "./billboard-sprite.js";
-import { BILLBOARD_INSTANCE_FLOATS_PER_SPRITE, BILLBOARD_INSTANCE_STRIDE_BYTES, isBillboardBlendMode } from "./billboard-sprite.js";
-import type { SpriteBlendMode } from "./sprite-2d.js";
+import { BILLBOARD_INSTANCE_FLOATS_PER_SPRITE, BILLBOARD_INSTANCE_STRIDE_BYTES } from "./billboard-sprite.js";
 
 export interface BillboardPipelineDeviceCache {
     _shaderModules: Map<string, GPUShaderModule>;
@@ -58,11 +57,8 @@ export interface BillboardInstanceSortScratch {
     _sortDepths: Float32Array;
 }
 
-function getBlendModeEntry(blendMode: SpriteBlendMode): (typeof BLEND_MODE_TABLE)[BillboardBlendMode] {
-    if (isBillboardBlendMode(blendMode)) {
-        return BLEND_MODE_TABLE[blendMode];
-    }
-    throw new Error(`Billboard pipeline: blendMode: "${blendMode}" is not supported yet.`);
+function getBlendModeEntry(blendMode: BillboardBlendMode): (typeof BLEND_MODE_TABLE)[BillboardBlendMode] {
+    return BLEND_MODE_TABLE[blendMode];
 }
 
 function getDepthModeEntry(depthMode: BillboardDepthMode): (typeof DEPTH_MODE_TABLE)[BillboardDepthMode] {

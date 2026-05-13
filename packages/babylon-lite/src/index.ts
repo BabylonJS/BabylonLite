@@ -193,7 +193,6 @@ export { createSprite2DLayer, addSprite2DIndex, updateSprite2DIndex, removeSprit
 export { addDepthHostedSpriteLayer } from "./sprite/sprite-scene.js";
 // ─── World-space billboards ────────────────────────────────────────
 export type {
-    BillboardSpriteSystem,
     FacingBillboardSpriteSystem,
     AxisLockedBillboardSpriteSystem,
     BillboardSpriteSystemOptions,
@@ -210,7 +209,6 @@ export {
     removeBillboardSpriteIndex,
     clearBillboardSprites,
     setBillboardSpriteFrameIndex,
-    isBillboardBlendMode,
 } from "./sprite/billboard-sprite.js";
 export { addFacingBillboardSystem, addAxisLockedBillboardSystem } from "./sprite/billboard-scene.js";
 export type { SpriteRenderer, SpriteRendererOptions } from "./sprite/sprite-renderer.js";
