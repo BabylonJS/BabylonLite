@@ -1619,8 +1619,8 @@
     "bjsGzipKB": 575.3
   },
   "scene120": {
-    "rawKB": 32.7,
-    "gzipKB": 12.1,
+    "rawKB": 33.7,
+    "gzipKB": 12.5,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene120.js"
@@ -1629,13 +1629,41 @@
     "bjsGzipKB": 361.9
   },
   "scene121": {
-    "rawKB": 32.9,
-    "gzipKB": 12.2,
+    "rawKB": 33.9,
+    "gzipKB": 12.5,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene121.js"
     ],
     "bjsRawKB": 1494.7,
     "bjsGzipKB": 361.9
+  },
+  "scene122": {
+    "rawKB": 46.3,
+    "gzipKB": 17.5,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene122-gaussian-splatting-pipeline-sh--fArtqLF.js",
+      "scene122.js"
+    ]
+  },
+  "scene123": {
+    "rawKB": 43.1,
+    "gzipKB": 16.5,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene123-gaussian-splatting-pipeline-sh-DqbMQKcx.js",
+      "scene123.js"
+    ]
+  },
+  "scene124": {
+    "rawKB": 49,
+    "gzipKB": 18.5,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene124-gaussian-splatting-pipeline-sh-CbLEOoE5.js",
+      "scene124-splat-ply-compressed-D-fMhYTB.js",
+      "scene124.js"
+    ]
   }
 }

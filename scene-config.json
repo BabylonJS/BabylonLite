@@ -758,5 +758,32 @@
         "maxRawKB": 35,
         "description": "Loads Halo_Believe.splat with keepInRam, modifies the first 30 000 splats' Y by -2, then calls gs.updateData().",
         "tags": ["gaussian-splatting", "splat"]
+    },
+    {
+        "id": 122,
+        "slug": "scene122-gs-sog",
+        "name": "Scene 122 — Gaussian Splatting SOG",
+        "maxMad": 1,
+        "maxRawKB": 70,
+        "description": "Loads hornedlizard.sog (ZIP-packed WebPs + meta.json) via loadSOG(); renders with view-dependent SH shading.",
+        "tags": ["gaussian-splatting", "sog", "sh"]
+    },
+    {
+        "id": 123,
+        "slug": "scene123-gs-spz",
+        "name": "Scene 123 — Gaussian Splatting SPZ",
+        "maxMad": 1,
+        "maxRawKB": 65,
+        "description": "Loads hornedlizard.spz (gzip-wrapped binary stream) via loadSPZ(); renders with view-dependent SH shading.",
+        "tags": ["gaussian-splatting", "spz", "sh"]
+    },
+    {
+        "id": 124,
+        "slug": "scene124-gs-compressed-ply",
+        "name": "Scene 124 — Gaussian Splatting compressed PLY",
+        "maxMad": 1,
+        "maxRawKB": 65,
+        "description": "Loads small_hornedlizard.compressed.ply (chunked PLY + element sh) via loadSplat(); SH rendering through dynamic-imported pipeline.",
+        "tags": ["gaussian-splatting", "ply", "compressed", "sh"]
     }
 ]

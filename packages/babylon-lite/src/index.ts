@@ -105,6 +105,8 @@ export { loadHdrEnvironment } from "./loader-hdr/load-hdr.js";
 export { loadTexture2D } from "./texture/texture-2d.js";
 export { loadSkybox } from "./loader-skybox/load-skybox.js";
 export { loadSplat } from "./loader-splat/load-splat.js";
+export { loadSOG } from "./loader-splat/load-sog.js";
+export { loadSPZ } from "./loader-splat/load-spz.js";
 export type { GaussianSplattingMesh } from "./mesh/gaussian-splatting-mesh.js";
 
 // ─── Shadows ─────────────────────────────────────────────────────────
