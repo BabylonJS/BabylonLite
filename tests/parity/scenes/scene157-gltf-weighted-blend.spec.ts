@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import * as path from "path";
-import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
+import { attachCompareArtifacts, captureGolden, compareImages, compareRegion, getSceneConfig } from "../compare-utils";
 
 const sceneConfig = getSceneConfig(157);
 const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene157-gltf-weighted-blend");
@@ -24,8 +24,10 @@ test("Scene 157 — glTF weighted animation blend matches Babylon.js reference",
     await page.locator("canvas").screenshot({ path: screenshotPath });
 
     const full = compareImages(screenshotPath, GOLDEN_REF);
+    const region = compareRegion(screenshotPath, GOLDEN_REF);
     await attachCompareArtifacts(testInfo, screenshotPath, GOLDEN_REF, REFERENCE_DIR);
-    console.log(`Full image MAD=${full.mad.toFixed(3)}`);
+    console.log(`Full image MAD=${full.mad.toFixed(3)}, Xbot region=${region.regionPixels} px`);
 
+    expect(region.regionPixels, "Reference should contain visible Xbot pixels").toBeGreaterThan(1_000);
     expect(full.mad, `Full image MAD should be <= ${sceneConfig.maxMad}`).toBeLessThanOrEqual(sceneConfig.maxMad);
 });

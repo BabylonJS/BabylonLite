@@ -17,6 +17,7 @@ import {
     setAnimationAdditive,
     setAnimationWeight,
     startEngine,
+    stopAnimation,
     updateAnimationManager,
 } from "babylon-lite";
 import type { AnimationGroup } from "babylon-lite";
@@ -48,40 +49,36 @@ async function main(): Promise<void> {
     const groups = xbot.animationGroups ?? [];
     addAnimationGroups(manager, groups);
     for (const group of groups) {
-        group.loopAnimation = true;
-        playAnimation(group);
+        stopAnimation(group);
         setAnimationWeight(group, 0);
     }
 
-    const idle = requireGroup(groups, "idle");
     const walk = requireGroup(groups, "walk");
-    const run = requireGroup(groups, "run");
     const sadPose = requireGroup(groups, "sad_pose");
     const sneakPose = requireGroup(groups, "sneak_pose");
     const headShake = requireGroup(groups, "headShake");
     const agree = requireGroup(groups, "agree");
 
-    setAnimationWeight(idle, 0);
+    walk.loopAnimation = true;
+    playAnimation(walk);
     setAnimationWeight(walk, 1);
-    setAnimationWeight(run, 0);
 
     setAdditivePose(sadPose, 0.35);
     setAdditivePose(sneakPose, 0.2);
     setAdditiveLoop(headShake, 0.6);
     setAdditiveLoop(agree, 0.25);
+    const activeGroups = [walk, sadPose, sneakPose, headShake, agree];
     enableAnimationBlending(manager);
 
     const seekTime = parseFloat(new URLSearchParams(window.location.search).get("seekTime") || "");
     if (Number.isFinite(seekTime)) {
-        for (const group of groups) {
+        for (const group of activeGroups) {
             group.currentFrame = group === sadPose || group === sneakPose ? POSE_TIME : seekTime;
             pauseAnimation(group);
         }
-        updateAnimationManager(manager, 0);
         canvas.dataset.animationFrozen = "true";
-    } else {
-        onBeforeRender(scene, (deltaMs) => updateAnimationManager(manager, deltaMs));
     }
+    onBeforeRender(scene, (deltaMs) => updateAnimationManager(manager, deltaMs));
 
     await registerScene(engine, scene);
     await startEngine(engine);
@@ -99,6 +96,8 @@ function requireGroup(groups: readonly AnimationGroup[], name: string): Animatio
 }
 
 function setAdditivePose(group: AnimationGroup, weight: number): void {
+    group.loopAnimation = true;
+    playAnimation(group);
     setAnimationAdditive(group, { referenceFrame: 0 });
     setAnimationWeight(group, weight);
     group.currentFrame = POSE_TIME;
@@ -106,6 +105,8 @@ function setAdditivePose(group: AnimationGroup, weight: number): void {
 }
 
 function setAdditiveLoop(group: AnimationGroup, weight: number): void {
+    group.loopAnimation = true;
+    playAnimation(group);
     setAnimationAdditive(group, { referenceFrame: 0 });
     setAnimationWeight(group, weight);
 }

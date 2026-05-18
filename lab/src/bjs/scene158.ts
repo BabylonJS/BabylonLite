@@ -30,23 +30,23 @@ const POSE_FRAME = 2;
 
     await SceneLoader.ImportMeshAsync("", "https://playground.babylonjs.com/scenes/", "Xbot.glb", scene);
 
-    const idle = requireGroup(scene.animationGroups, "idle");
     const walk = requireGroup(scene.animationGroups, "walk");
-    const run = requireGroup(scene.animationGroups, "run");
     const sadPose = AnimationGroup.MakeAnimationAdditive(requireGroup(scene.animationGroups, "sad_pose"));
     const sneakPose = AnimationGroup.MakeAnimationAdditive(requireGroup(scene.animationGroups, "sneak_pose"));
     const headShake = AnimationGroup.MakeAnimationAdditive(requireGroup(scene.animationGroups, "headShake"));
     const agree = AnimationGroup.MakeAnimationAdditive(requireGroup(scene.animationGroups, "agree"));
 
     for (const group of scene.animationGroups) {
-        group.loopAnimation = true;
+        group.stop();
         group.weight = 0;
+    }
+    const activeGroups = [walk, sadPose, sneakPose, headShake, agree];
+    for (const group of activeGroups) {
+        group.loopAnimation = true;
         group.play(true);
     }
 
-    idle.weight = 0;
     walk.weight = 1;
-    run.weight = 0;
     sadPose.weight = 0.35;
     sneakPose.weight = 0.2;
     headShake.weight = 0.6;
@@ -65,7 +65,7 @@ const POSE_FRAME = 2;
     const seekTime = parseFloat(new URLSearchParams(window.location.search).get("seekTime") || "");
     if (Number.isFinite(seekTime)) {
         const seekFrame = seekTime * 60;
-        for (const group of scene.animationGroups) {
+        for (const group of activeGroups) {
             group.goToFrame(group === sadPose || group === sneakPose ? POSE_FRAME : seekFrame, true);
             group.pause();
         }

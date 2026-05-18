@@ -16,6 +16,7 @@ import {
     registerScene,
     setAnimationWeight,
     startEngine,
+    stopAnimation,
     updateAnimationManager,
 } from "babylon-lite";
 
@@ -44,15 +45,18 @@ async function main(): Promise<void> {
 
     const manager = createAnimationManager({ engine });
     addAnimationGroups(manager, xbot.animationGroups ?? []);
-    for (const group of xbot.animationGroups ?? []) {
-        group.loopAnimation = true;
-        playAnimation(group);
-        setAnimationWeight(group, 0);
-    }
     const walk = xbot.animationGroups?.find((group) => group.name === "walk");
     const run = xbot.animationGroups?.find((group) => group.name === "run");
     if (!walk || !run) {
         throw new Error("Xbot walk/run animation groups were not found");
+    }
+    for (const group of xbot.animationGroups ?? []) {
+        stopAnimation(group);
+        setAnimationWeight(group, 0);
+    }
+    for (const group of [walk, run]) {
+        group.loopAnimation = true;
+        playAnimation(group);
     }
     setAnimationWeight(walk, WALK_WEIGHT);
     setAnimationWeight(run, RUN_WEIGHT);
@@ -60,15 +64,13 @@ async function main(): Promise<void> {
 
     const seekTime = parseFloat(new URLSearchParams(window.location.search).get("seekTime") || "");
     if (Number.isFinite(seekTime)) {
-        for (const group of xbot.animationGroups ?? []) {
+        for (const group of [walk, run]) {
             group.currentFrame = seekTime;
             pauseAnimation(group);
         }
-        updateAnimationManager(manager, 0);
         canvas.dataset.animationFrozen = "true";
-    } else {
-        onBeforeRender(scene, (deltaMs) => updateAnimationManager(manager, deltaMs));
     }
+    onBeforeRender(scene, (deltaMs) => updateAnimationManager(manager, deltaMs));
 
     await registerScene(engine, scene);
     await startEngine(engine);

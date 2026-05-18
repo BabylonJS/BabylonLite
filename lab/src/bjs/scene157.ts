@@ -29,15 +29,18 @@ const RUN_WEIGHT = 0.5;
     new DirectionalLight("dir", new Vector3(0, -0.5, -1), scene).intensity = 0.8;
 
     await SceneLoader.ImportMeshAsync("", "https://playground.babylonjs.com/scenes/", "Xbot.glb", scene);
-    for (const group of scene.animationGroups) {
-        group.loopAnimation = true;
-        group.weight = 0;
-        group.play(true);
-    }
     const walk = scene.animationGroups.find((group) => group.name === "walk");
     const run = scene.animationGroups.find((group) => group.name === "run");
     if (!walk || !run) {
         throw new Error("Xbot walk/run animation groups were not found");
+    }
+    for (const group of scene.animationGroups) {
+        group.stop();
+        group.weight = 0;
+    }
+    for (const group of [walk, run]) {
+        group.loopAnimation = true;
+        group.play(true);
     }
     walk.weight = WALK_WEIGHT;
     run.weight = RUN_WEIGHT;
@@ -50,7 +53,7 @@ const RUN_WEIGHT = 0.5;
     const seekTime = parseFloat(new URLSearchParams(window.location.search).get("seekTime") || "");
     if (Number.isFinite(seekTime)) {
         const seekFrame = seekTime * 60;
-        for (const group of scene.animationGroups) {
+        for (const group of [walk, run]) {
             group.goToFrame(seekFrame, true);
             group.pause();
         }

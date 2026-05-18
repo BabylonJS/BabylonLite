@@ -1777,7 +1777,7 @@
   },
   "scene158": {
     "rawKB": 93.3,
-    "gzipKB": 35.5,
+    "gzipKB": 35.4,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene158-create-skeleton-ChYvdS9U.js",
