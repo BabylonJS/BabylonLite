@@ -11,6 +11,9 @@ const DEFAULT_FRAME_RATE = 60;
 
 export type AnimationPropertyMixer = readonly [readonly AnimationChannel[], readonly AnimationSampler[], number, number, number];
 export type AnimationGltfMixer = readonly [AnimationClip, readonly NodeRest[], readonly SkeletonBinding[]];
+export interface AnimationAdditiveMixer {
+    readonly referenceTime: number;
+}
 
 /** User-facing animation group — one per glTF animation clip. Pure state. */
 export interface AnimationGroup {
@@ -36,6 +39,8 @@ export interface AnimationGroup {
     _pm?: AnimationPropertyMixer;
     /** @internal glTF skeleton metadata used by the optional weighted mixer. */
     _gm?: AnimationGltfMixer;
+    /** @internal Additive animation metadata used by the optional blending mixer. */
+    _am?: AnimationAdditiveMixer;
     /** @internal Whether stop() was called (suppresses _tick). */
     _stopped: boolean;
 }

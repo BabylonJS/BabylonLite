@@ -8,7 +8,7 @@ import {
 } from "./weighted-pointer-mixer.js";
 import type { CrossFadeAnimationGroupsOptions, FadeAnimationWeightOptions } from "./weighted-pointer-mixer.js";
 
-/** Set the weighted contribution for an animation group and enable manager-side mixing. */
+/** Set the weighted contribution for an animation group. Manual property groups enable their lightweight mixer automatically. */
 export function setAnimationWeight(group: AnimationGroup, weight: number): void {
     if (!Number.isFinite(weight) || weight < 0 || weight > 1) {
         throw new Error(`Animation weight must be a finite number between 0 and 1, got ${weight}`);
@@ -16,7 +16,7 @@ export function setAnimationWeight(group: AnimationGroup, weight: number): void 
     group.weight = weight;
 
     const owner = getAnimationGroupOwner(group);
-    if (owner) {
+    if (owner && group._pm) {
         attachWeightedAnimationMixer(owner);
     }
 }

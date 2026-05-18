@@ -1,5 +1,6 @@
 import { tickAnimation } from "./animation-group.js";
 import type { AnimationGltfMixer, AnimationGroup } from "./animation-group.js";
+import { getAnimationGroupOwner } from "./animation-manager-core.js";
 import type { AnimationManager } from "./animation-manager-core.js";
 import type { NodeRest, SkeletonBinding } from "./types.js";
 import { PATH_ROTATION, PATH_SCALE, PATH_TRANSLATION } from "./types.js";
@@ -38,13 +39,36 @@ interface WeightedGltfScratch {
     readonly keys: Set<object>;
     readonly targets: Map<object, WeightedGltfTarget>;
     readonly sample: Float32Array;
+    readonly reference: Float32Array;
+    readonly delta: Float32Array;
 }
 
 const _scratch = new WeakMap<AnimationManager, WeightedGltfScratch>();
 
+export interface AnimationAdditiveOptions {
+    readonly referenceFrame?: number;
+    readonly referenceTime?: number;
+}
+
 /** Enable advanced animation blending for a manager. Kept opt-in so manual-only weights do not pay for skeletal mixing code. */
 export function enableAnimationBlending(manager: AnimationManager): void {
     manager._wu = updateWeightedGltfAnimations;
+}
+
+/** Mark an animation group as additive. Reference defaults to frame 0, matching Babylon.js MakeAnimationAdditive. */
+export function setAnimationAdditive(group: AnimationGroup, options?: AnimationAdditiveOptions): void {
+    if (options?.referenceFrame !== undefined && options.referenceTime !== undefined) {
+        throw new Error("Additive animation reference must use either referenceFrame or referenceTime, not both");
+    }
+    const referenceTime = options?.referenceTime ?? (options?.referenceFrame ?? 0) / group.frameRate;
+    if (!Number.isFinite(referenceTime) || referenceTime < 0) {
+        throw new Error(`Additive animation reference time must be a finite non-negative number, got ${referenceTime}`);
+    }
+    group._am = { referenceTime };
+    const owner = getAnimationGroupOwner(group);
+    if (owner) {
+        enableAnimationBlending(owner);
+    }
 }
 
 function getScratch(manager: AnimationManager): WeightedGltfScratch {
@@ -54,6 +78,8 @@ function getScratch(manager: AnimationManager): WeightedGltfScratch {
             keys: new Set<object>(),
             targets: new Map<object, WeightedGltfTarget>(),
             sample: new Float32Array(16),
+            reference: new Float32Array(16),
+            delta: new Float32Array(16),
         };
         _scratch.set(manager, scratch);
     }
@@ -67,7 +93,7 @@ function updateWeightedGltfAnimations(manager: AnimationManager, deltaMs: number
 
     for (const group of manager.animationGroups) {
         const mixer = group._gm;
-        if (group._stopped || group.weight === 1 || !mixer) {
+        if (group._stopped || !mixer || (group.weight === 1 && !group._am)) {
             continue;
         }
         keys.add(mixer[GLTF_NODES]);
@@ -92,11 +118,23 @@ function updateWeightedGltfAnimations(manager: AnimationManager, deltaMs: number
 
         const mixer = group._gm;
         if (mixer && keys.has(mixer[GLTF_NODES])) {
-            accumulateGroup(manager, scratch, group, mixer, deltaMs);
+            if (group._am) {
+                getTarget(scratch, mixer).active = true;
+                advanceGroupTime(group, mixer, deltaMs);
+            } else {
+                accumulateGroup(manager, scratch, group, mixer, deltaMs);
+            }
             continue;
         }
 
         tickAnimation(group, deltaMs, manager.engine);
+    }
+
+    for (const group of manager.animationGroups) {
+        const mixer = group._gm;
+        if (!group._stopped && group._am && mixer && keys.has(mixer[GLTF_NODES])) {
+            accumulateAdditiveGroup(scratch, group, mixer);
+        }
     }
 
     for (const [key, target] of scratch.targets) {
@@ -145,6 +183,45 @@ function resetTarget(target: WeightedGltfTarget): void {
         trs[off + S_OFF] = n.sx;
         trs[off + S_OFF + 1] = n.sy;
         trs[off + S_OFF + 2] = n.sz;
+    }
+}
+
+function accumulateAdditiveGroup(scratch: WeightedGltfScratch, group: AnimationGroup, mixer: AnimationGltfMixer): void {
+    const additive = group._am;
+    const weight = group.weight;
+    if (!additive || weight === 0) {
+        return;
+    }
+
+    const target = getTarget(scratch, mixer);
+    const clip = mixer[GLTF_CLIP];
+    const t = group.currentFrame;
+    for (const ch of clip.channels) {
+        const sampler = clip.samplers[ch.samplerIdx]!;
+        const nodeIdx = ch.nodeIdx;
+        const base = nodeIdx * TRS_STRIDE;
+        switch (ch.path) {
+            case PATH_TRANSLATION:
+                evaluateSampler(sampler, t, 3, false, scratch.sample, 0);
+                evaluateSampler(sampler, additive.referenceTime, 3, false, scratch.reference, 0);
+                target.trs[base + T_OFF] = target.trs[base + T_OFF]! + (scratch.sample[0]! - scratch.reference[0]!) * weight;
+                target.trs[base + T_OFF + 1] = target.trs[base + T_OFF + 1]! + (scratch.sample[1]! - scratch.reference[1]!) * weight;
+                target.trs[base + T_OFF + 2] = target.trs[base + T_OFF + 2]! + (scratch.sample[2]! - scratch.reference[2]!) * weight;
+                break;
+            case PATH_SCALE:
+                evaluateSampler(sampler, t, 3, false, scratch.sample, 0);
+                evaluateSampler(sampler, additive.referenceTime, 3, false, scratch.reference, 0);
+                target.trs[base + S_OFF] = target.trs[base + S_OFF]! + (scratch.sample[0]! - scratch.reference[0]!) * weight;
+                target.trs[base + S_OFF + 1] = target.trs[base + S_OFF + 1]! + (scratch.sample[1]! - scratch.reference[1]!) * weight;
+                target.trs[base + S_OFF + 2] = target.trs[base + S_OFF + 2]! + (scratch.sample[2]! - scratch.reference[2]!) * weight;
+                break;
+            case PATH_ROTATION:
+                evaluateSampler(sampler, t, 4, true, scratch.sample, 0);
+                evaluateSampler(sampler, additive.referenceTime, 4, true, scratch.reference, 0);
+                quatRefInverseTimesSample(scratch.delta, scratch.reference, scratch.sample);
+                applyAdditiveQuaternion(target.trs, base + R_OFF, scratch.delta, weight);
+                break;
+        }
     }
 }
 
@@ -328,4 +405,71 @@ function normalizeQuaternionAt(values: Float32Array, offset: number): void {
         values[offset + 2] = z * inv;
         values[offset + 3] = w * inv;
     }
+}
+
+function quatRefInverseTimesSample(out: Float32Array, ref: Float32Array, sample: Float32Array): void {
+    const ax = -ref[0]!;
+    const ay = -ref[1]!;
+    const az = -ref[2]!;
+    const aw = ref[3]!;
+    const bx = sample[0]!;
+    const by = sample[1]!;
+    const bz = sample[2]!;
+    const bw = sample[3]!;
+    out[0] = aw * bx + ax * bw + ay * bz - az * by;
+    out[1] = aw * by - ax * bz + ay * bw + az * bx;
+    out[2] = aw * bz + ax * by - ay * bx + az * bw;
+    out[3] = aw * bw - ax * bx - ay * by - az * bz;
+    normalizeQuaternionAt(out, 0);
+}
+
+function applyAdditiveQuaternion(base: Float32Array, offset: number, delta: Float32Array, weight: number): void {
+    const bx = base[offset]!;
+    const by = base[offset + 1]!;
+    const bz = base[offset + 2]!;
+    const bw = base[offset + 3]!;
+    const dx = delta[0]!;
+    const dy = delta[1]!;
+    const dz = delta[2]!;
+    const dw = delta[3]!;
+    quatSlerpInto(
+        base,
+        offset,
+        bx,
+        by,
+        bz,
+        bw,
+        bw * dx + bx * dw + by * dz - bz * dy,
+        bw * dy - bx * dz + by * dw + bz * dx,
+        bw * dz + bx * dy - by * dx + bz * dw,
+        bw * dw - bx * dx - by * dy - bz * dz,
+        weight
+    );
+}
+
+function quatSlerpInto(out: Float32Array, offset: number, ax: number, ay: number, az: number, aw: number, bx: number, by: number, bz: number, bw: number, t: number): void {
+    let dot = ax * bx + ay * by + az * bz + aw * bw;
+    if (dot < 0) {
+        bx = -bx;
+        by = -by;
+        bz = -bz;
+        bw = -bw;
+        dot = -dot;
+    }
+    if (dot > 0.9995) {
+        out[offset] = ax + t * (bx - ax);
+        out[offset + 1] = ay + t * (by - ay);
+        out[offset + 2] = az + t * (bz - az);
+        out[offset + 3] = aw + t * (bw - aw);
+        normalizeQuaternionAt(out, offset);
+        return;
+    }
+    const theta = Math.acos(dot);
+    const sinTheta = Math.sin(theta);
+    const wa = Math.sin((1 - t) * theta) / sinTheta;
+    const wb = Math.sin(t * theta) / sinTheta;
+    out[offset] = wa * ax + wb * bx;
+    out[offset + 1] = wa * ay + wb * by;
+    out[offset + 2] = wa * az + wb * bz;
+    out[offset + 3] = wa * aw + wb * bw;
 }
