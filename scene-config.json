@@ -749,5 +749,23 @@
         "maxRawKB": 82,
         "description": "Frame-graph RTT demo for Standard and PBR material views with shadow-depth feature overrides; the normal source materials render in the main pass and the depth RTTs are displayed on planes.",
         "tags": ["std", "pbr", "frame-graph", "rtt", "shadow"]
+    },
+    {
+        "id": 120,
+        "slug": "scene120-gaussian-splatting",
+        "name": "Scene 120 — Gaussian Splatting",
+        "maxMad": 1,
+        "maxRawKB": 35,
+        "description": "Loads Halo_Believe.ply via loadSplat(); renders the splat cloud with a back-to-front sort produced by an inline worker thread.",
+        "tags": ["gaussian-splatting", "ply"]
+    },
+    {
+        "id": 121,
+        "slug": "scene121-gs-update-data",
+        "name": "Scene 121 — Gaussian Splatting updateData",
+        "maxMad": 50,
+        "maxRawKB": 35,
+        "description": "Loads Halo_Believe.splat with keepInRam, modifies the first 30 000 splats' Y by -2, then calls gs.updateData().",
+        "tags": ["gaussian-splatting", "splat"]
     }
 ]

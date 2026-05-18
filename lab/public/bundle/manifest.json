@@ -1634,5 +1634,25 @@
     ],
     "bjsRawKB": 1757.5,
     "bjsGzipKB": 421.1
+  },
+  "scene120": {
+    "rawKB": 32.7,
+    "gzipKB": 12.1,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene120.js"
+    ],
+    "bjsRawKB": 1494.5,
+    "bjsGzipKB": 361.9
+  },
+  "scene121": {
+    "rawKB": 32.9,
+    "gzipKB": 12.2,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene121.js"
+    ],
+    "bjsRawKB": 1494.7,
+    "bjsGzipKB": 361.9
   }
 }
