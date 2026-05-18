@@ -721,7 +721,7 @@ export async function buildBundleScenes(): Promise<void> {
     const NAME_POLYFILL = 'var __name=(fn,name)=>(Object.defineProperty(fn,"name",{value:name,configurable:true}),fn);';
 
     /** Modules that must keep side effects (they patch prototypes via bare import). */
-    const BJS_SIDE_EFFECT_MODULES = ["thinInstanceMesh"];
+    const BJS_SIDE_EFFECT_MODULES = ["animatable", "thinInstanceMesh"];
     function isBjsSideEffectModule(id: string): boolean {
         return BJS_SIDE_EFFECT_MODULES.some((m) => id.includes(m));
     }

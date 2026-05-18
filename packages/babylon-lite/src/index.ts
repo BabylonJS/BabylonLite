@@ -117,6 +117,18 @@ export { createPcfDirectionalShadowGenerator } from "./shadow/pcf-directional-sh
 // ─── Animation ───────────────────────────────────────────────────────
 export { createAnimationController } from "./skeleton/skeleton-updater.js";
 export { createAnimationGroups, playAnimation, pauseAnimation, stopAnimation, goToFrame } from "./animation/animation-group.js";
+export {
+    addAnimationGroup,
+    addAnimationGroups,
+    clearAnimationManager,
+    createAnimationManager,
+    createPropertyAnimationClip,
+    createPropertyAnimationGroup,
+    removeAnimationGroup,
+    startAnimationManager,
+    stopAnimationManager,
+    updateAnimationManager,
+} from "./animation/animation-manager.js";
 export { createMorphTargets } from "./morph/create-morph-targets.js";
 export type { MorphTargetData } from "./animation/types.js";
 
@@ -133,7 +145,7 @@ export { addThinInstance, removeThinInstance, setThinInstanceMatrix, setThinInst
 export type { ThinInstanceData } from "./mesh/thin-instance.js";
 
 // ─── Types ───────────────────────────────────────────────────────────
-export type { SceneContext, ImageProcessingConfig, ClipPlane } from "./scene/scene.js";
+export type { AddToSceneOptions, SceneContext, ImageProcessingConfig, ClipPlane } from "./scene/scene.js";
 export type { ArcRotateCamera } from "./camera/arc-rotate.js";
 export type { Camera, NormalizedViewport } from "./camera/camera.js";
 export { getViewMatrix, getProjectionMatrix, getViewProjectionMatrix, getCameraPosition } from "./camera/camera.js";
@@ -164,6 +176,18 @@ export type { ShadowGenerator, ShadowGeneratorConfig } from "./shadow/shadow-gen
 export type { PcfShadowGeneratorConfig } from "./shadow/pcf-shadow-generator.js";
 export type { AnimationController } from "./skeleton/skeleton-updater.js";
 export type { AnimationGroup } from "./animation/animation-group.js";
+export type {
+    AnimationKeyframe,
+    AnimationKeyframeValue,
+    AnimationManager,
+    AnimationManagerOptions,
+    CreatePropertyAnimationGroupOptions,
+    PropertyAnimationClip,
+    PropertyAnimationClipOptions,
+    PropertyAnimationInterpolation,
+    PropertyAnimationTrack,
+    PropertyAnimationTrackOptions,
+} from "./animation/animation-manager.js";
 export type { AnimationClip, GltfAnimationData } from "./animation/types.js";
 export type { SphereOptions } from "./mesh/create-sphere.js";
 export type { TorusOptions } from "./mesh/create-torus.js";

@@ -1,11 +1,13 @@
 // AnimationGroup — user-facing handle for a single animation clip.
 // Stored on scene.animationGroups[]. Pure state interface.
 
-import type { EngineContextInternal } from "../engine/engine.js";
+import type { EngineContext } from "../engine/engine.js";
 import type { GltfAnimationData } from "./types.js";
 import { PATH_POINTER } from "./types.js";
 import { createAnimationController } from "../skeleton/skeleton-updater.js";
 import type { AnimationController } from "../skeleton/skeleton-updater.js";
+
+const DEFAULT_FRAME_RATE = 60;
 
 /** User-facing animation group — one per glTF animation clip. Pure state. */
 export interface AnimationGroup {
@@ -13,6 +15,8 @@ export interface AnimationGroup {
     readonly name: string;
     /** Duration in seconds. */
     readonly duration: number;
+    /** Frame rate used by goToFrame(). */
+    readonly frameRate: number;
     /** True if currently playing. */
     readonly isPlaying: boolean;
     /** Current playback time in seconds. */
@@ -51,16 +55,19 @@ export function stopAnimation(group: AnimationGroup): void {
     group._stopped = true;
 }
 
-/** Seek to a specific frame (at 60 fps, matching BJS convention) and pause. */
-export function goToFrame(group: AnimationGroup, frame: number): void {
+/** Seek to a specific frame, apply the pose, and pause. */
+export function goToFrame(group: AnimationGroup, frame: number, engine?: EngineContext): void {
     if (group._ctrl) {
-        group._ctrl.time = frame / 60;
+        group._ctrl.time = frame / group.frameRate;
         group._ctrl.playing = false;
+        if (!group._ctrl.requiresEngine || engine) {
+            group._ctrl.tick(0, engine, true);
+        }
     }
 }
 
 /** @internal Advance animation by deltaMs. Called by the engine each frame. */
-export function tickAnimation(group: AnimationGroup, deltaMs: number, engine: EngineContextInternal): void {
+export function tickAnimation(group: AnimationGroup, deltaMs: number, engine?: EngineContext): void {
     if (group._stopped) {
         return;
     }
@@ -91,6 +98,7 @@ export function createAnimationGroups(animData: GltfAnimationData): AnimationGro
         const group: AnimationGroup = {
             name: clip.name || `animation_${clipIndex}`,
             duration: clip.duration,
+            frameRate: clip.frameRate ?? DEFAULT_FRAME_RATE,
 
             get isPlaying(): boolean {
                 return ctrl.playing;

@@ -94,6 +94,14 @@ export function evaluateSampler(sampler: AnimationSampler, t: number, stride: nu
         }
         return;
     }
+    if (t >= input[keyCount - 1]!) {
+        // Clamp to last keyframe
+        const srcOff = interpolation === INTERP_CUBICSPLINE ? (keyCount - 1) * stride * 3 + stride : (keyCount - 1) * stride;
+        for (let c = 0; c < stride; c++) {
+            dst[dstOffset + c] = output[srcOff + c]!;
+        }
+        return;
+    }
 
     const idx = findKeyframe(input, t);
     const t0 = input[idx]!;

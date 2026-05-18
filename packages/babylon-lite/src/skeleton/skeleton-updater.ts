@@ -50,7 +50,7 @@ function computeTopoOrder(nodes: readonly { readonly parentIdx: number }[]): Int
 
 export interface AnimationController {
     /** Advance animation by deltaMs and update bone textures. */
-    tick(deltaMs: number, engine: EngineContext): void;
+    tick(deltaMs: number, engine?: EngineContext, force?: boolean): void;
     /** Current playback time in seconds. */
     time: number;
     /** True if playing. */
@@ -59,6 +59,12 @@ export interface AnimationController {
     speedRatio: number;
     /** Whether animation loops (default true). */
     loop: boolean;
+    /** Inclusive playback range start in seconds. */
+    fromTime: number;
+    /** Exclusive playback range end in seconds. Defaults to clip duration. */
+    toTime: number;
+    /** True when evaluating the clip needs GPU uploads through an engine. */
+    readonly requiresEngine: boolean;
     /** Debug: node world matrices (numNodes × 16 floats, column-major). */
     readonly _debugWorldMat?: Float32Array;
     /** Debug: node names. */
@@ -73,10 +79,20 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
     const { clips, nodes, skeletons, morphBindings } = animData;
     const hasPointer = clips.some((c) => c.channels.some((ch) => ch.path === PATH_POINTER));
     if (clips.length === 0 || (skeletons.length === 0 && morphBindings.length === 0 && !hasPointer)) {
-        return { tick() {}, time: 0, playing: false, speedRatio: 1, loop: true };
+        return {
+            tick() {},
+            time: 0,
+            playing: false,
+            speedRatio: 1,
+            loop: true,
+            fromTime: 0,
+            toTime: 0,
+            requiresEngine: false,
+        };
     }
 
     const clip: AnimationClip = clips[0]!;
+    const requiresEngine = skeletons.length > 0 || morphBindings.length > 0;
     const numNodes = nodes.length;
 
     // Pre-allocate scratch buffers (once)
@@ -111,16 +127,22 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
         playing: true,
         speedRatio: 1,
         loop: true,
+        fromTime: 0,
+        toTime: clip.duration,
+        requiresEngine,
         _debugWorldMat: worldMat,
 
-        tick(deltaMs: number, engine: EngineContextInternal): void {
-            const device = engine.device;
+        tick(deltaMs: number, engine?: EngineContext, force = false): void {
             if (clip.duration <= 0) {
                 return;
             }
+            if (requiresEngine && !engine) {
+                throw new Error("AnimationController.tick requires an EngineContext for skeleton or morph animation");
+            }
+            const device = requiresEngine ? (engine as EngineContextInternal).device : null;
 
             // Skip if animation time hasn't changed (paused/static scene)
-            if (deltaMs === 0 && _hasTickedOnce) {
+            if (!force && deltaMs === 0 && _hasTickedOnce) {
                 return;
             }
             _hasTickedOnce = true;
@@ -129,14 +151,21 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
                 ctrl.time += (deltaMs / 1000) * ctrl.speedRatio;
             }
 
+            const fromTime = Math.max(0, Math.min(ctrl.fromTime, clip.duration));
+            const toTime = ctrl.toTime > fromTime ? Math.min(ctrl.toTime, clip.duration) : clip.duration;
+            const duration = Math.max(0, toTime - fromTime);
+            if (duration <= 0) {
+                return;
+            }
+
             // Always wrap/clamp — ensures externally-set time (goToFrame) is valid
             if (ctrl.loop) {
-                ctrl.time %= clip.duration;
-                if (ctrl.time < 0) {
-                    ctrl.time += clip.duration;
+                ctrl.time = fromTime + ((ctrl.time - fromTime) % duration);
+                if (ctrl.time < fromTime) {
+                    ctrl.time += duration;
                 }
             } else {
-                ctrl.time = Math.min(ctrl.time, clip.duration);
+                ctrl.time = Math.min(Math.max(ctrl.time, fromTime), toTime);
             }
             const t = ctrl.time;
 
@@ -180,14 +209,14 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
                             for (const mb of bindings) {
                                 mb.weights.set(morphUploadF32);
                                 // Write only the weights vec4 (first 16 bytes); count/texWidth/rowsPerBand are immutable
-                                device.queue.writeBuffer(mb.weightsBuffer, 0, morphUploadF32.buffer, 0, 16);
+                                device!.queue.writeBuffer(mb.weightsBuffer, 0, morphUploadF32.buffer, 0, 16);
                             }
                         }
                         break;
                     }
                     case PATH_POINTER: {
                         if (ch.pointerArity && ch.pointerWriter) {
-                            evaluateSampler(sampler, t, ch.pointerArity, false, pointerScratch, 0);
+                            evaluateSampler(sampler, t, ch.pointerArity, ch.pointerQuaternion === true, pointerScratch, 0);
                             ch.pointerWriter(pointerScratch, 0);
                         }
                         break;
@@ -238,7 +267,7 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
 
                 // Upload to GPU
                 const texWidth = skel.boneCount * 4;
-                device.queue.writeTexture({ texture: skel.boneTexture }, boneData.buffer, { bytesPerRow: texWidth * 16 }, { width: texWidth, height: 1 });
+                device!.queue.writeTexture({ texture: skel.boneTexture }, boneData.buffer, { bytesPerRow: texWidth * 16 }, { width: texWidth, height: 1 });
             }
         },
     };
