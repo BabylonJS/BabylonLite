@@ -10,7 +10,6 @@ import type { AnimationGroup } from "../animation/animation-group.js";
 import type { ShadowGenerator } from "../shadow/shadow-generator.js";
 import type { FogConfig } from "../material/standard/standard-material.js";
 import type { Renderable, PrePassRenderable, SceneUniformUpdater, MeshGroupBuilder } from "../render/renderable.js";
-import type { AnimationManager } from "../animation/animation-manager-core.js";
 import type { TransformNode } from "./transform-node.js";
 import type { SceneNode } from "./scene-node.js";
 import type { EnvironmentTextures } from "../loader-env/load-env.js";
@@ -109,8 +108,6 @@ export interface SceneContextInternal extends SceneContext, RenderingContext {
      *  `_renderables` into the swapchain. User code may add additional tasks
      *  (offscreen RTTs, post-FX, UI overlays, etc.). */
     _frameGraph: FrameGraph;
-    /** Lazily-created manager for scene-owned glTF animation groups. */
-    _animationManager?: AnimationManager;
 }
 
 /** Install a property setter on mesh.material that sets _materialDirty
@@ -275,26 +272,14 @@ export function addDeferredSceneRenderables(
  * opt-in add functions so mesh-only scenes do not pay feature-specific routing bytes here.
  */
 function registerSceneAnimationGroups(ctx: SceneContextInternal, groups: readonly AnimationGroup[]): void {
-    const setup = async (): Promise<void> => {
-        const { addSceneAnimationGroups, createSceneAnimationManager, updateSceneAnimationManager } = await import("./scene-animation-manager.js");
-        let manager = ctx._animationManager;
-        if (!manager) {
-            manager = createSceneAnimationManager(ctx.engine);
-            ctx._animationManager = manager;
-            ctx._beforeRender.push((deltaMs: number) => {
-                if (ctx._animationManager) {
-                    updateSceneAnimationManager(ctx._animationManager, deltaMs);
-                }
-            });
+    const engine = ctx.engine as EngineContextInternal;
+    ctx._beforeRender.push((deltaMs: number) => {
+        for (const group of groups) {
+            if (!group._stopped && group._ctrl) {
+                group._ctrl.tick(deltaMs, engine);
+            }
         }
-        addSceneAnimationGroups(manager, groups);
-    };
-
-    if (isRenderingContextRegistered(ctx.engine, ctx)) {
-        void setup();
-    } else {
-        ctx._deferredBuilders.push(setup);
-    }
+    });
 }
 
 export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camera | ShadowGenerator | TransformNode | AssetContainer, options?: AddToSceneOptions): void {
@@ -374,11 +359,6 @@ export function disposeScene(scene: SceneContext): void {
     ctx._prePasses.length = 0;
     ctx._uniformUpdaters.length = 0;
     ctx._beforeRender.length = 0;
-    if (ctx._animationManager) {
-        const manager = ctx._animationManager;
-        void import("./scene-animation-manager.js").then(({ clearSceneAnimationManager }) => clearSceneAnimationManager(manager));
-        ctx._animationManager = undefined;
-    }
     ctx._deferredBuilders.length = 0;
     ctx._disposables.length = 0;
     ctx._materialSwapQueue.length = 0;
