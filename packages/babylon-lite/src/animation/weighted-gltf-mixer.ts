@@ -42,8 +42,8 @@ interface WeightedGltfScratch {
 
 const _scratch = new WeakMap<AnimationManager, WeightedGltfScratch>();
 
-/** Enable weighted glTF skeleton blending for a manager. Kept opt-in so manual-only weights do not pay for skeletal mixing code. */
-export function enableGltfAnimationWeights(manager: AnimationManager): void {
+/** Enable advanced animation blending for a manager. Kept opt-in so manual-only weights do not pay for skeletal mixing code. */
+export function enableAnimationBlending(manager: AnimationManager): void {
     manager._wu = updateWeightedGltfAnimations;
 }
 

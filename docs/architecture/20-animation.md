@@ -181,7 +181,7 @@ export function stopAnimationManager(manager: AnimationManager): void;
 export function setAnimationWeight(group: AnimationGroup, weight: number): void;
 export function fadeAnimationWeight(manager: AnimationManager, group: AnimationGroup, options: FadeAnimationWeightOptions): void;
 export function crossFadeAnimationGroups(manager: AnimationManager, fromGroup: AnimationGroup, toGroup: AnimationGroup, options: CrossFadeAnimationGroupsOptions): void;
-export function enableGltfAnimationWeights(manager: AnimationManager): void;
+export function enableAnimationBlending(manager: AnimationManager): void;
 
 export function createPropertyAnimationClip(
     name: string,
@@ -325,7 +325,7 @@ for (const group of xbot.animationGroups ?? []) {
 }
 setAnimationWeight(xbot.animationGroups!.find((group) => group.name === "walk")!, 0.5);
 setAnimationWeight(xbot.animationGroups!.find((group) => group.name === "run")!, 0.5);
-enableGltfAnimationWeights(manager);
+enableAnimationBlending(manager);
 onBeforeRender(scene, (deltaMs) => updateAnimationManager(manager, deltaMs));
 ```
 
@@ -353,7 +353,7 @@ Weights intentionally use Babylon-style weighted sums for this first layer: `fin
 
 ### glTF Skeleton Weight Mixing
 
-Weighted glTF skeleton blending is kept behind `enableGltfAnimationWeights(manager)` so manual-only or direct glTF playback does not load the skeletal mixer. Once enabled, groups sharing the same parsed glTF node array are evaluated into one mixed TRS pose and each affected skeleton uploads its bone texture once per update.
+Weighted glTF skeleton blending is kept behind the generic `enableAnimationBlending(manager)` opt-in so manual-only or direct glTF playback does not load the skeletal mixer. Once enabled, groups sharing the same parsed glTF node array are evaluated into one mixed TRS pose and each affected skeleton uploads its bone texture once per update.
 
 The default blend semantics match Babylon.js weights: translation and scale use weighted sums, rotation uses weighted quaternion accumulation with hemisphere correction and final normalization, and weights are not normalized. The current glTF mixer covers skeleton TRS channels; morph target and additive layers are planned as follow-on mixer passes.
 
@@ -401,7 +401,7 @@ N/A — No shaders in this module. Skinning WGSL is in `shader/fragments/skeleto
 | `AnimationGroup.goToFrame(f)` | `goToFrame(group, f)` (uses `group.frameRate`) |
 | `AnimationGroup.speedRatio` | `group.speedRatio` |
 | `AnimationGroup.loopAnimation` | `group.loopAnimation` |
-| `AnimationGroup.weight` / `setWeightForAllAnimatables()` | `setAnimationWeight(group, weight)`; call `enableGltfAnimationWeights(manager)` for weighted glTF skeleton clips |
+| `AnimationGroup.weight` / `setWeightForAllAnimatables()` | `setAnimationWeight(group, weight)`; call `enableAnimationBlending(manager)` for weighted glTF skeleton clips |
 | manual weight ramp / blending speed | `fadeAnimationWeight(manager, group, { to, durationMs })` |
 | manual cross-fade | `crossFadeAnimationGroups(manager, from, to, { durationMs })` |
 | `scene.animationGroups` | `scene.animationGroups` |

@@ -8,7 +8,7 @@ import {
     createEngine,
     createHemisphericLight,
     createSceneContext,
-    enableGltfAnimationWeights,
+    enableAnimationBlending,
     loadGltf,
     onBeforeRender,
     pauseAnimation,
@@ -56,7 +56,7 @@ async function main(): Promise<void> {
     }
     setAnimationWeight(walk, WALK_WEIGHT);
     setAnimationWeight(run, RUN_WEIGHT);
-    enableGltfAnimationWeights(manager);
+    enableAnimationBlending(manager);
 
     const seekTime = parseFloat(new URLSearchParams(window.location.search).get("seekTime") || "");
     if (Number.isFinite(seekTime)) {
