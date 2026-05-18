@@ -1,5 +1,5 @@
 /**
- * Scene 116 ΓÇö Shadow-depth material views parity test.
+ * Scene 116 - Shadow-depth material views parity test.
  *
  * Exercises Standard/PBR material views rendered into depth RTTs, then sampled
  * through Standard emissive textures on preview planes.
@@ -12,7 +12,7 @@ const sceneConfig = getSceneConfig(116);
 const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene116-shadow-depth-materials");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test("Scene 116 ΓÇö Shadow Depth Materials matches Babylon.js reference", async ({ page }, testInfo) => {
+test("Scene 116 - Shadow Depth Materials matches Babylon.js reference", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
     await captureGolden(browser, { sceneId: 116, timeout: 60_000, settleMs: 1_000 });
 

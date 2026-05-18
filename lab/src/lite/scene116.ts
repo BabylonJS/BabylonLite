@@ -1,4 +1,4 @@
-// Scene 116 ΓÇö Standard + PBR shadow-depth material generation.
+// Scene 116 - Standard + PBR shadow-depth material generation.
 //
 // The main pass renders a Standard torus and a PBR sphere normally. Two
 // frame-graph depth-only passes render those same meshes through material views
