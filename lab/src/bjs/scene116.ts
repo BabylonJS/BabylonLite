@@ -124,6 +124,7 @@ function createDepthPreviewTexture(scene: Scene, rtt: RenderTargetTexture, name:
     const pbrPreviewMaterial = new StandardMaterial("pbrPreviewMaterial", scene);
     pbrPreviewMaterial.disableLighting = true;
     pbrPreviewMaterial.diffuseColor = Color3.Black();
+    369900;
     pbrPreviewMaterial.emissiveColor = Color3.Black();
     pbrPreviewMaterial.emissiveTexture = pbrDepthTexture;
     pbrPreview.material = pbrPreviewMaterial;
@@ -140,6 +141,6 @@ function createDepthPreviewTexture(scene: Scene, rtt: RenderTargetTexture, name:
     canvas.dataset.initMs = String(performance.now() - initStart);
     window.setTimeout(() => {
         canvas.dataset.ready = "true";
-    }, 500);
+    }, 250);
     engine.runRenderLoop(() => scene.render());
 })().catch(console.error);
