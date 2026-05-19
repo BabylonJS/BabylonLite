@@ -1,16 +1,16 @@
-/** .ply Gaussian-Splatting parser.
+/** Standard .ply Gaussian-Splatting parser (no chunks, no SH).
  *
- *  Pure function: ArrayBuffer (.ply asset) → ArrayBuffer in the standard
- *  `splat` row layout used by the rest of the loader (32 bytes / splat:
- *    bytes  0..11  → float32 position (x, y, z)
- *    bytes 12..23  → float32 scale    (sx, sy, sz, exp-mapped)
- *    bytes 24..27  → uint8   colour   (r, g, b, a)
- *    bytes 28..31  → uint8   rotation (qw, qx, qy, qz, normalised, biased by 128)
+ *  Pure function: ArrayBuffer (.ply asset) → `ParsedSplat` containing
+ *  a 32-byte/splat row buffer (position + scale + colour + quat). Mirrors the
+ *  algorithm BJS uses in `GaussianSplattingMesh.ConvertPLYToSplat`.
  *
- *  Mirrors the algorithm BJS uses in `GaussianSplattingMesh.ConvertPLYToSplat`
- *  (originally adapted from gsplat.js, MIT). If the input is not a recognisable
- *  PLY header the original buffer is returned unchanged so callers can layer
- *  the .splat fast-path on top without re-sniffing. */
+ *  Compressed PLY (`element chunk`) and SH coefficients (`element sh` or
+ *  per-vertex `f_rest_*`) are handled by a separate, dynamic-imported parser
+ *  (`splat-ply-compressed.ts`) so plain `.ply` scenes (e.g. scene 120) don't
+ *  bundle the additional decoder code. `isPlyCompressedOrSH` lets callers
+ *  decide which path to take. */
+
+import type { ParsedSplat } from "./splat-data.js";
 
 const SH_C0 = 0.28209479177387814;
 
@@ -21,20 +21,37 @@ export function isPly(data: ArrayBuffer): boolean {
     return header.startsWith("ply") && header.indexOf("end_header\n") >= 0;
 }
 
-/** Decode a PLY ArrayBuffer into the engine's internal splat row layout.
- *  Returns the input untouched when it isn't a PLY (caller can pass through). */
-export function convertPlyToSplat(data: ArrayBuffer): ArrayBuffer {
+/** True when the PLY header declares either an `element chunk` block
+ *  (compressed PLY) or any spherical-harmonics data (`element sh` block or
+ *  per-vertex `f_rest_*` properties). Callers route these assets through the
+ *  separately-imported compressed parser. */
+export function isPlyCompressedOrSH(data: ArrayBuffer): boolean {
+    const ubuf = new Uint8Array(data, 0, Math.min(data.byteLength, 1024 * 10));
+    const header = new TextDecoder().decode(ubuf);
+    const end = header.indexOf("end_header\n");
+    if (end < 0) {
+        return false;
+    }
+    const slice = header.slice(0, end);
+    return slice.indexOf("element chunk ") >= 0 || slice.indexOf("element sh ") >= 0 || slice.indexOf("f_rest_") >= 0;
+}
+
+/** Decode a standard PLY ArrayBuffer into the engine's internal splat row
+ *  layout. Returns `{ data: ArrayBuffer(0) }` when the property layout is
+ *  unsupported; returns `{ data }` echoing the input untouched when the buffer
+ *  isn't a PLY at all (so callers can chain a `.splat` fast-path). */
+export function convertPlyToSplat(data: ArrayBuffer): ParsedSplat {
     const ubuf = new Uint8Array(data);
     const header = new TextDecoder().decode(ubuf.slice(0, 1024 * 10));
     const headerEnd = "end_header\n";
     const headerEndIndex = header.indexOf(headerEnd);
     if (headerEndIndex < 0) {
-        return data;
+        return { data };
     }
 
     const vmatch = /element vertex (\d+)\n/.exec(header);
     if (!vmatch) {
-        return data;
+        return { data };
     }
     const vertexCount = parseInt(vmatch[1]!, 10);
 
@@ -47,55 +64,54 @@ export function convertPlyToSplat(data: ArrayBuffer): ArrayBuffer {
         }
         const [, type, name] = line.split(" ");
         if (!type || !name || offsets[type] === undefined) {
-            return new ArrayBuffer(0);
+            return { data: new ArrayBuffer(0) };
         }
         properties.push({ name, type, offset: rowOffset });
         rowOffset += offsets[type]!;
     }
 
-    const rowLength = 3 * 4 + 3 * 4 + 4 + 4;
     const dv = new DataView(data, headerEndIndex + headerEnd.length);
-    const out = new ArrayBuffer(rowLength * vertexCount);
+    const ROW_OUTPUT_LENGTH = 32;
+    const out = new ArrayBuffer(ROW_OUTPUT_LENGTH * vertexCount);
 
+    let off = 0;
     for (let i = 0; i < vertexCount; i++) {
-        const position = new Float32Array(out, i * rowLength, 3);
-        const scale = new Float32Array(out, i * rowLength + 12, 3);
-        const rgba = new Uint8ClampedArray(out, i * rowLength + 24, 4);
-        const rot = new Uint8ClampedArray(out, i * rowLength + 28, 4);
+        const position = new Float32Array(out, i * ROW_OUTPUT_LENGTH, 3);
+        const scale = new Float32Array(out, i * ROW_OUTPUT_LENGTH + 12, 3);
+        const rgba = new Uint8ClampedArray(out, i * ROW_OUTPUT_LENGTH + 24, 4);
+        const rot = new Uint8ClampedArray(out, i * ROW_OUTPUT_LENGTH + 28, 4);
 
         let r0 = 255,
             r1 = 0,
             r2 = 0,
             r3 = 0;
 
-        const base = i * rowOffset;
-        for (let p = 0; p < properties.length; p++) {
-            const prop = properties[p]!;
+        for (const prop of properties) {
             let value: number;
             switch (prop.type) {
                 case "float":
-                    value = dv.getFloat32(prop.offset + base, true);
+                    value = dv.getFloat32(off + prop.offset, true);
                     break;
                 case "int":
-                    value = dv.getInt32(prop.offset + base, true);
+                    value = dv.getInt32(off + prop.offset, true);
                     break;
                 case "uint":
-                    value = dv.getUint32(prop.offset + base, true);
+                    value = dv.getUint32(off + prop.offset, true);
                     break;
                 case "uchar":
-                    value = dv.getUint8(prop.offset + base);
+                    value = dv.getUint8(off + prop.offset);
                     break;
                 case "short":
-                    value = dv.getInt16(prop.offset + base, true);
+                    value = dv.getInt16(off + prop.offset, true);
                     break;
                 case "ushort":
-                    value = dv.getUint16(prop.offset + base, true);
+                    value = dv.getUint16(off + prop.offset, true);
                     break;
                 case "double":
-                    value = dv.getFloat64(prop.offset + base, true);
+                    value = dv.getFloat64(off + prop.offset, true);
                     break;
                 default:
-                    return new ArrayBuffer(0);
+                    continue;
             }
             switch (prop.name) {
                 case "x":
@@ -117,12 +133,15 @@ export function convertPlyToSplat(data: ArrayBuffer): ArrayBuffer {
                     scale[2] = Math.exp(value);
                     break;
                 case "red":
+                case "diffuse_red":
                     rgba[0] = value;
                     break;
                 case "green":
+                case "diffuse_green":
                     rgba[1] = value;
                     break;
                 case "blue":
+                case "diffuse_blue":
                     rgba[2] = value;
                     break;
                 case "f_dc_0":
@@ -155,15 +174,15 @@ export function convertPlyToSplat(data: ArrayBuffer): ArrayBuffer {
             }
         }
 
-        // Normalise (r0,r1,r2,r3) and bias to uint8 range. Original BJS layout: w,x,y,z.
-        // Bias 127.5/127.5 matches BJS's `_GetSplat` (round-trips byte-for-byte).
         const len = Math.hypot(r0, r1, r2, r3) || 1;
         const inv = 1 / len;
         rot[0] = r0 * inv * 127.5 + 127.5;
         rot[1] = r1 * inv * 127.5 + 127.5;
         rot[2] = r2 * inv * 127.5 + 127.5;
         rot[3] = r3 * inv * 127.5 + 127.5;
+
+        off += rowOffset;
     }
 
-    return out;
+    return { data: out };
 }

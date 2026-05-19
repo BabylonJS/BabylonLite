@@ -109,6 +109,8 @@ export { loadHdrEnvironment } from "./loader-hdr/load-hdr.js";
 export { loadTexture2D } from "./texture/texture-2d.js";
 export { loadSkybox } from "./loader-skybox/load-skybox.js";
 export { loadSplat } from "./loader-splat/load-splat.js";
+export { loadSOG } from "./loader-splat/load-sog.js";
+export { loadSPZ } from "./loader-splat/load-spz.js";
 export type { GaussianSplattingMesh } from "./mesh/gaussian-splatting-mesh.js";
 
 // ─── Shadows ─────────────────────────────────────────────────────────
@@ -119,6 +121,22 @@ export { createPcfDirectionalShadowGenerator } from "./shadow/pcf-directional-sh
 // ─── Animation ───────────────────────────────────────────────────────
 export { createAnimationController } from "./skeleton/skeleton-updater.js";
 export { createAnimationGroups, playAnimation, pauseAnimation, stopAnimation, goToFrame } from "./animation/animation-group.js";
+export { crossFadeAnimationGroups, fadeAnimationWeight, setAnimationWeight } from "./animation/animation-weight.js";
+export { enableAnimationBlending, setAnimationAdditive } from "./animation/weighted-gltf-mixer.js";
+export type { CrossFadeAnimationGroupsOptions, FadeAnimationWeightOptions } from "./animation/animation-weight.js";
+export type { AnimationAdditiveOptions } from "./animation/weighted-gltf-mixer.js";
+export {
+    addAnimationGroup,
+    addAnimationGroups,
+    clearAnimationManager,
+    createAnimationManager,
+    createPropertyAnimationClip,
+    createPropertyAnimationGroup,
+    removeAnimationGroup,
+    startAnimationManager,
+    stopAnimationManager,
+    updateAnimationManager,
+} from "./animation/animation-manager.js";
 export { createMorphTargets } from "./morph/create-morph-targets.js";
 export type { MorphTargetData } from "./animation/types.js";
 
@@ -166,6 +184,18 @@ export type { ShadowGenerator, ShadowGeneratorConfig } from "./shadow/shadow-gen
 export type { PcfShadowGeneratorConfig } from "./shadow/pcf-shadow-generator.js";
 export type { AnimationController } from "./skeleton/skeleton-updater.js";
 export type { AnimationGroup } from "./animation/animation-group.js";
+export type {
+    AnimationKeyframe,
+    AnimationKeyframeValue,
+    AnimationManager,
+    AnimationManagerOptions,
+    CreatePropertyAnimationGroupOptions,
+    PropertyAnimationClip,
+    PropertyAnimationClipOptions,
+    PropertyAnimationInterpolation,
+    PropertyAnimationTrack,
+    PropertyAnimationTrackOptions,
+} from "./animation/animation-manager.js";
 export type { AnimationClip, GltfAnimationData } from "./animation/types.js";
 export type { SphereOptions } from "./mesh/create-sphere.js";
 export type { TorusOptions } from "./mesh/create-torus.js";
@@ -195,8 +225,28 @@ export type { RenderTargetSignature } from "./engine/render-target.js";
 export type { SpriteAtlas, SpriteFrame, SpriteSampling, GridAtlasOptions, LoadAtlasOptions } from "./sprite/shared/sprite-atlas.js";
 export { createGridSpriteAtlas, loadSpriteAtlas } from "./sprite/shared/sprite-atlas.js";
 export type { Sprite2DLayer, Sprite2DLayerOptions, Sprite2DProps, Sprite2DView, Sprite2DDepthMode, SpriteBlendMode } from "./sprite/sprite-2d.js";
-export { createSprite2DLayer, addSprite2DIndex, updateSprite2DIndex, removeSprite2DIndex, setSprite2DFrameIndex } from "./sprite/sprite-2d.js";
+export { createSprite2DLayer, addSprite2DIndex, updateSprite2DIndex, removeSprite2DIndex, clearSprite2DLayer, setSprite2DFrameIndex } from "./sprite/sprite-2d.js";
 export { addDepthHostedSpriteLayer } from "./sprite/sprite-scene.js";
+// ─── World-space billboards ────────────────────────────────────────
+export type {
+    FacingBillboardSpriteSystem,
+    AxisLockedBillboardSpriteSystem,
+    BillboardSpriteSystemOptions,
+    BillboardSpriteInit,
+    BillboardOrientation,
+    BillboardDepthMode,
+    BillboardBlendMode,
+} from "./sprite/billboard-sprite.js";
+export {
+    createFacingBillboardSystem,
+    createAxisLockedBillboardSystem,
+    addBillboardSpriteIndex,
+    updateBillboardSpriteIndex,
+    removeBillboardSpriteIndex,
+    clearBillboardSprites,
+    setBillboardSpriteFrameIndex,
+} from "./sprite/billboard-sprite.js";
+export { addFacingBillboardSystem, addAxisLockedBillboardSystem } from "./sprite/billboard-scene.js";
 export type { SpriteRenderer, SpriteRendererOptions } from "./sprite/sprite-renderer.js";
 export {
     createSpriteRenderer,

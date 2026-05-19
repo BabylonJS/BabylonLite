@@ -14,35 +14,35 @@
 
 ## Architecture Document Index
 
-| Doc | Module | Scope |
-|-----|--------|-------|
-| [00-overview.md](00-overview.md) | Overview | Repository structure, public API |
-| [01-shadow-generator.md](01-shadow-generator.md) | Shadow Generator | ESM + PCF shadows, depth pass, Gaussian blur |
-| [03-texture-2d.md](03-texture-2d.md) | Texture2D | Image upload, KTX1/KTX2, mipmap gen, invertY |
-| [04-mesh-generators.md](04-mesh-generators.md) | Mesh Generators | Ground/heightmap, torus, sphere, box, cylinder, plane, disc, polyhedron, ribbon, tube, extrude |
-| [05-lights.md](05-lights.md) | Lights | Hemispheric, directional, point, spot + shared lights UBO for Standard/PBR |
-| [06-engine.md](06-engine.md) | Engine | GPU init, MSAA, render loop, swap chain |
-| [07-scene.md](07-scene.md) | Scene | SceneContext, one-way ownership |
-| [08-camera.md](08-camera.md) | Camera | ArcRotateCamera + FreeCamera, controls |
-| [09-core-math.md](09-core-math.md) | Core Math | Vec3, Mat4, Quat, ObservableVec3/Quat |
-| [10-pbr-material.md](10-pbr-material.md) | PBR Material | ShaderFragment composition, GGX/IBL, clearcoat, sheen |
-| [11-standard-material.md](11-standard-material.md) | Standard Material | ShaderFragment composition, Blinn-Phong |
-| [12-background-skybox.md](12-background-skybox.md) | Background/Skybox | DDS/HDR/cubemap skybox, ground, background material |
-| [13-loaders.md](13-loaders.md) | Loaders | glTF 2.0, dynamic glTF features, .env, .hdr, .babylon, skybox |
-| [14-render-pipeline.md](14-render-pipeline.md) | Renderable Architecture | Renderable interfaces, entity-owned pipelines |
-| [15-morph-targets.md](15-morph-targets.md) | Morph Targets | Vertex extension, GPU texture weights |
-| [16-animation-parity-testing.md](16-animation-parity-testing.md) | Animation Parity | Animated scene test methodology |
-| [17-thin-instances.md](17-thin-instances.md) | Thin Instances | Per-instance matrix + color, PBR + Standard |
-| [18-picking.md](18-picking.md) | Picking | GPU ID pass, CPU ray/triangle intersection |
-| [19-scene-hierarchy-parenting.md](19-scene-hierarchy-parenting.md) | Scene Hierarchy | TransformNode, parenting, world matrix propagation |
-| [20-animation.md](20-animation.md) | Animation | AnimationGroup, keyframe evaluation, glTF integration |
-| [21-shader-composition.md](21-shader-composition.md) | Shader Composition | ShaderFragment system, composer, slot injection |
-| [22-skeleton.md](22-skeleton.md) | Skeleton | Bone textures, 4/8-bone skinning |
-| [23-loader-hdr.md](23-loader-hdr.md) | HDR Loader | RGBE parsing, SH extraction, GPU compute IBL |
-| [24-loader-babylon.md](24-loader-babylon.md) | .babylon Loader | .babylon format parsing |
-| [25-resource-pool.md](25-resource-pool.md) | Resource Pool | GPU buffer/texture pooling |
-| [26-sprites.md](26-sprites.md) | Sprites | 2D sprites, depth-hosted sprites, sprite renderables |
-| [27-frame-graph.md](27-frame-graph.md) | Frame Graph | Task ordering, RenderTask, passes, render targets, RTT texture flow |
+| Doc                                                                | Module                  | Scope                                                                                          |
+| ------------------------------------------------------------------ | ----------------------- | ---------------------------------------------------------------------------------------------- |
+| [00-overview.md](00-overview.md)                                   | Overview                | Repository structure, public API                                                               |
+| [01-shadow-generator.md](01-shadow-generator.md)                   | Shadow Generator        | ESM + PCF shadows, depth pass, Gaussian blur                                                   |
+| [03-texture-2d.md](03-texture-2d.md)                               | Texture2D               | Image upload, KTX1/KTX2, mipmap gen, invertY                                                   |
+| [04-mesh-generators.md](04-mesh-generators.md)                     | Mesh Generators         | Ground/heightmap, torus, sphere, box, cylinder, plane, disc, polyhedron, ribbon, tube, extrude |
+| [05-lights.md](05-lights.md)                                       | Lights                  | Hemispheric, directional, point, spot + shared lights UBO for Standard/PBR                     |
+| [06-engine.md](06-engine.md)                                       | Engine                  | GPU init, MSAA, render loop, swap chain                                                        |
+| [07-scene.md](07-scene.md)                                         | Scene                   | SceneContext, one-way ownership                                                                |
+| [08-camera.md](08-camera.md)                                       | Camera                  | ArcRotateCamera + FreeCamera, controls                                                         |
+| [09-core-math.md](09-core-math.md)                                 | Core Math               | Vec3, Mat4, Quat, ObservableVec3/Quat                                                          |
+| [10-pbr-material.md](10-pbr-material.md)                           | PBR Material            | ShaderFragment composition, GGX/IBL, clearcoat, sheen                                          |
+| [11-standard-material.md](11-standard-material.md)                 | Standard Material       | ShaderFragment composition, Blinn-Phong                                                        |
+| [12-background-skybox.md](12-background-skybox.md)                 | Background/Skybox       | DDS/HDR/cubemap skybox, ground, background material                                            |
+| [13-loaders.md](13-loaders.md)                                     | Loaders                 | glTF 2.0, dynamic glTF features, .env, .hdr, .babylon, skybox                                  |
+| [14-render-pipeline.md](14-render-pipeline.md)                     | Renderable Architecture | Renderable interfaces, entity-owned pipelines                                                  |
+| [15-morph-targets.md](15-morph-targets.md)                         | Morph Targets           | Vertex extension, GPU texture weights                                                          |
+| [16-animation-parity-testing.md](16-animation-parity-testing.md)   | Animation Parity        | Animated scene test methodology                                                                |
+| [17-thin-instances.md](17-thin-instances.md)                       | Thin Instances          | Per-instance matrix + color, PBR + Standard                                                    |
+| [18-picking.md](18-picking.md)                                     | Picking                 | GPU ID pass, CPU ray/triangle intersection                                                     |
+| [19-scene-hierarchy-parenting.md](19-scene-hierarchy-parenting.md) | Scene Hierarchy         | TransformNode, parenting, world matrix propagation                                             |
+| [20-animation.md](20-animation.md)                                 | Animation               | AnimationGroup, keyframe evaluation, glTF integration                                          |
+| [21-shader-composition.md](21-shader-composition.md)               | Shader Composition      | ShaderFragment system, composer, slot injection                                                |
+| [22-skeleton.md](22-skeleton.md)                                   | Skeleton                | Bone textures, 4/8-bone skinning                                                               |
+| [23-loader-hdr.md](23-loader-hdr.md)                               | HDR Loader              | RGBE parsing, SH extraction, GPU compute IBL                                                   |
+| [24-loader-babylon.md](24-loader-babylon.md)                       | .babylon Loader         | .babylon format parsing                                                                        |
+| [25-resource-pool.md](25-resource-pool.md)                         | Resource Pool           | GPU buffer/texture pooling                                                                     |
+| [26-sprites.md](26-sprites.md)                                     | Sprites                 | 2D sprites, depth-hosted sprites, sprite renderables                                           |
+| [27-frame-graph.md](27-frame-graph.md)                             | Frame Graph             | Task ordering, RenderTask, passes, render targets, RTT texture flow                            |
 
 ---
 
@@ -859,7 +859,7 @@ registerScene runs deferred builders → requestAnimationFrame → resize() → 
 3. For each registered rendering context, run `_record()`:
     - `scene._frameGraph.execute()` drains its ordered tasks
 
-- each `RenderTask` acquires/patches the swapchain or RTT views, writes its per-pass scene UBO, calls `DrawBinding.update({ targetWidth, targetHeight })`, and draws bucketed `DrawBinding`s
+- each `RenderTask` acquires/patches the swapchain or RTT views, writes its per-pass scene UBO, calls `DrawBinding.update({ targetWidth, targetHeight, _camera })`, and draws bucketed `DrawBinding`s
 
 4. Submit the command buffer
 
@@ -990,7 +990,7 @@ interface SceneUniformUpdater {
 }
 ```
 
-**Draw order**: skybox/background (0) → opaque (100) → transmissive → transparent (200, distance-sorted).
+**Draw order**: skybox/background (0) → opaque bundle (100) → direct non-transparent draws (dynamic depth-write batches and true transmissive surfaces) → transparent (200, distance-sorted).
 
 **Deferred building**: Entities register builders on `scene._deferredBuilders`. `registerScene()` calls `buildScene()` to drain them before the scene is registered, then builds the scene frame graph.
 
@@ -1262,19 +1262,19 @@ main.ts (e.g. scene1.ts)
 
 ## 6. Babylon.js Equivalence Map
 
-| Babylon.js | Babylon Lite | Notes |
-|-----------|-------------|-------|
-| `new Engine(canvas)` | `createEngine(canvas)` | Async, returns Promise |
-| `new Scene(engine)` | `createSceneContext(engine)` | Flat struct, no observables |
-| `SceneLoader.Append(url)` | `addToScene(scene, await loadGltf(engine, url))` | glTF/GLB with scoped extension modules |
-| `scene.createDefaultEnvironment()` | `loadEnvironment(scene, url)` | Explicit URL |
-| `scene.createDefaultCameraOrLight()` | `createDefaultCamera(scene)` + `createHemisphericLight()` | Separate functions |
-| `new HemisphericLight(...)` | `createHemisphericLight(dir, intensity)` | Returns plain data |
-| `new ArcRotateCamera(...)` | `createDefaultCamera(scene)` | Auto-frames, returns data |
-| `PBRMaterial` | `getOrCreatePbrPipeline()` + composer | Feature-flag pipelines |
-| `StandardMaterial` | `getOrCreatePipeline()` + composer | Feature-flag pipelines |
-| `scene._prepareFrame()` | `startEngine()` runs deferred builders | Lazy pipeline creation |
-| `engine.runRenderLoop(...)` | `registerScene(engine, scene)` + `startEngine(engine)` | One or more registered rendering contexts |
+| Babylon.js                           | Babylon Lite                                              | Notes                                     |
+| ------------------------------------ | --------------------------------------------------------- | ----------------------------------------- |
+| `new Engine(canvas)`                 | `createEngine(canvas)`                                    | Async, returns Promise                    |
+| `new Scene(engine)`                  | `createSceneContext(engine)`                              | Flat struct, no observables               |
+| `SceneLoader.Append(url)`            | `addToScene(scene, await loadGltf(engine, url))`          | glTF/GLB with scoped extension modules    |
+| `scene.createDefaultEnvironment()`   | `loadEnvironment(scene, url)`                             | Explicit URL                              |
+| `scene.createDefaultCameraOrLight()` | `createDefaultCamera(scene)` + `createHemisphericLight()` | Separate functions                        |
+| `new HemisphericLight(...)`          | `createHemisphericLight(dir, intensity)`                  | Returns plain data                        |
+| `new ArcRotateCamera(...)`           | `createDefaultCamera(scene)`                              | Auto-frames, returns data                 |
+| `PBRMaterial`                        | `getOrCreatePbrPipeline()` + composer                     | Feature-flag pipelines                    |
+| `StandardMaterial`                   | `getOrCreatePipeline()` + composer                        | Feature-flag pipelines                    |
+| `scene._prepareFrame()`              | `startEngine()` runs deferred builders                    | Lazy pipeline creation                    |
+| `engine.runRenderLoop(...)`          | `registerScene(engine, scene)` + `startEngine(engine)`    | One or more registered rendering contexts |
 
 ---
 

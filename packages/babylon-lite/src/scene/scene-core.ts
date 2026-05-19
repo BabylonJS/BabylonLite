@@ -67,8 +67,8 @@ export interface SceneContext {
 /** @internal SceneContext with internal rendering state — for renderable/loader code only. Not re-exported from index.ts. */
 export interface SceneContextInternal extends SceneContext, RenderingContext {
     /** All renderables in this scene. The active frame-graph tasks bucket them
-     *  (opaque / transmissive / transparent) at bind time based on each
-     *  renderable's `isTransparent` / `isTransmissive` flags. */
+     *  (opaque / direct / transparent) at bind time based on `isTransparent`
+     *  and `_direct`; `isTransmissive` is used by refraction setup. */
     _renderables: Renderable[];
     /** Pre-pass work (shadow maps, compute, etc.). */
     _prePasses: PrePassRenderable[];
@@ -261,11 +261,6 @@ export function addDeferredSceneRenderables(
     });
 }
 
-/**
- * Add an entity (mesh, light, camera, transform node, shadow generator, or asset container)
- * to the scene. Optional scene-hosted systems such as depth-hosted sprites expose their own
- * opt-in add functions so mesh-only scenes do not pay feature-specific routing bytes here.
- */
 export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camera | ShadowGenerator | TransformNode | AssetContainer): void {
     const ctx = scene as SceneContextInternal;
     // AssetContainer from loadGltf / loadBabylon — process each field present

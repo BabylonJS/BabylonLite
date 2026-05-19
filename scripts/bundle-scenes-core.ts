@@ -342,6 +342,34 @@ function mangleWgslIdentifiers(code: string): string {
         ["entry", "e"],
         ["hemiDiffuse", "hd"],
         ["coloredFresnel", "cf"],
+        ["BillboardSystem", "BS"],
+        ["BillboardBasis", "BB"],
+        ["getBillboardBasis", "gbb"],
+        ["billboards", "bb"],
+        ["opacityMul", "om"],
+        ["atlasTex", "atx"],
+        ["atlasSamp", "asp"],
+        ["cameraRight", "cr"],
+        ["cameraUp", "cu"],
+        ["lockAxis", "la"],
+        ["projectedRightLen", "prl"],
+        ["safeProjectedRightLen", "sprl"],
+        ["projectedRight", "pr"],
+        ["fallbackSeed", "fsd"],
+        ["fallbackRightRaw", "frr"],
+        ["fallbackRight", "fr"],
+        ["sampleColor", "scol"],
+        ["cosRot", "cr2"],
+        ["sinRot", "sr2"],
+        ["rotated", "rot"],
+        ["worldPos", "wp"],
+        ["iUvMin", "ium"],
+        ["iUvMax", "iux"],
+        ["iPivot", "ip"],
+        ["iColor", "ic"],
+        ["iSize", "isz"],
+        ["iPos", "ipos"],
+        ["iRot", "ir"],
     ];
     let out = code;
     for (const [from, to] of replacements) {
@@ -907,7 +935,7 @@ export async function buildBundleScenes(): Promise<void> {
 
     // ── 1. Build all scenes ──────────────────────────────────────────────
     /** Modules that must keep side effects (they patch prototypes via bare import). */
-    const BJS_SIDE_EFFECT_MODULES = ["thinInstanceMesh"];
+    const BJS_SIDE_EFFECT_MODULES = ["animatable", "thinInstanceMesh"];
     function isBjsSideEffectModule(id: string): boolean {
         return BJS_SIDE_EFFECT_MODULES.some((m) => id.includes(m));
     }

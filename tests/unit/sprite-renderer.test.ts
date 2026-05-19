@@ -22,8 +22,9 @@ import {
     DEPTH_INSTANCE_STRIDE_BYTES,
     PURE_2D_INSTANCE_FLOATS_PER_SPRITE,
     PURE_2D_INSTANCE_STRIDE_BYTES,
-    createSprite2DLayer,
     addSprite2DIndex,
+    clearSprite2DLayer,
+    createSprite2DLayer,
 } from "../../packages/babylon-lite/src/sprite/sprite-2d";
 import {
     createSpriteRenderer,
@@ -378,6 +379,24 @@ describe("createSprite2DLayer guards", () => {
         expect(() => createSprite2DLayer(makeMockAtlas(), { blendMode: "additive" })).toThrow();
         expect(() => createSprite2DLayer(makeMockAtlas(), { blendMode: "multiply" })).toThrow();
         expect(() => createSprite2DLayer(makeMockAtlas(), { blendMode: "cutout" })).toThrow();
+    });
+});
+
+describe("Sprite2DLayer index lifecycle", () => {
+    it("clears sprites while preserving capacity and bumping version once", () => {
+        const layer = createSprite2DLayer(makeMockAtlas(), { capacity: 4 });
+        addSprite2DIndex(layer, { positionPx: [0, 0], sizePx: [10, 10] });
+        addSprite2DIndex(layer, { positionPx: [20, 0], sizePx: [10, 10], visible: false });
+        const versionBefore = layer._version;
+
+        clearSprite2DLayer(layer);
+
+        expect(layer.count).toBe(0);
+        expect(layer._capacity).toBe(4);
+        expect(layer._dirtyMin).toBe(0);
+        expect(layer._dirtyMax).toBe(0);
+        expect(layer._version).toBe((versionBefore + 1) | 0);
+        expect(Array.from(layer._savedSize.slice(0, 4))).toEqual([0, 0, 0, 0]);
     });
 });
 

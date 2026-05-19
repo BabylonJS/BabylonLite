@@ -17,7 +17,7 @@ import { ObservableVec3 } from "../math/observable-vec3.js";
 import { ObservableQuat } from "../math/observable-quat.js";
 import { createWorldMatrixState } from "../scene/world-matrix-state.js";
 import { eulerToQuat, createEulerProxy } from "../scene/scene-node.js";
-import { buildSplatGeometry, type SplatGeometry } from "../loader-splat/splat-data.js";
+import { buildSplatGeometry, type SplatGeometry, type ParsedSplat } from "../loader-splat/splat-data.js";
 
 /** Per-mesh GPU resources owned by a GaussianSplattingMesh. */
 export interface GaussianSplattingGpu {
@@ -38,6 +38,10 @@ export interface GaussianSplattingGpu {
     splatIndexBuffer: GPUBuffer;
     /** CPU-side scratch matching `splatIndexBuffer`. */
     splatIndexCpu: Float32Array;
+    /** Packed view-dependent SH textures (1..5 rgba32uint), `null` when
+     *  the cloud has no SH data. Layout: 16 bytes per splat per texture. */
+    shTextures: GPUTexture[] | null;
+    shViews: GPUTextureView[] | null;
 }
 
 /** Public Gaussian-splatting mesh handle.  `_kind` is a brand so consumers can
@@ -52,6 +56,9 @@ export interface GaussianSplattingMesh extends SceneNode {
     /** World-space AABB across all splat centres (for camera framing). */
     boundMin: [number, number, number];
     boundMax: [number, number, number];
+    /** Spherical-harmonics degree (0 means no view-dependent SH). Set at load
+     *  time and immutable afterwards — `updateData` rejects a degree change. */
+    readonly shDegree: number;
     /** Sort worker. Owned by the mesh; terminated on dispose. */
     _worker: Worker;
     /** Scratch for the worker round-trip. high-32 = depth, low-32 = index. */
@@ -82,13 +89,14 @@ export interface GaussianSplattingMesh extends SceneNode {
     updateData(splatBuffer: ArrayBuffer): void;
 }
 
-/** Create a GaussianSplattingMesh from parsed geometry. Uploads textures + initial
- *  identity splat-index buffer, spawns the sort worker, and returns the data.
+/** Create a GaussianSplattingMesh from a parsed splat asset. Uploads textures +
+ *  initial identity splat-index buffer, spawns the sort worker, and (when the
+ *  asset includes SH coefficients) packs SH into rgba32uint textures.
  *
- *  `splatBuffer` is retained on the mesh as `splatsData` so callers can mutate
+ *  `parsed.data` is retained on the mesh as `splatsData` so callers can mutate
  *  the row data and round-trip it via `mesh.updateData(buffer)` — matches
  *  `keepInRam:true` semantics on BJS `GaussianSplattingMesh`. */
-export function createGaussianSplattingMesh(engine: EngineContextInternal, name: string, geom: SplatGeometry, worker: Worker, splatBuffer: ArrayBuffer): GaussianSplattingMesh {
+export function createGaussianSplattingMesh(engine: EngineContextInternal, name: string, geom: SplatGeometry, worker: Worker, parsed: ParsedSplat): GaussianSplattingMesh {
     const device = engine.device;
 
     // ── Textures (RGBA32F, one texel per splat) ──────────────────────
@@ -142,9 +150,15 @@ export function createGaussianSplattingMesh(engine: EngineContextInternal, name:
     });
 
     // ── Retained source buffer (for splatsData + updateData) ─────────
-    let retainedSplatsData = splatBuffer;
+    let retainedSplatsData = parsed.data;
 
     // ── Compose mesh ─────────────────────────────────────────────────
+    // `shDegree` comes from the parser (0 means "no view-dependent SH").
+    // The SH attacher (`gaussian-splatting-pipeline-sh.ts`, dynamic-imported
+    // when `parsed.shDegree > 0`) creates the rgba32uint textures and
+    // patches `mesh._gs.shTextures` in place. Keeping all SH-specific code
+    // out of this module lets scenes that only need the static splat path
+    // stay below their bundle ceilings.
     const mesh = {
         _kind: "gs-mesh",
         name,
@@ -153,6 +167,7 @@ export function createGaussianSplattingMesh(engine: EngineContextInternal, name:
         textureHeight: geom.textureHeight,
         boundMin: geom.boundMin.slice() as [number, number, number],
         boundMax: geom.boundMax.slice() as [number, number, number],
+        shDegree: parsed.shDegree ?? 0,
         _worker: worker,
         _depthMix: new BigInt64Array(geom.vertexCount),
         _sortWorldMatrix: new Float32Array(16),
@@ -175,6 +190,8 @@ export function createGaussianSplattingMesh(engine: EngineContextInternal, name:
             indexBuffer,
             splatIndexBuffer,
             splatIndexCpu,
+            shTextures: null,
+            shViews: null,
         },
     } as unknown as GaussianSplattingMesh;
 
@@ -256,6 +273,11 @@ export function disposeGaussianSplattingMesh(mesh: GaussianSplattingMesh): void 
     gs.quadBuffer.destroy();
     gs.indexBuffer.destroy();
     gs.splatIndexBuffer.destroy();
+    if (gs.shTextures) {
+        for (const tex of gs.shTextures) {
+            tex.destroy();
+        }
+    }
     mesh._worker.terminate();
 }
 

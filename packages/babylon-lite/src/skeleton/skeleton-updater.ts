@@ -2,7 +2,7 @@
 // Zero per-frame allocation: all scratch buffers pre-allocated at init.
 
 import type { EngineContext, EngineContextInternal } from "../engine/engine.js";
-import type { GltfAnimationData, AnimationClip } from "../animation/types.js";
+import type { AnimationClip, NodeRest, SkeletonBinding } from "../animation/types.js";
 import type { MorphBinding } from "../animation/types.js";
 import { PATH_TRANSLATION, PATH_ROTATION, PATH_SCALE, PATH_WEIGHTS, PATH_POINTER } from "../animation/types.js";
 import { evaluateSampler } from "../animation/evaluate.js";
@@ -50,7 +50,7 @@ function computeTopoOrder(nodes: readonly { readonly parentIdx: number }[]): Int
 
 export interface AnimationController {
     /** Advance animation by deltaMs and update bone textures. */
-    tick(deltaMs: number, engine: EngineContext): void;
+    tick(deltaMs: number, engine?: EngineContext): void;
     /** Current playback time in seconds. */
     time: number;
     /** True if playing. */
@@ -69,14 +69,13 @@ export interface AnimationController {
  * Create a skeleton animation controller from parsed glTF animation data.
  * Returns a tick function that advances the animation and uploads bone matrices.
  */
-export function createAnimationController(animData: GltfAnimationData): AnimationController {
-    const { clips, nodes, skeletons, morphBindings } = animData;
-    const hasPointer = clips.some((c) => c.channels.some((ch) => ch.path === PATH_POINTER));
-    if (clips.length === 0 || (skeletons.length === 0 && morphBindings.length === 0 && !hasPointer)) {
-        return { tick() {}, time: 0, playing: false, speedRatio: 1, loop: true };
-    }
-
-    const clip: AnimationClip = clips[0]!;
+export function createAnimationController(
+    clip: AnimationClip,
+    nodes: readonly NodeRest[],
+    skeletons: readonly SkeletonBinding[],
+    morphBindings: readonly MorphBinding[]
+): AnimationController {
+    const requiresEngine = skeletons.length > 0 || morphBindings.length > 0;
     const numNodes = nodes.length;
 
     // Pre-allocate scratch buffers (once)
@@ -104,7 +103,7 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
     // Current registered writers need at most 4 (quaternion/color4). Keep 16 for headroom.
     const pointerScratch = new Float32Array(16);
 
-    let _hasTickedOnce = false;
+    let cachedEngine: EngineContext | undefined;
 
     const ctrl: AnimationController = {
         time: 0,
@@ -113,17 +112,18 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
         loop: true,
         _debugWorldMat: worldMat,
 
-        tick(deltaMs: number, engine: EngineContextInternal): void {
-            const device = engine.device;
+        tick(deltaMs: number, engine?: EngineContext): void {
             if (clip.duration <= 0) {
                 return;
             }
-
-            // Skip if animation time hasn't changed (paused/static scene)
-            if (deltaMs === 0 && _hasTickedOnce) {
-                return;
+            if (engine) {
+                cachedEngine = engine;
             }
-            _hasTickedOnce = true;
+            const activeEngine = engine ?? cachedEngine;
+            if (requiresEngine && !activeEngine) {
+                throw new Error("AnimationController.tick requires an EngineContext for skeleton or morph animation");
+            }
+            const device = requiresEngine ? (activeEngine as EngineContextInternal).device : null;
 
             if (ctrl.playing) {
                 ctrl.time += (deltaMs / 1000) * ctrl.speedRatio;
@@ -136,7 +136,7 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
                     ctrl.time += clip.duration;
                 }
             } else {
-                ctrl.time = Math.min(ctrl.time, clip.duration);
+                ctrl.time = Math.min(Math.max(ctrl.time, 0), clip.duration);
             }
             const t = ctrl.time;
 
@@ -180,14 +180,14 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
                             for (const mb of bindings) {
                                 mb.weights.set(morphUploadF32);
                                 // Write only the weights vec4 (first 16 bytes); count/texWidth/rowsPerBand are immutable
-                                device.queue.writeBuffer(mb.weightsBuffer, 0, morphUploadF32.buffer, 0, 16);
+                                device!.queue.writeBuffer(mb.weightsBuffer, 0, morphUploadF32.buffer, 0, 16);
                             }
                         }
                         break;
                     }
                     case PATH_POINTER: {
                         if (ch.pointerArity && ch.pointerWriter) {
-                            evaluateSampler(sampler, t, ch.pointerArity, false, pointerScratch, 0);
+                            evaluateSampler(sampler, t, ch.pointerArity, ch.pointerQuaternion === true, pointerScratch, 0);
                             ch.pointerWriter(pointerScratch, 0);
                         }
                         break;
@@ -238,7 +238,7 @@ export function createAnimationController(animData: GltfAnimationData): Animatio
 
                 // Upload to GPU
                 const texWidth = skel.boneCount * 4;
-                device.queue.writeTexture({ texture: skel.boneTexture }, boneData.buffer, { bytesPerRow: texWidth * 16 }, { width: texWidth, height: 1 });
+                device!.queue.writeTexture({ texture: skel.boneTexture }, boneData.buffer, { bytesPerRow: texWidth * 16 }, { width: texWidth, height: 1 });
             }
         },
     };

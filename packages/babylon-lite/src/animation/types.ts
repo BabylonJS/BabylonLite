@@ -43,6 +43,10 @@ export interface AnimationChannel {
     readonly pointerWriter?: (output: Float32Array, offset: number) => void;
     /** PATH_POINTER only: number of floats per keyframe (1, 3, 4, ...). */
     readonly pointerArity?: number;
+    /** PATH_POINTER only: true when LINEAR interpolation should use quaternion slerp. */
+    readonly pointerQuaternion?: boolean;
+    /** @internal PATH_POINTER stable identity used by optional weighted manual-property mixing. */
+    readonly _mk?: object;
 }
 
 /** One glTF animation clip (may animate many nodes). */
@@ -52,6 +56,8 @@ export interface AnimationClip {
     readonly samplers: readonly AnimationSampler[];
     /** Total duration in seconds (max of all sampler input times). */
     readonly duration: number;
+    /** Frame rate used by AnimationGroup goToFrame(); defaults to 60. */
+    readonly frameRate?: number;
 }
 
 /** Per-node rest pose TRS + parent link for hierarchy traversal. */

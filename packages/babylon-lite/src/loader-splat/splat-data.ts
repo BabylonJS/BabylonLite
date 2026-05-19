@@ -13,6 +13,25 @@
 
 const ROW_LENGTH = 32;
 
+/** Result of parsing a Gaussian-Splatting asset (PLY / SPZ / SOG / .splat).
+ *
+ *  `data` is the standard 32-byte/splat row buffer that `buildSplatGeometry`
+ *  consumes. `sh`, if present, is a *flat* coefficient buffer with BJS encoding
+ *  (`value * 127.5 + 127.5` clamped to 0..255) laid out as `splatCount *
+ *  shCoefficientCount` bytes in
+ *  `[R0,G0,B0, R1,G1,B1, …, R(N-1),G(N-1),B(N-1)]` order per splat. The
+ *  `gaussian-splatting-pipeline-sh` module packs it into 1..5 `rgba32uint`
+ *  textures at attach time. */
+export interface ParsedSplat {
+    /** 32-byte/splat row buffer (position + scale + colour + quat). */
+    data: ArrayBuffer;
+    /** Flat SH coefficient bytes (splatCount * shVectorCount * 3 bytes),
+     *  BJS-quantized. Each byte's shader decode is `(v * 2/255) - 1`. */
+    sh?: Uint8Array;
+    /** Spherical-harmonics degree (1..4) when `sh` is set, else absent. */
+    shDegree?: number;
+}
+
 export interface SplatGeometry {
     /** Number of splats parsed from the buffer. */
     vertexCount: number;

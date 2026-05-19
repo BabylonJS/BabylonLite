@@ -3,7 +3,7 @@
 
 ## Purpose
 
-Provides a zero-allocation keyframe animation system for glTF animations. Supports skeletal joint transforms, morph target weights, and arbitrary TRS channels. Each glTF animation clip is wrapped in an `AnimationGroup` that exposes play/pause/stop/seek controls matching the Babylon.js API surface. Evaluation runs LINEAR, STEP, and CUBICSPLINE interpolation using pre-allocated scratch buffers, with no per-frame heap allocation.
+Provides a zero-allocation keyframe animation system for glTF animations and user-authored property animations. Supports skeletal joint transforms, morph target weights, KHR_animation_pointer channels, and manual tracks bound to object property paths such as `position.x`, `position`, `rotationQuaternion`, or `scaling`. Each evaluated clip is wrapped in an `AnimationGroup` and can be driven by a standalone `AnimationManager`, by a scene render loop, or by explicit deterministic updates. Evaluation runs LINEAR, STEP, and CUBICSPLINE interpolation using pre-allocated scratch buffers, with no per-frame heap allocation.
 
 ## Public API Surface
 
@@ -45,6 +45,7 @@ export interface AnimationClip {
     readonly channels: readonly AnimationChannel[];
     readonly samplers: readonly AnimationSampler[];
     readonly duration: number;             // max of all sampler input times (seconds)
+    readonly frameRate?: number;           // defaults to 60 for glTF clips
 }
 
 export interface NodeRest {
@@ -75,6 +76,64 @@ export interface GltfAnimationData {
     readonly morphBindings: readonly MorphBinding[];
 }
 
+export type AnimationKeyframeValue = number | readonly number[];
+
+export interface AnimationKeyframe {
+    /** Timestamp in seconds. Mutually exclusive with `frame`. */
+    readonly time?: number;
+    /** Frame index converted with `frameRate`. Mutually exclusive with `time`. */
+    readonly frame?: number;
+    readonly value: AnimationKeyframeValue;
+}
+
+export type PropertyAnimationInterpolation = "linear" | "step";
+
+export interface PropertyAnimationTrackOptions {
+    readonly path: string;
+    readonly keys: readonly AnimationKeyframe[];
+    readonly frameRate?: number;
+    readonly interpolation?: PropertyAnimationInterpolation;
+    /** Forces quaternion-aware interpolation for vec4 tracks. Inferred for `rotationQuaternion` paths. */
+    readonly quaternion?: boolean;
+}
+
+export interface PropertyAnimationClipOptions {
+    readonly frameRate?: number;
+}
+
+export interface PropertyAnimationTrack {
+    readonly path: string;
+    readonly sampler: AnimationSampler;
+    readonly stride: number;
+    readonly quaternion: boolean;
+}
+
+export interface PropertyAnimationClip {
+    readonly name: string;
+    readonly tracks: readonly PropertyAnimationTrack[];
+    readonly duration: number;
+    readonly frameRate: number;
+}
+
+export interface AnimationManagerOptions {
+    /** Optional engine enables glTF skeleton/morph GPU uploads when manager is not scene-hosted. */
+    readonly engine?: EngineContext;
+    /** Fixed step in ms. `0` means caller-supplied / rAF delta. */
+    readonly fixedDeltaMs?: number;
+    /** Called after each autonomous tick, e.g. to render a custom view. */
+    readonly onUpdate?: (deltaMs: number) => void;
+}
+
+export interface AnimationManager {
+    animationGroups: AnimationGroup[];
+    fixedDeltaMs: number;
+    running: boolean;
+    readonly engine?: EngineContext;
+    readonly onUpdate?: (deltaMs: number) => void;
+    _rafId: number;
+    _lastTime: number;
+}
+
 export interface SkeletonData {
     readonly boneTexture: GPUTexture;
     readonly boneCount: number;
@@ -97,15 +156,13 @@ export interface MorphTargetData {
 export interface AnimationGroup {
     readonly name: string;
     readonly duration: number;             // seconds
+    readonly frameRate: number;            // used by goToFrame()
     readonly isPlaying: boolean;
     currentFrame: number;                  // current time in seconds (not frames!)
     speedRatio: number;                    // default 1
     loopAnimation: boolean;               // default true
-    play(): void;
-    pause(): void;
-    stop(): void;                          // resets to frame 0
-    goToFrame(frame: number): void;        // seeks to frame/60 seconds, pauses
-    _tick(deltaMs: number, device: GPUDevice): void;
+    weight: number;                        // default 1
+    _stopped: boolean;
     readonly _ctrl?: AnimationController;
 }
 ```
@@ -114,6 +171,38 @@ export interface AnimationGroup {
 
 ```typescript
 export function createAnimationGroups(animData: GltfAnimationData): AnimationGroup[];
+export function goToFrame(group: AnimationGroup, frame: number, engine?: EngineContext): void;
+export function createAnimationManager(options?: AnimationManagerOptions): AnimationManager;
+export function addAnimationGroup(manager: AnimationManager, group: AnimationGroup): void;
+export function removeAnimationGroup(manager: AnimationManager, group: AnimationGroup): void;
+export function updateAnimationManager(manager: AnimationManager, deltaMs: number): void;
+export function startAnimationManager(manager: AnimationManager): void;
+export function stopAnimationManager(manager: AnimationManager): void;
+export function setAnimationWeight(group: AnimationGroup, weight: number): void;
+export function fadeAnimationWeight(manager: AnimationManager, group: AnimationGroup, options: FadeAnimationWeightOptions): void;
+export function crossFadeAnimationGroups(manager: AnimationManager, fromGroup: AnimationGroup, toGroup: AnimationGroup, options: CrossFadeAnimationGroupsOptions): void;
+export function enableAnimationBlending(manager: AnimationManager): void;
+export function setAnimationAdditive(group: AnimationGroup, options?: AnimationAdditiveOptions): void;
+
+export function createPropertyAnimationClip(
+    name: string,
+    tracks: readonly PropertyAnimationTrackOptions[],
+    options?: PropertyAnimationClipOptions
+): PropertyAnimationClip;
+
+export function createPropertyAnimationGroup(
+    manager: AnimationManager,
+    target: object,
+    clip: PropertyAnimationClip,
+    options?: {
+        readonly loop?: boolean;
+        readonly speedRatio?: number;
+        readonly fromFrame?: number;
+        readonly toFrame?: number;
+        readonly fromTime?: number;
+        readonly toTime?: number;
+    }
+): AnimationGroup;
 
 export function evaluateSampler(
     sampler: AnimationSampler,
@@ -138,7 +227,7 @@ All animation data uses flat typed arrays for GPU-friendly memory layout:
 
 ### Keyframe Search
 
-`findKeyframe(input, t)` performs binary search to find index `i` such that `input[i] <= t < input[i+1]`. Returns 0 for `t <= input[0]`, and `length-2` for `t >= input[last]`.
+`evaluateSampler()` clamps `t <= input[0]` to the first key and `t >= input[last]` to the final key before searching. For interior samples, `findKeyframe(input, t)` performs binary search to find index `i` such that `input[i] <= t < input[i+1]`.
 
 ### Scratch Buffer: `_quat`
 
@@ -147,14 +236,149 @@ A module-level `[0,0,0,1]` array is reused for quaternion slerp output to avoid 
 ### Frame Timing Model
 
 - `AnimationGroup.currentFrame` stores time in **seconds** (not frame numbers, despite the name — matches BJS convention)
-- `goToFrame(frame)` converts frame number to seconds: `ctrl.time = frame / 60`
+- `goToFrame(frame)` converts frame number to seconds with the group's `frameRate`, immediately evaluates the pose when possible, then pauses
 - `_tick(deltaMs)` advances `ctrl.time += (deltaMs / 1000) * speedRatio`
 - Duration is in seconds (max sampler input timestamp)
-- Looping wraps via modulo: `time %= duration`
+- Looping wraps via modulo within the active range: `time = from + ((time - from) % (to - from))`
+- glTF groups default to 60fps; property groups inherit the `PropertyAnimationClip.frameRate`
+- Babylon-style frame ranges are converted once with the clip `frameRate`
+
+### AnimationManager Lifecycle
+
+`AnimationManager` is a standalone owner for animation groups. It has no scene dependency and can be driven three ways:
+
+```typescript
+const manager = createAnimationManager();
+startAnimationManager(manager);          // autonomous requestAnimationFrame loop
+updateAnimationManager(manager, 16.667); // caller-owned loop
+goToFrame(group, 20);                    // deterministic seek + pose evaluation
+```
+
+A scene may still own animation groups through `scene.animationGroups`; that remains compatibility state. Scenes can continue using their existing `_beforeRender` callbacks, while non-scene code can create a manager directly.
+
+### Usage Examples
+
+Manual property animation, matching Babylon.js `beginDirectAnimation(target, [animation], from, to, loop)`:
+
+```typescript
+const manager = createAnimationManager();
+const clip = createPropertyAnimationClip(
+    "xSlide",
+    [
+        {
+            path: "position.x",
+            frameRate: 10,
+            keys: [
+                { frame: 0, value: 2 },
+                { frame: 10, value: -2 },
+                { frame: 20, value: 2 },
+            ],
+        },
+    ]
+);
+const group = createPropertyAnimationGroup(manager, box, clip, { fromFrame: 0, toFrame: 20, loop: true });
+startAnimationManager(manager);
+```
+
+Autonomous, no-scene animation:
+
+```typescript
+const target = { position: { x: -2 } };
+const manager = createAnimationManager({ onUpdate: () => draw(target.position.x) });
+const group = createPropertyAnimationGroup(manager, target, clip);
+startAnimationManager(manager);
+```
+
+Unified glTF + manual animation ownership:
+
+```typescript
+const shark = await loadGltf(engine, "https://models.babylonjs.com/shark.glb");
+for (const entity of shark.entities) {
+    addToScene(scene, entity);
+}
+
+const manager = createAnimationManager({ engine });
+addAnimationGroups(manager, shark.animationGroups ?? []);
+createPropertyAnimationGroup(manager, camera, cameraClip, { loop: true });
+onBeforeRender(scene, (deltaMs) => updateAnimationManager(manager, deltaMs));
+```
+
+Weighted manual animation and deterministic cross-fade:
+
+```typescript
+const walk = createPropertyAnimationGroup(manager, box, walkClip);
+const run = createPropertyAnimationGroup(manager, box, runClip);
+
+setAnimationWeight(walk, 1);
+setAnimationWeight(run, 0);
+crossFadeAnimationGroups(manager, walk, run, { durationMs: 300 });
+```
+
+Weighted glTF skeleton blend:
+
+```typescript
+const xbot = await loadGltf(engine, "https://playground.babylonjs.com/scenes/Xbot.glb");
+for (const entity of xbot.entities) {
+    addToScene(scene, entity);
+}
+
+const manager = createAnimationManager({ engine });
+addAnimationGroups(manager, xbot.animationGroups ?? []);
+
+for (const group of xbot.animationGroups ?? []) {
+    setAnimationWeight(group, 0);
+}
+setAnimationWeight(xbot.animationGroups!.find((group) => group.name === "walk")!, 0.5);
+setAnimationWeight(xbot.animationGroups!.find((group) => group.name === "run")!, 0.5);
+enableAnimationBlending(manager);
+onBeforeRender(scene, (deltaMs) => updateAnimationManager(manager, deltaMs));
+```
+
+Additive pose/loop layers on top of an override clip:
+
+```typescript
+setAnimationWeight(walk, 1);
+
+setAnimationAdditive(headShake, { referenceFrame: 0 });
+setAnimationWeight(headShake, 0.6);
+
+setAnimationAdditive(sadPose, { referenceFrame: 0 });
+sadPose.currentFrame = 2 / sadPose.frameRate;
+pauseAnimation(sadPose);
+setAnimationWeight(sadPose, 0.35);
+
+enableAnimationBlending(manager);
+```
 
 ### AnimationGroup Creation
 
 `createAnimationGroups()` creates one `AnimationGroup` per `AnimationClip`. Each group wraps an `AnimationController` (from `skeleton-updater.ts`) with a single-clip slice of the animation data. All groups auto-play by default (matching BJS behavior).
+
+Manual property clips follow the same runtime path. `createPropertyAnimationClip()` stores reusable unresolved property tracks. `createPropertyAnimationGroup()` resolves each track against the target once, converts the clip to a pointer-only `AnimationClip`, and wraps it in an `AnimationGroup`. The hot path remains `evaluateSampler()` + `AnimationController.tick()`.
+
+### Property Binding
+
+Manual property bindings are resolved once when the group is created:
+
+- scalar paths (`position.x`, `alpha`, `visible`) write directly to the resolved property;
+- vector/quaternion paths (`position`, `scaling`, `rotationQuaternion`) call `.set(...)` when the target object exposes a setter method;
+- invalid paths throw immediately during `createPropertyAnimationGroup()` so typos never fail silently.
+
+Bindings are target-specific; `PropertyAnimationClip` is reusable, while the generated pointer-only `AnimationClip` is owned by the returned `AnimationGroup`.
+
+### Manual Weight Mixing
+
+Manual property weights are optional and live outside the default direct evaluator. Calling `setAnimationWeight()` installs a manager-side mixer for manual pointer tracks that share the same target and property path. The mixer advances group time once, samples each contributing clip with `evaluateSampler()`, then writes one final weighted value per property so multiple groups do not devolve into last-write-wins behavior.
+
+Weights intentionally use Babylon-style weighted sums for this first layer: `final = sum(group.weight * sampledValue)` for the groups targeting the same property. The mixer does not normalize totals and does not blend toward rest pose. `crossFadeAnimationGroups()` builds on the same weights by scheduling deterministic duration-based fade jobs inside the manager.
+
+### glTF Skeleton Weight Mixing
+
+Weighted glTF skeleton blending is kept behind the generic `enableAnimationBlending(manager)` opt-in so manual-only or direct glTF playback does not load the skeletal mixer. Once enabled, groups sharing the same parsed glTF node array are evaluated into one mixed TRS pose and each affected skeleton uploads its bone texture once per update.
+
+The default blend semantics match Babylon.js weights: translation and scale use weighted sums, rotation uses weighted quaternion accumulation with hemisphere correction and final normalization, and weights are not normalized. The current glTF mixer covers skeleton TRS channels; morph target blending is planned as a follow-on mixer pass.
+
+Additive groups are marked with `setAnimationAdditive(group, { referenceFrame })`. The mixer evaluates override/base groups first, then applies additive deltas in manager order before the single skeleton upload. Translation and scale add `sample - reference` by weight; rotations compute `reference^-1 * sample`, multiply that delta onto the base rotation, then slerp from base to the delta-applied rotation by the additive weight.
 
 ## Pipeline Configuration
 
@@ -184,19 +408,26 @@ N/A — No shaders in this module. Skinning WGSL is in `shader/fragments/skeleto
 - **STOPPED**: `ctrl.playing = false`, `ctrl.time = 0`, `stopped = true`. `_tick()` returns immediately.
 - **PLAYING**: `ctrl.playing = true`. Each `_tick()` advances time, evaluates samplers, uploads GPU data.
 - **PAUSED**: `ctrl.playing = false`. `_tick()` still evaluates (ensures pose is current) but doesn't advance time.
-- **goToFrame(f)**: Sets `ctrl.time = f/60`, sets `ctrl.playing = false` (pauses at that pose).
+- **goToFrame(f)**: Sets `ctrl.time = f / group.frameRate`, evaluates the pose immediately for pointer-only clips (or engine-backed clips when an engine is provided), then pauses.
 
 ## Babylon.js Equivalence Map
 
 | Babylon.js API | Babylon Lite |
 |---|---|
+| `new Animation(name, "position.x", frameRate, FLOAT, CYCLE)` | `createPropertyAnimationClip(name, [{ path: "position.x", frameRate, keys }])` |
+| `animation.setKeys(keys)` | keys passed to `createPropertyAnimationClip()` |
+| `scene.beginDirectAnimation(target, [anim], from, to, loop)` | `createPropertyAnimationGroup(manager, target, clip, { fromFrame: from, toFrame: to, loop })` |
 | `AnimationGroup` | `AnimationGroup` interface |
-| `AnimationGroup.play()` | `group.play()` |
-| `AnimationGroup.pause()` | `group.pause()` |
-| `AnimationGroup.stop()` | `group.stop()` |
-| `AnimationGroup.goToFrame(f)` | `group.goToFrame(f)` (frame at 60fps) |
+| `AnimationGroup.play()` | `playAnimation(group)` |
+| `AnimationGroup.pause()` | `pauseAnimation(group)` |
+| `AnimationGroup.stop()` | `stopAnimation(group)` |
+| `AnimationGroup.goToFrame(f)` | `goToFrame(group, f)` (uses `group.frameRate`) |
 | `AnimationGroup.speedRatio` | `group.speedRatio` |
 | `AnimationGroup.loopAnimation` | `group.loopAnimation` |
+| `AnimationGroup.weight` / `setWeightForAllAnimatables()` | `setAnimationWeight(group, weight)`; call `enableAnimationBlending(manager)` for weighted glTF skeleton clips |
+| `AnimationGroup.MakeAnimationAdditive(group, frame)` | `setAnimationAdditive(group, { referenceFrame: frame })` |
+| manual weight ramp / blending speed | `fadeAnimationWeight(manager, group, { to, durationMs })` |
+| manual cross-fade | `crossFadeAnimationGroups(manager, from, to, { durationMs })` |
 | `scene.animationGroups` | `scene.animationGroups` |
 | `Animation.ANIMATIONTYPE_QUATERNION` | `PATH_ROTATION = 1` |
 | `Animation.ANIMATIONTYPE_VECTOR3` | `PATH_TRANSLATION = 0`, `PATH_SCALE = 2` |
@@ -207,6 +438,9 @@ N/A — No shaders in this module. Skinning WGSL is in `shader/fragments/skeleto
 - `../skeleton/skeleton-updater.js` — `createAnimationController`, `AnimationController`
 - `../loader-gltf/gltf-animation.ts` — `parseAnimationData` (glTF → `GltfAnimationData`)
 - `../loader-gltf/gltf-parser.ts` — `resolveAccessor`, `computeNodeWorldMatrix`, `findParent`
+- `./animation-manager.ts` — standalone manager, property clip builder, property path binding
+- `./weighted-pointer-mixer.ts` — optional manual property weight mixer and duration-based weight fades
+- `./weighted-gltf-mixer.ts` — optional glTF skeleton weight mixer, loaded only when explicitly imported/enabled
 
 ## Test Specification
 
@@ -215,10 +449,18 @@ N/A — No shaders in this module. Skinning WGSL is in `shader/fragments/skeleto
 3. **CUBICSPLINE interpolation**: Verify Hermite spline evaluation with tangents; verify quaternion normalization
 4. **Binary search edge cases**: `t` before first key, after last key, exactly on a key, between keys
 5. **AnimationGroup lifecycle**: play → tick → verify time advances; pause → tick → verify time frozen; stop → verify reset to 0
-6. **goToFrame**: Verify `goToFrame(120)` sets time to `2.0` seconds and pauses
+6. **goToFrame**: Verify `goToFrame(120)` sets time to `2.0` seconds, evaluates the pose immediately, and pauses
 7. **Looping**: Verify time wraps correctly at duration boundary
 8. **Speed ratio**: Verify `speedRatio = 2` doubles playback speed
 9. **Morph weight upload**: Verify correct weights written to GPU buffer for PATH_WEIGHTS channels
+10. **Manual scalar animation**: Verify `position.x` keyframes reproduce Babylon frame-rate timing
+11. **Manual vector animation**: Verify `position` calls `.set(x, y, z)` and marks world matrices dirty
+12. **Standalone manager**: Verify `updateAnimationManager()` works without a scene or engine for pointer-only clips
+13. **Bad path failure**: Verify invalid property paths throw during binding
+14. **Manual weighted blend**: Verify two groups targeting one scalar write a single weighted result independent of group order
+15. **Manual cross-fade**: Verify manager fade jobs update group weights by elapsed duration
+16. **glTF weighted skeleton blend**: Verify Xbot walk/run weighted TRS blending matches Babylon.js reference
+17. **Additive skeleton blend**: Verify Xbot additive pose/loop layers match Babylon.js reference
 
 ## File Manifest
 
@@ -227,3 +469,6 @@ N/A — No shaders in this module. Skinning WGSL is in `shader/fragments/skeleto
 | `types.ts` | All animation data types, interpolation/path constants, GPU-attached data interfaces |
 | `evaluate.ts` | Keyframe interpolation engine (LINEAR, STEP, CUBICSPLINE); binary search; zero-allocation |
 | `animation-group.ts` | User-facing AnimationGroup factory; wraps AnimationController per clip |
+| `animation-manager.ts` | Standalone manager, manual property animation clip builder, and cached property bindings |
+| `weighted-pointer-mixer.ts` | Optional manual property weight mixer plus fade/cross-fade scheduling |
+| `weighted-gltf-mixer.ts` | Optional glTF skeleton weighted/additive mixer with single skeleton upload per blended target |

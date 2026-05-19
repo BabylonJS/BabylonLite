@@ -26,7 +26,7 @@ export function processMaterialSwaps(scene: SceneContext): void {
         }
         const renderable = rebuild(ctx, mesh);
         // Insert by `order` so the renderable list stays sorted (frame-graph
-        // tasks bucket transparency/transmissive at bind time).
+        // tasks bucket opaque/direct/transparent at bind time).
         let i = ctx._renderables.length;
         while (i > 0 && ctx._renderables[i - 1]!.order > renderable.order) {
             i--;

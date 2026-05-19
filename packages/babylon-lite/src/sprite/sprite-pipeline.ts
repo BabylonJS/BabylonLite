@@ -11,8 +11,15 @@ export interface SpritePipelineDeviceCache {
 
 export interface SpritePipelineCache {
     _devices: WeakMap<GPUDevice, SpritePipelineDeviceCache>;
-    _lastDeviceCache: SpritePipelineDeviceCache | null;
 }
+
+const SPRITE_POSITION_OFFSET_BYTES = 0;
+const SPRITE_SIZE_OFFSET_BYTES = 8;
+const SPRITE_UV_MIN_OFFSET_BYTES = 16;
+const SPRITE_UV_MAX_OFFSET_BYTES = 24;
+const SPRITE_ROTATION_OFFSET_BYTES = 32;
+const SPRITE_COLOR_OFFSET_BYTES = 36;
+const SPRITE_DEPTH_OFFSET_BYTES = 52;
 
 function makeSpriteWgsl(hasDepth: boolean, spriteGroupIndex: 0 | 1): string {
     const group = `@group(${spriteGroupIndex})`;
@@ -105,17 +112,15 @@ function getBlendModeEntry(blendMode: SpriteBlendMode): (typeof BLEND_MODE_TABLE
 export function createSpritePipelineCache(): SpritePipelineCache {
     return {
         _devices: new WeakMap(),
-        _lastDeviceCache: null,
     };
 }
 
-export function clearSpritePipelineCache(cache: SpritePipelineCache): void {
+export function resetSpritePipelineCache(cache: SpritePipelineCache): void {
     cache._devices = new WeakMap();
-    cache._lastDeviceCache = null;
 }
 
-export function getSpritePipelineCacheSize(cache: SpritePipelineCache): number {
-    return cache._lastDeviceCache?._pipelines.size ?? 0;
+export function getSpritePipelineCacheSize(cache: SpritePipelineCache, device: GPUDevice): number {
+    return cache._devices.get(device)?._pipelines.size ?? 0;
 }
 
 export function getOrCreateSpritePipeline(
@@ -170,7 +175,6 @@ function getSpritePipelineDeviceCache(engine: EngineContextInternal, cache: Spri
         };
         cache._devices.set(engine.device, deviceCache);
     }
-    cache._lastDeviceCache = deviceCache;
     return deviceCache;
 }
 
@@ -229,15 +233,15 @@ function buildSpritePipeline(
     }
     const bindGroupLayouts = hasDepth ? [sceneBindGroupLayout!, bindGroupLayout] : [bindGroupLayout];
     const instanceAttributes: GPUVertexAttribute[] = [
-        { shaderLocation: 0, offset: 0, format: "float32x2" },
-        { shaderLocation: 1, offset: 8, format: "float32x2" },
-        { shaderLocation: 2, offset: 16, format: "float32x2" },
-        { shaderLocation: 3, offset: 24, format: "float32x2" },
-        { shaderLocation: 4, offset: 32, format: "float32" },
-        { shaderLocation: 5, offset: 36, format: "float32x4" },
+        { shaderLocation: 0, offset: SPRITE_POSITION_OFFSET_BYTES, format: "float32x2" },
+        { shaderLocation: 1, offset: SPRITE_SIZE_OFFSET_BYTES, format: "float32x2" },
+        { shaderLocation: 2, offset: SPRITE_UV_MIN_OFFSET_BYTES, format: "float32x2" },
+        { shaderLocation: 3, offset: SPRITE_UV_MAX_OFFSET_BYTES, format: "float32x2" },
+        { shaderLocation: 4, offset: SPRITE_ROTATION_OFFSET_BYTES, format: "float32" },
+        { shaderLocation: 5, offset: SPRITE_COLOR_OFFSET_BYTES, format: "float32x4" },
     ];
     if (hasDepth) {
-        instanceAttributes.push({ shaderLocation: 6, offset: 52, format: "float32" });
+        instanceAttributes.push({ shaderLocation: 6, offset: SPRITE_DEPTH_OFFSET_BYTES, format: "float32" });
     }
     const descriptor: GPURenderPipelineDescriptor = {
         layout: device.createPipelineLayout({ bindGroupLayouts }),
@@ -325,8 +329,13 @@ export function ensureSpriteInstanceBuffer(
  * edits uploads only `[_dirtyMin, min(_dirtyMax, count))`. Resets the dirty range.
  */
 export function uploadSpriteInstances(device: GPUDevice, layer: Sprite2DLayer, instanceBuffer: GPUBuffer, uploadedVersion: number): number {
-    if (uploadedVersion === layer._version || layer.count === 0) {
+    if (uploadedVersion === layer._version) {
         return uploadedVersion;
+    }
+    if (layer.count === 0) {
+        layer._dirtyMin = 0;
+        layer._dirtyMax = 0;
+        return layer._version;
     }
     let lo: number;
     let hi: number;
