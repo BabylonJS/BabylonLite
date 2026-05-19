@@ -671,7 +671,7 @@ export interface Sprite2DHandle {
 export function addSprite2D(layer: Sprite2DLayer, props: Sprite2DProps): Sprite2DHandle;
 export function updateSprite2D(handle: Sprite2DHandle, patch: Partial<Sprite2DProps>): void;
 export function removeSprite2D(handle: Sprite2DHandle): void;
-export function setSprite2DHandleFrameIndex(handle: Sprite2DHandle, frame: number): void;
+export function setSprite2DFrame(handle: Sprite2DHandle, frame: number): void;
 export function getSprite2DHandleIndex(handle: Sprite2DHandle): number;
 export function isSprite2DHandleAlive(handle: Sprite2DHandle): boolean;
 ```
@@ -830,7 +830,7 @@ export interface BillboardSpriteHandle {
 export function addBillboardSprite(system: BillboardSpriteSystem, init: BillboardSpriteInit): BillboardSpriteHandle;
 export function updateBillboardSprite(handle: BillboardSpriteHandle, patch: Partial<BillboardSpriteInit>): void;
 export function removeBillboardSprite(handle: BillboardSpriteHandle): void;
-export function setBillboardSpriteHandleFrameIndex(handle: BillboardSpriteHandle, frame: number): void;
+export function setBillboardSpriteFrame(handle: BillboardSpriteHandle, frame: number): void;
 export function getBillboardSpriteHandleIndex(handle: BillboardSpriteHandle): number;
 export function isBillboardSpriteHandleAlive(handle: BillboardSpriteHandle): boolean;
 
@@ -1731,6 +1731,8 @@ parented to a moving platform, owns animation state).
 
 The handle modules live in separate files so that scenes that only use the
 Index API never load handle code (see **Tree-shaking** below).
+Holding a handle intentionally keeps its owning layer/system reachable for GC
+for as long as the handle itself remains reachable.
 
 ### Stable IDs (`idToIndex` / `indexToId`)
 

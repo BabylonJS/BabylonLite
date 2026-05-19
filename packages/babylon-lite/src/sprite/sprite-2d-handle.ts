@@ -66,9 +66,13 @@ function onRemoveIndex(state: Sprite2DHandleState, index: number, last: number):
     if (removedId !== 0) {
         state.idToIndex.delete(removedId);
     }
-    if (index !== last && movedId !== 0) {
-        state.idToIndex.set(movedId, index);
-        state.indexToId[index] = movedId;
+    if (index !== last) {
+        if (movedId !== 0) {
+            state.idToIndex.set(movedId, index);
+        }
+        if (index < state.indexToId.length) {
+            state.indexToId[index] = movedId;
+        }
     } else if (index < state.indexToId.length) {
         state.indexToId[index] = 0;
     }
@@ -106,7 +110,6 @@ function requireIndex(handle: Sprite2DHandle, caller: string): number {
 export function addSprite2D(layer: Sprite2DLayer, props: Sprite2DProps): Sprite2DHandle {
     const index = addSprite2DIndex(layer, props);
     const state = getOrCreateState(layer);
-    ensureIndexCapacity(layer, state);
     const id = allocateId(state);
     state.idToIndex.set(id, index);
     state.indexToId[index] = id;
@@ -125,8 +128,8 @@ export function removeSprite2D(handle: Sprite2DHandle): void {
     removeSprite2DIndex(handle.layer, index);
 }
 
-export function setSprite2DHandleFrameIndex(handle: Sprite2DHandle, frame: number): void {
-    setSprite2DFrameIndex(handle.layer, requireIndex(handle, "setSprite2DHandleFrameIndex"), frame);
+export function setSprite2DFrame(handle: Sprite2DHandle, frame: number): void {
+    setSprite2DFrameIndex(handle.layer, requireIndex(handle, "setSprite2DFrame"), frame);
 }
 
 export function getSprite2DHandleIndex(handle: Sprite2DHandle): number {

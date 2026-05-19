@@ -7,12 +7,20 @@ import {
     getBillboardSpriteHandleIndex,
     isBillboardSpriteHandleAlive,
     removeBillboardSprite,
+    setBillboardSpriteFrame,
     updateBillboardSprite,
 } from "../../packages/babylon-lite/src/sprite/billboard-sprite-handle";
 import type { SpriteAtlas } from "../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
 import type { Sprite2DLayer } from "../../packages/babylon-lite/src/sprite/sprite-2d";
 import { addSprite2DIndex, clearSprite2DLayer, createSprite2DLayer, removeSprite2DIndex } from "../../packages/babylon-lite/src/sprite/sprite-2d";
-import { addSprite2D, getSprite2DHandleIndex, isSprite2DHandleAlive, removeSprite2D, updateSprite2D } from "../../packages/babylon-lite/src/sprite/sprite-2d-handle";
+import {
+    addSprite2D,
+    getSprite2DHandleIndex,
+    isSprite2DHandleAlive,
+    removeSprite2D,
+    setSprite2DFrame,
+    updateSprite2D,
+} from "../../packages/babylon-lite/src/sprite/sprite-2d-handle";
 import type { Texture2D } from "../../packages/babylon-lite/src/texture/texture-2d";
 
 interface WithOptionalHandleState {
@@ -76,6 +84,12 @@ describe("Sprite2DHandle", () => {
         updateSprite2D(last, { positionPx: [300, 4] });
         expect(layer._instanceData[0]).toBe(300);
         expect(layer._instanceData[1]).toBe(4);
+
+        setSprite2DFrame(last, 1);
+        expect(layer._instanceData[4]).toBe(0.25);
+        expect(layer._instanceData[5]).toBe(0);
+        expect(layer._instanceData[6]).toBe(0.5);
+        expect(layer._instanceData[7]).toBe(0.25);
     });
 
     it("supports depth-hosted Sprite2D layers with the same stable ids", () => {
@@ -112,6 +126,7 @@ describe("Sprite2DHandle", () => {
         removeSprite2D(middle);
         expect(layer.count).toBe(2);
 
+        clearSprite2DLayer(layer);
         clearSprite2DLayer(layer);
         expect(isSprite2DHandleAlive(first)).toBe(false);
         expect(isSprite2DHandleAlive(last)).toBe(false);
@@ -153,6 +168,12 @@ describe("BillboardSpriteHandle", () => {
         expect(system._instanceData[base]).toBe(300);
         expect(system._instanceData[base + 1]).toBe(4);
         expect(system._instanceData[base + 2]).toBe(5);
+
+        setBillboardSpriteFrame(last, 1);
+        expect(system._instanceData[base + 5]).toBe(0.25);
+        expect(system._instanceData[base + 6]).toBe(0);
+        expect(system._instanceData[base + 7]).toBe(0.5);
+        expect(system._instanceData[base + 8]).toBe(0.25);
     });
 
     it("removes billboards by handle and invalidates handles on clear", () => {
@@ -171,6 +192,7 @@ describe("BillboardSpriteHandle", () => {
         removeBillboardSprite(middle);
         expect(system.count).toBe(2);
 
+        clearBillboardSprites(system);
         clearBillboardSprites(system);
         expect(isBillboardSpriteHandleAlive(first)).toBe(false);
         expect(isBillboardSpriteHandleAlive(last)).toBe(false);

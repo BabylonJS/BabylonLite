@@ -425,10 +425,10 @@ export function clearSprite2DLayer(layer: Sprite2DLayer): void {
     const count = layer.count;
     layer._dirtyMin = 0;
     layer._dirtyMax = 0;
+    layer._handleHooks?.clear();
     if (count === 0) {
         return;
     }
-    layer._handleHooks?.clear();
     layer._savedSize.fill(0, 0, count * SAVED_SIZE_FLOATS_PER_SPRITE);
     setSprite2DCount(layer, 0);
     layer._version = (layer._version + 1) | 0;

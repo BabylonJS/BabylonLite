@@ -66,9 +66,13 @@ function onRemoveIndex(state: BillboardHandleState, index: number, last: number)
     if (removedId !== 0) {
         state.idToIndex.delete(removedId);
     }
-    if (index !== last && movedId !== 0) {
-        state.idToIndex.set(movedId, index);
-        state.indexToId[index] = movedId;
+    if (index !== last) {
+        if (movedId !== 0) {
+            state.idToIndex.set(movedId, index);
+        }
+        if (index < state.indexToId.length) {
+            state.indexToId[index] = movedId;
+        }
     } else if (index < state.indexToId.length) {
         state.indexToId[index] = 0;
     }
@@ -106,7 +110,6 @@ function requireIndex(handle: BillboardSpriteHandle, caller: string): number {
 export function addBillboardSprite(system: BillboardSpriteSystem, init: BillboardSpriteInit): BillboardSpriteHandle {
     const index = addBillboardSpriteIndex(system, init);
     const state = getOrCreateState(system);
-    ensureIndexCapacity(system, state);
     const id = allocateId(state);
     state.idToIndex.set(id, index);
     state.indexToId[index] = id;
@@ -125,8 +128,8 @@ export function removeBillboardSprite(handle: BillboardSpriteHandle): void {
     removeBillboardSpriteIndex(handle.system, index);
 }
 
-export function setBillboardSpriteHandleFrameIndex(handle: BillboardSpriteHandle, frame: number): void {
-    setBillboardSpriteFrameIndex(handle.system, requireIndex(handle, "setBillboardSpriteHandleFrameIndex"), frame);
+export function setBillboardSpriteFrame(handle: BillboardSpriteHandle, frame: number): void {
+    setBillboardSpriteFrameIndex(handle.system, requireIndex(handle, "setBillboardSpriteFrame"), frame);
 }
 
 export function getBillboardSpriteHandleIndex(handle: BillboardSpriteHandle): number {

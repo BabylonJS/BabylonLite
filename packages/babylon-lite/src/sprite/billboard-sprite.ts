@@ -344,10 +344,10 @@ export function clearBillboardSprites(system: BillboardSpriteSystem): void {
     const count = system.count;
     system._dirtyMin = 0;
     system._dirtyMax = 0;
+    system._handleHooks?.clear();
     if (count === 0) {
         return;
     }
-    system._handleHooks?.clear();
     system._savedSize.fill(0, 0, count * BILLBOARD_SAVED_SIZE_FLOATS_PER_SPRITE);
     setBillboardCount(system, 0);
     system._version = (system._version + 1) | 0;
