@@ -13,7 +13,7 @@ import type { MaterialVariantData } from "./loader-gltf/material-variants.js";
 export interface AssetContainer {
     /** Scene entities. glTF: [root TransformNode]. .babylon: root nodes + lights. */
     entities: Array<SceneNode | LightBase>;
-    /** Animation groups from the file. addToScene() registers their per-frame tick automatically. */
+    /** Animation groups from the file. addToScene() registers them with the scene-owned AnimationManager by default. */
     animationGroups?: AnimationGroup[];
     /** Scene background color declared in the file. addToScene() applies it to scene.clearColor. */
     clearColor?: GPUColorDict;

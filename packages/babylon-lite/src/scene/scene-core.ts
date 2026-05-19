@@ -261,11 +261,6 @@ export function addDeferredSceneRenderables(
     });
 }
 
-/**
- * Add an entity (mesh, light, camera, transform node, shadow generator, or asset container)
- * to the scene. Optional scene-hosted systems such as depth-hosted sprites expose their own
- * opt-in add functions so mesh-only scenes do not pay feature-specific routing bytes here.
- */
 export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camera | ShadowGenerator | TransformNode | AssetContainer): void {
     const ctx = scene as SceneContextInternal;
     // AssetContainer from loadGltf / loadBabylon — process each field present

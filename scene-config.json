@@ -821,5 +821,86 @@
         "maxRawKB": 65,
         "description": "Loads small_hornedlizard.compressed.ply (chunked PLY + element sh) via loadSplat(); SH rendering through dynamic-imported pipeline.",
         "tags": ["gaussian-splatting", "ply", "compressed", "sh"]
+    },
+    {
+        "id": 150,
+        "slug": "scene150-manual-x-slide",
+        "name": "Scene 150 — Manual X Slide Animation",
+        "maxMad": 0.08,
+        "maxRawKB": 57,
+        "description": "Standalone AnimationManager drives a manual position.x float track matching Babylon.js beginDirectAnimation.",
+        "tags": ["std", "procedural", "anim"]
+    },
+    {
+        "id": 151,
+        "slug": "scene151-manual-transform",
+        "name": "Scene 151 — Manual Transform Animation",
+        "maxMad": 0.02,
+        "maxRawKB": 57,
+        "description": "Standalone AnimationManager drives position, scaling, and rotationQuaternion tracks on one manual transform clip.",
+        "tags": ["std", "procedural", "anim"]
+    },
+    {
+        "id": 152,
+        "slug": "scene152-gltf-manager",
+        "name": "Scene 152 — Unified AnimationManager",
+        "maxMad": 0.02,
+        "maxRawKB": 90,
+        "description": "One explicit AnimationManager drives a glTF shark skeleton group and a manual camera orbit property group.",
+        "tags": ["pbr", "gltf", "anim"]
+    },
+    {
+        "id": 153,
+        "slug": "scene153-autonomous-manager",
+        "name": "Scene 153 — Autonomous AnimationManager",
+        "maxMad": 0.02,
+        "maxRawKB": 16,
+        "description": "Standalone AnimationManager animates a plain object and draws to a 2D canvas without a Lite scene or engine.",
+        "tags": ["anim", "standalone"]
+    },
+    {
+        "id": 154,
+        "slug": "scene154-step-time-animation",
+        "name": "Scene 154 - Step Time Animation",
+        "maxMad": 0.02,
+        "maxRawKB": 58,
+        "description": "Manual property animation uses second-based keyframes and STEP interpolation, matching Babylon.js AnimationKeyInterpolation.STEP.",
+        "tags": ["std", "procedural", "anim"]
+    },
+    {
+        "id": 155,
+        "slug": "scene155-manual-weighted-blend",
+        "name": "Scene 155 — Manual Weighted Animation Blend",
+        "maxMad": 0.02,
+        "maxRawKB": 60,
+        "description": "Two manual property animation groups blend weighted contributions into the same position.x property.",
+        "tags": ["std", "procedural", "anim"]
+    },
+    {
+        "id": 156,
+        "slug": "scene156-manual-cross-fade",
+        "name": "Scene 156 — Manual Cross-Fade Animation",
+        "maxMad": 0.02,
+        "maxRawKB": 61,
+        "description": "Two manual property animation groups cross-fade by duration-driven weight transitions.",
+        "tags": ["std", "procedural", "anim"]
+    },
+    {
+        "id": 157,
+        "slug": "scene157-gltf-weighted-blend",
+        "name": "Scene 157 — glTF Weighted Animation Blend",
+        "maxMad": 0.02,
+        "maxRawKB": 96,
+        "description": "One AnimationManager blends Xbot walk and run glTF animation groups with equal weights before a single skeleton upload.",
+        "tags": ["pbr", "gltf", "anim"]
+    },
+    {
+        "id": 158,
+        "slug": "scene158-additive-animation-blend",
+        "name": "Scene 158 — Additive Animation Blend",
+        "maxMad": 0.02,
+        "maxRawKB": 98,
+        "description": "Xbot idle base animation blends with a full-weight additive sad pose.",
+        "tags": ["pbr", "gltf", "anim"]
     }
 ]
