@@ -1,0 +1,45 @@
+{
+    "name": "@babylon-lite/thin-gl",
+    "version": "0.1.0",
+    "type": "module",
+    "main": "./src/index.ts",
+    "types": "./src/index.ts",
+    "sideEffects": false,
+    "exports": {
+        ".": {
+            "import": "./src/index.ts",
+            "types": "./src/index.ts"
+        },
+        "./html-texture": {
+            "import": "./src/webgl-html-texture.ts",
+            "types": "./src/webgl-html-texture.ts"
+        }
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "vite build",
+        "build:prod": "vite build --mode prod",
+        "test": "vitest run"
+    },
+    "publishConfig": {
+        "main": "./dist/index.js",
+        "types": "./dist/index.d.ts",
+        "exports": {
+            ".": {
+                "import": "./dist/index.js",
+                "types": "./dist/index.d.ts"
+            },
+            "./html-texture": {
+                "import": "./dist/webgl-html-texture.js",
+                "types": "./dist/webgl-html-texture.d.ts"
+            }
+        }
+    },
+    "devDependencies": {
+        "typescript": "^5.7.0",
+        "vite": "^6.0.0",
+        "vite-plugin-dts": "^4.5.4"
+    }
+}
