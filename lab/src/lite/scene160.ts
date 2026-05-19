@@ -21,7 +21,7 @@ async function main(): Promise<void> {
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
     const engine = await createEngine(canvas);
     const scene = createSceneContext(engine);
-    scene.clearColor = { r: 0.2, g: 0.2, b: 0.3, a: 1 };
+    scene.clearColor = { r: 51 / 255, g: 51 / 255, b: 76 / 255, a: 1 };
 
     const camera = createArcRotateCamera(-Math.PI / 2, Math.PI / 2, 4.0, { x: 0, y: 0, z: 0 });
     camera.nearPlane = 0.1;

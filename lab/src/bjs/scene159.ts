@@ -28,7 +28,7 @@ void main(void) {
     await engine.initAsync();
 
     const scene = new Scene(engine);
-    scene.clearColor = new Color4(0.2, 0.2, 0.3, 1);
+    scene.clearColor = new Color4(51 / 255, 51 / 255, 76 / 255, 1);
 
     const camera = new ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 2.25, 4.2, Vector3.Zero(), scene);
     camera.minZ = 0.1;
