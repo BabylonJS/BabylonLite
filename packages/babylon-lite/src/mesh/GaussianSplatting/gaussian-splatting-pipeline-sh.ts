@@ -26,15 +26,16 @@
  *  so Lite reproduces the BJS SH direction by computing
  *  `inverseMat3(worldRot) · (worldPos − eye)` and then negating `.y`. */
 
-import type { EngineContextInternal, EngineContext } from "../engine/engine.js";
-import type { SceneContext } from "../scene/scene-core.js";
-import type { Renderable, DrawBinding } from "../render/renderable.js";
-import type { RenderTargetSignature } from "../engine/render-target.js";
-import { targetSignatureKey } from "../engine/render-target.js";
-import { getViewMatrix, getProjectionMatrix, getCameraPosition } from "../camera/camera.js";
-import { getSceneBindGroupLayout } from "../render/scene-helpers.js";
-import { getRenderTargetSize } from "../engine/engine.js";
-import { disposeGaussianSplattingMesh, type GaussianSplattingMesh } from "./gaussian-splatting-mesh.js";
+import type { EngineContextInternal, EngineContext } from "../../engine/engine.js";
+import type { SceneContext } from "../../scene/scene-core.js";
+import type { Renderable, DrawBinding } from "../../render/renderable.js";
+import type { RenderTargetSignature } from "../../engine/render-target.js";
+import { targetSignatureKey } from "../../engine/render-target.js";
+import { getViewMatrix, getProjectionMatrix, getCameraPosition } from "../../camera/camera.js";
+import { getSceneBindGroupLayout } from "../../render/scene-helpers.js";
+import { getRenderTargetSize } from "../../engine/engine.js";
+import { disposeGaussianSplattingMesh, type GaussianSplattingMesh, type GsShaderFragment } from "./gaussian-splatting-mesh.js";
+import { applyGsFragments } from "./gaussian-splatting-pipeline.js";
 
 interface PipelineEntry {
     pipeline: GPURenderPipeline;
@@ -45,7 +46,7 @@ interface PipelineEntry {
 // shDegree → number of rgba32uint SH textures: 1→1, 2→2, 3→3, 4→5.
 const SH_TEXTURE_COUNT = [0, 1, 2, 3, 5];
 
-let _cache: { device: GPUDevice; modules: Map<number, GPUShaderModule>; entries: Map<string, PipelineEntry> } | null = null;
+let _cache: { device: GPUDevice; modules: Map<string, GPUShaderModule>; entries: Map<string, PipelineEntry> } | null = null;
 
 /** Build the WGSL source for a given SH degree (1..4). Mirrors the BJS
  *  preprocessor-driven shader structure: declares only the SH textures used
@@ -275,27 +276,35 @@ fn vs(@location(0) corner: vec2<f32>, @location(1) splatIndex: f32) -> VOut {
   return out;
 }
 
+/*GS_FRAGMENT_DEFINITIONS*/
 @fragment
 fn fs(in: VOut) -> @location(0) vec4<f32> {
+  /*GS_FRAGMENT_MAIN_BEGIN*/
   let A = -dot(in.vPos, in.vPos);
   if (A < -4.0) { discard; }
   let B = exp(A) * in.vColor.a;
-  return vec4<f32>(in.vColor.rgb, B);
+  var finalColor = vec4<f32>(in.vColor.rgb, B);
+  /*GS_FRAGMENT_BEFORE_FRAGCOLOR*/
+  /*GS_FRAGMENT_MAIN_END*/
+  return finalColor;
 }
 `;
 }
 
-function getOrCreateShPipeline(engine: EngineContextInternal, sig: RenderTargetSignature, shDegree: number): PipelineEntry {
+function getOrCreateShPipeline(engine: EngineContextInternal, sig: RenderTargetSignature, shDegree: number, fragments?: readonly GsShaderFragment[]): PipelineEntry {
     const device = engine.device;
     if (!_cache || _cache.device !== device) {
         _cache = { device, modules: new Map(), entries: new Map() };
     }
-    let module = _cache.modules.get(shDegree);
+    const fragKey = fragments && fragments.length > 0 ? "|" + fragments.map((f) => f.id).join(",") : "";
+    let module = _cache.modules.get(shDegree + fragKey);
     if (!module) {
-        module = device.createShaderModule({ code: buildShShaderSource(shDegree) });
-        _cache.modules.set(shDegree, module);
+        module = device.createShaderModule({
+            code: fragments && fragments.length > 0 ? applyGsFragments(buildShShaderSource(shDegree), fragments) : buildShShaderSource(shDegree),
+        });
+        _cache.modules.set(shDegree + fragKey, module);
     }
-    const key = `${targetSignatureKey(sig)}|sh${shDegree}`;
+    const key = `${targetSignatureKey(sig)}|sh${shDegree}${fragKey}`;
     let entry = _cache.entries.get(key);
     if (entry) {
         return entry;
@@ -353,7 +362,7 @@ function getOrCreateShPipeline(engine: EngineContextInternal, sig: RenderTargetS
 /** Build the Renderable for a GaussianSplattingMesh with SH coefficients.
  *  Mirrors `buildGaussianSplattingRenderable` but adds eyePosition to the UBO
  *  and binds the SH textures. */
-export function buildGaussianSplattingRenderableSH(scene: SceneContext, mesh: GaussianSplattingMesh): Renderable {
+export function buildGaussianSplattingRenderableSH(scene: SceneContext, mesh: GaussianSplattingMesh, fragments?: readonly GsShaderFragment[]): Renderable {
     const engine = scene.engine as EngineContextInternal;
     const device = engine.device;
 
@@ -476,7 +485,7 @@ export function buildGaussianSplattingRenderableSH(scene: SceneContext, mesh: Ga
         order: 200,
         isTransparent: true,
         bind(eng: EngineContext, sig: RenderTargetSignature): DrawBinding {
-            const entry = getOrCreateShPipeline(eng as EngineContextInternal, sig, mesh.shDegree);
+            const entry = getOrCreateShPipeline(eng as EngineContextInternal, sig, mesh.shDegree, fragments);
             const bindGroup = getBindGroup(entry);
             return {
                 renderable: r,
@@ -501,7 +510,7 @@ export function buildGaussianSplattingRenderableSH(scene: SceneContext, mesh: Ga
  *  coefficients. Reads `mesh.shDegree` (set at mesh construction), creates
  *  the `rgba32uint` SH textures (1..5 depending on degree), patches
  *  `mesh._gs.shTextures` in place, and installs the SH renderable. */
-export function attachGaussianSplattingMeshSH(scene: SceneContext, mesh: GaussianSplattingMesh, shFlat: Uint8Array): void {
+export function attachGaussianSplattingMeshSH(scene: SceneContext, mesh: GaussianSplattingMesh, shFlat: Uint8Array, fragments?: readonly GsShaderFragment[]): void {
     const engine = scene.engine as EngineContextInternal;
     const device = engine.device;
     const shDegree = mesh.shDegree;
@@ -541,6 +550,6 @@ export function attachGaussianSplattingMeshSH(scene: SceneContext, mesh: Gaussia
     (mesh._gs as { shTextures: GPUTexture[]; shViews: GPUTextureView[] }).shViews = views;
 
     const ctx = scene as unknown as { _renderables: Renderable[]; _disposables: (() => void)[] };
-    ctx._renderables.push(buildGaussianSplattingRenderableSH(scene, mesh));
+    ctx._renderables.push(buildGaussianSplattingRenderableSH(scene, mesh, fragments));
     ctx._disposables.push(() => disposeGaussianSplattingMesh(mesh));
 }

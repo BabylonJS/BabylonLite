@@ -899,6 +899,24 @@
         "skipPerf": true
     },
     {
+        "id": 125,
+        "slug": "scene125-gs-bake-transform",
+        "name": "Scene 125 — Gaussian Splatting bakeCurrentTransformIntoVertices",
+        "maxMad": 1,
+        "maxRawKB": 37,
+        "description": "Loads Halo_Believe.splat, applies position/rotation/scale, calls bakeCurrentTransformIntoVertices(), verifies rendering.",
+        "tags": ["gaussian-splatting", "bake-transform"]
+    },
+    {
+        "id": 126,
+        "slug": "scene126-gs-material-plugin",
+        "name": "Scene 126 — Gaussian Splatting Material Plugin",
+        "maxMad": 0.5,
+        "maxRawKB": 35,
+        "description": "Procedurally generates 10k splats and applies a GsShaderFragment that overrides fragment output at GS_FRAGMENT_MAIN_END.",
+        "tags": ["gaussian-splatting", "material-plugin"]
+    },
+    {
         "id": 150,
         "slug": "scene150-manual-x-slide",
         "name": "Scene 150 — Manual X Slide Animation",

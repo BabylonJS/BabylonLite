@@ -20,30 +20,31 @@ import type { EngineContextInternal } from "../engine/engine.js";
 import type { SceneContext } from "../scene/scene-core.js";
 import { isPly, isPlyCompressedOrSH, convertPlyToSplat } from "./splat-ply-parser.js";
 import { buildSplatGeometry, type ParsedSplat } from "./splat-data.js";
-import type { GaussianSplattingMesh } from "../mesh/gaussian-splatting-mesh.js";
-import { createGaussianSplattingMesh } from "../mesh/gaussian-splatting-mesh.js";
-import { attachGaussianSplattingMesh } from "../mesh/gaussian-splatting-pipeline.js";
+import type { GaussianSplattingMesh } from "../mesh/GaussianSplatting/gaussian-splatting-mesh.js";
+import { createGaussianSplattingMesh } from "../mesh/GaussianSplatting/gaussian-splatting-mesh.js";
+import { attachGaussianSplattingMesh } from "../mesh/GaussianSplatting/gaussian-splatting-pipeline.js";
+import type { GsShaderFragment } from "../mesh/GaussianSplatting/gaussian-splatting-mesh.js";
 import SplatSortWorker from "./splat-sort-worker.ts?worker&inline";
 
 /** Build the mesh + renderable from a parsed splat asset. Exported so SOG/SPZ
  *  loaders can share the same plumbing (worker, pipeline attach, SH dispatch). */
-export async function attachParsedSplat(scene: SceneContext, name: string, parsed: ParsedSplat): Promise<GaussianSplattingMesh> {
+export async function attachParsedSplat(scene: SceneContext, name: string, parsed: ParsedSplat, fragments?: readonly GsShaderFragment[]): Promise<GaussianSplattingMesh> {
     const geom = buildSplatGeometry(parsed.data);
     const worker = new SplatSortWorker({ name: "babylon-lite-splat-sort" });
     const eng = scene.engine as EngineContextInternal;
     const mesh = createGaussianSplattingMesh(eng, name, geom, worker, parsed);
 
     if (parsed.sh && parsed.shDegree && parsed.shDegree > 0) {
-        const { attachGaussianSplattingMeshSH } = await import("../mesh/gaussian-splatting-pipeline-sh.js");
-        attachGaussianSplattingMeshSH(scene, mesh, parsed.sh);
+        const { attachGaussianSplattingMeshSH } = await import("../mesh/GaussianSplatting/gaussian-splatting-pipeline-sh.js");
+        attachGaussianSplattingMeshSH(scene, mesh, parsed.sh, fragments);
     } else {
-        attachGaussianSplattingMesh(scene, mesh);
+        attachGaussianSplattingMesh(scene, mesh, fragments);
     }
     return mesh;
 }
 
 /** Fetch + parse a Gaussian-splat asset and attach it to `scene`. */
-export async function loadSplat(scene: SceneContext, url: string): Promise<GaussianSplattingMesh> {
+export async function loadSplat(scene: SceneContext, url: string, fragments?: readonly GsShaderFragment[]): Promise<GaussianSplattingMesh> {
     const response = await fetch(url);
     if (!response.ok) {
         throw new Error(`loadSplat: HTTP ${response.status} for ${url}`);
@@ -67,5 +68,5 @@ export async function loadSplat(scene: SceneContext, url: string): Promise<Gauss
     }
 
     const name = url.substring(url.lastIndexOf("/") + 1) || "splat";
-    return await attachParsedSplat(scene, name, parsed);
+    return await attachParsedSplat(scene, name, parsed, fragments);
 }
