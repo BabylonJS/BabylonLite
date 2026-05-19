@@ -29,7 +29,7 @@ variables:
     # Curated performance-regression suite. Keep this to representative, high-signal scenes
     # so BrowserStack perf validation stays actionable and finishes in a reasonable time.
     - name: PERF_SCENES
-      value: "1,4,7,9,16,17,19,20,22,28,35,37,54,66,72,73,110,111,116,120"
+      value: "1,4,7,9,16,17,19,20,22,24,28,35,37,54,66,72,73,110,111,120"
 
 stages:
     - stage: CI
@@ -240,10 +240,11 @@ stages:
                       const selected = new Set(process.env.PERF_SCENES.split(',').map((s) => Number(s.trim())).filter(Boolean));
                       const perfScenes = scenes.filter((s) => selected.has(s.id));
                       for (const s of perfScenes) {
+                        if (!fs.existsSync(path.join('lab','public','bundle-baseline','scene'+s.id+'.js'))) continue;
                         const html = '<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000}canvas{width:100%;height:100%;display:block}</style></head><body><canvas id=\"renderCanvas\"></canvas><script src=\"/loader.js\"></script><script type=\"module\" src=\"/bundle-baseline/scene'+s.id+'.js\"></script></body></html>';
                         fs.writeFileSync(path.join('lab','bundle-baseline-scene'+s.id+'.html'), html);
                       }
-                      console.log('Generated ' + perfScenes.length + ' baseline HTML pages');
+                      console.log('Generated baseline HTML pages for cached baseline bundles');
                       "
                   displayName: "Generate baseline HTML pages"
                   condition: eq(variables.BASELINE_CACHE_HIT, 'true')

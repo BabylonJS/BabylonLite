@@ -17,6 +17,12 @@ const WORKTREE_DIR = resolve(ROOT, ".perf-baseline-worktree");
 const BASELINE_OUT = resolve(ROOT, "lab/public/bundle-baseline");
 const BASELINE_HTML_DIR = resolve(ROOT, "lab");
 
+interface SceneConfigEntry {
+    id: number;
+    slug: string;
+    name: string;
+}
+
 function run(cmd: string, opts?: { cwd?: string; env?: Record<string, string> }): string {
     return execSync(cmd, {
         encoding: "utf-8",
@@ -115,18 +121,47 @@ try {
 // comparisons focused on runtime source changes, not historical bundler bugs.
 cpSync(resolve(ROOT, "scripts/bundle-scenes-core.ts"), resolve(WORKTREE_DIR, "scripts/bundle-scenes-core.ts"));
 
-console.log("\nBuilding bundle scenes from baseline (Lite only, skip measurement)...");
-run("pnpm build:bundle-scenes", {
-    cwd: WORKTREE_DIR,
-    env: { SKIP_BJS: "true", SKIP_MEASURE: "true" },
-});
+const baselineScenes: SceneConfigEntry[] = JSON.parse(readFileSync(resolve(WORKTREE_DIR, "scene-config.json"), "utf-8"));
+const baselineSceneKeys = new Set(baselineScenes.map((scene) => `scene${scene.id}`));
+const requestedBundleScenes = process.env.BUNDLE_SCENES?.split(",")
+    .map((scene) => scene.trim())
+    .filter(Boolean);
+const baselineBundleScenes = requestedBundleScenes?.filter(
+    (scene) => baselineSceneKeys.has(scene) && existsSync(resolve(WORKTREE_DIR, `lab/src/lite/${scene}.ts`))
+);
+
+if (requestedBundleScenes) {
+    const skippedScenes = requestedBundleScenes.filter((scene) => !baselineBundleScenes!.includes(scene));
+    if (skippedScenes.length) {
+        console.log(`Skipping ${skippedScenes.length} scene(s) missing from baseline ${baselineRef}: ${skippedScenes.join(", ")}`);
+    }
+}
+
+const builtBaselineSceneIds = new Set(
+    (baselineBundleScenes ?? baselineScenes.map((scene) => `scene${scene.id}`)).map((scene) => Number(scene.replace(/^scene/, ""))).filter(Number.isFinite)
+);
+
+if (builtBaselineSceneIds.size > 0) {
+    const buildEnv: Record<string, string> = { SKIP_BJS: "true", SKIP_MEASURE: "true" };
+    if (baselineBundleScenes) {
+        buildEnv.BUNDLE_SCENES = baselineBundleScenes.join(",");
+    }
+
+    console.log("\nBuilding bundle scenes from baseline (Lite only, skip measurement)...");
+    run("pnpm build:bundle-scenes", {
+        cwd: WORKTREE_DIR,
+        env: buildEnv,
+    });
+} else {
+    console.log(`\nNo requested scenes exist in baseline ${baselineRef}; baseline build skipped.`);
+}
 
 // ── 4. Copy baseline bundles to lab/public/bundle-baseline/ ────────
 
 console.log("\nCopying baseline bundles...");
 const worktreeBundleDir = resolve(WORKTREE_DIR, "lab/public/bundle");
 
-if (!existsSync(worktreeBundleDir)) {
+if (builtBaselineSceneIds.size > 0 && !existsSync(worktreeBundleDir)) {
     console.error("Error: baseline bundle build did not produce lab/public/bundle/");
     process.exit(1);
 }
@@ -136,19 +171,17 @@ if (existsSync(BASELINE_OUT)) {
     rmSync(BASELINE_OUT, { recursive: true });
 }
 mkdirSync(BASELINE_OUT, { recursive: true });
-cpSync(worktreeBundleDir, BASELINE_OUT, { recursive: true });
+if (builtBaselineSceneIds.size > 0) {
+    cpSync(worktreeBundleDir, BASELINE_OUT, { recursive: true });
+}
 
 // ── 5. Generate HTML loader pages ──────────────────────────────────
 
 console.log("Generating baseline HTML pages...");
-interface SceneConfigEntry {
-    id: number;
-    slug: string;
-    name: string;
-}
 const scenes: SceneConfigEntry[] = JSON.parse(readFileSync(resolve(ROOT, "scene-config.json"), "utf-8"));
 
-for (const scene of scenes) {
+const htmlScenes = scenes.filter((scene) => builtBaselineSceneIds.has(scene.id));
+for (const scene of htmlScenes) {
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -183,4 +216,4 @@ try {
 }
 
 console.log(`\n✓ Baseline bundles from ${baselineRef} (${baselineSha.slice(0, 8)}) ready at ${BASELINE_OUT}`);
-console.log(`✓ HTML pages: lab/bundle-baseline-scene{1..${scenes.length}}.html`);
+console.log(`✓ HTML pages generated for ${htmlScenes.length} baseline scene(s)`);
