@@ -21,13 +21,13 @@ import {
     LAYER_UBO_BYTES,
     SHARED_SPRITE_INDEX_DATA,
     buildSpriteLayerUbo,
-    clearSpritePipelineCache,
     createSpriteInstanceBuffer,
     createSpriteLayerBindGroup,
     createSpritePipelineCache,
     ensureSpriteInstanceBuffer,
     getOrCreateSpritePipeline,
     getSpritePipelineCacheSize,
+    resetSpritePipelineCache,
     uploadSpriteInstances,
     writeSpriteLayerUboIfDirty,
 } from "./sprite-pipeline.js";
@@ -420,11 +420,12 @@ export function disposeSpriteRenderer(sr: SpriteRenderer): void {
     rr._layerGpu.clear();
     rr._visibleBundles.length = 0;
     rr._indexBuffer.destroy();
-    clearSpritePipelineCache(rr._pipelineCache);
+    resetSpritePipelineCache(rr._pipelineCache);
     rr.layers.length = 0;
 }
 
 /** @internal Test-only accessor for pipeline-cache size. */
 export function _spriteRendererPipelineCacheSize(sr: SpriteRenderer): number {
-    return getSpritePipelineCacheSize((sr as SpriteRendererInternal)._pipelineCache);
+    const rr = sr as SpriteRendererInternal;
+    return getSpritePipelineCacheSize(rr._pipelineCache, rr._engine.device);
 }

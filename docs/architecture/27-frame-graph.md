@@ -59,7 +59,7 @@ export interface FrameGraph {
 `build()` runs in two phases (mirroring the implicit shape of BJS' `frameGraph.buildAsync`):
 
 1. **Record.** For each task in execute order: clear `task._passes`, set `_currentProcessedTask = task`, call `task.record()`, then unset the cursor in `finally`. The cursor lets `addRenderPass(...)` inside `record()` associate a freshly-created `Pass` with the task that is currently recording.
-2. **Initialize.** For each task in execute order, for each pass: call `pass._initialize()`. This deferred initialization lets a pass safely reference resources allocated by *other* tasks (for example, an RTT whose color texture is built by an earlier task's `record()`).
+2. **Initialize.** For each task in execute order, for each pass: call `pass._initialize()`. This deferred initialization lets a pass safely reference resources allocated by _other_ tasks (for example, an RTT whose color texture is built by an earlier task's `record()`).
 
 `_currentProcessedTask` is `null` outside of phase 1; calling `addRenderPass(...)` outside `record()` throws.
 
@@ -78,10 +78,10 @@ export interface Task {
 
 Task lifecycle:
 
-| Method      | Called by                      | Purpose                                                                                                                                                                                                  |
-| ----------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Method      | Called by                      | Purpose                                                                                                                                                                                                |
+| ----------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `record()`  | `FrameGraph.build()` (phase 1) | Allocate/rebuild GPU resources, register `Pass` instances onto `_passes` (typically via `addRenderPass(fg, name)` and friends), and finalize anything that needs the final canvas / target size. Sync. |
-| `dispose()` | `FrameGraph.dispose()`         | Release task-owned GPU resources. Should call `_dispose()` on each owned pass.                                                                                                                           |
+| `dispose()` | `FrameGraph.dispose()`         | Release task-owned GPU resources. Should call `_dispose()` on each owned pass.                                                                                                                         |
 
 `RenderTask` is the primary scene-render implementation of `Task`, and `EffectRenderTask` uses the same task/pass contract for fullscreen RTT effects. The interface exists so future frame-graph work can add other ordered task types without changing `FrameGraph` itself, for example compute tasks, copy/resolve tasks, object-list tasks, or resource-transition/helper tasks.
 
@@ -106,11 +106,11 @@ export interface Pass {
 }
 ```
 
-| Method          | Called by                                | Purpose                                                                                                                                                                            |
-| --------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `_initialize()` | `FrameGraph.build()` (phase 2)           | Build any caches that need other tasks' RTs to already be allocated. `RenderPass` builds its `GPURenderPassDescriptor` here. May be a no-op for passes that don't need this stage. |
-| `_execute()`    | `_executeTask()` per frame               | Performs the concrete pass GPU work. Returns the number of draw calls issued (summed into the engine's draw counter).                                                              |
-| `_dispose()`    | The owning task's `dispose()`            | Free pass-owned GPU/CPU state. Idempotent.                                                                                                                                         |
+| Method          | Called by                      | Purpose                                                                                                                                                                            |
+| --------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `_initialize()` | `FrameGraph.build()` (phase 2) | Build any caches that need other tasks' RTs to already be allocated. `RenderPass` builds its `GPURenderPassDescriptor` here. May be a no-op for passes that don't need this stage. |
+| `_execute()`    | `_executeTask()` per frame     | Performs the concrete pass GPU work. Returns the number of draw calls issued (summed into the engine's draw counter).                                                              |
+| `_dispose()`    | The owning task's `dispose()`  | Free pass-owned GPU/CPU state. Idempotent.                                                                                                                                         |
 
 `addPassDependencies(pass, deps)` adds one or more `RenderTarget`s to `pass._dependencies` (`Set` semantics, idempotent). Lifted onto the base `Pass` (BJS keeps it on `FrameGraphRenderPass`) because it is a texture-graph-wide concept that future compute / copy / object-list passes will want without re-introducing per pass type. Today it is informational only; the upcoming texture-virtualization step will read it to compute lifetimes / aliasing.
 
@@ -144,10 +144,10 @@ A `RenderPass` brackets a single `encoder.beginRenderPass(...)` / `pass.end()` a
 
 User task code creates and configures passes through public actions:
 
-| Function                                                    | Purpose                                                                                                                                            |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `addRenderPass(target, name)`                               | Create a `RenderPass`, associate it with the currently-recording task (via `FrameGraph._currentProcessedTask`), push it onto `task._passes`, return it. Must be called from inside `Task.record()`. |
-| `addPassDependencies(pass, deps)`                           | Add one or more `RenderTarget`s the pass reads from (idempotent).                                                                                  |
+| Function                          | Purpose                                                                                                                                                                                             |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `addRenderPass(target, name)`     | Create a `RenderPass`, associate it with the currently-recording task (via `FrameGraph._currentProcessedTask`), push it onto `task._passes`, return it. Must be called from inside `Task.record()`. |
+| `addPassDependencies(pass, deps)` | Add one or more `RenderTarget`s the pass reads from (idempotent).                                                                                                                                   |
 
 Lower-level `setRenderPass*` helpers live beside the state they mutate: render-target / clear-state setters live in `frame-graph/render-pass.ts`, while generic pass callbacks (`setRenderPassExecuteFunc`, `setRenderPassBeforeExecute`) live in `frame-graph/pass.ts`. `setRenderPassClear(pass, clear, clearColor)` updates the clear/load flag and clear color together without allocating a state object. These helpers are intentionally **not** re-exported from the package today. Built-in tasks use `createRenderPass(...)`, which atomically creates the pass and appends it to `task._passes`, then configure it through the setters. That keeps the public action and helpers fully tree-shakable for scenes that only use built-in tasks. The setters become public the moment a user-defined task type needs them.
 
@@ -155,8 +155,6 @@ Lower-level `setRenderPass*` helpers live beside the state they mutate: render-t
 
 - **No shared `FrameGraphRenderContext`.** BJS routes the live render-pass encoder through a context object that's swapped between passes. In Lite, each `RenderPass` owns its descriptor and its base pass `_executeFunc(enc)` receives the live encoder directly. This keeps the surface flatter and avoids a per-pass indirection that costs bundle bytes for no gain at the current scale.
 - **No numeric `TextureHandle` indirection.** `pass._renderTarget` / `pass._renderTargetDepth` are concrete `RenderTarget` references, not handles into a texture manager. The full virtualization story (handles, lifetime/aliasing analysis, deferred allocation, MRT, history textures) is a deliberate future step. The handle layer will be a typed-parameter change at known call sites (`setRenderPassRenderTarget`, `setRenderPassRenderTargetDepth`, and `_initialize()`); the rest of the surface is shaped to absorb it without churn.
-
-
 
 Tasks execute in array order. There is no automatic dependency analysis; caller order is the contract.
 
@@ -290,7 +288,7 @@ At record/re-sync time, `RenderTask` converts renderables into `DrawBinding`s by
 const binding = renderable.bind(engine, targetSignature);
 ```
 
-During `record()`, the task also builds/refreshes its `RenderTarget`, stores an update context from the resolved dimensions, and registers its `RenderPass`. The task wires the pass's render target, before-execute preparation, and an `_executeFunc` closure that holds the per-pass-encoder body (set viewport / scissor, bind scene group 0, replay the cached opaque bundle, draw transmissive + transparent bindings):
+During `record()`, the task also builds/refreshes its `RenderTarget`, stores an update context from the resolved dimensions, and registers its `RenderPass`. The task wires the pass's render target, before-execute preparation, and an `_executeFunc` closure that holds the per-pass-encoder body (set viewport / scissor, bind scene group 0, replay the cached opaque bundle, draw direct + transparent bindings):
 
 ```typescript
 task._updateContext.targetWidth = rt._width;
@@ -304,27 +302,25 @@ setRenderPassExecuteFunc(pass, (enc) => executePassBody(task, enc));
 
 Bindings are partitioned into:
 
-| Bucket       | Renderable flags                    | Execution                                                      |
-| ------------ | ----------------------------------- | -------------------------------------------------------------- |
-| Opaque       | `!isTransparent && !isTransmissive` | Cached `GPURenderBundle`                                       |
-| Transmissive | `isTransmissive`                    | Direct draw after opaque                                       |
-| Transparent  | `isTransparent`                     | Direct draw after transmissive, sorted back-to-front per frame |
+| Bucket      | Renderable flags             | Execution                                                |
+| ----------- | ---------------------------- | -------------------------------------------------------- |
+| Opaque      | `!isTransparent && !_direct` | Cached `GPURenderBundle`                                 |
+| Direct      | `_direct`                    | Direct draw after opaque                                 |
+| Transparent | `isTransparent`              | Direct draw after direct, sorted back-to-front per frame |
 
-Opaque and transmissive buckets currently sort by `renderable.order`. Transparent is sorted by squared distance from the active pass camera and must not be pipeline-sorted.
+Opaque and direct buckets currently sort by `renderable.order`. Transparent is sorted by squared distance from the active pass camera and must not be pipeline-sorted.
 
 `DrawBinding.pipeline` is mandatory. The per-pass-encoder body owns `setPipeline()` and deduplicates consecutive bindings with the same pipeline before calling the binding's `draw()` closure.
 
 Before opening the pass each frame, the `RenderPass` before-execute hook installed by `RenderTask` runs pre-pass work outside the encoder:
 
 1. Auto-resync the renderable list if the scene's `_renderableVersion` has changed.
-2. Sort transparent bindings back-to-front from the active camera.
-3. Refresh the task's scene bind group (the scene-wide lights buffer can be resized after this task was first recorded).
-4. Write the per-task scene UBO, refresh the scene-wide lights UBO, and call `binding.update?.(_updateContext)` for opaque, transmissive, and transparent bindings. This refreshes dirty per-binding UBOs with the pass target dimensions while allowing opaque render bundles to stay cached.
+2. Refresh the task's scene bind group (the scene-wide lights buffer can be resized after this task was first recorded).
+3. Write the per-task scene UBO, refresh the scene-wide lights UBO, set `_updateContext._camera`, and call `binding.update?.(_updateContext)` for opaque, direct, and transparent bindings. This refreshes dirty per-binding UBOs with the pass target dimensions while allowing opaque render bundles to stay cached.
+4. Sort transparent bindings back-to-front from the active camera, after updates so renderables can refresh `_worldCenter` first.
 5. Mirror live `scene.clearColor` (auto-filled tasks) or `_config.clrColor` plus `_config.clr !== false` onto every owned pass — so the pass picks them up when patching its color attachment.
 
 Then the task iterates `_passes` calling `_execute()`. Each `RenderPass._execute()` patches the swapchain view + clearColor + loadOp, calls `beginRenderPass`, runs `executePassBody(task, enc)` (the closure captured at record time), and ends the pass.
-
-Before opening the pass each frame, `RenderPassTask` calls `binding.update?.(_updateContext)` for opaque, transmissive, and transparent bindings. This refreshes dirty per-binding UBOs with the pass target dimensions while allowing opaque render bundles to stay cached.
 
 ## Per-Pass Scene UBO
 
@@ -413,21 +409,21 @@ Fixed-size eager RTTs are not reallocated by graph rebuilds because their GPU te
 
 ## Babylon.js FrameGraph Mapping
 
-| Babylon.js concept             | Babylon Lite                                        |
-| ------------------------------ | --------------------------------------------------- |
-| Frame graph                    | Ordered `FrameGraph._tasks`                         |
-| Frame graph task               | `Task` (with `_passes: Pass[]`)                     |
-| `IFrameGraphPass`              | `Pass`                                              |
-| `FrameGraphRenderPass`         | `RenderPass` (no shared render context)             |
-| `frameGraph.addRenderPass`     | `addRenderPass(target, name)`                       |
-| `addDependencies`              | `addPassDependencies(pass, deps)` (lifted onto base)|
-| Render pass task               | `RenderTask`                                    |
-| Texture/resource handle        | Concrete `RenderTarget` for now                     |
-| Task record/build phase        | `Task.record()` via `FrameGraph.build()` (phase 1)  |
-| Pass post-record initialization| `Pass._initialize()` via `FrameGraph.build()` (phase 2) |
-| Per-frame execute phase        | `_executeTask()` → iterates `_passes` calling `_execute()` |
-| Render target texture          | `createRenderTargetTexture()`                       |
-| Pass-specific camera/scene UBO | `RenderTaskConfig.cam` + task-owned `_sceneUBO` |
+| Babylon.js concept              | Babylon Lite                                               |
+| ------------------------------- | ---------------------------------------------------------- |
+| Frame graph                     | Ordered `FrameGraph._tasks`                                |
+| Frame graph task                | `Task` (with `_passes: Pass[]`)                            |
+| `IFrameGraphPass`               | `Pass`                                                     |
+| `FrameGraphRenderPass`          | `RenderPass` (no shared render context)                    |
+| `frameGraph.addRenderPass`      | `addRenderPass(target, name)`                              |
+| `addDependencies`               | `addPassDependencies(pass, deps)` (lifted onto base)       |
+| Render pass task                | `RenderTask`                                               |
+| Texture/resource handle         | Concrete `RenderTarget` for now                            |
+| Task record/build phase         | `Task.record()` via `FrameGraph.build()` (phase 1)         |
+| Pass post-record initialization | `Pass._initialize()` via `FrameGraph.build()` (phase 2)    |
+| Per-frame execute phase         | `_executeTask()` → iterates `_passes` calling `_execute()` |
+| Render target texture           | `createRenderTargetTexture()`                              |
+| Pass-specific camera/scene UBO  | `RenderTaskConfig.cam` + task-owned `_sceneUBO`            |
 
 ## File Manifest
 

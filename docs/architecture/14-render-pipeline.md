@@ -16,6 +16,7 @@ This keeps the engine render loop material-agnostic while allowing the same `Ren
 export interface DrawUpdateContext {
     readonly targetWidth: number;
     readonly targetHeight: number;
+    readonly _camera?: Camera | null;
 }
 
 export interface DrawBinding {
@@ -30,6 +31,7 @@ export interface Renderable {
     readonly order: number;
     readonly isTransparent: boolean;
     readonly isTransmissive?: boolean;
+    readonly _direct?: boolean;
     readonly mesh?: Mesh;
     _sortDistance?: number;
     _worldCenter?: [number, number, number];
@@ -50,9 +52,7 @@ export interface MeshGroupBuildResult {
 
 `Renderable.bind(engine, target)` is the key split: material modules resolve the pipeline for the pass target once and return a `DrawBinding` closure. The `RenderTask` owns the scene bind group (group 0), so renderables never set bind group 0 themselves.
 
-`DrawBinding.update(context)` is called once per frame per binding before the render pass is opened. The context contains the current pass target dimensions (`targetWidth`, `targetHeight`) so bindings can refresh target-size-dependent UBOs without rebuilding their pipelines or bind groups. Mesh/material UBO updates that do not need the target dimensions still use this hook and version-guard their writes.
-
-`DrawBinding.update(context)` is called once per frame per binding before the render pass is opened. The context contains the current pass target dimensions (`targetWidth`, `targetHeight`) so bindings can refresh target-size-dependent UBOs without rebuilding their pipelines or bind groups. Mesh/material UBO updates that do not need the target dimensions still use this hook and version-guard their writes.
+`DrawBinding.update(context)` is called once per frame per binding before the render pass is opened. The context contains the current pass target dimensions (`targetWidth`, `targetHeight`) and the active pass camera (`_camera`) so bindings can refresh target-size-dependent UBOs or camera-sorted instance buffers without rebuilding their pipelines or bind groups. Mesh/material UBO updates that do not need the target dimensions still use this hook and version-guard their writes.
 
 ### Frame graph (`frame-graph/`)
 
@@ -127,13 +127,13 @@ startEngine/registerScene frame:
 
 At record/re-sync time, a render pass task partitions bindings into:
 
-| Bucket       | Source flag                         | Draw path                                                           |
-| ------------ | ----------------------------------- | ------------------------------------------------------------------- |
-| Opaque       | `!isTransparent && !isTransmissive` | Cached `GPURenderBundle` when visibility/version state is unchanged |
-| Transmissive | `isTransmissive`                    | Direct draw after opaque bundle                                     |
-| Transparent  | `isTransparent`                     | Direct draw, distance-sorted back-to-front per pass                 |
+| Bucket      | Source flag                  | Draw path                                                           |
+| ----------- | ---------------------------- | ------------------------------------------------------------------- |
+| Opaque      | `!isTransparent && !_direct` | Cached `GPURenderBundle` when visibility/version state is unchanged |
+| Direct      | `_direct`                    | Direct draw after opaque bundle                                     |
+| Transparent | `isTransparent`              | Direct draw, distance-sorted back-to-front per pass                 |
 
-Opaque and transmissive bindings are sorted by `renderable.order`. Transparent bindings must remain distance-sorted and are not pipeline-sorted.
+Opaque and direct bindings are sorted by `renderable.order`. Transparent bindings must remain distance-sorted and are not pipeline-sorted. `_direct` selects the non-transparent direct-draw bucket; PBR transmissive renderables set `_direct` and `isTransmissive`, while mutable depth-writing sprite/billboard batches set `_direct` without `isTransmissive` so they still appear in the opaque-scene refraction RTT.
 
 ## Per-Pass Scene UBO
 
@@ -165,15 +165,15 @@ Materials carry `_buildGroup: MeshGroupBuilder` on their props. `addToScene()` g
 
 ## Babylon.js Equivalence Map
 
-| Babylon Lite                            | Babylon.js                                        |
-| --------------------------------------- | ------------------------------------------------- |
-| `FrameGraph` + `Task`                   | Frame graph / render graph scheduling             |
-| `RenderTask`                            | Render pass task that binds target + camera state |
-| `Renderable.bind()`                     | Material/effect submesh binding for a target      |
-| `DrawBinding`                           | Prepared draw item / submesh draw packet          |
-| Task-owned scene UBO                    | Per-pass scene uniform state                      |
-| Opaque/transmissive/transparent buckets | Rendering group draw lists                        |
-| `renderable.order`                      | Rendering order / group sorting                   |
+| Babylon Lite                      | Babylon.js                                        |
+| --------------------------------- | ------------------------------------------------- |
+| `FrameGraph` + `Task`             | Frame graph / render graph scheduling             |
+| `RenderTask`                      | Render pass task that binds target + camera state |
+| `Renderable.bind()`               | Material/effect submesh binding for a target      |
+| `DrawBinding`                     | Prepared draw item / submesh draw packet          |
+| Task-owned scene UBO              | Per-pass scene uniform state                      |
+| Opaque/direct/transparent buckets | Rendering group draw lists                        |
+| `renderable.order`                | Rendering order / group sorting                   |
 
 ## Dependencies
 

@@ -139,6 +139,8 @@ describe("addDepthHostedSpriteLayer", () => {
         await registerScene(engine, scene);
         expect(scene._renderables.length).toBe(1);
         expect(scene._renderables[0]!.isTransparent).toBe(true);
+        expect(scene._renderables[0]!.isTransmissive).toBe(false);
+        expect(scene._renderables[0]!._direct).toBe(false);
         expect(scene._renderables[0]!.order).toBe(200);
     });
 
@@ -149,7 +151,8 @@ describe("addDepthHostedSpriteLayer", () => {
         await registerScene(engine, scene);
         expect(scene._renderables.length).toBe(1);
         expect(scene._renderables[0]!.isTransparent).toBe(false);
-        expect(scene._renderables[0]!.isTransmissive).toBe(true);
+        expect(scene._renderables[0]!.isTransmissive).toBe(false);
+        expect(scene._renderables[0]!._direct).toBe(true);
         expect(scene._renderables[0]!.order).toBe(100);
     });
 
@@ -185,7 +188,7 @@ describe("addDepthHostedSpriteLayer", () => {
         expect(vertexBuffer.attributes.map((attr) => attr.shaderLocation)).toEqual([0, 1, 2, 3, 4, 5, 6]);
     });
 
-    it("allocates and uploads depth-hosted instances as 44 bytes per sprite", async () => {
+    it("allocates and uploads depth-hosted instances as 56 bytes per sprite", async () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContextInternal;
         const layer = createSprite2DLayer(makeMockAtlas(), { depth: "test-write", capacity: 1 });

@@ -9,11 +9,14 @@
 import type { EngineContext } from "../engine/engine.js";
 import type { Mesh } from "../mesh/mesh.js";
 import type { RenderTargetSignature } from "../engine/render-target.js";
+import type { Camera } from "../camera/camera.js";
 
 /** Dynamic per-pass data available before a binding draws. */
 export interface DrawUpdateContext {
     readonly targetWidth: number;
     readonly targetHeight: number;
+    /** Active pass camera. Null for camera-less passes. */
+    readonly _camera?: Camera | null;
 }
 
 /**
@@ -37,7 +40,8 @@ export interface DrawBinding {
     draw(pass: GPURenderPassEncoder | GPURenderBundleEncoder, engine: EngineContext): number;
     /** Update dirty per-pass state before draw. Called once per frame per binding.
      *  Per-mesh state (e.g. world matrix) shared across bindings should be
-     *  version-guarded to avoid redundant writes. */
+     *  version-guarded to avoid redundant writes. Render task transparent sorting
+     *  runs after these updates, so renderables may refresh `_worldCenter` here. */
     update?(context: DrawUpdateContext): void;
     /** Scratch: squared distance from camera for transparent sorting (per-pass). */
     _sortDistance?: number;
@@ -50,9 +54,11 @@ export interface Renderable {
     readonly order: number;
     /** Whether this renderable is transparent (auto-derived from material). */
     readonly isTransparent: boolean;
-    /** Whether this renderable is transmissive (refraction through surface). Opaque write-depth
-     *  but rendered AFTER the opaque-scene RTT is built. Defaults to false. */
+    /** Whether this renderable is a true transmissive/refractive surface. These surfaces are
+     *  excluded from the opaque-scene RTT; PBR transmissive renderables also set `_direct`. */
     readonly isTransmissive?: boolean;
+    /** Whether this non-transparent renderable must direct-draw after cached opaque bundles. */
+    readonly _direct?: boolean;
     /** Reference to the source mesh (for distance sort + material-change detection). */
     readonly mesh?: Mesh;
     /** Scratch: squared distance from camera for transparent sorting. */
