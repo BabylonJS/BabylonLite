@@ -52,7 +52,7 @@ class SomeWorkingGsPlugin extends MaterialPluginBase {
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0, 0, 0, 1);
 
-    const cam = new ArcRotateCamera("cam", 4.57, 1.29, 18, new Vector3(0, 0, 0), scene);
+    const cam = new ArcRotateCamera("cam", 4.57, 1.29, 6, new Vector3(0, 0, 0), scene);
     cam.minZ = 0.1;
     cam.maxZ = 100;
     cam.attachControl(canvas, true);

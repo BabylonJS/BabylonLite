@@ -913,7 +913,7 @@
         "name": "Scene 126 — Gaussian Splatting Material Plugin",
         "maxMad": 0.5,
         "maxRawKB": 35,
-        "description": "Procedurally generates 10k splats and applies a GsShaderFragment that overrides fragment output at GS_FRAGMENT_MAIN_END.",
+        "description": "Loads Halo_Believe.splat and applies a GsShaderFragment that overrides finalColor at GS_FRAGMENT_MAIN_END (parity with BJS MaterialPluginBase CUSTOM_FRAGMENT_MAIN_END).",
         "tags": ["gaussian-splatting", "material-plugin"]
     },
     {

@@ -119,9 +119,13 @@ fn vs(@location(0) corner: vec2<f32>, @location(1) splatIndex: f32) -> VOut {
 fn fs(in: VOut) -> @location(0) vec4<f32> {
   /*GS_FRAGMENT_MAIN_BEGIN*/
   let A = -dot(in.vPos, in.vPos);
-  if (A < -4.0) { discard; }
-  let B = exp(A) * in.vColor.a;
-  var finalColor = vec4<f32>(in.vColor.rgb, B);
+  var finalColor: vec4<f32>;
+  if (A > -4.0) {
+    let B = exp(A) * in.vColor.a;
+    finalColor = vec4<f32>(in.vColor.rgb, B);
+  } else {
+    finalColor = vec4<f32>(0.0);
+  }
   /*GS_FRAGMENT_BEFORE_FRAGCOLOR*/
   /*GS_FRAGMENT_MAIN_END*/
   return finalColor;
