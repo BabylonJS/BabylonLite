@@ -1918,5 +1918,20 @@
     ],
     "bjsRawKB": 1200.6,
     "bjsGzipKB": 294
+  },
+  "scene170": {
+    "rawKB": 820.5,
+    "gzipKB": 247.5,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene170-index-C0Kz3C8I.js",
+      "scene170-index-DgKv7FMh.js",
+      "scene170-recast-navigation.wasm-compat-CfM0a41I.js",
+      "scene170-standard-renderable-CSOSrPBd.js",
+      "scene170-wgsl-helpers-WTsokIfK.js",
+      "scene170.js"
+    ],
+    "bjsRawKB": 1330.9,
+    "bjsGzipKB": 326
   }
 }

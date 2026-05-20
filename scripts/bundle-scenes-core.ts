@@ -432,8 +432,15 @@ function terserPropertyManglePlugin(): Plugin {
         async generateBundle(_options, bundle) {
             const nameCache: Record<string, unknown> = {};
 
-            for (const [, chunk] of Object.entries(bundle)) {
+            for (const [chunkName, chunk] of Object.entries(bundle)) {
                 if (chunk.type !== "chunk") continue;
+
+                // Skip property mangling for emscripten wasm-compat glue (e.g.
+                // recast-navigation). Its wasm exports are accessed dynamically as
+                // `wasmExports["_u"]` etc.; the property regex would rename those
+                // string lookups while the WASM binary's actual export keys remain
+                // unchanged, breaking every export at runtime.
+                if (/wasm-compat/.test(chunkName)) continue;
 
                 // Dynamically extract WASM import binding names from emscripten
                 // glue code.  These are property keys in the env object that the

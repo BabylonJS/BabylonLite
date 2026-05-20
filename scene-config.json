@@ -1037,5 +1037,16 @@
         "description": "WGSL ShaderMaterial uses alpha blending and explicit shader-side discard for alpha testing.",
         "tags": ["shader", "alpha", "procedural"],
         "skipPerf": true
+    },
+    {
+        "id": 170,
+        "slug": "scene170-navigation-basic",
+        "name": "Scene 170 - Navigation Basic",
+        "maxMad": 0.5,
+        "maxRawKB": 900,
+        "description": "Recast V2 navmesh built from ground + sphere + box, debug visualization, one stationary crowd agent at a fixed nav-snapped position.",
+        "tags": ["navigation", "recast", "wasm"],
+        "skipPerf": true,
+        "bundleTimeoutMs": 120000
     }
 ]
