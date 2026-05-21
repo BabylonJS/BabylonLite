@@ -68,7 +68,6 @@ export interface Task {
 
 export interface FrameGraph {
     _tasks: Task[];
-    _ready: boolean;
     build(): void;
     execute(): number;
     dispose(): void;

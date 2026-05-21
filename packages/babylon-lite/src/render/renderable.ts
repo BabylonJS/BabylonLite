@@ -117,4 +117,5 @@ export interface MeshGroupBuildResult {
  */
 export type MeshGroupBuilder = ((scene: SceneContext, meshes: Mesh[]) => Promise<MeshGroupBuildResult>) & {
     _rebuildSingle?: (scene: SceneContext, mesh: Mesh, materialOverride?: Material) => Renderable;
+    _materialFamily?: "standard" | "pbr" | "node";
 };

@@ -17,8 +17,9 @@ import {
     createSpotLight,
     createDirectionalLight,
     createPcfDirectionalShadowGenerator,
+    setShadowTaskCasterMeshes,
     attachControl,
-    registerScene,
+    registerSceneWithShadowSupport,
     parseNodeMaterialFromSnippet,
     loadEnvironment,
     createSolidTexture2D,
@@ -136,7 +137,8 @@ async function main(): Promise<void> {
     ground.receiveShadows = true;
     (ground as Mesh & { layerMask?: number }).layerMask = 1;
 
-    const sg = createPcfDirectionalShadowGenerator(engine, dir, [sphere], { mapSize: 1024, orthoMinZ: -2, orthoMaxZ: 15 });
+    const sg = createPcfDirectionalShadowGenerator(engine, dir, { mapSize: 1024, orthoMinZ: -2, orthoMaxZ: 15 });
+    setShadowTaskCasterMeshes(sg, [sphere]);
     dir.shadowGenerator = sg;
 
     const json = await getScene72Nme();
@@ -169,7 +171,7 @@ async function main(): Promise<void> {
     addToScene(scene, sphere);
     addToScene(scene, ground);
 
-    await registerScene(engine, scene);
+    await registerSceneWithShadowSupport(engine, scene);
     await startEngine(engine);
     canvas.dataset.drawCalls = String(engine.drawCallCount);
     canvas.dataset.initMs = String(performance.now() - __initStart);

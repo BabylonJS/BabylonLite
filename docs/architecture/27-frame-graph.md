@@ -11,8 +11,10 @@ The first implementation is intentionally small:
 
 - a `FrameGraph` is an ordered task list, not a dependency DAG
 - `RenderTask` is the default scene-render task type; `EffectRenderTask` is also a frame-graph task for fullscreen RTT effects
+- `ShadowTask` is an internal adapter task, installed only by `registerSceneWithShadowSupport()`, that schedules shadow generators through `Task.execute()` before the default scene render
 - the `Task` interface is intentionally open so later work can add other task types
 - a task records one or more `Pass` instances during `record()`; only `RenderPass` exists today
+- a task may optionally implement `execute()` for legacy or non-recorded GPU work while that work is migrated into recorded passes
 - render targets are explicit objects, not virtual graph resources yet
 - the default scene render is itself a `RenderTask`
 
@@ -44,7 +46,6 @@ export { createRenderTargetTexture } from "./texture/rtt.js";
 ```typescript
 export interface FrameGraph {
     _tasks: Task[];
-    _ready: boolean;
     _engine: EngineContextInternal;
     _scene: SceneContextInternal;
     _currentProcessedTask: Task | null;
@@ -54,7 +55,7 @@ export interface FrameGraph {
 }
 ```
 
-`createSceneContext(engine)` creates a frame graph immediately and appends one default swapchain `RenderTask` named `"scene"`. User code normally accesses it through `getFrameGraph(scene)` or passes the scene directly to `addTask*()`.
+`createSceneContext(engine)` creates a frame graph immediately and appends one default swapchain `RenderTask` named `"scene"`. `registerSceneWithShadowSupport()` inserts the internal shadow adapter task named `"shadow"` at the front, while ordinary `registerScene()` stays shadow-free so non-shadow scenes do not retain the shadow task module. User code normally accesses the graph through `getFrameGraph(scene)` or passes the scene directly to `addTask*()`.
 
 `build()` runs in two phases (mirroring the implicit shape of BJS' `frameGraph.buildAsync`):
 
@@ -72,6 +73,7 @@ export interface Task {
     readonly scene: SceneContextInternal;
     _passes: Pass[];
     record(): void;
+    execute?(): number;
     dispose(): void;
 }
 ```
@@ -81,11 +83,14 @@ Task lifecycle:
 | Method      | Called by                      | Purpose                                                                                                                                                                                                |
 | ----------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `record()`  | `FrameGraph.build()` (phase 1) | Allocate/rebuild GPU resources, register `Pass` instances onto `_passes` (typically via `addRenderPass(fg, name)` and friends), and finalize anything that needs the final canvas / target size. Sync. |
+| `execute()` | `FrameGraph.execute()`         | Optional task-level execution hook. If present, the frame graph calls it instead of draining `_passes`. Used only for adapter tasks while legacy GPU work is moved under frame-graph scheduling.        |
 | `dispose()` | `FrameGraph.dispose()`         | Release task-owned GPU resources. Should call `_dispose()` on each owned pass.                                                                                                                         |
 
 `RenderTask` is the primary scene-render implementation of `Task`, and `EffectRenderTask` uses the same task/pass contract for fullscreen RTT effects. The interface exists so future frame-graph work can add other ordered task types without changing `FrameGraph` itself, for example compute tasks, copy/resolve tasks, object-list tasks, or resource-transition/helper tasks.
 
 The `_passes` list is the per-task view of recorded passes. `FrameGraph.build()` clears it at the start of each task's record and the task is responsible for re-pushing its passes during `record()`. Today every `RenderTask` records exactly one `RenderPass`; the surface is shaped to support multi-pass tasks (e.g. shadow cascades) later without changing the `Task` interface again.
+
+`Task.execute()` is a migration escape hatch, not the final shape for new rendering work. `FrameGraph.execute()` sums the draw count returned by `task.execute()` when present; otherwise it drains the recorded passes. The built-in `ShadowTask` uses this path for shadow scheduling: ESM generators expose depth/blur resources that `ShadowTask` encodes, while PCF generators are rendered through ShadowTask-owned depth-only `RenderTask`s that use Standard/PBR/Node no-color shadow material views. These PCF variants keep a void fragment stage when needed so material `discard` logic still affects the depth attachment without binding a color target.
 
 ## `Pass` and `RenderPass`
 
@@ -160,7 +165,7 @@ Tasks execute in array order. There is no automatic dependency analysis; caller 
 
 ```typescript
 addTask(sceneOrGraph, task); // append at end
-addTaskAtStart(sceneOrGraph, task); // insert at start
+addTaskAtStart(sceneOrGraph, task); // insert at start of user work, after built-in system tasks such as ShadowTask
 addTaskBefore(sceneOrGraph, task, beforeTask);
 ```
 
@@ -169,8 +174,28 @@ Rules:
 - Offscreen producer tasks must run before consumers that sample their output.
 - Overlay tasks should use `clr: false` and run after the task they overlay.
 - `addTaskBefore()` appends if the `beforeTask` is not found.
-- Adding or inserting a task marks the graph not ready; call `await getFrameGraph(scene).build()` before the next frame if tasks are modified outside the startup/resize path.
+- If tasks are added or inserted outside the startup/resize path, caller code must rebuild the graph before the next frame.
 - If a task uses `addMesh()` before `registerScene()`, defer the explicit `build()` call until after `registerScene()` so deferred material builders have run.
+
+### Internal Shadow Adapter Task
+
+`registerSceneWithShadowSupport(engine, scene)` installs an internal `ShadowTask` before the default `"scene"` render task:
+
+```typescript
+await registerSceneWithShadowSupport(engine, scene);
+createRenderTask({ name: "scene", rt: swapRT, clrColor: scene.clearColor }, engine, scene);
+```
+
+The task owns the caster-mesh inputs registered for each shadow generator. It records no direct passes of its own. During `record()`, it creates/records internal shadow render tasks so caster meshes are rendered through material-owned pipelines:
+
+```typescript
+record(): void {
+    task._passes.length = 0;
+    // PCF/ESM shadow generators record internal caster RenderTasks here.
+}
+```
+
+Per frame, `execute()` iterates the scene's lights, renders each light's shadow generator from task-owned caster inputs, and returns the summed draw count. ESM adds blur passes after its internal material-view caster task; PCF executes the internal depth-only material-view task recorded earlier.
 
 ## Render Targets
 
@@ -276,7 +301,7 @@ task.addMesh(mesh);
 task.addMesh(mesh, { material: overrideMaterialOrView });
 ```
 
-`addMesh()` accepts a source material or `MaterialView` and resolves at `record()` time through the source material family's `_buildGroup._rebuildSingle` hook. The mesh's material family must already be registered with the scene so the builder has run. Passing a material view lets a pass reuse source material state with pass-specific render feature bits, for example depth-only Standard/PBR variants used by shadow/depth RTTs.
+`addMesh()` accepts a source material or `MaterialView` and resolves at `record()` time through the source material family's `_buildGroup._rebuildSingle` hook. The mesh's material family must already be registered with the scene so the builder has run. Passing a material view lets a pass reuse source material state with pass-specific render feature bits, for example Standard/PBR/Node no-color shadow variants used by PCF shadow render tasks.
 
 If a task has explicit renderables, it does **not** auto-mirror the scene.
 
@@ -422,6 +447,7 @@ Fixed-size eager RTTs are not reallocated by graph rebuilds because their GPU te
 | Task record/build phase         | `Task.record()` via `FrameGraph.build()` (phase 1)         |
 | Pass post-record initialization | `Pass._initialize()` via `FrameGraph.build()` (phase 2)    |
 | Per-frame execute phase         | `_executeTask()` → iterates `_passes` calling `_execute()` |
+| Legacy/non-recorded task work   | Optional `Task.execute()`                                  |
 | Render target texture           | `createRenderTargetTexture()`                              |
 | Pass-specific camera/scene UBO  | `RenderTaskConfig.cam` + task-owned `_sceneUBO`            |
 
@@ -435,6 +461,7 @@ Fixed-size eager RTTs are not reallocated by graph rebuilds because their GPU te
 | `src/frame-graph/frame-graph.ts`         | Ordered task list and two-phase build/execute/dispose lifecycle                              |
 | `src/frame-graph/frame-graph-actions.ts` | Public task-insertion + `addRenderPass` actions                                              |
 | `src/frame-graph/render-task.ts`         | Render task, per-pass scene UBO, target binding, draw buckets, per-pass-encoder body         |
+| `src/frame-graph/shadow-task.ts`         | Internal adapter task that schedules existing shadow generators through `Task.execute()`      |
 | `src/engine/render-target.ts`            | Render target descriptors, allocation, disposal, target signatures                           |
 | `src/texture/rtt.ts`                     | Eager render-target texture helper                                                           |
 | `src/render/renderable.ts`               | `Renderable`, `DrawBinding`, and `DrawUpdateContext` contracts consumed by render-pass tasks |

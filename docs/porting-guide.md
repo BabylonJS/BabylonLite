@@ -29,8 +29,9 @@ This guide shows how to translate a Babylon.js (BJS) scene to Babylon Lite, side
 | KTX1 compressed 2D texture | `await loadKtxTexture2D(engine, baseUrl, suffixes)` |
 | glTF KTX2 / `KHR_texture_basisu` texture source | `addToScene(scene, await loadGltf(engine, ktx2GltfUrl))` *(auto-detected)* |
 | Basis Universal (.basis) 2D texture | `await loadBasisTexture2D(engine, url)` |
-| `new ShadowGenerator(size, light)` | `createShadowGenerator(engine, light, casters, opts)` |
-| `sg.usePercentageCloserFiltering = true` | `createPcfShadowGenerator(engine, light, casters, opts)` |
+| `new ShadowGenerator(size, light)` with a directional light and ESM | `createEsmDirectionalShadowGenerator(engine, light, opts)` |
+| `sg.usePercentageCloserFiltering = true` with a spotlight | `createPcfSpotlightShadowGenerator(engine, light, opts)` |
+| `sg.usePercentageCloserFiltering = true` with a directional light | `createPcfDirectionalShadowGenerator(engine, light, opts)` |
 | `mesh.thinInstanceSetBuffer("matrix", data, 16)` | `setThinInstances(mesh, data, count)` |
 | `mesh.thinInstanceSetBuffer("color", data, 4)` | `setThinInstanceColors(mesh, data)` |
 | `new Vector3(x, y, z)` | `{ x, y, z }` or `[x, y, z]` |
@@ -136,12 +137,14 @@ sg.useBlurExponentialShadowMap = true;
 ground.receiveShadows = true;
 
 // ✅ Babylon Lite
-light.shadowGenerator = createShadowGenerator(engine, light, [mesh], {
+light.shadowGenerator = createEsmDirectionalShadowGenerator(engine, light, {
     mapSize: 1024,
     depthScale: 50,
     blurScale: 2,
 });
+setShadowTaskCasterMeshes(light.shadowGenerator, [mesh]);
 ground.receiveShadows = true;
+await registerSceneWithShadowSupport(engine, scene);
 ```
 
 For PCF shadows:
@@ -151,9 +154,11 @@ const sg = new ShadowGenerator(1024, spotLight);
 sg.usePercentageCloserFiltering = true;
 
 // ✅ Babylon Lite
-spotLight.shadowGenerator = createPcfShadowGenerator(engine, spotLight, [mesh], {
+spotLight.shadowGenerator = createPcfSpotlightShadowGenerator(engine, spotLight, {
     mapSize: 1024,
 });
+setShadowTaskCasterMeshes(spotLight.shadowGenerator, [mesh]);
+await registerSceneWithShadowSupport(engine, scene);
 ```
 
 ### 7. Thin Instances Use Raw Arrays
