@@ -256,6 +256,8 @@ goToFrame(group, 20);                    // deterministic seek + pose evaluation
 
 A scene may still own animation groups through `scene.animationGroups`; that remains compatibility state. Scenes can continue using their existing `_beforeRender` callbacks, while non-scene code can create a manager directly.
 
+The autonomous `requestAnimationFrame` lifecycle is factored into the internal `animation-loop.ts` helper. `AnimationManager` owns animation groups and stepping semantics; the shared helper only owns `running`, `_rafId`, `_lastTime`, fixed-delta reporting to `onUpdate`, and start/stop scheduling.
+
 ### Usage Examples
 
 Manual property animation, matching Babylon.js `beginDirectAnimation(target, [animation], from, to, loop)`:

@@ -1,4 +1,8 @@
-import { addSpriteAnimation, createSpriteFrameAnimation } from "./sprite-animation.js";
+/**
+ * Optional Sprite2D stable-handle frame animation helper.
+ * Imports handle tracking only when callers opt into this entry point.
+ */
+import { playSpriteTargetAnimation } from "./sprite-animation.js";
 import type { PlaySpriteAnimationOptions, SpriteAnimationManager, SpriteFrameAnimation } from "./sprite-animation.js";
 import type { Sprite2DHandle } from "./sprite-2d-handle.js";
 import { isSprite2DHandleAlive, removeSprite2D, setSprite2DFrame } from "./sprite-2d-handle.js";
@@ -12,9 +16,9 @@ export function playSprite2DAnimation(
     delayMs: number,
     options?: PlaySpriteAnimationOptions
 ): SpriteFrameAnimation {
-    const animation = createSpriteFrameAnimation(
+    return playSpriteTargetAnimation(
+        manager,
         {
-            kind: "sprite2d-handle",
             setFrame(frame): void {
                 setSprite2DFrame(handle, frame);
             },
@@ -31,6 +35,4 @@ export function playSprite2DAnimation(
         delayMs,
         options
     );
-    addSpriteAnimation(manager, animation);
-    return animation;
 }

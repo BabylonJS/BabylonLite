@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
 import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
 import type { SpriteAtlas } from "../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
-import { addBillboardSpriteIndex, createFacingBillboardSystem } from "../../packages/babylon-lite/src/sprite/billboard-sprite";
+import { addBillboardSpriteIndex, createFacingBillboardSystem, removeBillboardSpriteIndex } from "../../packages/babylon-lite/src/sprite/billboard-sprite";
 import { addBillboardSprite, isBillboardSpriteHandleAlive } from "../../packages/babylon-lite/src/sprite/billboard-sprite-handle";
 import { playBillboardSpriteAnimation } from "../../packages/babylon-lite/src/sprite/billboard-sprite-handle-animation";
 import { playBillboardSpriteIndexAnimation } from "../../packages/babylon-lite/src/sprite/billboard-sprite-index-animation";
@@ -13,13 +13,17 @@ import {
     attachSpriteAnimationsToScene,
     clearSpriteAnimations,
     createSpriteAnimationManager,
+    createSpriteFrameAnimation,
     disposeSpriteAnimationBinding,
+    playSpriteFrameAnimation,
     removeSpriteAnimation,
+    startSpriteAnimationManager,
+    stopSpriteAnimationManager,
     stopSpriteAnimation,
     updateSpriteAnimationManager,
 } from "../../packages/babylon-lite/src/sprite/sprite-animation";
 import type { SpriteFrameAnimation } from "../../packages/babylon-lite/src/sprite/sprite-animation";
-import { addSprite2DIndex, createSprite2DLayer, removeSprite2DIndex } from "../../packages/babylon-lite/src/sprite/sprite-2d";
+import { addSprite2DIndex, createSprite2DLayer, removeSprite2DIndex, setSprite2DFrameIndex } from "../../packages/babylon-lite/src/sprite/sprite-2d";
 import { addSprite2D, getSprite2DHandleIndex, isSprite2DHandleAlive } from "../../packages/babylon-lite/src/sprite/sprite-2d-handle";
 import { playSprite2DAnimation } from "../../packages/babylon-lite/src/sprite/sprite-2d-handle-animation";
 import { playSprite2DIndexAnimation } from "../../packages/babylon-lite/src/sprite/sprite-2d-index-animation";
@@ -51,6 +55,26 @@ function makeMockAtlas(): SpriteAtlas {
     };
 }
 
+function makeNonUniformAtlas(): SpriteAtlas {
+    const atlas = makeMockAtlas();
+    return {
+        ...atlas,
+        frames: [atlas.frames[0]!, { uvMin: [0.125, 0], uvMax: [0.375, 1], sourceSizePx: [64, 24], pivot: [0.5, 0.5] }, ...atlas.frames.slice(2)],
+    };
+}
+
+function makeNarrowNonDegenerateAtlas(): SpriteAtlas {
+    const atlas = makeMockAtlas();
+    return {
+        ...atlas,
+        textureSizePx: [256, 32],
+        frames: [
+            { uvMin: [0, 0], uvMax: [1 / 256, 1], sourceSizePx: [1, 32], pivot: [0.5, 0.5] },
+            { uvMin: [1 / 256, 0], uvMax: [2 / 256, 1], sourceSizePx: [1, 32], pivot: [0.5, 0.5] },
+        ],
+    };
+}
+
 function sprite2DUvMinX(layer: ReturnType<typeof createSprite2DLayer>, index = 0): number {
     return layer._instanceData[index * layer._instanceFloatsPerSprite + 4]!;
 }
@@ -69,7 +93,7 @@ describe("SpriteAnimationManager", () => {
         const setFrame = vi.fn();
         const animation: SpriteFrameAnimation = {
             _entityType: "sprite-frame-animation",
-            target: { kind: "mock", setFrame },
+            target: { setFrame },
             from: 0,
             to: 3,
             current: 0,
@@ -84,6 +108,7 @@ describe("SpriteAnimationManager", () => {
         addSpriteAnimation(manager, animation);
         addSpriteAnimation(manager, animation);
         expect(manager.animations).toEqual([animation]);
+        expect(animation._owner).toBe(manager);
 
         stopSpriteAnimation(animation);
         updateSpriteAnimationManager(manager, 101);
@@ -92,10 +117,56 @@ describe("SpriteAnimationManager", () => {
 
         removeSpriteAnimation(manager, animation);
         expect(manager.animations).toEqual([]);
+        expect(animation._owner).toBeUndefined();
 
         addSpriteAnimation(manager, animation);
         clearSpriteAnimations(manager);
         expect(manager.animations).toEqual([]);
+        expect(animation._owner).toBeUndefined();
+    });
+
+    it("moves animations between managers and clears ownership when finished", () => {
+        const firstManager = createSpriteAnimationManager();
+        const secondManager = createSpriteAnimationManager();
+        const animation = createSpriteFrameAnimation({ setFrame: vi.fn() }, 0, 1, false, 50);
+
+        addSpriteAnimation(firstManager, animation);
+        addSpriteAnimation(secondManager, animation);
+
+        expect(firstManager.animations).toEqual([]);
+        expect(secondManager.animations).toEqual([animation]);
+        expect(animation._owner).toBe(secondManager);
+
+        updateSpriteAnimationManager(secondManager, 51);
+        updateSpriteAnimationManager(secondManager, 51);
+
+        expect(secondManager.animations).toEqual([]);
+        expect(animation._owner).toBeUndefined();
+    });
+
+    it("updates replay callback and removal options when provided", () => {
+        const manager = createSpriteAnimationManager();
+        const target = { setFrame: vi.fn(), remove: vi.fn() };
+        const firstEnd = vi.fn();
+        const secondEnd = vi.fn();
+        const animation = createSpriteFrameAnimation(target, 0, 1, false, 50, { onEnd: firstEnd, removeWhenFinished: true });
+
+        addSpriteAnimation(manager, animation);
+        playSpriteFrameAnimation(animation, 0, 1, false, 50, { onEnd: secondEnd });
+        updateSpriteAnimationManager(manager, 51);
+        updateSpriteAnimationManager(manager, 51);
+
+        expect(firstEnd).not.toHaveBeenCalled();
+        expect(secondEnd).toHaveBeenCalledTimes(1);
+        expect(target.remove).not.toHaveBeenCalled();
+
+        playSpriteFrameAnimation(animation, 0, 1, false, 50, {});
+        addSpriteAnimation(manager, animation);
+        updateSpriteAnimationManager(manager, 51);
+        updateSpriteAnimationManager(manager, 51);
+
+        expect(secondEnd).toHaveBeenCalledTimes(1);
+        expect(target.remove).not.toHaveBeenCalled();
     });
 
     it("uses fixedDeltaMs when supplied", () => {
@@ -169,6 +240,31 @@ describe("Sprite2D index animation", () => {
         expect(sprite2DUvMaxX(layer)).toBeCloseTo(0.125);
     });
 
+    it("keeps explicit Sprite2D size when switching to a different-sized frame", () => {
+        const layer = createSprite2DLayer(makeNonUniformAtlas());
+        addSprite2DIndex(layer, { positionPx: [0, 0], sizePx: [32, 40], frame: 0 });
+
+        setSprite2DFrameIndex(layer, 0, 1);
+
+        expect(layer._instanceData[2]).toBe(32);
+        expect(layer._instanceData[3]).toBe(40);
+        expect(layer._savedSize[0]).toBe(32);
+        expect(layer._savedSize[1]).toBe(40);
+        expect(sprite2DUvMinX(layer)).toBeCloseTo(0.125);
+        expect(sprite2DUvMaxX(layer)).toBeCloseTo(0.375);
+    });
+
+    it("preserves Sprite2D flip state for narrow non-degenerate frames", () => {
+        const layer = createSprite2DLayer(makeNarrowNonDegenerateAtlas());
+        addSprite2DIndex(layer, { positionPx: [0, 0], sizePx: [1, 32], frame: 0, flipX: true });
+
+        setSprite2DFrameIndex(layer, 0, 1);
+
+        expect(sprite2DUvMinX(layer)).toBeGreaterThan(sprite2DUvMaxX(layer));
+        expect(sprite2DUvMinX(layer)).toBeCloseTo(2 / 256);
+        expect(sprite2DUvMaxX(layer)).toBeCloseTo(1 / 256);
+    });
+
     it("fires end callback once and removes the index target when requested", () => {
         const manager = createSpriteAnimationManager();
         const layer = createSprite2DLayer(makeMockAtlas());
@@ -185,6 +281,22 @@ describe("Sprite2D index animation", () => {
         expect(onEnd).toHaveBeenCalledTimes(1);
         expect(layer.count).toBe(0);
         expect(manager.animations).toEqual([]);
+    });
+
+    it("uses slot semantics after index swap-remove", () => {
+        const manager = createSpriteAnimationManager();
+        const layer = createSprite2DLayer(makeMockAtlas());
+        addSprite2DIndex(layer, { positionPx: [0, 0], sizePx: [32, 32], frame: 0 });
+        addSprite2DIndex(layer, { positionPx: [32, 0], sizePx: [32, 32], frame: 0 });
+        addSprite2DIndex(layer, { positionPx: [64, 0], sizePx: [32, 32], frame: 4 });
+
+        playSprite2DIndexAnimation(manager, layer, 1, 0, 2, true, 50);
+        removeSprite2DIndex(layer, 1);
+        expect(sprite2DUvMinX(layer, 1)).toBeCloseTo(0.5);
+
+        updateSpriteAnimationManager(manager, 51);
+
+        expect(sprite2DUvMinX(layer, 1)).toBeCloseTo(0.125);
     });
 });
 
@@ -231,6 +343,22 @@ describe("Billboard sprite animation", () => {
         expect(billboardUvMinX(system)).toBeCloseTo(0.125);
     });
 
+    it("uses slot semantics for billboard index animations after swap-remove", () => {
+        const manager = createSpriteAnimationManager();
+        const system = createFacingBillboardSystem(makeMockAtlas());
+        addBillboardSpriteIndex(system, { position: [0, 0, 0], sizeWorld: [1, 1], frame: 0 });
+        addBillboardSpriteIndex(system, { position: [1, 0, 0], sizeWorld: [1, 1], frame: 0 });
+        addBillboardSpriteIndex(system, { position: [2, 0, 0], sizeWorld: [1, 1], frame: 4 });
+
+        playBillboardSpriteIndexAnimation(manager, system, 1, 0, 2, true, 50);
+        removeBillboardSpriteIndex(system, 1);
+        expect(billboardUvMinX(system, 1)).toBeCloseTo(0.5);
+
+        updateSpriteAnimationManager(manager, 51);
+
+        expect(billboardUvMinX(system, 1)).toBeCloseTo(0.125);
+    });
+
     it("animates and removes billboard handle targets", () => {
         const manager = createSpriteAnimationManager();
         const system = createFacingBillboardSystem(makeMockAtlas());
@@ -259,6 +387,7 @@ describe("sprite animation render-loop attachments", () => {
         expect(sprite2DUvMinX(layer)).toBeCloseTo(0.125);
         disposeSpriteAnimationBinding(binding);
         expect(scene._beforeRender).toEqual([]);
+        expect(manager._binding).toBeUndefined();
     });
 
     it("attaches to renderers before upload using engine current delta", () => {
@@ -269,7 +398,11 @@ describe("sprite animation render-loop attachments", () => {
         let frameSeenByUpload = -1;
         const renderer = {
             _engine: { _currentDelta: 51 } as EngineContextInternal,
-            _update: () => {
+            _beforeUpdate: [] as Array<(deltaMs: number) => void>,
+            _update(): void {
+                for (const hook of this._beforeUpdate) {
+                    hook(this._engine._currentDelta);
+                }
                 frameSeenByUpload = sprite2DUvMinX(layer);
             },
         } as unknown as SpriteRenderer;
@@ -279,9 +412,46 @@ describe("sprite animation render-loop attachments", () => {
 
         expect(frameSeenByUpload).toBeCloseTo(0.125);
         disposeSpriteAnimationBinding(binding);
+        expect(manager._binding).toBeUndefined();
         (renderer as unknown as { _engine: { _currentDelta: number } })._engine._currentDelta = 51;
         renderer._update();
         expect(sprite2DUvMinX(layer)).toBeCloseTo(0.125);
+    });
+
+    it("composes renderer hooks and disposes them independently", () => {
+        const firstManager = createSpriteAnimationManager();
+        const firstLayer = createSprite2DLayer(makeMockAtlas());
+        addSprite2DIndex(firstLayer, { positionPx: [0, 0], sizePx: [32, 32], frame: 0 });
+        playSprite2DIndexAnimation(firstManager, firstLayer, 0, 0, 3, true, 50);
+
+        const secondManager = createSpriteAnimationManager();
+        const secondLayer = createSprite2DLayer(makeMockAtlas());
+        addSprite2DIndex(secondLayer, { positionPx: [0, 0], sizePx: [32, 32], frame: 0 });
+        playSprite2DIndexAnimation(secondManager, secondLayer, 0, 0, 3, true, 50);
+
+        const renderer = {
+            _engine: { _currentDelta: 51 } as EngineContextInternal,
+            _beforeUpdate: [] as Array<(deltaMs: number) => void>,
+            _update(): void {
+                for (const hook of this._beforeUpdate) {
+                    hook(this._engine._currentDelta);
+                }
+            },
+        } as unknown as SpriteRenderer;
+
+        const firstBinding = attachSpriteAnimationsToRenderer(renderer, firstManager);
+        const secondBinding = attachSpriteAnimationsToRenderer(renderer, secondManager);
+        expect(renderer._beforeUpdate).toHaveLength(2);
+
+        disposeSpriteAnimationBinding(firstBinding);
+        expect(renderer._beforeUpdate).toHaveLength(1);
+        renderer._update();
+
+        expect(sprite2DUvMinX(firstLayer)).toBeCloseTo(0);
+        expect(sprite2DUvMinX(secondLayer)).toBeCloseTo(0.125);
+
+        disposeSpriteAnimationBinding(secondBinding);
+        expect(renderer._beforeUpdate).toEqual([]);
     });
 
     it("prevents double attachment for one manager", () => {
@@ -290,5 +460,32 @@ describe("sprite animation render-loop attachments", () => {
         attachSpriteAnimationsToScene(scene, manager);
 
         expect(() => attachSpriteAnimationsToScene(scene, manager)).toThrow(/already attached/);
+    });
+
+    it("prevents autonomous start while attached to a scene", () => {
+        const manager = createSpriteAnimationManager();
+        const scene = { _beforeRender: [] as Array<(deltaMs: number) => void> } as unknown as SceneContextInternal;
+        attachSpriteAnimationsToScene(scene, manager);
+
+        expect(() => startSpriteAnimationManager(manager)).toThrow(/already attached/);
+    });
+
+    it("prevents render-loop attachment while running autonomously", () => {
+        vi.stubGlobal(
+            "requestAnimationFrame",
+            vi.fn(() => 1)
+        );
+        vi.stubGlobal("cancelAnimationFrame", vi.fn());
+        const manager = createSpriteAnimationManager();
+        const scene = { _beforeRender: [] as Array<(deltaMs: number) => void> } as unknown as SceneContextInternal;
+
+        try {
+            startSpriteAnimationManager(manager);
+
+            expect(() => attachSpriteAnimationsToScene(scene, manager)).toThrow(/already running/);
+        } finally {
+            stopSpriteAnimationManager(manager);
+            vi.unstubAllGlobals();
+        }
     });
 });

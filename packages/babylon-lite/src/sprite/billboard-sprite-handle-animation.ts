@@ -1,4 +1,8 @@
-import { addSpriteAnimation, createSpriteFrameAnimation } from "./sprite-animation.js";
+/**
+ * Optional billboard stable-handle frame animation helper.
+ * Imports handle tracking only when callers opt into this entry point.
+ */
+import { playSpriteTargetAnimation } from "./sprite-animation.js";
 import type { PlaySpriteAnimationOptions, SpriteAnimationManager, SpriteFrameAnimation } from "./sprite-animation.js";
 import type { BillboardSpriteHandle } from "./billboard-sprite-handle.js";
 import { isBillboardSpriteHandleAlive, removeBillboardSprite, setBillboardSpriteFrame } from "./billboard-sprite-handle.js";
@@ -12,9 +16,9 @@ export function playBillboardSpriteAnimation(
     delayMs: number,
     options?: PlaySpriteAnimationOptions
 ): SpriteFrameAnimation {
-    const animation = createSpriteFrameAnimation(
+    return playSpriteTargetAnimation(
+        manager,
         {
-            kind: "billboard-handle",
             setFrame(frame): void {
                 setBillboardSpriteFrame(handle, frame);
             },
@@ -31,6 +35,4 @@ export function playBillboardSpriteAnimation(
         delayMs,
         options
     );
-    addSpriteAnimation(manager, animation);
-    return animation;
 }

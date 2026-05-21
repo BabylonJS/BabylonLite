@@ -16,6 +16,11 @@ export const PLAYER_SPRITE_INFO = {
 
 export const PLAYER_SPRITE_SEEK_STEP_MS = 1000 / 60;
 
+/**
+ * BJS-reference copy of the Lite sprite frame timing rules.
+ * Keep this in sync with `advanceSpriteAnimation` in the engine core.
+ */
+
 export interface ManualSpriteAnimationTarget {
     cellIndex: number;
     isVisible: boolean;

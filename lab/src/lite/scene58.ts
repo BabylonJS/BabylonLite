@@ -9,9 +9,9 @@ import {
     playSprite2DAnimation,
     registerSpriteRenderer,
     startEngine,
-    updateSpriteAnimationManager,
 } from "babylon-lite";
-import { getPlayerSpriteSeekStepCount, PLAYER_SPRITE_INFO, PLAYER_SPRITE_SEEK_STEP_MS, PLAYER_SPRITE_URL } from "../_shared/player-sprite";
+import { seekSpriteAnimationManager } from "../_shared/player-lite-sprite";
+import { PLAYER_SPRITE_INFO, PLAYER_SPRITE_URL } from "../_shared/player-sprite";
 
 async function main(): Promise<void> {
     const initStart = performance.now();
@@ -67,13 +67,6 @@ async function main(): Promise<void> {
     canvas.dataset.drawCalls = String(engine.drawCallCount);
     canvas.dataset.initMs = String(performance.now() - initStart);
     canvas.dataset.ready = "true";
-}
-
-function seekSpriteAnimationManager(manager: ReturnType<typeof createSpriteAnimationManager>, seekTimeSeconds: number): void {
-    const stepCount = getPlayerSpriteSeekStepCount(seekTimeSeconds);
-    for (let stepIndex = 0; stepIndex < stepCount; stepIndex++) {
-        updateSpriteAnimationManager(manager, PLAYER_SPRITE_SEEK_STEP_MS);
-    }
 }
 
 main().catch((error) => {

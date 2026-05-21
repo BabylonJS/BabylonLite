@@ -1,6 +1,7 @@
 import type { EngineContext } from "../engine/engine.js";
 import { tickAnimation } from "./animation-group.js";
 import type { AnimationGroup } from "./animation-group.js";
+import { startAnimationLoop, stopAnimationLoop } from "./animation-loop.js";
 
 export interface AnimationManagerOptions {
     readonly engine?: EngineContext;
@@ -82,33 +83,9 @@ export function updateAnimationManager(manager: AnimationManager, deltaMs: numbe
 }
 
 export function startAnimationManager(manager: AnimationManager): void {
-    if (manager.running) {
-        return;
-    }
-    if (typeof requestAnimationFrame !== "function" || typeof cancelAnimationFrame !== "function") {
-        throw new Error("AnimationManager autonomous mode requires requestAnimationFrame");
-    }
-    manager.running = true;
-    manager._lastTime = 0;
-    const tick = (now: number): void => {
-        if (!manager.running) {
-            return;
-        }
-        const deltaMs = manager._lastTime > 0 ? now - manager._lastTime : 0;
-        manager._lastTime = now;
-        updateAnimationManager(manager, deltaMs);
-        manager.onUpdate?.(manager.fixedDeltaMs > 0 ? manager.fixedDeltaMs : deltaMs);
-        manager._rafId = requestAnimationFrame(tick);
-    };
-    manager._rafId = requestAnimationFrame(tick);
+    startAnimationLoop(manager, (deltaMs) => updateAnimationManager(manager, deltaMs), "AnimationManager autonomous mode requires requestAnimationFrame");
 }
 
 export function stopAnimationManager(manager: AnimationManager): void {
-    if (!manager.running) {
-        return;
-    }
-    cancelAnimationFrame(manager._rafId);
-    manager._rafId = 0;
-    manager._lastTime = 0;
-    manager.running = false;
+    stopAnimationLoop(manager);
 }

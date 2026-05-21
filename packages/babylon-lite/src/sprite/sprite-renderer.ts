@@ -72,6 +72,8 @@ export interface SpriteRenderer extends RenderingContext {
     readonly _kind: typeof KIND;
     /** Renderer-owned layer membership. Use `addSpriteRendererLayer` / `removeSpriteRendererLayer` to mutate. */
     readonly layers: readonly Sprite2DLayer[];
+    /** @internal Hooks run at the start of `_update`, before layer uploads. */
+    _beforeUpdate: ((deltaMs: number) => void)[];
 }
 
 /** @internal Per-layer GPU resources owned by the renderer. */
@@ -219,6 +221,7 @@ export function createSpriteRenderer(engine: EngineContext, opts: SpriteRenderer
         _targetHeight: targetSize.height,
         _disposed: false,
         _clear: opts.clear ?? true,
+        _beforeUpdate: [],
         layers: opts.layers.slice(),
         clearColor: opts.clearValue ?? { r: 0, g: 0, b: 0, a: 1 },
         _drawCallsPre: 0,
@@ -260,6 +263,10 @@ function assertSpriteRendererLayer(layer: Sprite2DLayer): void {
 function spriteRendererUpdate(rr: SpriteRendererInternal): void {
     if (rr._disposed) {
         return;
+    }
+    const deltaMs = rr._engine._currentDelta ?? 0;
+    for (const hook of rr._beforeUpdate) {
+        hook(deltaMs);
     }
     assertSpriteRendererLayers(rr.layers);
     const targetSize = getRenderTargetSize(rr._engine);
@@ -419,6 +426,7 @@ export function disposeSpriteRenderer(sr: SpriteRenderer): void {
     }
     rr._layerGpu.clear();
     rr._visibleBundles.length = 0;
+    rr._beforeUpdate.length = 0;
     rr._indexBuffer.destroy();
     resetSpritePipelineCache(rr._pipelineCache);
     rr.layers.length = 0;

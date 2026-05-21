@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
     createAnimationManager,
     createPropertyAnimationClip,
     createPropertyAnimationGroup,
+    startAnimationManager,
+    stopAnimationManager,
     updateAnimationManager,
 } from "../../packages/babylon-lite/src/animation/animation-manager";
 import { goToFrame } from "../../packages/babylon-lite/src/animation/animation-group";
@@ -204,5 +206,45 @@ describe("AnimationManager", () => {
         expect(positiveGroup.weight).toBeCloseTo(0.75);
         expect(negativeGroup.weight).toBeCloseTo(0.25);
         expect(target.position.x).toBeCloseTo(1);
+    });
+
+    it("runs autonomously through requestAnimationFrame", () => {
+        const callbacks: Array<(now: number) => void> = [];
+        const requestAnimationFrameMock = vi.fn((callback: (now: number) => void) => {
+            callbacks.push(callback);
+            return callbacks.length;
+        });
+        const cancelAnimationFrameMock = vi.fn();
+        vi.stubGlobal("requestAnimationFrame", requestAnimationFrameMock);
+        vi.stubGlobal("cancelAnimationFrame", cancelAnimationFrameMock);
+        const onUpdate = vi.fn();
+        const manager = createAnimationManager({ fixedDeltaMs: 25, onUpdate });
+        const target = { position: { x: 0 } };
+        const clip = createPropertyAnimationClip("autonomous", [
+            {
+                path: "position.x",
+                keys: [
+                    { time: 0, value: 0 },
+                    { time: 1, value: 10 },
+                ],
+            },
+        ]);
+        createPropertyAnimationGroup(manager, target, clip, { loop: false });
+
+        try {
+            startAnimationManager(manager);
+            callbacks[0]!(100);
+
+            expect(target.position.x).toBeCloseTo(0.25);
+            expect(onUpdate).toHaveBeenCalledWith(25);
+            expect(requestAnimationFrameMock).toHaveBeenCalledTimes(2);
+
+            stopAnimationManager(manager);
+            expect(cancelAnimationFrameMock).toHaveBeenCalledWith(2);
+            expect(manager.running).toBe(false);
+        } finally {
+            stopAnimationManager(manager);
+            vi.unstubAllGlobals();
+        }
     });
 });

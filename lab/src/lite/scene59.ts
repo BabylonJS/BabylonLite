@@ -15,9 +15,9 @@ import {
     playBillboardSpriteAnimation,
     registerScene,
     startEngine,
-    updateSpriteAnimationManager,
 } from "babylon-lite";
-import { getPlayerSpriteSeekStepCount, PLAYER_SPRITE_INFO, PLAYER_SPRITE_SEEK_STEP_MS, PLAYER_SPRITE_URL } from "../_shared/player-sprite";
+import { seekSpriteAnimationManager } from "../_shared/player-lite-sprite";
+import { PLAYER_SPRITE_INFO, PLAYER_SPRITE_URL } from "../_shared/player-sprite";
 
 const CAMERA_POSITION = { x: 0, y: 1.05, z: -5.6 };
 const CAMERA_TARGET = { x: 0, y: 0.25, z: 0.75 };
@@ -101,13 +101,6 @@ function addBoxAt(
     material.diffuseColor = color;
     box.material = material;
     addToScene(scene, box);
-}
-
-function seekSpriteAnimationManager(manager: ReturnType<typeof createSpriteAnimationManager>, seekTimeSeconds: number): void {
-    const stepCount = getPlayerSpriteSeekStepCount(seekTimeSeconds);
-    for (let stepIndex = 0; stepIndex < stepCount; stepIndex++) {
-        updateSpriteAnimationManager(manager, PLAYER_SPRITE_SEEK_STEP_MS);
-    }
 }
 
 main().catch((error) => {
