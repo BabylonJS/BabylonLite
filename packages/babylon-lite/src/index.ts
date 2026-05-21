@@ -274,6 +274,34 @@ export {
     isBillboardSpriteHandleAlive,
 } from "./sprite/billboard-sprite-handle.js";
 export { addFacingBillboardSystem, addAxisLockedBillboardSystem } from "./sprite/billboard-scene.js";
+// ─── Sprite Animation (Optional) ─────────────────────────────────────
+export type {
+    SpriteAnimationBinding,
+    SpriteAnimationManager,
+    SpriteAnimationManagerOptions,
+    SpriteAnimationTarget,
+    SpriteFrameAnimation,
+    PlaySpriteAnimationOptions,
+} from "./sprite/sprite-animation.js";
+export {
+    createSpriteAnimationManager,
+    createSpriteFrameAnimation,
+    addSpriteAnimation,
+    removeSpriteAnimation,
+    clearSpriteAnimations,
+    updateSpriteAnimationManager,
+    playSpriteFrameAnimation,
+    stopSpriteAnimation,
+    startSpriteAnimationManager,
+    stopSpriteAnimationManager,
+    attachSpriteAnimationsToScene,
+    attachSpriteAnimationsToRenderer,
+    disposeSpriteAnimationBinding,
+} from "./sprite/sprite-animation.js";
+export { playSprite2DIndexAnimation } from "./sprite/sprite-2d-index-animation.js";
+export { playSprite2DAnimation } from "./sprite/sprite-2d-handle-animation.js";
+export { playBillboardSpriteIndexAnimation } from "./sprite/billboard-sprite-index-animation.js";
+export { playBillboardSpriteAnimation } from "./sprite/billboard-sprite-handle-animation.js";
 export type { SpriteRenderer, SpriteRendererOptions } from "./sprite/sprite-renderer.js";
 export {
     createSpriteRenderer,

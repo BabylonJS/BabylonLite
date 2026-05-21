@@ -85,6 +85,13 @@ export const BILLBOARD_SAVED_SIZE_FLOATS_PER_SPRITE = 2;
 
 const DEFAULT_CAPACITY = 16;
 
+function shouldSwapUvEndpoints(min: number, max: number, wantsFlip: boolean): boolean {
+    if (min > max) {
+        return !wantsFlip;
+    }
+    return wantsFlip;
+}
+
 function setBillboardCount(system: BillboardSpriteSystem, count: number): void {
     (system as { count: number }).count = count;
 }
@@ -234,12 +241,12 @@ function writeInstance(system: BillboardSpriteSystem, slotIndex: number, props: 
     }
     const wantsFlipX = props.flipX ?? (!isAdd && prev![5]! > prev![7]!);
     const wantsFlipY = props.flipY ?? (!isAdd && prev![6]! > prev![8]!);
-    if (uvMinX > uvMaxX !== wantsFlipX) {
+    if (shouldSwapUvEndpoints(uvMinX, uvMaxX, wantsFlipX)) {
         const previousMinX = uvMinX;
         uvMinX = uvMaxX;
         uvMaxX = previousMinX;
     }
-    if (uvMinY > uvMaxY !== wantsFlipY) {
+    if (shouldSwapUvEndpoints(uvMinY, uvMaxY, wantsFlipY)) {
         const previousMinY = uvMinY;
         uvMinY = uvMaxY;
         uvMaxY = previousMinY;
