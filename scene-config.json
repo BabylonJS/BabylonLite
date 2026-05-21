@@ -919,6 +919,24 @@
         "skipPerf": true
     },
     {
+        "id": 125,
+        "slug": "scene125-gs-bake-transform",
+        "name": "Scene 125 — Gaussian Splatting bakeCurrentTransformIntoVertices",
+        "maxMad": 1,
+        "maxRawKB": 37,
+        "description": "Loads Halo_Believe.splat, applies position/rotation/scale, calls bakeCurrentTransformIntoVertices(), verifies rendering.",
+        "tags": ["gaussian-splatting", "bake-transform"]
+    },
+    {
+        "id": 126,
+        "slug": "scene126-gs-material-plugin",
+        "name": "Scene 126 — Gaussian Splatting Material Plugin",
+        "maxMad": 0.5,
+        "maxRawKB": 35,
+        "description": "Loads Halo_Believe.splat and applies a GsShaderFragment that overrides finalColor at GS_FRAGMENT_MAIN_END (parity with BJS MaterialPluginBase CUSTOM_FRAGMENT_MAIN_END).",
+        "tags": ["gaussian-splatting", "material-plugin"]
+    },
+    {
         "id": 150,
         "slug": "scene150-manual-x-slide",
         "name": "Scene 150 — Manual X Slide Animation",
@@ -1057,5 +1075,16 @@
         "description": "WGSL ShaderMaterial uses alpha blending and explicit shader-side discard for alpha testing.",
         "tags": ["shader", "alpha", "procedural"],
         "skipPerf": true
+    },
+    {
+        "id": 170,
+        "slug": "scene170-navigation-basic",
+        "name": "Scene 170 - Navigation Basic",
+        "maxMad": 0.5,
+        "maxRawKB": 55,
+        "description": "Recast V2 navmesh built from ground + sphere + box, debug visualization, one stationary crowd agent at a fixed nav-snapped position.",
+        "tags": ["navigation", "recast", "wasm"],
+        "skipPerf": true,
+        "bundleTimeoutMs": 120000
     }
 ]

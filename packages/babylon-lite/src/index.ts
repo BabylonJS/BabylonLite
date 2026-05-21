@@ -67,6 +67,7 @@ export {
     createRibbon,
     createTube,
     createExtrudeShape,
+    createMeshFromData,
 } from "./mesh/mesh-factories.js";
 export { createSphereData } from "./mesh/create-sphere.js";
 export type { SphereMeshData } from "./mesh/create-sphere.js";
@@ -112,7 +113,10 @@ export { loadSkybox } from "./loader-skybox/load-skybox.js";
 export { loadSplat } from "./loader-splat/load-splat.js";
 export { loadSOG } from "./loader-splat/load-sog.js";
 export { loadSPZ } from "./loader-splat/load-spz.js";
-export type { GaussianSplattingMesh } from "./mesh/gaussian-splatting-mesh.js";
+export type { GaussianSplattingMesh } from "./mesh/GaussianSplatting/gaussian-splatting-mesh.js";
+export { bakeCurrentTransformIntoVertices, bakeTransformIntoVertices } from "./mesh/GaussianSplatting/gaussian-splatting-bake.js";
+export type { GsShaderFragment, GsFragmentSlot } from "./mesh/GaussianSplatting/gaussian-splatting-mesh.js";
+export { createProceduralGaussianSplattingMesh } from "./mesh/GaussianSplatting/create-gaussian-splatting-mesh.js";
 
 // ─── Shadows ─────────────────────────────────────────────────────────
 export { createShadowGenerator } from "./shadow/shadow-generator.js";
@@ -332,3 +336,19 @@ export {
     PhysicsMotionType,
 } from "./physics/havok.js";
 export type { PhysicsWorld, PhysicsBody, PhysicsShape, PhysicsAggregate, PhysicsShapeOptions, PhysicsShapeParameters, PhysicsAggregateOptions } from "./physics/havok.js";
+
+// ─── Navigation (Recast V2) ──────────────────────────────────────────
+export {
+    createNavigationPluginAsync,
+    createNavMesh,
+    createDebugNavMeshGeometry,
+    getClosestPoint,
+    computePath,
+    createNavCrowd,
+    addAgent,
+    getAgentPosition,
+    getAgentVelocity,
+    agentGoto,
+    updateNavCrowd,
+} from "./navigation/navigation.js";
+export type { NavigationPlugin, NavCrowd, NavMeshParameters, AgentParameters } from "./navigation/navigation.js";

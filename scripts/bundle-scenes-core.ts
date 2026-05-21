@@ -518,6 +518,11 @@ const MASTER_MANIFEST_FILE = "master-manifest.json";
 const NAME_POLYFILL = 'var __name=(fn,name)=>(Object.defineProperty(fn,"name",{value:name,configurable:true}),fn);';
 const LITE_BUNDLE_TARGET = "esnext";
 
+interface SceneConfigEntry {
+    id: number;
+    tags?: string[];
+}
+
 interface BundleManifestEntry {
     rawKB: number;
     gzipKB: number;
@@ -529,7 +534,8 @@ interface BundleManifestEntry {
 
 type BundleManifest = Record<string, BundleManifestEntry>;
 
-const sceneConfig: { id: number }[] = JSON.parse(readFileSync(resolve(ROOT, "scene-config.json"), "utf-8"));
+const sceneConfig: SceneConfigEntry[] = JSON.parse(readFileSync(resolve(ROOT, "scene-config.json"), "utf-8"));
+const sceneConfigByName = new Map(sceneConfig.map((s) => [`scene${s.id}`, s]));
 const ALL_SCENES = sceneConfig.map((s) => `scene${s.id}`);
 
 function orderBundleManifest(manifest: BundleManifest): BundleManifest {
@@ -932,8 +938,127 @@ function minimalVitePreloadPlugin(): Plugin {
     };
 }
 
+type PackageRequire = ReturnType<typeof createRequire>;
+
+interface VendorRuntime {
+    name: string;
+    external: (id: string) => boolean;
+    imports: Record<string, string>;
+    usedByLiteScene: (scene: string, source: string, config: SceneConfigEntry | undefined) => boolean;
+    copyFiles: (_require: PackageRequire, vendorDir: string) => void;
+}
+
+function hasAny(source: string, needles: readonly string[]): boolean {
+    return needles.some((needle) => source.includes(needle));
+}
+
+const VENDOR_RUNTIMES: VendorRuntime[] = [
+    {
+        name: "havok",
+        external: (id) => id === "@babylonjs/havok",
+        imports: {
+            "@babylonjs/havok": "/vendor/havok.js",
+        },
+        usedByLiteScene: (_scene, source) => source.includes("@babylonjs/havok"),
+        copyFiles: (_require, vendorDir) => {
+            const havokMain = _require.resolve("@babylonjs/havok");
+            const havokSrc = resolve(dirname(dirname(havokMain)), "esm/HavokPhysics_es.js");
+            if (existsSync(havokSrc)) {
+                writeFileSync(resolve(vendorDir, "havok.js"), readFileSync(havokSrc));
+            }
+        },
+    },
+    {
+        name: "manifold-3d",
+        external: (id) => id === "manifold-3d" || id.startsWith("manifold-3d/"),
+        imports: {
+            "manifold-3d": "/vendor/manifold-3d/manifold.js",
+            "manifold-3d/manifold.wasm?url": "data:text/javascript,export%20default%20%22/vendor/manifold-3d/manifold.wasm%22%3B",
+        },
+        usedByLiteScene: (_scene, source) => hasAny(source, ["initializeCsg2Async", "createCsg2FromMesh", "createMeshesFromCsg2", "createMeshFromCsg2"]),
+        copyFiles: (_require, vendorDir) => {
+            const manifoldJsSrc = _require.resolve("manifold-3d/manifold.js");
+            const manifoldDir = resolve(vendorDir, "manifold-3d");
+            mkdirSync(manifoldDir, { recursive: true });
+            writeFileSync(resolve(manifoldDir, "manifold.js"), readFileSync(manifoldJsSrc));
+            const manifoldWasmSrc = resolve(dirname(manifoldJsSrc), "manifold.wasm");
+            if (existsSync(manifoldWasmSrc)) {
+                writeFileSync(resolve(manifoldDir, "manifold.wasm"), readFileSync(manifoldWasmSrc));
+            }
+        },
+    },
+    {
+        name: "recast-navigation",
+        external: (id) => id.startsWith("@recast-navigation/"),
+        imports: {
+            "@recast-navigation/core": "/vendor/recast-navigation/core.js",
+            "@recast-navigation/generators": "/vendor/recast-navigation/generators.js",
+            "@recast-navigation/wasm": "/vendor/recast-navigation/wasm-compat.js",
+            "@recast-navigation/wasm/wasm": "/vendor/recast-navigation/wasm.js",
+        },
+        usedByLiteScene: (_scene, source, config) =>
+            source.includes("createNavigationPluginAsync") || config?.tags?.includes("navigation") === true || config?.tags?.includes("recast") === true,
+        copyFiles: (_require, vendorDir) => {
+            const recastDir = resolve(vendorDir, "recast-navigation");
+            mkdirSync(recastDir, { recursive: true });
+            const coreSrc = _require.resolve("@recast-navigation/core");
+            writeFileSync(resolve(recastDir, "core.js"), readFileSync(resolve(dirname(coreSrc), "index.mjs")));
+            const gensSrc = _require.resolve("@recast-navigation/generators");
+            writeFileSync(resolve(recastDir, "generators.js"), readFileSync(resolve(dirname(gensSrc), "index.mjs")));
+            const wasmPkg = dirname(dirname(_require.resolve("@recast-navigation/wasm")));
+            writeFileSync(resolve(recastDir, "wasm-compat.js"), readFileSync(resolve(wasmPkg, "dist/recast-navigation.wasm-compat.js")));
+            writeFileSync(resolve(recastDir, "wasm.js"), readFileSync(resolve(wasmPkg, "dist/recast-navigation.wasm.js")));
+            writeFileSync(resolve(recastDir, "recast-navigation.wasm.wasm"), readFileSync(resolve(wasmPkg, "dist/recast-navigation.wasm.wasm")));
+        },
+    },
+];
+
 function isLiteBundleExternal(id: string): boolean {
-    return id === "@babylonjs/havok" || id === "manifold-3d" || id.startsWith("manifold-3d/");
+    return VENDOR_RUNTIMES.some((runtime) => runtime.external(id));
+}
+
+function readLiteSceneSource(scene: string): string {
+    try {
+        return readFileSync(resolve(labDir, `src/lite/${scene}.ts`), "utf-8");
+    } catch {
+        return "";
+    }
+}
+
+function getLiteSceneVendorRuntimes(scene: string): VendorRuntime[] {
+    if (scene.startsWith("bjs-")) return [];
+    const source = readLiteSceneSource(scene);
+    const config = sceneConfigByName.get(scene);
+    return VENDOR_RUNTIMES.filter((runtime) => runtime.usedByLiteScene(scene, source, config));
+}
+
+function ensureBundleHtmlImportMap(scene: string): void {
+    const runtimes = getLiteSceneVendorRuntimes(scene);
+    if (runtimes.length === 0) return;
+    const htmlPath = resolve(labDir, `bundle-${scene}.html`);
+    if (!existsSync(htmlPath)) return;
+
+    const imports = Object.assign({}, ...runtimes.map((runtime) => runtime.imports)) as Record<string, string>;
+    const importMap = `<script type="importmap">${JSON.stringify({ imports })}</script>`;
+    const html = readFileSync(htmlPath, "utf-8");
+    const existing = html.match(/(^[ \t]*)<script type="importmap">[\s\S]*?<\/script>/m);
+    const next = existing ? html.replace(existing[0], `${existing[1] ?? ""}${importMap}`) : html.replace(/(^[ \t]*)<style>/m, `$1${importMap}\n$1<style>`);
+    if (next !== html) {
+        writeFileSync(htmlPath, next);
+    }
+}
+
+function copyVendorRuntimeFiles(): void {
+    const vendorDir = resolve(labDir, "public/vendor");
+    mkdirSync(vendorDir, { recursive: true });
+    const _require = createRequire(resolve(labDir, "package.json"));
+    for (const runtime of VENDOR_RUNTIMES) {
+        try {
+            runtime.copyFiles(_require, vendorDir);
+        } catch {
+            console.warn(`Could not copy ${runtime.name} vendor runtime; scenes that use it may fail until its package is installed.`);
+        }
+    }
 }
 
 export async function buildLiteSceneBundleInfo(scene: string, sourceRoot: string, infoDir: string): Promise<void> {
@@ -992,6 +1117,9 @@ export async function buildBundleScenes(): Promise<void> {
     // Each scene is updated atomically (new files written, stale old chunks removed).
     mkdirSync(outDir, { recursive: true });
     writeMasterBundleManifest();
+    for (const scene of SCENES) {
+        ensureBundleHtmlImportMap(scene);
+    }
 
     // ── 1. Build all scenes ──────────────────────────────────────────────
     /** Modules that must keep side effects (they patch prototypes via bare import). */
@@ -1066,7 +1194,7 @@ export async function buildBundleScenes(): Promise<void> {
                     input: { [scene]: resolve(labDir, isBjs ? `src/bjs/${scene.slice(4)}.ts` : `src/lite/${scene}.ts`) },
                     // Exclude third-party WASM runtimes from Lite bundles so the
                     // bundle-size metric reflects only first-party Lite engine code.
-                    ...(!isBjs && { external: ["@babylonjs/havok", "manifold-3d"] }),
+                    ...(!isBjs && { external: isLiteBundleExternal }),
                     output: {
                         format: "es",
                         entryFileNames: "[name].js",
@@ -1159,33 +1287,7 @@ export async function buildBundleScenes(): Promise<void> {
 
     console.log(`\nAll ${totalScenes} scenes built in ${elapsed(t0)}`);
 
-    // Copy third-party WASM runtimes needed by import-mapped bundle pages.
-    const vendorDir = resolve(labDir, "public/vendor");
-    mkdirSync(vendorDir, { recursive: true });
-    try {
-        const _require = createRequire(resolve(labDir, "package.json"));
-        const havokMain = _require.resolve("@babylonjs/havok");
-        const havokSrc = resolve(dirname(dirname(havokMain)), "esm/HavokPhysics_es.js");
-        if (existsSync(havokSrc)) {
-            writeFileSync(resolve(vendorDir, "havok.js"), readFileSync(havokSrc));
-        }
-    } catch {
-        /* @babylonjs/havok not installed — skip vendor copy */
-    }
-    try {
-        const _require = createRequire(resolve(labDir, "package.json"));
-        const manifoldJsSrc = _require.resolve("manifold-3d/manifold.js");
-        const manifoldDir = resolve(vendorDir, "manifold-3d");
-        mkdirSync(manifoldDir, { recursive: true });
-        writeFileSync(resolve(manifoldDir, "manifold.js"), readFileSync(manifoldJsSrc));
-        const manifoldWasmSrc = resolve(dirname(manifoldJsSrc), "manifold.wasm");
-        if (existsSync(manifoldWasmSrc)) {
-            writeFileSync(resolve(manifoldDir, "manifold.wasm"), readFileSync(manifoldWasmSrc));
-        }
-    } catch {
-        /* manifold-3d not installed — skip vendor copy */
-    }
-    // ── 2. Measure real runtime sizes via headless browser ───────────────
+    copyVendorRuntimeFiles();
     if (process.env.SKIP_MEASURE) {
         console.log("Skipping live size measurement (SKIP_MEASURE is set)");
         console.log(`✓ Bundle scenes built to ${outDir} (total ${elapsed(t0)})`);

@@ -1568,12 +1568,11 @@
     "bjsGzipKB": 345.7
   },
   "scene91": {
-    "rawKB": 54.8,
-    "gzipKB": 21.6,
+    "rawKB": 54.7,
+    "gzipKB": 21.5,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene91-generate-mipmaps-j_7YqpF4.js",
-      "scene91-manifold-DzfOEtRz.js",
       "scene91-standard-renderable-BjJfGiq8.js",
       "scene91-wgsl-helpers-WTsokIfK.js",
       "scene91.js"
@@ -1942,5 +1941,17 @@
     ],
     "bjsRawKB": 1200.6,
     "bjsGzipKB": 294
+  },
+  "scene170": {
+    "rawKB": 46.8,
+    "gzipKB": 18.3,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene170-standard-renderable-CKjSAPfl.js",
+      "scene170-wgsl-helpers-WTsokIfK.js",
+      "scene170.js"
+    ],
+    "bjsRawKB": 1330.9,
+    "bjsGzipKB": 326
   }
 }

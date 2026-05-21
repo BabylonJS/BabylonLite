@@ -9,15 +9,28 @@
  *  `attachGaussianSplattingMesh()` — scene-core stays GS-agnostic so non-GS
  *  scenes never pull in this pipeline. */
 
-import type { SceneNode } from "../scene/scene-node.js";
-import type { EngineContextInternal } from "../engine/engine.js";
-import type { Mat4 } from "../math/types.js";
-import { mat4Identity, mat4Compose } from "../math/mat4.js";
-import { ObservableVec3 } from "../math/observable-vec3.js";
-import { ObservableQuat } from "../math/observable-quat.js";
-import { createWorldMatrixState } from "../scene/world-matrix-state.js";
-import { eulerToQuat, createEulerProxy } from "../scene/scene-node.js";
-import { buildSplatGeometry, type SplatGeometry, type ParsedSplat } from "../loader-splat/splat-data.js";
+import type { SceneNode } from "../../scene/scene-node.js";
+import type { EngineContextInternal } from "../../engine/engine.js";
+import type { Mat4 } from "../../math/types.js";
+import { mat4Identity, mat4Compose } from "../../math/mat4.js";
+import { ObservableVec3 } from "../../math/observable-vec3.js";
+import { ObservableQuat } from "../../math/observable-quat.js";
+import { createWorldMatrixState } from "../../scene/world-matrix-state.js";
+import { eulerToQuat, createEulerProxy } from "../../scene/scene-node.js";
+import { buildSplatGeometry, type SplatGeometry, type ParsedSplat } from "../../loader-splat/splat-data.js";
+
+/** Names of the four WGSL slots a `GsShaderFragment` may inject into the
+ *  Gaussian-splat fragment shader. Markers in the WGSL source look like
+ *  `\/*GS_FRAGMENT_MAIN_END*\/` — valid comments when no plugin is present. */
+export type GsFragmentSlot = "GS_FRAGMENT_DEFINITIONS" | "GS_FRAGMENT_MAIN_BEGIN" | "GS_FRAGMENT_BEFORE_FRAGCOLOR" | "GS_FRAGMENT_MAIN_END";
+
+/** Data-only descriptor of a GS shader plugin. Lite equivalent of a BJS
+ *  `MaterialPluginBase`: snippets get spliced into the four GS fragment slots. */
+export interface GsShaderFragment {
+    readonly id: string;
+    readonly fragmentSlots?: Partial<Record<GsFragmentSlot, string>>;
+    readonly helperFunctions?: string;
+}
 
 /** Per-mesh GPU resources owned by a GaussianSplattingMesh. */
 export interface GaussianSplattingGpu {

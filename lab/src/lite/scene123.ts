@@ -1,10 +1,8 @@
 // Scene 123 — Gaussian Splatting SPZ parity (Lite).
 // Loads a gzipped SPZ cloud via loadSPZ() and renders it with SH
 // view-dependent shading. Mirrors playground XSNFXP#12 — camera at
-// (4.6, 0.956, 3). The BJS playground also sets
-// `mesh.rotation.x = Math.PI`; loadSPZ bakes that correction into the row
-// buffer + SH coefficients here so the mesh renders upright with identity
-// rotation.
+// (4.6, 0.956, 3). loadSPZ sets `mesh.rotation.x = Math.PI` on the scene
+// node, matching BJS convention.
 
 import { attachControl, createArcRotateCamera, createEngine, createSceneContext, loadSPZ, registerScene, startEngine } from "babylon-lite";
 

@@ -16,16 +16,16 @@
  *
  *  The pipeline is cached per `RenderTargetSignature`. */
 
-import type { EngineContextInternal, EngineContext } from "../engine/engine.js";
-import type { SceneContext } from "../scene/scene-core.js";
-import type { Renderable, DrawBinding } from "../render/renderable.js";
-import type { RenderTargetSignature } from "../engine/render-target.js";
-import { targetSignatureKey } from "../engine/render-target.js";
-import { getViewMatrix, getProjectionMatrix, getCameraPosition } from "../camera/camera.js";
-import { getSceneBindGroupLayout } from "../render/scene-helpers.js";
-import { getRenderTargetSize } from "../engine/engine.js";
-import { disposeGaussianSplattingMesh, type GaussianSplattingMesh } from "./gaussian-splatting-mesh.js";
-import WGSL from "../../shaders/gaussian-splatting.wgsl?raw";
+import type { EngineContextInternal, EngineContext } from "../../engine/engine.js";
+import type { SceneContext } from "../../scene/scene-core.js";
+import type { Renderable, DrawBinding } from "../../render/renderable.js";
+import type { RenderTargetSignature } from "../../engine/render-target.js";
+import { targetSignatureKey } from "../../engine/render-target.js";
+import { getViewMatrix, getProjectionMatrix, getCameraPosition } from "../../camera/camera.js";
+import { getSceneBindGroupLayout } from "../../render/scene-helpers.js";
+import { getRenderTargetSize } from "../../engine/engine.js";
+import { disposeGaussianSplattingMesh, type GaussianSplattingMesh, type GsShaderFragment } from "./gaussian-splatting-mesh.js";
+import WGSL from "../../../shaders/gaussian-splatting.wgsl?raw";
 
 interface PipelineEntry {
     pipeline: GPURenderPipeline;
@@ -34,17 +34,36 @@ interface PipelineEntry {
 
 // Per-device pipeline cache keyed by RenderTargetSignature string. Tree-shake-friendly
 // lazy init (no top-level `new Map`) — see GUIDANCE §4.
-let _cache: { device: GPUDevice; shaderModule: GPUShaderModule; entries: Map<string, PipelineEntry> } | null = null;
+let _cache: { device: GPUDevice; modules: Map<string, GPUShaderModule>; entries: Map<string, PipelineEntry> } | null = null;
 
-function getOrCreatePipeline(engine: EngineContextInternal, sig: RenderTargetSignature): PipelineEntry {
+export function applyGsFragments(wgsl: string, fragments: readonly GsShaderFragment[]): string {
+    const slotCode: Record<string, string> = {};
+    for (const frag of fragments) {
+        if (frag.helperFunctions) {
+            slotCode["GS_FRAGMENT_DEFINITIONS"] = (slotCode["GS_FRAGMENT_DEFINITIONS"] ?? "") + frag.helperFunctions + "\n";
+        }
+        for (const [slot, code] of Object.entries(frag.fragmentSlots ?? {})) {
+            slotCode[slot] = (slotCode[slot] ?? "") + code + "\n";
+        }
+    }
+    return wgsl.replace(/\/\*(GS_FRAGMENT_\w+)\*\//g, (_, slot: string) => slotCode[slot] ?? "");
+}
+
+function getOrCreatePipeline(engine: EngineContextInternal, sig: RenderTargetSignature, fragments?: readonly GsShaderFragment[]): PipelineEntry {
     const device = engine.device;
     if (!_cache || _cache.device !== device) {
-        _cache = { device, shaderModule: device.createShaderModule({ code: WGSL }), entries: new Map() };
+        _cache = { device, modules: new Map(), entries: new Map() };
     }
-    const key = targetSignatureKey(sig);
+    const fragKey = fragments && fragments.length > 0 ? "|" + fragments.map((f) => f.id).join(",") : "";
+    const key = targetSignatureKey(sig) + fragKey;
     let entry = _cache.entries.get(key);
     if (entry) {
         return entry;
+    }
+    let module = _cache.modules.get(fragKey);
+    if (!module) {
+        module = device.createShaderModule({ code: fragments && fragments.length > 0 ? applyGsFragments(WGSL, fragments) : WGSL });
+        _cache.modules.set(fragKey, module);
     }
     const meshBindGroupLayout = device.createBindGroupLayout({
         entries: [
@@ -59,7 +78,7 @@ function getOrCreatePipeline(engine: EngineContextInternal, sig: RenderTargetSig
     const pipeline = device.createRenderPipeline({
         layout: device.createPipelineLayout({ bindGroupLayouts: [getSceneBindGroupLayout(engine), meshBindGroupLayout] }),
         vertex: {
-            module: _cache.shaderModule,
+            module,
             entryPoint: "vs",
             buffers: [
                 {
@@ -75,7 +94,7 @@ function getOrCreatePipeline(engine: EngineContextInternal, sig: RenderTargetSig
             ],
         },
         fragment: {
-            module: _cache.shaderModule,
+            module,
             entryPoint: "fs",
             targets: [
                 {
@@ -105,7 +124,7 @@ function getOrCreatePipeline(engine: EngineContextInternal, sig: RenderTargetSig
 /** Build the Renderable for a GaussianSplattingMesh. Called from the deferred
  *  builder installed by `addToScene`. Owns the per-mesh UBO and a per-signature
  *  bind-group cache. */
-export function buildGaussianSplattingRenderable(scene: SceneContext, mesh: GaussianSplattingMesh): Renderable {
+export function buildGaussianSplattingRenderable(scene: SceneContext, mesh: GaussianSplattingMesh, fragments?: readonly GsShaderFragment[]): Renderable {
     const engine = scene.engine as EngineContextInternal;
     const device = engine.device;
 
@@ -234,7 +253,7 @@ export function buildGaussianSplattingRenderable(scene: SceneContext, mesh: Gaus
         order: 200,
         isTransparent: true,
         bind(eng: EngineContext, sig: RenderTargetSignature): DrawBinding {
-            const entry = getOrCreatePipeline(eng as EngineContextInternal, sig);
+            const entry = getOrCreatePipeline(eng as EngineContextInternal, sig, fragments);
             const bindGroup = getBindGroup(entry);
             return {
                 renderable: r,
@@ -257,8 +276,8 @@ export function buildGaussianSplattingRenderable(scene: SceneContext, mesh: Gaus
 /** Wire a `GaussianSplattingMesh` into a scene: pushes its renderable +
  *  registers a disposer that frees per-mesh GPU buffers and the worker.
  *  Called from the deferred builder installed by `addToScene`. */
-export function attachGaussianSplattingMesh(scene: SceneContext, mesh: GaussianSplattingMesh): void {
+export function attachGaussianSplattingMesh(scene: SceneContext, mesh: GaussianSplattingMesh, fragments?: readonly GsShaderFragment[]): void {
     const ctx = scene as unknown as { _renderables: Renderable[]; _disposables: (() => void)[] };
-    ctx._renderables.push(buildGaussianSplattingRenderable(scene, mesh));
+    ctx._renderables.push(buildGaussianSplattingRenderable(scene, mesh, fragments));
     ctx._disposables.push(() => disposeGaussianSplattingMesh(mesh));
 }

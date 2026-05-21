@@ -1,10 +1,8 @@
 // Scene 122 — Gaussian Splatting SOG parity (Lite).
 // Loads a SOG (zipped meta.json + WebPs) cloud via loadSOG() and renders
 // it with SH view-dependent shading. Mirrors the BJS playground
-// QA2662#12; note that the BJS playground sets
-// `mesh.rotation.x = Math.PI`, which loadSOG bakes into the row buffer +
-// SH coefficients on our side so the mesh renders upright with identity
-// rotation.
+// QA2662#12; loadSOG sets `mesh.rotation.x = Math.PI` on the scene node,
+// matching BJS convention.
 
 import { attachControl, createArcRotateCamera, createEngine, createSceneContext, loadSOG, registerScene, startEngine } from "babylon-lite";
 
