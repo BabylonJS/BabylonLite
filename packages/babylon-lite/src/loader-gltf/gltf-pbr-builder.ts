@@ -44,7 +44,15 @@ export function uploadTex(
     } else {
         device.queue.writeTexture({ texture: tex }, (fallback ?? new Uint8Array([255, 255, 255, 255])) as Uint8Array<ArrayBuffer>, { bytesPerRow: 4 }, { width: 1, height: 1 });
     }
-    return { texture: tex, view: tex.createView(), sampler, width: w, height: h };
+    const result: Texture2D = {
+        texture: tex,
+        view: tex.createView(),
+        sampler,
+        width: w,
+        height: h,
+    };
+    engine._dlr?.b(result, bitmap, srgb, !!bitmap, fallback);
+    return result;
 }
 
 /** Assemble a PbrMaterialPropsInternal from parsed glTF material data + already-uploaded

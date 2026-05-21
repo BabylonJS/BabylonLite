@@ -497,6 +497,7 @@ async function uploadMeshes(meshDatas: GltfMeshData[], features: GltfFeature[], 
             mesh._cpuNormals = m.normals;
             mesh._cpuUvs = m.uvs;
             mesh._cpuIndices = m.indices instanceof Uint32Array ? m.indices : new Uint32Array(m.indices);
+            engine._dlr?.m(mesh, m.uv2s, m.tangents, m.colors, m.indices, gpu.indexFormat);
 
             // Run all per-mesh feature hooks (skeleton, morph, …) in parallel.
             // Each hook mutates `mesh` directly (e.g. attaches mesh.skeleton).

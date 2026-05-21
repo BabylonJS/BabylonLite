@@ -1057,6 +1057,17 @@
         "skipPerf": true
     },
     {
+        "id": 164,
+        "slug": "scene164-device-lost-recovery",
+        "name": "Scene 164 - Device Lost Recovery",
+        "maxMad": 0.01,
+        "maxRegionMad": 0.08,
+        "maxRawKB": 95,
+        "description": "Scene 5 Alien glTF forces WebGPU device loss and validates opt-in automatic recovery without an app rebuild callback.",
+        "tags": ["pbr", "gltf", "anim", "recovery"],
+        "skipPerf": true
+    },
+    {
         "id": 170,
         "slug": "scene170-navigation-basic",
         "name": "Scene 170 - Navigation Basic",

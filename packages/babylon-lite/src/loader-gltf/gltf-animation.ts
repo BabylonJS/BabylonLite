@@ -265,6 +265,7 @@ export function parseAnimationData(
                 boneTexture: skeleton.boneTexture,
                 boneCount: jointNodes.length,
                 boneMatrices: skeleton.boneMatrices,
+                runtimeSkeleton: skeleton,
             });
         }
     }
@@ -297,6 +298,7 @@ export function parseAnimationData(
                 weightsBuffer: morphTargets.weightsBuffer,
                 weights: morphTargets.weights,
                 targetCount: morphTargets.count,
+                runtimeMorphTargets: morphTargets,
             });
         }
     }
