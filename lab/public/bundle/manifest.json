@@ -726,7 +726,7 @@
     "bjsGzipKB": 198.3
   },
   "scene52": {
-    "rawKB": 54.4,
+    "rawKB": 54.5,
     "gzipKB": 21.4,
     "ignoredRawKB": 0,
     "runtimeChunks": [
@@ -803,8 +803,8 @@
     "bjsGzipKB": 348.6
   },
   "scene58": {
-    "rawKB": 18.3,
-    "gzipKB": 7.4,
+    "rawKB": 18.5,
+    "gzipKB": 7.5,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene58.js"
@@ -813,8 +813,8 @@
     "bjsGzipKB": 195.2
   },
   "scene59": {
-    "rawKB": 59.7,
-    "gzipKB": 23.6,
+    "rawKB": 59.9,
+    "gzipKB": 23.7,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene59-billboard-renderable-BVpfBeTE.js",
@@ -1712,8 +1712,8 @@
     "bjsGzipKB": 421.1
   },
   "scene120": {
-    "rawKB": 32.7,
-    "gzipKB": 12.3,
+    "rawKB": 33.1,
+    "gzipKB": 12.5,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene120.js"
@@ -1722,8 +1722,8 @@
     "bjsGzipKB": 361.9
   },
   "scene121": {
-    "rawKB": 32.9,
-    "gzipKB": 12.4,
+    "rawKB": 33.3,
+    "gzipKB": 12.6,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene121.js"
@@ -1733,30 +1733,46 @@
   },
   "scene122": {
     "rawKB": 45.9,
-    "gzipKB": 17.5,
+    "gzipKB": 17.6,
     "ignoredRawKB": 0,
     "runtimeChunks": [
-      "scene122-gaussian-splatting-pipeline-sh-CYUuC31p.js",
+      "scene122-gaussian-splatting-pipeline-sh-CWoMSRyh.js",
       "scene122.js"
     ]
   },
   "scene123": {
     "rawKB": 42.6,
-    "gzipKB": 16.5,
+    "gzipKB": 16.6,
     "ignoredRawKB": 0,
     "runtimeChunks": [
-      "scene123-gaussian-splatting-pipeline-sh-ll6MfmsO.js",
+      "scene123-gaussian-splatting-pipeline-sh-Cx9iAiyC.js",
       "scene123.js"
     ]
   },
   "scene124": {
-    "rawKB": 48,
-    "gzipKB": 18.3,
+    "rawKB": 48.6,
+    "gzipKB": 18.7,
     "ignoredRawKB": 0,
     "runtimeChunks": [
-      "scene124-gaussian-splatting-pipeline-sh-D0G_AaFr.js",
+      "scene124-gaussian-splatting-pipeline-sh-B-WRB_Kj.js",
       "scene124-splat-ply-compressed-D-fMhYTB.js",
       "scene124.js"
+    ]
+  },
+  "scene125": {
+    "rawKB": 35,
+    "gzipKB": 13.2,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene125.js"
+    ]
+  },
+  "scene126": {
+    "rawKB": 33.3,
+    "gzipKB": 12.6,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene126.js"
     ]
   },
   "scene150": {
