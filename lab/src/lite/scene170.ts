@@ -68,7 +68,6 @@ async function main(): Promise<void> {
     });
 
     const debugGeo = createDebugNavMeshGeometry(nav);
-    console.log("[nav] debug mesh positionsHash:", debugGeo.positionsHash);
     const debugNormals = new Float32Array(debugGeo.positions.length);
     for (let i = 1; i < debugNormals.length; i += 3) {
         debugNormals[i] = 1;
