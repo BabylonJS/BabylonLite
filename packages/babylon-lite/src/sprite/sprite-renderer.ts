@@ -72,8 +72,6 @@ export interface SpriteRenderer extends RenderingContext {
     readonly _kind: typeof KIND;
     /** Renderer-owned layer membership. Use `addSpriteRendererLayer` / `removeSpriteRendererLayer` to mutate. */
     readonly layers: readonly Sprite2DLayer[];
-    /** @internal Hooks run at the start of `_update`, before layer uploads. */
-    _beforeUpdate: ((deltaMs: number) => void)[];
 }
 
 /** @internal Per-layer GPU resources owned by the renderer. */
@@ -112,6 +110,10 @@ interface SpriteRendererInternal extends SpriteRenderer {
     _indexBuffer: GPUBuffer;
     _pipelineCache: SpritePipelineCache;
     _layerGpu: Map<Sprite2DLayer, LayerGpu>;
+    /** Hooks run at the start of `_update`, before layer uploads. */
+    _beforeUpdate: ((deltaMs: number) => void)[];
+    /** Cleanup callbacks run by `disposeSpriteRenderer`; optional integrations register here. */
+    _disposeCallbacks: (() => void)[];
     layers: Sprite2DLayer[];
     _visibleBundles: GPURenderBundle[];
     /** Captured each `_update`, read in `_record`. */
@@ -222,6 +224,7 @@ export function createSpriteRenderer(engine: EngineContext, opts: SpriteRenderer
         _disposed: false,
         _clear: opts.clear ?? true,
         _beforeUpdate: [],
+        _disposeCallbacks: [],
         layers: opts.layers.slice(),
         clearColor: opts.clearValue ?? { r: 0, g: 0, b: 0, a: 1 },
         _drawCallsPre: 0,
@@ -421,6 +424,11 @@ export function disposeSpriteRenderer(sr: SpriteRenderer): void {
     }
     unregisterSpriteRenderer(rr);
     rr._disposed = true;
+    const disposeCallbacks = rr._disposeCallbacks.slice();
+    rr._disposeCallbacks.length = 0;
+    for (const dispose of disposeCallbacks) {
+        dispose();
+    }
     for (const lg of rr._layerGpu.values()) {
         disposeLayerGpu(lg);
     }

@@ -30,6 +30,11 @@ import { playSprite2DIndexAnimation } from "../../packages/babylon-lite/src/spri
 import type { SpriteRenderer } from "../../packages/babylon-lite/src/sprite/sprite-renderer";
 import type { Texture2D } from "../../packages/babylon-lite/src/texture/texture-2d";
 
+type SpriteAnimationTestRenderer = SpriteRenderer & {
+    _beforeUpdate: Array<(deltaMs: number) => void>;
+    _disposeCallbacks: Array<() => void>;
+};
+
 function makeMockAtlas(): SpriteAtlas {
     const texture = {
         texture: {} as GPUTexture,
@@ -87,6 +92,17 @@ function billboardUvMinX(system: ReturnType<typeof createFacingBillboardSystem>,
     return system._instanceData[index * system._instanceFloatsPerSprite + 5]!;
 }
 
+function makeSpriteAnimationScene(): SceneContextInternal {
+    return {
+        _beforeRender: [] as Array<(deltaMs: number) => void>,
+        _disposables: [] as Array<() => void>,
+    } as unknown as SceneContextInternal;
+}
+
+function spriteAnimationManagerBinding(manager: ReturnType<typeof createSpriteAnimationManager>): unknown {
+    return (manager as { _binding?: unknown })._binding;
+}
+
 describe("SpriteAnimationManager", () => {
     it("adds, removes, clears, and stops animations without touching sprite family code", () => {
         const manager = createSpriteAnimationManager();
@@ -102,13 +118,11 @@ describe("SpriteAnimationManager", () => {
             accumulatedMs: 0,
             animationStarted: true,
             removeWhenFinished: false,
-            _direction: 1,
         };
 
         addSpriteAnimation(manager, animation);
         addSpriteAnimation(manager, animation);
         expect(manager.animations).toEqual([animation]);
-        expect(animation._owner).toBe(manager);
 
         stopSpriteAnimation(animation);
         updateSpriteAnimationManager(manager, 101);
@@ -117,12 +131,10 @@ describe("SpriteAnimationManager", () => {
 
         removeSpriteAnimation(manager, animation);
         expect(manager.animations).toEqual([]);
-        expect(animation._owner).toBeUndefined();
 
         addSpriteAnimation(manager, animation);
         clearSpriteAnimations(manager);
         expect(manager.animations).toEqual([]);
-        expect(animation._owner).toBeUndefined();
     });
 
     it("moves animations between managers and clears ownership when finished", () => {
@@ -135,13 +147,11 @@ describe("SpriteAnimationManager", () => {
 
         expect(firstManager.animations).toEqual([]);
         expect(secondManager.animations).toEqual([animation]);
-        expect(animation._owner).toBe(secondManager);
 
         updateSpriteAnimationManager(secondManager, 51);
         updateSpriteAnimationManager(secondManager, 51);
 
         expect(secondManager.animations).toEqual([]);
-        expect(animation._owner).toBeUndefined();
     });
 
     it("updates replay callback and removal options when provided", () => {
@@ -379,7 +389,7 @@ describe("sprite animation render-loop attachments", () => {
         const layer = createSprite2DLayer(makeMockAtlas());
         addSprite2DIndex(layer, { positionPx: [0, 0], sizePx: [32, 32], frame: 0 });
         playSprite2DIndexAnimation(manager, layer, 0, 0, 3, true, 50);
-        const scene = { _beforeRender: [] as Array<(deltaMs: number) => void> } as unknown as SceneContextInternal;
+        const scene = makeSpriteAnimationScene();
 
         const binding = attachSpriteAnimationsToScene(scene, manager);
         scene._beforeRender[0]!(51);
@@ -387,7 +397,24 @@ describe("sprite animation render-loop attachments", () => {
         expect(sprite2DUvMinX(layer)).toBeCloseTo(0.125);
         disposeSpriteAnimationBinding(binding);
         expect(scene._beforeRender).toEqual([]);
-        expect(manager._binding).toBeUndefined();
+        expect(spriteAnimationManagerBinding(manager)).toBeUndefined();
+    });
+
+    it("registers scene disposal cleanup for scene attachments", () => {
+        const manager = createSpriteAnimationManager();
+        const scene = makeSpriteAnimationScene();
+
+        const binding = attachSpriteAnimationsToScene(scene, manager);
+        for (const dispose of scene._disposables) {
+            dispose();
+        }
+        scene._beforeRender.length = 0;
+
+        expect(binding.active).toBe(false);
+        expect(spriteAnimationManagerBinding(manager)).toBeUndefined();
+        const nextBinding = attachSpriteAnimationsToScene(makeSpriteAnimationScene(), manager);
+        expect(nextBinding.active).toBe(true);
+        disposeSpriteAnimationBinding(nextBinding);
     });
 
     it("attaches to renderers before upload using engine current delta", () => {
@@ -399,23 +426,46 @@ describe("sprite animation render-loop attachments", () => {
         const renderer = {
             _engine: { _currentDelta: 51 } as EngineContextInternal,
             _beforeUpdate: [] as Array<(deltaMs: number) => void>,
+            _disposeCallbacks: [] as Array<() => void>,
             _update(): void {
                 for (const hook of this._beforeUpdate) {
                     hook(this._engine._currentDelta);
                 }
                 frameSeenByUpload = sprite2DUvMinX(layer);
             },
-        } as unknown as SpriteRenderer;
+        } as unknown as SpriteAnimationTestRenderer;
 
         const binding = attachSpriteAnimationsToRenderer(renderer, manager);
         renderer._update();
 
         expect(frameSeenByUpload).toBeCloseTo(0.125);
         disposeSpriteAnimationBinding(binding);
-        expect(manager._binding).toBeUndefined();
+        expect(spriteAnimationManagerBinding(manager)).toBeUndefined();
+        expect(renderer._disposeCallbacks).toEqual([]);
         (renderer as unknown as { _engine: { _currentDelta: number } })._engine._currentDelta = 51;
         renderer._update();
         expect(sprite2DUvMinX(layer)).toBeCloseTo(0.125);
+    });
+
+    it("registers renderer disposal cleanup for renderer attachments", () => {
+        const manager = createSpriteAnimationManager();
+        const renderer = {
+            _beforeUpdate: [] as Array<(deltaMs: number) => void>,
+            _disposeCallbacks: [] as Array<() => void>,
+        } as unknown as SpriteAnimationTestRenderer;
+
+        const binding = attachSpriteAnimationsToRenderer(renderer, manager);
+        for (const dispose of renderer._disposeCallbacks.slice()) {
+            dispose();
+        }
+        renderer._beforeUpdate.length = 0;
+
+        expect(binding.active).toBe(false);
+        expect(renderer._disposeCallbacks).toEqual([]);
+        expect(spriteAnimationManagerBinding(manager)).toBeUndefined();
+        const nextBinding = attachSpriteAnimationsToRenderer({ _beforeUpdate: [], _disposeCallbacks: [] } as unknown as SpriteAnimationTestRenderer, manager);
+        expect(nextBinding.active).toBe(true);
+        disposeSpriteAnimationBinding(nextBinding);
     });
 
     it("composes renderer hooks and disposes them independently", () => {
@@ -432,12 +482,13 @@ describe("sprite animation render-loop attachments", () => {
         const renderer = {
             _engine: { _currentDelta: 51 } as EngineContextInternal,
             _beforeUpdate: [] as Array<(deltaMs: number) => void>,
+            _disposeCallbacks: [] as Array<() => void>,
             _update(): void {
                 for (const hook of this._beforeUpdate) {
                     hook(this._engine._currentDelta);
                 }
             },
-        } as unknown as SpriteRenderer;
+        } as unknown as SpriteAnimationTestRenderer;
 
         const firstBinding = attachSpriteAnimationsToRenderer(renderer, firstManager);
         const secondBinding = attachSpriteAnimationsToRenderer(renderer, secondManager);
@@ -445,6 +496,7 @@ describe("sprite animation render-loop attachments", () => {
 
         disposeSpriteAnimationBinding(firstBinding);
         expect(renderer._beforeUpdate).toHaveLength(1);
+        expect(renderer._disposeCallbacks).toHaveLength(1);
         renderer._update();
 
         expect(sprite2DUvMinX(firstLayer)).toBeCloseTo(0);
@@ -452,11 +504,12 @@ describe("sprite animation render-loop attachments", () => {
 
         disposeSpriteAnimationBinding(secondBinding);
         expect(renderer._beforeUpdate).toEqual([]);
+        expect(renderer._disposeCallbacks).toEqual([]);
     });
 
     it("prevents double attachment for one manager", () => {
         const manager = createSpriteAnimationManager();
-        const scene = { _beforeRender: [] as Array<(deltaMs: number) => void> } as unknown as SceneContextInternal;
+        const scene = makeSpriteAnimationScene();
         attachSpriteAnimationsToScene(scene, manager);
 
         expect(() => attachSpriteAnimationsToScene(scene, manager)).toThrow(/already attached/);
@@ -464,7 +517,7 @@ describe("sprite animation render-loop attachments", () => {
 
     it("prevents autonomous start while attached to a scene", () => {
         const manager = createSpriteAnimationManager();
-        const scene = { _beforeRender: [] as Array<(deltaMs: number) => void> } as unknown as SceneContextInternal;
+        const scene = makeSpriteAnimationScene();
         attachSpriteAnimationsToScene(scene, manager);
 
         expect(() => startSpriteAnimationManager(manager)).toThrow(/already attached/);
@@ -477,7 +530,7 @@ describe("sprite animation render-loop attachments", () => {
         );
         vi.stubGlobal("cancelAnimationFrame", vi.fn());
         const manager = createSpriteAnimationManager();
-        const scene = { _beforeRender: [] as Array<(deltaMs: number) => void> } as unknown as SceneContextInternal;
+        const scene = makeSpriteAnimationScene();
 
         try {
             startSpriteAnimationManager(manager);

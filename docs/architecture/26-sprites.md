@@ -2083,7 +2083,7 @@ Provides Babylon.js-style per-sprite frame animation for both Sprite2D (index/ha
   - Delay clamped to minimum 1ms
 - **Index vs handle separation.** Index-only callers pay zero bytes for handle tracking code. Handle-based animations survive swap-remove via stable identity.
 - **Raw-index animations are slot animations.** `playSprite2DIndexAnimation` and `playBillboardSpriteIndexAnimation` intentionally bind to the numeric slot for structurally stable layers/systems. If a caller swap-removes that slot, the animation follows the new occupant. Use the handle helpers for stable sprite identity.
-- **Manager ownership is explicit.** Adding an animation tags it with the owning manager. Re-adding the same animation to the same manager is an O(1) no-op; adding it to another manager detaches it from the previous owner first. Finish, removal, and clear paths unset the owner.
+- **Manager ownership is explicit.** Adding an animation tracks it with the owning manager. Re-adding the same animation to the same manager is an O(1) no-op; adding it to another manager detaches it from the previous owner first. Finish, removal, and clear paths unset the owner internally.
 - **Replay options are explicit.** `playSpriteFrameAnimation` preserves existing callback/removal options when its `options` argument is omitted, and replaces them when an options object is provided.
 - **`removeWhenFinished` option** (equivalent to Babylon.js disposing after an animation finishes):
   - For handles: calls `removeSprite2D(handle)` or `removeBillboardSprite(handle)`
@@ -2104,7 +2104,6 @@ export interface SpriteFrameAnimation {
   animationStarted: boolean;
     onEnd?: () => void;
   removeWhenFinished: boolean;
-  _owner?: SpriteAnimationManager;
 }
 
 export interface SpriteAnimationTarget {
@@ -2118,6 +2117,11 @@ export interface SpriteAnimationManager {
     animations: SpriteFrameAnimation[];
   fixedDeltaMs: number;
   running: boolean;
+}
+
+export interface SpriteAnimationBinding {
+  readonly _entityType: "sprite-animation-binding";
+  active: boolean;
 }
 
 export interface SpriteAnimationManagerOptions {
@@ -2199,6 +2203,8 @@ export function attachSpriteAnimationsToRenderer(
 export function disposeSpriteAnimationBinding(binding: SpriteAnimationBinding): void;
 ```
 
+Underscore-prefixed runtime bookkeeping such as RAF handles, active render-loop bindings, and animation ownership/direction tracking is intentionally kept behind non-exported internal types. The only underscored fields in the public API block are discriminator tags.
+
 ### Usage Example
 
 ```typescript
@@ -2225,8 +2231,8 @@ const binding = attachSpriteAnimationsToRenderer(sr, animMgr);
 - `updateSpriteAnimationManager` iterates `manager.animations`, accumulates time, advances frame when `accumulatedMs > delayMs` (not `>=`), and removes finished non-loop animations after the callback/removal path has run.
 - `startSpriteAnimationManager` / `stopSpriteAnimationManager` reuse the internal `animation-loop.ts` RAF lifecycle helper shared with the 3D `AnimationManager`; sprite-specific scene/renderer attachments remain in this module.
 - Attachment helpers:
-  - `attachSpriteAnimationsToScene` unshifts a `_beforeRender` hook that receives scene delta and calls `updateSpriteAnimationManager`. Dispose via `disposeSpriteAnimationBinding`; disposal splices the hook and clears `manager._binding`.
-  - `attachSpriteAnimationsToRenderer` pushes a callback into `sr._beforeUpdate`; `SpriteRenderer._update` passes the engine's current delta to these hooks before layer upload. Dispose splices only that callback via `disposeSpriteAnimationBinding` and clears `manager._binding`.
+  - `attachSpriteAnimationsToScene` unshifts a `_beforeRender` hook that receives scene delta and calls `updateSpriteAnimationManager`. Dispose via `disposeSpriteAnimationBinding`; disposal splices the hook and clears the manager's internal binding state. Scene-attached bindings also register the same cleanup with scene disposal, so `disposeScene(scene)` releases that binding state.
+  - `attachSpriteAnimationsToRenderer` pushes a callback into the renderer's internal before-update hook list; `SpriteRenderer._update` passes the engine's current delta to these hooks before layer upload. Dispose splices only that callback via `disposeSpriteAnimationBinding` and clears the manager's internal binding state. Renderer-attached bindings register the same cleanup with `disposeSpriteRenderer`, so renderer disposal also releases that binding state.
 - Family helpers live in separate modules. `sprite-2d-index-animation.ts` imports no handle code; `sprite-2d-handle-animation.ts` imports the stable-handle helpers. Billboard index/handle helpers follow the same split.
 - Index target tracking uses raw slot indices. If the index is swap-removed by non-animation code, the animation follows raw-index semantics and continues targeting the same numeric slot. Callers should use handles for animated sprites that may be removed externally, or manually stop animations before remove.
 - Handle target tracking uses stable `Sprite2DHandle` or `BillboardSpriteHandle`. Swap-remove is safe; the handle stays valid until the animation removes it via `removeWhenFinished`.
