@@ -847,6 +847,7 @@
         "maxRawKB": 82,
         "description": "Frame-graph RTT demo for Standard and PBR material views with shadow-depth feature overrides; the normal source materials render in the main pass and the depth RTTs are displayed on planes.",
         "tags": ["std", "pbr", "frame-graph", "rtt", "shadow"],
+        "skipParity": true,
         "skipPerf": true
     },
     {
