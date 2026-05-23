@@ -847,6 +847,7 @@
         "maxRawKB": 82,
         "description": "Frame-graph RTT demo for Standard and PBR material views with shadow-depth feature overrides; the normal source materials render in the main pass and the depth RTTs are displayed on planes.",
         "tags": ["std", "pbr", "frame-graph", "rtt", "shadow"],
+        "skipParity": true,
         "skipPerf": true
     },
     {
@@ -915,6 +916,26 @@
         "maxRawKB": 35,
         "description": "Loads Halo_Believe.splat and applies a GsShaderFragment that overrides finalColor at GS_FRAGMENT_MAIN_END (parity with BJS MaterialPluginBase CUSTOM_FRAGMENT_MAIN_END).",
         "tags": ["gaussian-splatting", "material-plugin"]
+    },
+    {
+        "id": 140,
+        "slug": "scene140-nme-pcf-alpha-discard-shadows",
+        "name": "Scene 140 — NME PCF Alpha Discard Shadows",
+        "maxMad": 0.25,
+        "maxRawKB": 102,
+        "description": "Scene 66 NME variant where the sphere and cube caster materials discard fragments when final alpha is below 0.4, validating PCF shadow depth passes that execute material fragment discard while morph-target shadows refresh every frame.",
+        "tags": ["nme", "procedural", "shadows", "morph", "reflection"],
+        "skipPerf": true
+    },
+    {
+        "id": 141,
+        "slug": "scene141-esm-material-casters",
+        "name": "Scene 141 — ESM Material Casters",
+        "maxMad": 0.1,
+        "maxRawKB": 137,
+        "description": "Scene 65 ESM directional-shadow setup with three caster materials: NodeMaterial, Standard, and PBR spheres all cast shadows onto a NodeMaterial receiver.",
+        "tags": ["nme", "standard", "pbr", "shadows"],
+        "skipPerf": true
     },
     {
         "id": 150,

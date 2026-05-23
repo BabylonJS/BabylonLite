@@ -117,14 +117,15 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
     const rt = config.rt;
     config.clrColor ??= { r: 0.2, g: 0.2, b: 0.3, a: 1.0 };
     config.clr ??= true;
-    const swapchain = rt.descriptor.resolveToSwapchain === true;
-    const sampleCount = rt.descriptor.sampleCount ?? 1;
-    // Offscreen RTTs need a Y-flipped projection so the result texture samples
-    // upright when sourced by a downstream pass. Swapchain passes never flip.
-    const flipY = !swapchain;
+    const swapchain = rt._descriptor.resolveToSwapchain === true;
+    const sampleCount = rt._descriptor.sampleCount ?? 1;
+    // Offscreen RTTs usually need a Y-flipped projection so the result texture
+    // samples upright when sourced by a downstream pass. Depth-only shadow maps
+    // can override this to preserve shadow-sampler UV conventions.
+    const flipY = rt._descriptor.flipY ?? !swapchain;
     const targetSignature: RenderTargetSignature = {
-        colorFormat: rt.descriptor.colorFormat,
-        depthStencilFormat: rt.descriptor.depthStencilFormat,
+        colorFormat: rt._descriptor.colorFormat,
+        depthStencilFormat: rt._descriptor.depthStencilFormat,
         sampleCount,
         flipY,
     };
@@ -307,7 +308,7 @@ function buildRenderPassDescriptor(task: RenderTask, rt: RenderTarget): void {
             depthLoadOp: "clear",
             depthStoreOp: "store",
         };
-        if (rt.descriptor.depthStencilFormat?.includes("stencil")) {
+        if (rt._descriptor.depthStencilFormat?.includes("stencil")) {
             depthAttachment.stencilClearValue = 0;
             depthAttachment.stencilLoadOp = "clear";
             depthAttachment.stencilStoreOp = "store";
@@ -415,7 +416,7 @@ function executePassBody(task: RenderTask, pass: GPURenderPassEncoder): number {
     // or visibility version (_vis). The bundle records group(0) at its start so it can
     // be replayed standalone (executeBundles inherits no inherited state).
     if (task._lastVersion !== scene._renderableVersion || task._lastVis !== _vis || opaqueBundles.length === 0) {
-        const desc = rt.descriptor;
+        const desc = rt._descriptor;
         const be = eng.device.createRenderBundleEncoder({
             colorFormats: desc.colorFormat ? [desc.colorFormat] : [],
             depthStencilFormat: desc.depthStencilFormat,

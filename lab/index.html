@@ -1479,6 +1479,49 @@
                 font-size: 0.75rem;
                 margin-bottom: 0.6rem;
             }
+            .bf-master-compare {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+                gap: 0.5rem;
+                margin-bottom: 0.65rem;
+                padding: 0.6rem;
+                border: 1px solid #30363d;
+                border-radius: 8px;
+                background: #161b22;
+            }
+            .bf-master-compare-title {
+                grid-column: 1 / -1;
+                color: #8b949e;
+                font-size: 0.72rem;
+                font-weight: 700;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+            .bf-master-compare-metric {
+                color: #8b949e;
+                font-size: 0.75rem;
+            }
+            .bf-master-compare-metric strong {
+                display: block;
+                margin-top: 0.15rem;
+                color: #e6edf3;
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                font-size: 0.86rem;
+            }
+            .bf-master-compare-delta {
+                display: inline-block;
+                margin-left: 0.35rem;
+                font-weight: 700;
+            }
+            .bf-master-compare-delta.increase {
+                color: #f85149;
+            }
+            .bf-master-compare-delta.decrease {
+                color: #3fb950;
+            }
+            .bf-master-compare-delta.neutral {
+                color: #8b949e;
+            }
             .bf-toolbar {
                 position: sticky;
                 top: 0;
@@ -6091,8 +6134,18 @@
                     if (n < 1024 * 1024) return (n / 1024).toFixed(2) + " KB";
                     return (n / (1024 * 1024)).toFixed(2) + " MB";
                 }
+                function fmtKB(n) {
+                    return Number(n).toFixed(1) + " KB";
+                }
                 function fmtDeltaBytes(n) {
                     return (n > 0 ? "+" : "-") + fmtBytes(Math.abs(n));
+                }
+                function fmtDeltaKB(n) {
+                    return (n > 0 ? "+" : "-") + Math.abs(n).toFixed(1) + " KB";
+                }
+                function numericSize(value) {
+                    var n = parseFloat(value);
+                    return isFinite(n) ? n : null;
                 }
                 function modulePrefix(id) {
                     if (id.indexOf("packages/babylon-lite/") === 0) return "lite";
@@ -6645,6 +6698,45 @@
                     return { label: label, info: info, manifest: manifest || {}, runtimeSet: runtimeSet, hasRuntime: hasRuntime, subtitle: sub };
                 }
 
+                function renderSceneSizeMetric(label, key, localSizes, masterSizes) {
+                    var local = numericSize(localSizes && localSizes[key]);
+                    var master = numericSize(masterSizes && masterSizes[key]);
+                    if (local == null) return "";
+                    if (master == null) {
+                        return '<div class="bf-master-compare-metric">' + label + '<strong>' + fmtKB(local) + '<span class="bf-master-compare-delta neutral">new vs master</span></strong></div>';
+                    }
+                    var delta = Math.round((local - master) * 10) / 10;
+                    var cls = delta > 0 ? "increase" : delta < 0 ? "decrease" : "neutral";
+                    var deltaText = delta === 0 ? "0.0 KB" : fmtDeltaKB(delta);
+                    return (
+                        '<div class="bf-master-compare-metric">' +
+                        label +
+                        '<strong>' +
+                        fmtKB(local) +
+                        '<span class="bf-master-compare-delta ' +
+                        cls +
+                        '" title="Master: ' +
+                        fmtKB(master) +
+                        '">' +
+                        deltaText +
+                        " vs master</span></strong></div>"
+                    );
+                }
+
+                function renderSceneMasterComparison(scene, manifest, masterManifest) {
+                    var localSizes = manifest && manifest[scene];
+                    var masterSizes = masterManifest && masterManifest[scene];
+                    if (!localSizes) {
+                        return '<div class="bf-note">Local bundle size unavailable in <code>manifest.json</code>.</div>';
+                    }
+                    if (!masterManifest) {
+                        return '<div class="bf-note">No master bundle baseline loaded; scene-level delta unavailable.</div>';
+                    }
+                    var metrics = renderSceneSizeMetric("Raw minified", "rawKB", localSizes, masterSizes) + renderSceneSizeMetric("Gzip", "gzipKB", localSizes, masterSizes);
+                    if (!metrics) return "";
+                    return '<div class="bf-master-compare"><div class="bf-master-compare-title">Current vs master bundle</div>' + metrics + "</div>";
+                }
+
                 function applyBundleSource(source) {
                     var data = state.sources[source];
                     if (!data) return;
@@ -6689,7 +6781,7 @@
                         var info = results[0];
                         var manifest = results[1] || {};
                         var masterInfo = results[2];
-                        var masterManifest = results[3] || {};
+                        var masterManifest = results[3];
                         var localData = prepareBundleSourceData("Local", info, manifest, scene);
                         var masterData = prepareBundleSourceData("Master", masterInfo, masterManifest, scene);
                         if (!localData && !masterData) {
@@ -6739,6 +6831,7 @@
                                   "</label>"
                                 : "") +
                             "</div>" +
+                            renderSceneMasterComparison(scene, manifest, masterManifest) +
                             '<div class="bf-note">Chunk sizes are post-minification bytes. Module sizes are the rendered contribution of each <code>.ts</code> / <code>.wgsl</code> file. Chips show the exported symbols that survived tree-shaking.</div>' +
                             (masterData ? "" : '<div class="bf-note">Master file breakdown unavailable. Run <code>pnpm build:bundle-master-info</code> to generate <code>master-bundle-info</code>.</div>') +
                             '<div id="bf-list"></div>';

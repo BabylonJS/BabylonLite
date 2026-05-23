@@ -35,6 +35,8 @@ export const pbrGroupBuilder: MeshGroupBuilder = async (scene, meshes) => {
     return result;
 };
 
+pbrGroupBuilder._materialFamily = "pbr";
+
 export interface PbrMaterialProps extends Material {
     baseColorTexture?: Texture2D;
     normalTexture?: Texture2D;

@@ -25,11 +25,12 @@ import {
     _getPbrExts,
     PBR_HAS_NORMAL_MAP,
     PBR_HAS_ALPHA_BLEND,
-    PBR2_GENERATE_DEPTH_FOR_SHADOWS,
+    PBR2_NO_COLOR_OUTPUT,
     PBR2_HAS_REFRACTION,
     PBR2_HAS_UV2,
     PBR_HAS_ENV,
     PBR_HAS_TONEMAP,
+    PBR2_ESM_SHADOW_OUTPUT,
 } from "./pbr-flags.js";
 import { createPbrComposer } from "./pbr-compose.js";
 import { _computePbrMaterialFeatures } from "./pbr-material.js";
@@ -58,7 +59,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     for (let i = 0; i < scene.lights.length; i++) {
         const sg = scene.lights[i]!.shadowGenerator;
         if (sg) {
-            shadowLights.push({ lightIndex: i, shadowType: sg.shadowType, gen: sg });
+            shadowLights.push({ lightIndex: i, shadowType: sg._shadowType, gen: sg });
         }
     }
     const hasSomeShadows = shadowLights.length > 0;
@@ -282,13 +283,16 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
 
         const lr = writeMeshLightSelection(mesh, s.lights);
         const lightCount = lr > 0 ? 1 : -lr;
-        const lightMode: PbrLightMode = lightCount === 0 ? 0 : lightCount === 1 && !(mesh.receiveShadows && hasSomeShadows) ? 1 : 2;
-        const singleLightType = lightMode === 1 ? getPackedSingleLightType(s.lights, lr - 1) : "";
-        const meshFeatures = _computeMeshFeatures(mesh, mesh.receiveShadows && hasSomeShadows);
         const features = renderFeatures.features;
         const features2 = renderFeatures.features2 ?? 0;
+        const shadowOutput = (features2 & (PBR2_NO_COLOR_OUTPUT | PBR2_ESM_SHADOW_OUTPUT)) !== 0;
+        const receiveShadows = !shadowOutput && mesh.receiveShadows && hasSomeShadows;
+        const lightMode: PbrLightMode = lightCount === 0 ? 0 : lightCount === 1 && !receiveShadows ? 1 : 2;
+        const singleLightType = lightMode === 1 ? getPackedSingleLightType(s.lights, lr - 1) : "";
+        const meshFeatures = _computeMeshFeatures(mesh, receiveShadows);
+        const esmShadowDepthCode = (features2 & PBR2_ESM_SHADOW_OUTPUT) !== 0 ? (mat as PbrMaterialProps & { readonly _esmShadowDepthCode: string })._esmShadowDepthCode : "";
 
-        const composed = composePbr(features, features2, meshFeatures, sceneFeatures, lightMode, singleLightType);
+        const composed = composePbr(features, features2, meshFeatures, sceneFeatures, lightMode, singleLightType, esmShadowDepthCode);
         const bindings = getOrCreatePbrBindings(engine, features, features2, meshFeatures, sceneFeatures, composed, `${lightMode}:${singleLightType}`);
 
         // Mesh UBO (world matrix at offset 0; spec.totalBytes covers any extra fields).
@@ -307,7 +311,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
 
         // Shadow bind group (group 2) — shared across receiving meshes via shadowBGCache.
         let shadowBindGroup: GPUBindGroup | null = null;
-        const meshShadowLights = mesh.receiveShadows && hasSomeShadows ? shadowLights : [];
+        const meshShadowLights = receiveShadows ? shadowLights : [];
         if (meshShadowLights.length > 0 && bindings._shadowBGL) {
             let cached = shadowBGCache.get(bindings._shadowBGL);
             if (!cached) {
@@ -315,9 +319,9 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
                 let b = 0;
                 for (const sl of meshShadowLights) {
                     const sg = sl.gen;
-                    entries.push({ binding: b++, resource: sg.blurredTexture.createView() });
-                    entries.push({ binding: b++, resource: sg.blurredSampler });
-                    entries.push({ binding: b++, resource: { buffer: sg.shadowUBO } });
+                    entries.push({ binding: b++, resource: sg._depthTexture.createView() });
+                    entries.push({ binding: b++, resource: sg._depthSampler });
+                    entries.push({ binding: b++, resource: { buffer: sg._shadowUBO } });
                 }
                 cached = device.createBindGroup({ layout: bindings._shadowBGL, entries });
                 shadowBGCache.set(bindings._shadowBGL, cached);
@@ -341,7 +345,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
             },
         ]);
 
-        const isTransparent = (features2 & PBR2_GENERATE_DEPTH_FOR_SHADOWS) === 0 && (features & PBR_HAS_ALPHA_BLEND) !== 0;
+        const isTransparent = (features2 & (PBR2_NO_COLOR_OUTPUT | PBR2_ESM_SHADOW_OUTPUT)) === 0 && (features & PBR_HAS_ALPHA_BLEND) !== 0;
         const isTransmissive = !isTransparent && (features2 & PBR2_HAS_REFRACTION) !== 0;
         const order = mesh.renderOrder ?? (isTransparent ? 150 : isTransmissive ? 140 : 100);
 
