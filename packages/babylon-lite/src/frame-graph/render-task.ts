@@ -254,20 +254,13 @@ function resolvePendingMeshes(task: RenderTask, sc: SceneContextInternal): void 
 /** Per-frame back-to-front sort for transparent bindings using the active camera. */
 function sortTransparentBindings(task: RenderTask, camera: Camera | null | undefined): void {
     const arr = task._transparentBindings;
-    if (arr.length <= 1) {
-        return;
-    }
-    if (!camera) {
+    if (arr.length <= 1 || !camera) {
         return;
     }
     const v = getViewMatrix(camera);
     for (const b of arr) {
-        b._sortDistance = 0;
         const wc = b.renderable._worldCenter;
-        if (wc) {
-            const [wx, wy, wz] = wc;
-            b._sortDistance = wx * v[2]! + wy * v[6]! + wz * v[10]! + v[14]!;
-        }
+        b._sortDistance = wc ? wc[0]! * v[2]! + wc[1]! * v[6]! + wc[2]! * v[10]! + v[14]! : 0;
     }
     arr.sort((a, b) => b._sortDistance! - a._sortDistance! || a.renderable.order - b.renderable.order);
 }

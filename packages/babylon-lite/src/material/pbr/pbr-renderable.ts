@@ -195,13 +195,8 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         _registerPbrExt(mod.subsurfaceExt);
     }
     if (hasRefraction) {
-        if (hasTransmissionRefraction) {
-            const mod = await import("./pbr-transmission-ext.js");
-            mod.registerPbrTransmission(scene as SceneContextInternal, engine, _registerPbrExt);
-        } else {
-            const mod = await import("./fragments/refraction-fragment.js");
-            _registerPbrExt(mod.refractionExt);
-        }
+        const mod = await import("./pbr-refraction.js");
+        await mod.registerPbrRefraction(scene as SceneContextInternal, engine, _registerPbrExt, hasTransmissionRefraction);
     }
     if (needsEmissiveColor) {
         const mod = await import("./fragments/emissive-fragment.js");
@@ -361,8 +356,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         ]);
 
         const isTransparent = (features2 & (PBR2_NO_COLOR_OUTPUT | PBR2_ESM_SHADOW_OUTPUT)) === 0 && (features & PBR_HAS_ALPHA_BLEND) !== 0;
-        const _transmissive = needsTaskRefraction;
-        const order = mesh.renderOrder ?? (isTransparent || _transmissive ? 150 : 100);
+        const order = mesh.renderOrder ?? (isTransparent || needsTaskRefraction ? 150 : 100);
 
         const hasNormalMap = (features & PBR_HAS_NORMAL_MAP) !== 0;
         const hasUV2 = (features2 & PBR2_HAS_UV2) !== 0 && (meshFeatures & MSH_HAS_UV2) !== 0;
@@ -445,7 +439,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         const r: Renderable = {
             order,
             isTransparent,
-            _transmissive,
+            _transmissive: needsTaskRefraction,
             mesh,
             bind(eng, sig) {
                 const pipeline = getOrCreatePbrPipeline(eng as EngineContextInternal, sig, bindings);
