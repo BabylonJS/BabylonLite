@@ -1965,5 +1965,80 @@
     ],
     "bjsRawKB": 1330.9,
     "bjsGzipKB": 326
+  },
+  "scene171": {
+    "rawKB": 90.8,
+    "gzipKB": 35.8,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene171-generate-mipmaps-Car8GfwW.js",
+      "scene171-gltf-glb-parser-BdYiApo0.js",
+      "scene171-mesh-features-CSbn-Xie.js",
+      "scene171-pbr-renderable-k3NSZYL2.js",
+      "scene171-singlelight-hemispheric-wgsl-fdOH0N74.js",
+      "scene171-standard-renderable-U9XLcOPR.js",
+      "scene171-wgsl-helpers-WTsokIfK.js",
+      "scene171.js"
+    ],
+    "bjsRawKB": 3800,
+    "bjsGzipKB": 961.4
+  },
+  "scene172": {
+    "rawKB": 55.8,
+    "gzipKB": 21.6,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene172-standard-renderable-tioHl0m3.js",
+      "scene172-wgsl-helpers-WTsokIfK.js",
+      "scene172.js"
+    ],
+    "bjsRawKB": 2235.1,
+    "bjsGzipKB": 576.8
+  },
+  "scene173": {
+    "rawKB": 57.5,
+    "gzipKB": 22.2,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene173-standard-renderable-BMT633bz.js",
+      "scene173-wgsl-helpers-WTsokIfK.js",
+      "scene173.js"
+    ],
+    "bjsRawKB": 2235.3,
+    "bjsGzipKB": 576.9
+  },
+  "scene174": {
+    "rawKB": 91.4,
+    "gzipKB": 36.2,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene174-generate-mipmaps-CnSzKlvs.js",
+      "scene174-gltf-glb-parser-BdYiApo0.js",
+      "scene174-mesh-features-CSbn-Xie.js",
+      "scene174-pbr-renderable-SyrBZoGw.js",
+      "scene174-singlelight-hemispheric-wgsl--TtdjZvs.js",
+      "scene174-standard-renderable-Bvb8_JmK.js",
+      "scene174-wgsl-helpers-WTsokIfK.js",
+      "scene174.js"
+    ],
+    "bjsRawKB": 3065.1,
+    "bjsGzipKB": 785.8
+  },
+  "scene175": {
+    "rawKB": 89.7,
+    "gzipKB": 35.6,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene175-generate-mipmaps-DbygUBMi.js",
+      "scene175-gltf-glb-parser-BdYiApo0.js",
+      "scene175-mesh-features-CSbn-Xie.js",
+      "scene175-pbr-renderable-Du8pUXxK.js",
+      "scene175-singlelight-hemispheric-wgsl-mcWzrVrn.js",
+      "scene175-standard-renderable-W2-K3UVY.js",
+      "scene175-wgsl-helpers-WTsokIfK.js",
+      "scene175.js"
+    ],
+    "bjsRawKB": 3064.1,
+    "bjsGzipKB": 785.3
   }
 }
