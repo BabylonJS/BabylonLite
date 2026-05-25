@@ -337,7 +337,7 @@ feature is tree-shakable: scenes that don't use it pay no bundle cost.
 | `KHR_materials_ior` | ✅ | Auto-detected; index of refraction for dielectrics (Scene 30) |
 | `KHR_materials_specular` | ✅ | Auto-detected; dielectric specular intensity + color (Scene 30) |
 | `KHR_materials_volume` | ✅ | Auto-detected; attenuation color/distance + thickness (Scene 30) |
-| `KHR_materials_transmission` | ⚡ | Env-only refraction by default (Scene 30); Scene 112 uses the scene-scoped opaque RTT refraction helper for FlightHelmetKTX parity. |
+| `KHR_materials_transmission` | ⚡ | Env-only refraction by default (Scene 30); frame-graph scene-texture transmission is opt-in and used by Scene 142. Scene 112 still uses the scene-scoped opaque RTT refraction helper for FlightHelmetKTX parity. |
 | `KHR_texture_transform` | ✅ | Auto-resolved at load (material-wide UV transform) |
 | `KHR_texture_basisu` | ✅ | Auto-detected; dynamically loads KTX2 decoder/upload path only for glTF assets that declare the extension (Scene 112) |
 | `KHR_draco_mesh_compression` | ✅ | Auto-detected; loads `draco_decoder.js` + `.wasm` on demand from site root (override via `setDracoBaseUrl()`) |
@@ -354,4 +354,3 @@ feature is tree-shakable: scenes that don't use it pay no bundle cost.
 | Screen-space SSS (PrePass) | ❌ | Not implemented — only BRDF-layer translucency |
 
 See `lab/src/lite/scene*.ts` for end-to-end examples of each extension in action.
-

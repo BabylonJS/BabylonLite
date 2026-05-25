@@ -122,6 +122,7 @@ const ext: GltfFeature = {
         if (eTx) {
             const intensity: number = typeof eTx.transmissionFactor === "number" ? eTx.transmissionFactor : 0;
             if (intensity > 0 || transTex) {
+                out.transmissive = true;
                 const refraction: RefractionProps = {
                     ...(subsurface.refraction ?? {}),
                     intensity,

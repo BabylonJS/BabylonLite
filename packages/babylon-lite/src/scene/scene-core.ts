@@ -67,8 +67,7 @@ export interface SceneContext {
 /** @internal SceneContext with internal rendering state — for renderable/loader code only. Not re-exported from index.ts. */
 export interface SceneContextInternal extends SceneContext, RenderingContext {
     /** All renderables in this scene. The active frame-graph tasks bucket them
-     *  (opaque / direct / transparent) at bind time based on `isTransparent`
-     *  and `_direct`; `isTransmissive` is used by refraction setup. */
+     *  (opaque / direct / transparent) at bind time based on `isTransparent`, `_direct`, and `_transmissive`. */
     _renderables: Renderable[];
     /** Pre-pass work (shadow maps, compute, etc.). */
     _prePasses: PrePassRenderable[];

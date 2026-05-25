@@ -4,7 +4,7 @@
 import type { Texture2D } from "./texture-2d.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { EngineContextInternal } from "../engine/engine.js";
-import { getBilinearSampler } from "../resource/gpu-pool.js";
+import { getBilinearSampler } from "../resource/samplers.js";
 
 export function createSolidTexture2D(engine: EngineContext, r: number, g: number, b: number, a: number = 1.0): Texture2D {
     const eng = engine as EngineContextInternal;

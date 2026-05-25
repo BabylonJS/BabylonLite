@@ -8,7 +8,8 @@ import { clearSceneBGLCache, getSceneBindGroupLayout } from "../render/scene-hel
 import { ensureSceneLightState } from "../render/lights-ubo.js";
 import { SCENE_UBO_BYTES } from "../shader/scene-uniforms-size.js";
 import type { Texture2D, Texture2DOptions } from "../texture/texture-2d.js";
-import { getBilinearSampler, getOrCreateSampler } from "../resource/gpu-pool.js";
+import { getOrCreateSampler } from "../resource/gpu-pool.js";
+import { getBilinearSampler } from "../resource/samplers.js";
 import type { createSkeleton } from "../skeleton/create-skeleton.js";
 import type { createMorphTargets } from "../morph/create-morph-targets.js";
 

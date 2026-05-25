@@ -9,9 +9,15 @@ import { createRenderTask } from "../../frame-graph/render-task.js";
 import type { Pass } from "../../frame-graph/pass.js";
 import type { Task } from "../../frame-graph/task.js";
 import { createMipRenderTargetTexture } from "../../texture/rtt-mip.js";
-import { recordMipmaps } from "../../texture/record-mipmaps.js";
+import { recordMipmaps } from "../../texture/generate-mipmaps.js";
+import { biasedMipLevelCount } from "../../texture/mip-count.js";
 import { _registerPbrExt } from "./pbr-flags.js";
 import { refractionRttExt, setOpaqueSceneRefractionTexture, useOpaqueSceneRefraction } from "./fragments/refraction-rtt-fragment.js";
+
+const REFRACTION_TEXTURE_SIZE = 1024;
+// The refraction RTT shader samples `log2(textureSize * alphaG) - 4.0`, so the
+// highest four mips are unreachable and don't need to be allocated/generated.
+const REFRACTION_LOD_BIAS = 4;
 
 export function enablePbrOpaqueRefraction(scene: SceneContext, engine: EngineContext): void {
     setOpaqueSceneRefractionTexture(setupPbrRefraction(scene, engine as EngineContextInternal));
@@ -23,7 +29,7 @@ export function usePbrOpaqueRefraction(container: AssetContainer): void {
 }
 
 export function selectOpaqueSceneRefractionRenderables(renderables: readonly Renderable[]): Renderable[] {
-    return renderables.filter((r) => !r.isTransmissive);
+    return renderables.filter((r) => !r._transmissive && ((r.mesh?.material as { _opaqueRefractionIntensity?: number } | undefined)?._opaqueRefractionIntensity ?? 0) <= 0);
 }
 
 function setupPbrRefraction(scene: SceneContext, engine: EngineContextInternal): Texture2D {
@@ -31,8 +37,8 @@ function setupPbrRefraction(scene: SceneContext, engine: EngineContextInternal):
         label: "opaqueSceneTexture",
         colorFormat: "rgba16float",
         depthStencilFormat: "depth24plus-stencil8",
-        mipLevelCount: 11,
-        size: { width: 1024, height: 1024 },
+        mipLevelCount: biasedMipLevelCount(REFRACTION_TEXTURE_SIZE, REFRACTION_TEXTURE_SIZE, REFRACTION_LOD_BIAS),
+        size: { width: REFRACTION_TEXTURE_SIZE, height: REFRACTION_TEXTURE_SIZE },
     });
     const sc = scene as SceneContextInternal;
     const pass = createRenderTask(

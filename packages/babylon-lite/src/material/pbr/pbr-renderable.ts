@@ -91,7 +91,9 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     let hasSheen = false;
     let hasAnyAnisotropy = false;
     let hasAnySubsurface = false;
+    let hasAlphaTest = false;
     let hasRefraction = false;
+    let hasTransmissionRefraction = false;
     let needsEmissiveColor = false;
     let hasSomeSkeletons = false;
     let hasSomeMorphs = false;
@@ -104,13 +106,16 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         const m = meshes[i]!;
         const mat = m.material as PbrMaterialProps & { _hasReflExt?: boolean; _hasUvTx?: boolean };
         const mi = m as MeshInternal;
+        const refractionIntensity = mat.subsurface?.refraction?.intensity ?? 0;
         hasSkybox ||= !!mat.skyboxMode;
         hasMetallicReflectance ||= !!(mat.metallicReflectanceTexture || mat.reflectanceTexture || mat._hasReflExt);
         hasClearcoat ||= !!mat.clearCoat?.isEnabled;
         hasSheen ||= !!mat.sheen?.isEnabled;
         hasAnyAnisotropy ||= !!mat.anisotropy?.isEnabled;
         hasAnySubsurface ||= !!mat.subsurface?.translucency;
-        hasRefraction ||= (mat.subsurface?.refraction?.intensity ?? 0) > 0;
+        hasAlphaTest ||= mat.alphaCutOff! > 0;
+        hasRefraction ||= refractionIntensity > 0;
+        hasTransmissionRefraction ||= refractionIntensity > 0 && !!mat.transmissive;
         needsEmissiveColor ||= !!mat.emissiveColor;
         hasSomeSkeletons ||= !!m.skeleton;
         hasSomeMorphs ||= !!m.morphTargets;
@@ -169,6 +174,10 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     // in scene1's pbr-renderable chunk. Registration runs sequentially in source
     // order, which is the iteration order consumed by `_getPbrExts().values()` on
     // the hot paths (composePbr, writeMaterialData, collectPbrBoundTextures).
+    if (hasAlphaTest) {
+        const mod = await import("./fragments/alpha-test-fragment.js");
+        _registerPbrExt(mod.alphaTestExt);
+    }
     if (hasMetallicReflectance) {
         const mod = await import("./fragments/reflectance-fragment.js");
         _registerPbrExt(mod.reflectanceExt);
@@ -186,8 +195,13 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         _registerPbrExt(mod.subsurfaceExt);
     }
     if (hasRefraction) {
-        const mod = await import("./fragments/refraction-fragment.js");
-        _registerPbrExt(mod.refractionExt);
+        if (hasTransmissionRefraction) {
+            const mod = await import("./pbr-transmission-ext.js");
+            mod.registerPbrTransmission(scene as SceneContextInternal, engine, _registerPbrExt);
+        } else {
+            const mod = await import("./fragments/refraction-fragment.js");
+            _registerPbrExt(mod.refractionExt);
+        }
     }
     if (needsEmissiveColor) {
         const mod = await import("./fragments/emissive-fragment.js");
@@ -307,7 +321,8 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         writeMaterialData(matInitData, mat, materialSpec);
         const materialUBO = createUniformBuffer(engine, matInitData);
 
-        const materialBindGroup = createPbrMeshBindGroup(engine, bindings, composed, meshUBO, materialUBO, mat, envTextures ?? null, mesh);
+        const needsTaskRefraction = !!mat.transmissive && (features2 & PBR2_HAS_REFRACTION) !== 0;
+        const materialBindGroupStatic = needsTaskRefraction ? null : createPbrMeshBindGroup(engine, bindings, composed, meshUBO, materialUBO, mat, envTextures ?? null, mesh);
 
         // Shadow bind group (group 2) — shared across receiving meshes via shadowBGCache.
         let shadowBindGroup: GPUBindGroup | null = null;
@@ -346,8 +361,8 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         ]);
 
         const isTransparent = (features2 & (PBR2_NO_COLOR_OUTPUT | PBR2_ESM_SHADOW_OUTPUT)) === 0 && (features & PBR_HAS_ALPHA_BLEND) !== 0;
-        const isTransmissive = !isTransparent && (features2 & PBR2_HAS_REFRACTION) !== 0;
-        const order = mesh.renderOrder ?? (isTransparent ? 150 : isTransmissive ? 140 : 100);
+        const _transmissive = needsTaskRefraction;
+        const order = mesh.renderOrder ?? (isTransparent || _transmissive ? 150 : 100);
 
         const hasNormalMap = (features & PBR_HAS_NORMAL_MAP) !== 0;
         const hasUV2 = (features2 & PBR2_HAS_UV2) !== 0 && (meshFeatures & MSH_HAS_UV2) !== 0;
@@ -355,10 +370,11 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         const hasTI = (meshFeatures & MSH_HAS_THIN_INSTANCES) !== 0;
         const hasTIColor = (meshFeatures & MSH_HAS_INSTANCE_COLOR) !== 0;
 
-        let _lastWorldVersion = mesh.worldMatrixVersion;
+        let _lastWorldVersion = -1;
         let _lastLightsCount = s.lights.length;
         const update = (): void => {
             if (mesh.worldMatrixVersion !== _lastWorldVersion || s.lights.length !== _lastLightsCount) {
+                r._worldCenter = [mesh.worldMatrix[12]!, mesh.worldMatrix[13]!, mesh.worldMatrix[14]!];
                 meshUboData.set(mesh.worldMatrix, 0);
                 writeMeshLightSelection(mesh, s.lights, meshUboData);
                 device.queue.writeBuffer(meshUBO, 0, meshUboData as Float32Array<ArrayBuffer>);
@@ -380,7 +396,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
             }
         };
 
-        const draw = (pass: GPURenderPassEncoder | GPURenderBundleEncoder): number => {
+        const drawWith = (pass: GPURenderPassEncoder | GPURenderBundleEncoder, materialBindGroup: GPUBindGroup): number => {
             if (!isOverride && mesh.material !== materialInput) {
                 return 0;
             }
@@ -424,19 +440,23 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
             }
             return 1;
         };
+        const draw = (pass: GPURenderPassEncoder | GPURenderBundleEncoder): number => drawWith(pass, materialBindGroupStatic!);
 
         const r: Renderable = {
             order,
             isTransparent,
-            isTransmissive,
-            _direct: isTransmissive,
+            _transmissive,
             mesh,
             bind(eng, sig) {
+                const pipeline = getOrCreatePbrPipeline(eng as EngineContextInternal, sig, bindings);
+                const materialBindGroup = needsTaskRefraction
+                    ? createPbrMeshBindGroup(engine, bindings, composed, meshUBO, materialUBO, mat, envTextures ?? null, mesh, sig._transmissionTexture)
+                    : materialBindGroupStatic!;
                 return {
                     renderable: r,
-                    pipeline: getOrCreatePbrPipeline(eng as EngineContextInternal, sig, bindings),
+                    pipeline,
                     update,
-                    draw,
+                    draw: needsTaskRefraction ? (pass) => drawWith(pass, materialBindGroup) : draw,
                 };
             },
         };
@@ -500,7 +520,6 @@ function writeMaterialData(data: Float32Array, material: PbrMaterialProps, spec:
         data[off + 2] = material.normalTextureScale ?? 1.0;
         data[off + 3] = material.usePhysicalLightFalloff === false ? 0 : 1;
     }
-
     for (const ext of _getPbrExts().values()) {
         if (ext.writeUbo) {
             ext.writeUbo(data, material, spec._offsets);

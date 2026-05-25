@@ -1,7 +1,7 @@
 import type { EngineContextInternal } from "../engine/engine.js";
 import type { RenderTarget, RenderTargetDescriptor } from "../engine/render-target.js";
 import { createRenderTarget } from "../engine/render-target.js";
-import { getTrilinearSampler } from "../resource/gpu-pool.js";
+import { getTrilinearSampler } from "../resource/samplers.js";
 import type { Texture2D } from "./texture-2d.js";
 
 export interface MipRenderTargetDescriptor extends Omit<RenderTargetDescriptor, "sampleCount" | "size"> {

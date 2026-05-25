@@ -289,8 +289,8 @@
         "name": "Scene 30 — KHR_materials_volume_testing",
         "maxMad": 20,
         "maxRawKB": 88.4,
-        "description": "KHR_materials_volume_testing.glb (transmission + volume + ior + specular) against default IBL environment. V1 env-only refraction. Matches PG #YG3BBF#16.",
-        "note": "MAD ceiling temporarily relaxed (18.59 actual vs 0.02 target). Env-only refraction cannot show scene-behind-the-glass; full parity requires opaque-scene RTT, deferred to land with the frame-graph.",
+        "description": "KHR_materials_volume_testing.glb (transmission + volume + ior + specular) against default IBL environment. Legacy env-only refraction path. Matches PG #YG3BBF#16.",
+        "note": "MAD ceiling temporarily relaxed (18.59 actual vs 0.02 target). Kept on the legacy env-only refraction path; Scene 142 is the frame-graph scene-texture transmission workbench.",
         "tags": ["pbr", "gltf", "env", "transmission", "volume"],
         "skipParity": true,
         "skipPerf": true
@@ -935,6 +935,16 @@
         "maxRawKB": 137,
         "description": "Scene 65 ESM directional-shadow setup with three caster materials: NodeMaterial, Standard, and PBR spheres all cast shadows onto a NodeMaterial receiver.",
         "tags": ["nme", "standard", "pbr", "shadows"],
+        "skipPerf": true
+    },
+    {
+        "id": 142,
+        "slug": "scene142-volume-transmission",
+        "name": "Scene 142 — KHR_materials_volume_testing Transmission",
+        "maxMad": 0.15,
+        "maxRawKB": 110,
+        "description": "Copy of Scene 30 using frame-graph scene-texture transmission for KHR_materials_volume_testing.glb.",
+        "tags": ["pbr", "gltf", "env", "transmission", "volume", "frame-graph"],
         "skipPerf": true
     },
     {

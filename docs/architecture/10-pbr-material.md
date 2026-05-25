@@ -93,6 +93,11 @@ export interface ClearCoatProps {
     intensity?: number;
     roughness?: number;
     indexOfRefraction?: number;
+    texture?: Texture2D;
+    roughnessTexture?: Texture2D;
+    bumpTexture?: Texture2D;
+    bumpTextureScale?: number;
+    useF0Remap?: boolean;
 }
 
 /** Sheen layer properties. */
@@ -102,12 +107,58 @@ export interface SheenProps {
     roughness?: number;
     intensity?: number;
     texture?: Texture2D;
+    albedoScaling?: boolean;
+}
+
+export interface AnisotropyProps {
+    isEnabled: boolean;
+    intensity?: number;
+    direction?: [number, number];
+}
+
+export interface TranslucencyProps {
+    intensity?: number;
+    color?: [number, number, number];
+    diffusionDistance?: [number, number, number];
+}
+
+export interface ScatteringProps {
+    diffusionDistance?: [number, number, number];
+    metersPerUnit?: number;
+}
+
+export interface ThicknessProps {
+    texture?: Texture2D;
+    useGlTFChannel?: boolean;
+    min?: number;
+    max?: number;
+}
+
+export interface RefractionProps {
+    intensity?: number;
+    texture?: Texture2D;
+    indexOfRefraction?: number;
+    useThicknessAsDepth?: boolean;
+}
+
+export interface TintProps {
+    color?: [number, number, number];
+    atDistance?: number;
+}
+
+export interface SubSurfaceProps {
+    translucency?: TranslucencyProps;
+    scattering?: ScatteringProps;
+    thickness?: ThicknessProps;
+    tint?: TintProps;
+    refraction?: RefractionProps;
 }
 
 /** User-facing PBR material properties. */
 export interface PbrMaterialProps extends Material {
   baseColorTexture?: Texture2D;
   normalTexture?: Texture2D;
+  normalTextureScale?: number;
   /** Occlusion-Roughness-Metallic packed: R=occ, G=rough, B=metal. */
   ormTexture?: Texture2D;
   emissiveTexture?: Texture2D;
@@ -118,11 +169,16 @@ export interface PbrMaterialProps extends Material {
   doubleSided?: boolean;
   alpha?: number;
   alphaBlend?: boolean;
+  alphaCutOff?: number;
   environmentIntensity?: number;
   directIntensity?: number;
   usePhysicalLightFalloff?: boolean;
   reflectance?: number;
+  metallicFactor?: number;
+  roughnessFactor?: number;
   occlusionStrength?: number;
+  occlusionTexCoord?: number;
+  occlusionTexture?: Texture2D;
   metallicF0Factor?: number;
   metallicReflectanceColor?: [number, number, number];
   useOnlyMetallicFromMetallicReflectanceTexture?: boolean;
@@ -130,6 +186,12 @@ export interface PbrMaterialProps extends Material {
   gammaAlbedo?: boolean;
   clearCoat?: ClearCoatProps;
   sheen?: SheenProps;
+  anisotropy?: AnisotropyProps;
+  subsurface?: SubSurfaceProps;
+  transmissive?: boolean;
+  skyboxMode?: boolean;
+  unlit?: boolean;
+  unlitColor?: [number, number, number];
 }
 
 /** Create a PbrMaterialProps with optional overrides. */
@@ -478,7 +540,7 @@ Supports both metallic-roughness and specular-glossiness workflows via `_hasSpec
 4. Builds per-mesh mesh/material UBOs and bind groups; the mesh UBO stores `lc` and packed `li` scene-light indices
 5. For each mesh: `computePbrFeatures()` → compose shader → `getOrCreatePbrPipeline()` → create mesh UBO → `createPbrMeshBindGroup()`
 6. Returns one `Renderable` per mesh; each renderable binds target-specific `DrawBinding`s for frame-graph passes
-7. Uses opaque order = 100, transparent order = 200, and sets `_direct` on transmissive materials while keeping `isTransmissive` reserved for refraction surfaces
+7. Uses opaque order = 100 and transparent/transmissive order = 150; scene-texture refraction surfaces set `_transmissive` and bind against `RenderTargetSignature._transmissionTexture` during `record()`
 8. Returns `rebuildSingle` so material swaps and per-pass material overrides can rebuild one mesh without rebuilding the whole scene
 9. Sets up disposal to clear pipeline cache and samplers on scene teardown
 

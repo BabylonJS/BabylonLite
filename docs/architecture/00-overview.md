@@ -200,7 +200,6 @@ babylon-lite/
 │   │   │   ├── rtt.ts             # Eager render-target texture helper
 │   │   │   ├── ktx2-loader.ts      # KTX2/BasisU upload for KHR_texture_basisu
 │   │   │   ├── rtt-mip.ts          # Mipmapped render-target texture helper
-│   │   │   ├── record-mipmaps.ts   # Encoder-local mipmap recording
 │   │   │   └── generate-mipmaps.ts # GPU mipmap generation
 │   │   ├── loader-gltf/
 │   │   │   ├── load-gltf.ts       # GLB parser, GPU upload
@@ -756,9 +755,13 @@ interface PickingInfo {
 interface DrawUpdateContext {
     targetWidth: number;
     targetHeight: number;
+    _camera?: Camera | null;
 }
 interface Renderable {
     order: number;
+    isTransparent: boolean;
+    _transmissive?: boolean;
+    _direct?: boolean;
     bind(engine: Engine, target: RenderTargetSignature): DrawBinding;
 }
 interface DrawBinding {
@@ -983,9 +986,13 @@ contribution = hemiColor * intensity
 interface DrawUpdateContext {
     targetWidth: number;
     targetHeight: number;
+    _camera?: Camera | null;
 }
 interface Renderable {
     order: number;
+    isTransparent: boolean;
+    _transmissive?: boolean;
+    _direct?: boolean;
     bind(engine, target): DrawBinding;
 }
 interface MaterialView {
@@ -1005,7 +1012,7 @@ interface SceneUniformUpdater {
 }
 ```
 
-**Draw order**: skybox/background (0) → opaque bundle (100) → direct non-transparent draws (dynamic depth-write batches and true transmissive surfaces) → transparent (200, distance-sorted).
+**Draw order**: skybox/background (0) → opaque bundle (100) → non-transparent direct draws (dynamic depth-write batches) → transparent + transmissive (camera-space-depth sorted).
 
 **Deferred building**: Entities register builders on `scene._deferredBuilders`. `registerScene()` calls `buildScene()` to drain them before the scene is registered, then builds the scene frame graph.
 
@@ -1452,8 +1459,7 @@ For production builds, switch to `"./dist/index.js"`.
 | `src/texture/rtt.ts` | Render-target texture helper | — |
 | `src/texture/ktx2-loader.ts` | KTX2/BasisU upload for `KHR_texture_basisu` | — |
 | `src/texture/rtt-mip.ts` | Mipmapped render-target texture helper | — |
-| `src/texture/record-mipmaps.ts` | Encoder-local mipmap recording | — |
-| `src/texture/generate-mipmaps.ts` | GPU mipmap generation | — |
+| `src/texture/generate-mipmaps.ts` | GPU mipmap generation and encoder-local mipmap recording | — |
 | `src/loader-gltf/load-gltf.ts` | GLB parser + GPU upload | 390 |
 | `src/loader-gltf/gltf-parser.ts` | glTF JSON parsing helpers | — |
 | `src/loader-gltf/gltf-material.ts` | glTF material → PbrMaterialProps | — |

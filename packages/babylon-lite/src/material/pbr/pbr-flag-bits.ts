@@ -1,6 +1,7 @@
 export const PBR_HAS_NORMAL_MAP = 1 << 0;
 export const PBR_HAS_EMISSIVE = 1 << 1;
 export const PBR_HAS_ENV = 1 << 2;
+export const PBR_HAS_ALPHA_TEST = 1 << 3;
 export const PBR_HAS_TONEMAP = 1 << 4;
 export const PBR_HAS_ALPHA_BLEND = 1 << 6;
 export const PBR_HAS_SPEC_GLOSS = 1 << 7;

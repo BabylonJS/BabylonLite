@@ -80,6 +80,7 @@ export function assemblePbrProps(
         ...(!defaultFactor ? { emissiveColor: [ef[0], ef[1], ef[2]] as [number, number, number] } : undefined),
         enableSpecularAA: true,
         ...(mat.alphaMode === "BLEND" ? { alphaBlend: true, alpha: mat.baseColorFactor[3] } : undefined),
+        ...(mat.alphaMode === "MASK" ? { alpha: mat.baseColorFactor[3], alphaCutOff: mat.alphaCutoff } : undefined),
         ...extLayers,
         _buildGroup: pbrGroupBuilder,
         _uboVersion: 0,

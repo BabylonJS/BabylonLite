@@ -11,6 +11,7 @@
  */
 
 import type { EngineContextInternal } from "./engine.js";
+import type { Texture2D } from "../texture/texture-2d.js";
 
 /** Signature of a render target's attachment set — enough to key a GPURenderPipeline. */
 export interface RenderTargetSignature {
@@ -20,6 +21,8 @@ export interface RenderTargetSignature {
     /** When true, the projection matrix's Y is flipped (offscreen RTT — see writePassSceneUBO).
      *  Pipelines must invert frontFace to keep back-face culling correct. */
     readonly flipY?: boolean;
+    /** Internal per-task refraction texture shared by transmissive material bindings. */
+    readonly _transmissionTexture?: Texture2D | null;
 }
 
 /** Description of a render target — what to create, not the GPU objects themselves. */
@@ -98,7 +101,7 @@ export function buildRenderTarget(rt: RenderTarget, engine: EngineContextInterna
             size: { width, height },
             format: desc.colorFormat!,
             sampleCount: desc.sampleCount,
-            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
         });
         rt._colorView = rt._colorTexture.createView();
     }

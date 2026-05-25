@@ -11,7 +11,7 @@ import type { DirectionalLight } from "../light/directional-light.js";
 import type { Material, MaterialView } from "../material/material.js";
 import type { Mesh } from "../mesh/mesh.js";
 import { createUniformBuffer } from "../resource/gpu-buffers.js";
-import { getBilinearSampler } from "../resource/gpu-pool.js";
+import { getBilinearSampler } from "../resource/samplers.js";
 import type { SceneContextInternal } from "../scene/scene-core.js";
 import { createRenderTask, type RenderTask } from "../frame-graph/render-task.js";
 import {

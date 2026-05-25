@@ -35,6 +35,8 @@ export type { RenderPassExecuteFunc } from "./frame-graph/pass.js";
 
 export type { RenderTask, RenderTaskConfig } from "./frame-graph/render-task.js";
 export { createRenderTask, removeMeshFromTask } from "./frame-graph/render-task.js";
+export type { ImageProcessingSource, ImageProcessingTaskConfig } from "./frame-graph/image-processing-task.js";
+export { createImageProcessingTask } from "./frame-graph/image-processing-task.js";
 
 export type { RenderTarget, RenderTargetDescriptor } from "./engine/render-target.js";
 export { createRenderTarget } from "./engine/render-target.js";
@@ -261,6 +263,7 @@ export interface RenderTaskConfig {
     clr?: boolean;
     cam?: Camera | null;
     cs?: boolean;
+    transmission?: { copyCount?: number; generateMipmaps?: boolean };
 }
 ```
 
@@ -272,6 +275,44 @@ export interface RenderTaskConfig {
 | `clr`      | Defaults to clear. Set `false` to use color/depth `loadOp: "load"` for overlays or multi-scene composition.                                                                                                     |
 | `cam`      | Optional per-pass camera. Defaults to `scene.camera`.                                                                                                                                                           |
 | `cs`       | Canvas-sized aspect flag. When true, scene UBO aspect uses canvas dimensions instead of RTT dimensions. This is useful for RTTs that are later sampled as a material texture but should preserve canvas aspect. |
+| `transmission` | Optional scene-texture transmission settings. `copyCount: 0` refreshes before every transmissive draw; otherwise the default is one refresh. `generateMipmaps` defaults to `true`; set `false` to allocate only mip 0 and skip refraction mip generation. |
+
+### Image Processing Task
+
+```typescript
+export type ImageProcessingSource = Texture2D | RenderTarget | (() => Texture2D | RenderTarget | null | undefined);
+
+export interface ImageProcessingTaskConfig {
+    name?: string;
+    source: ImageProcessingSource;
+}
+
+export function createImageProcessingTask(config: ImageProcessingTaskConfig, engine: EngineContext, scene: SceneContext): Task;
+```
+
+`createImageProcessingTask()` is a reusable fullscreen post-process task. During `record()` it resolves `config.source` to a `Texture2D` or `RenderTarget`, reads the source `GPUTexture.sampleCount` (falling back to `1`), builds the matching bind-group layout, and creates a fullscreen triangle pipeline targeting the swapchain format. During `execute()` it writes `scene.imageProcessing.exposure`, `scene.imageProcessing.contrast`, and `scene.imageProcessing.toneMappingEnabled` into a 16-byte uniform buffer, clears the swapchain to `scene.clearColor`, samples the source, applies exposure / tone map / gamma / contrast, and draws one triangle to the current swapchain view.
+
+The shader has two source variants:
+
+- single-sample: `texture_2d<f32>` with `textureLoad(source, pixel, 0)`
+- multisample: `texture_multisampled_2d<f32>` with `textureNumSamples(source)`; each sample is independently image-processed and the processed colors are averaged
+
+The task owns only its pipeline, bind group, and uniform buffer. It does not own the source texture. On graph rebuild, `record()` disposes the prior uniform buffer and rebuilds from the latest source returned by the getter.
+
+Transmission uses this task as its final swapchain pass. `enableSceneTransmission(scene, engine)` retargets render tasks to linear `rgba16float` offscreen output, then appends one `"transmission-image-processing"` task after the last render task if one is not already present. MSAA scenes feed the image-processing task directly from the MSAA color texture, so there is no extra final resolve texture or `*-transmission-scene` target.
+
+Transmission refraction textures allocate only the mip levels reachable by the refraction shader's fixed `-4.0` LOD bias. For the current 1024x1024 refraction textures, this means 7 levels (`0..6`) instead of the full 11-level chain, and mip generation records only those allocated levels. Tasks that set `transmission.generateMipmaps = false` allocate only mip 0 and skip this generation step.
+
+### Scene-Texture Transmission
+
+`enableSceneTransmission(scene, engine)` wraps each `RenderTask` instead of adding material-specific behavior to the renderer:
+
+1. Before the task records, it retargets swapchain output to a linear offscreen `rgba16float` render target using `engine.msaaSamples`, creates one shared 1024x1024 transmission texture for that task, and stores it on `task._targetSignature._transmissionTexture`.
+2. The original `RenderTask.record()` then binds renderables against that target signature. PBR transmissive renderables create their material bind groups at this point, capturing the shared transmission texture; there is no per-draw transmission bind-group mutation.
+3. After `record()` has built the render target, transmission stores `rt._colorTexture` as the source. If the source is MSAA or has a different size than the transmission texture, it creates the fullscreen blit pipeline and bind group once for this graph build; otherwise execute can use `copyTextureToTexture()` directly.
+4. During execute, the render task starts one pass for the opaque bundle and direct bucket, then iterates the single camera-sorted transparent list. Before a `_transmissive` binding, while `copyCount` allows, the pass is ended, the current offscreen color is copied/blitted into the shared transmission texture, optional mips are generated, and the task resumes with `loadOp: "load"`. Remaining transparent and transmissive bindings continue through the same loop.
+
+This keeps the refraction texture and all bind groups stable between graph rebuilds. `copyCount: 0` refreshes before every transmissive draw; finite values stop refreshing after the cap and draw the rest of the sorted transparent/transmissive list against the last snapshot.
 
 ### Default Scene Pass
 
@@ -331,9 +372,9 @@ Bindings are partitioned into:
 | ----------- | ---------------------------- | -------------------------------------------------------- |
 | Opaque      | `!isTransparent && !_direct` | Cached `GPURenderBundle`                                 |
 | Direct      | `_direct`                    | Direct draw after opaque                                 |
-| Transparent | `isTransparent`              | Direct draw after direct, sorted back-to-front per frame |
+| Transparent | `isTransparent || _transmissive` | Direct draw after direct, camera-space-depth sorted back-to-front per frame |
 
-Opaque and direct buckets currently sort by `renderable.order`. Transparent is sorted by squared distance from the active pass camera and must not be pipeline-sorted.
+Opaque and direct buckets currently sort by `renderable.order`. Transparent is sorted by camera-space depth from the active pass camera and must not be pipeline-sorted.
 
 `DrawBinding.pipeline` is mandatory. The per-pass-encoder body owns `setPipeline()` and deduplicates consecutive bindings with the same pipeline before calling the binding's `draw()` closure.
 
@@ -461,6 +502,7 @@ Fixed-size eager RTTs are not reallocated by graph rebuilds because their GPU te
 | `src/frame-graph/frame-graph.ts`         | Ordered task list and two-phase build/execute/dispose lifecycle                              |
 | `src/frame-graph/frame-graph-actions.ts` | Public task-insertion + `addRenderPass` actions                                              |
 | `src/frame-graph/render-task.ts`         | Render task, per-pass scene UBO, target binding, draw buckets, per-pass-encoder body         |
+| `src/frame-graph/image-processing-task.ts` | Reusable fullscreen image-processing task for swapchain output                              |
 | `src/frame-graph/shadow-task.ts`         | Internal adapter task that schedules existing shadow generators through `Task.execute()`      |
 | `src/engine/render-target.ts`            | Render target descriptors, allocation, disposal, target signatures                           |
 | `src/texture/rtt.ts`                     | Eager render-target texture helper                                                           |
