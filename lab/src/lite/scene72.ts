@@ -132,6 +132,7 @@ async function main(): Promise<void> {
     addToScene(scene, dir);
 
     const sphere = createSphere(engine, { segments: 32, diameter: 2 });
+    sphere.position.set(0, 0, -0.00001);
     const ground = createGround(engine, { width: 6, height: 6 });
     ground.position.set(0, -1, 0);
     ground.receiveShadows = true;

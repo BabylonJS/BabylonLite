@@ -161,11 +161,9 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         _multiLightWGSL = wgslMod.MULTI_LIGHT_STRUCTS() + wgslMod.COMPUTE_PBR_LIGHT;
         _multiLightLoop = wgslMod.getMultiLightLoop();
     }
-    if (hasAnyAffectedLight) {
-        if (hasSomeShadows) {
-            const shadowMod = await import("./fragments/pbr-shadow-fragment.js");
-            _createPbrShadowFragment = shadowMod.createPbrShadowFragment;
-        }
+    if (hasAnyAffectedLight && hasSomeShadows) {
+        const shadowMod = await import("./fragments/pbr-shadow-fragment.js");
+        _createPbrShadowFragment = shadowMod.createPbrShadowFragment;
     }
 
     // ── Per-mesh fragment creators (imported if any mesh needs them) ──
@@ -231,8 +229,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     // Lazy-load pbr-template-ext when any advanced features are present.
     // Scene1 has none of these, so it won't pay the ~1.5KB cost.
     let _createPbrTemplateExt: typeof import("./pbr-template-ext.js").createPbrTemplateExt | null = null;
-    const hasAnyExt = hasAnyUvTransform || hasAnyVertexColor || hasAnyUv2;
-    if (hasAnyExt) {
+    if (hasAnyUvTransform || hasAnyVertexColor || hasAnyUv2) {
         const extMod = await import("./pbr-template-ext.js");
         _createPbrTemplateExt = extMod.createPbrTemplateExt;
     }
