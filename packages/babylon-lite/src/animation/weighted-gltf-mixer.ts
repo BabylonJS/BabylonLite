@@ -1,7 +1,8 @@
 import { tickAnimation } from "./animation-group.js";
 import type { AnimationGltfMixer, AnimationGroup } from "./animation-group.js";
-import { getAnimationGroupOwner } from "./animation-manager-core.js";
-import type { AnimationManager } from "./animation-manager-core.js";
+import { ANIMATION_GROUP_TASK_CATEGORY, getAnimationGroupOwner, getAnimationGroups } from "./animation-group-task.js";
+import { setAnimationTaskCategoryHandler } from "./animation-manager.js";
+import type { AnimationManager } from "./animation-manager.js";
 import type { NodeRest, SkeletonBinding } from "./types.js";
 import { PATH_ROTATION, PATH_SCALE, PATH_TRANSLATION } from "./types.js";
 import { evaluateSampler } from "./evaluate.js";
@@ -43,7 +44,7 @@ interface WeightedGltfScratch {
     readonly delta: Float32Array;
 }
 
-const _scratch = new WeakMap<AnimationManager, WeightedGltfScratch>();
+let scratchByManager: WeakMap<AnimationManager, WeightedGltfScratch> | undefined;
 
 export interface AnimationAdditiveOptions {
     readonly referenceFrame?: number;
@@ -52,7 +53,7 @@ export interface AnimationAdditiveOptions {
 
 /** Enable advanced animation blending for a manager. Kept opt-in so manual-only weights do not pay for skeletal mixing code. */
 export function enableAnimationBlending(manager: AnimationManager): void {
-    manager._wu = updateWeightedGltfAnimations;
+    setAnimationTaskCategoryHandler(manager, ANIMATION_GROUP_TASK_CATEGORY, updateWeightedGltfAnimations);
 }
 
 /** Mark an animation group as additive. Reference defaults to frame 0, matching Babylon.js MakeAnimationAdditive. */
@@ -72,7 +73,8 @@ export function setAnimationAdditive(group: AnimationGroup, options?: AnimationA
 }
 
 function getScratch(manager: AnimationManager): WeightedGltfScratch {
-    let scratch = _scratch.get(manager);
+    scratchByManager ??= new WeakMap();
+    let scratch = scratchByManager.get(manager);
     if (!scratch) {
         scratch = {
             keys: new Set<object>(),
@@ -81,7 +83,7 @@ function getScratch(manager: AnimationManager): WeightedGltfScratch {
             reference: new Float32Array(16),
             delta: new Float32Array(16),
         };
-        _scratch.set(manager, scratch);
+        scratchByManager.set(manager, scratch);
     }
     return scratch;
 }
@@ -91,7 +93,7 @@ function updateWeightedGltfAnimations(manager: AnimationManager, deltaMs: number
     const keys = scratch.keys;
     keys.clear();
 
-    for (const group of manager.animationGroups) {
+    for (const group of getAnimationGroups(manager)) {
         const mixer = group._gm;
         if (group._stopped || !mixer || (group.weight === 1 && !group._am)) {
             continue;
@@ -111,7 +113,7 @@ function updateWeightedGltfAnimations(manager: AnimationManager, deltaMs: number
         resetTarget(target);
     }
 
-    for (const group of manager.animationGroups) {
+    for (const group of getAnimationGroups(manager)) {
         if (group._stopped) {
             continue;
         }
@@ -130,7 +132,7 @@ function updateWeightedGltfAnimations(manager: AnimationManager, deltaMs: number
         tickAnimation(group, deltaMs, manager.engine);
     }
 
-    for (const group of manager.animationGroups) {
+    for (const group of getAnimationGroups(manager)) {
         const mixer = group._gm;
         if (!group._stopped && group._am && mixer && keys.has(mixer[GLTF_NODES])) {
             accumulateAdditiveGroup(scratch, group, mixer);

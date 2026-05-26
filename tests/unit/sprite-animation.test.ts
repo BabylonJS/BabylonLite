@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createAnimationManager, updateAnimationManager } from "../../packages/babylon-lite/src/animation/animation-manager";
 import type { EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
 import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
 import type { SpriteAtlas } from "../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
@@ -17,11 +18,15 @@ import {
     disposeSpriteAnimationBinding,
     playSpriteFrameAnimation,
     removeSpriteAnimation,
-    startSpriteAnimationManager,
-    stopSpriteAnimationManager,
     stopSpriteAnimation,
     updateSpriteAnimationManager,
 } from "../../packages/babylon-lite/src/sprite/sprite-animation";
+import {
+    addSpriteAnimationManager,
+    removeSpriteAnimationManager,
+    startSpriteAnimationManager,
+    stopSpriteAnimationManager,
+} from "../../packages/babylon-lite/src/sprite/sprite-animation-task";
 import type { SpriteFrameAnimation } from "../../packages/babylon-lite/src/sprite/sprite-animation";
 import { addSprite2DIndex, createSprite2DLayer, removeSprite2DIndex, setSprite2DFrameIndex } from "../../packages/babylon-lite/src/sprite/sprite-2d";
 import { addSprite2D, getSprite2DHandleIndex, isSprite2DHandleAlive } from "../../packages/babylon-lite/src/sprite/sprite-2d-handle";
@@ -187,6 +192,23 @@ describe("SpriteAnimationManager", () => {
 
         updateSpriteAnimationManager(manager, 1);
 
+        expect(sprite2DUvMinX(layer)).toBeCloseTo(0.125);
+    });
+
+    it("can be driven by the generic AnimationManager task pipeline", () => {
+        const animationManager = createAnimationManager();
+        const spriteManager = createSpriteAnimationManager();
+        const layer = createSprite2DLayer(makeMockAtlas());
+        addSprite2DIndex(layer, { positionPx: [0, 0], sizePx: [32, 32], frame: 0 });
+        playSprite2DIndexAnimation(spriteManager, layer, 0, 0, 2, true, 50);
+
+        addSpriteAnimationManager(animationManager, spriteManager);
+        updateAnimationManager(animationManager, 51);
+
+        expect(sprite2DUvMinX(layer)).toBeCloseTo(0.125);
+
+        removeSpriteAnimationManager(animationManager, spriteManager);
+        updateAnimationManager(animationManager, 51);
         expect(sprite2DUvMinX(layer)).toBeCloseTo(0.125);
     });
 });

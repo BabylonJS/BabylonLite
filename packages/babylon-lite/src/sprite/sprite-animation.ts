@@ -1,5 +1,4 @@
 /** Optional Babylon.js-style frame animation core for sprite families. */
-import { startAnimationLoop, stopAnimationLoop, type AnimationLoopState } from "../animation/animation-loop.js";
 import type { SceneContextInternal } from "../scene/scene-core.js";
 import type { SceneContext } from "../scene/scene.js";
 import type { SpriteRenderer } from "./sprite-renderer.js";
@@ -51,9 +50,11 @@ export interface SpriteAnimationBinding {
     active: boolean;
 }
 
-interface SpriteAnimationManagerInternal extends SpriteAnimationManager, AnimationLoopState {
+interface SpriteAnimationManagerInternal extends SpriteAnimationManager {
     readonly onUpdate?: (deltaMs: number) => void;
     _binding?: SpriteAnimationBindingInternal;
+    _animationManager?: unknown;
+    _loopManager?: unknown;
 }
 
 interface SpriteAnimationBindingInternal extends SpriteAnimationBinding {
@@ -96,8 +97,6 @@ export function createSpriteAnimationManager(options?: SpriteAnimationManagerOpt
         fixedDeltaMs: options?.fixedDeltaMs ?? 0,
         running: false,
         onUpdate: options?.onUpdate,
-        _rafId: 0,
-        _lastTime: 0,
     };
     return manager;
 }
@@ -270,19 +269,6 @@ function advanceSpriteAnimation(animation: SpriteFrameAnimation, deltaMs: number
     return false;
 }
 
-export function startSpriteAnimationManager(manager: SpriteAnimationManager): void {
-    assertNoActiveBinding(manager);
-    startAnimationLoop(
-        asSpriteAnimationManagerInternal(manager),
-        (deltaMs) => updateSpriteAnimationManager(manager, deltaMs),
-        "SpriteAnimationManager autonomous mode requires requestAnimationFrame."
-    );
-}
-
-export function stopSpriteAnimationManager(manager: SpriteAnimationManager): void {
-    stopAnimationLoop(asSpriteAnimationManagerInternal(manager));
-}
-
 export function attachSpriteAnimationsToScene(scene: SceneContext, manager: SpriteAnimationManager): SpriteAnimationBinding {
     assertCanAttachToRenderLoop(manager);
     const managerInternal = asSpriteAnimationManagerInternal(manager);
@@ -354,8 +340,12 @@ export function disposeSpriteAnimationBinding(binding: SpriteAnimationBinding): 
 }
 
 function assertNoActiveBinding(manager: SpriteAnimationManager): void {
-    if (asSpriteAnimationManagerInternal(manager)._binding?.active) {
+    const managerInternal = asSpriteAnimationManagerInternal(manager);
+    if (managerInternal._binding?.active) {
         throw new Error("SpriteAnimationManager is already attached to a render loop.");
+    }
+    if (managerInternal._animationManager && managerInternal._animationManager !== managerInternal._loopManager) {
+        throw new Error("SpriteAnimationManager is already attached to an AnimationManager.");
     }
 }
 

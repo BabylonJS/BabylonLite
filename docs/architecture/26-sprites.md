@@ -2062,11 +2062,12 @@ packages/babylon-lite/src/
 
 ## Sprite Frame Animation (Optional)
 
-**Modules:** `sprite-animation.ts` for the side-effect-free core manager, plus one tiny family binding module per target kind. Static sprites import none of them and pay zero animation bytes.
+**Modules:** `sprite-animation.ts` for side-effect-free sprite frame state/update logic, `sprite-animation-task.ts` for generic `AnimationManager` integration, plus one tiny family binding module per target kind. Static sprites import none of them and pay zero animation bytes.
 
-Provides Babylon.js-style per-sprite frame animation for both Sprite2D (index/handle) and BillboardSprite (index/handle) families. Animations are managed by a `SpriteAnimationManager`, which can be:
+Provides Babylon.js-style per-sprite frame animation for both Sprite2D (index/handle) and BillboardSprite (index/handle) families. Animations are collected by a `SpriteAnimationManager`, which can be:
 
 - Manually driven via `updateSpriteAnimationManager(manager, deltaMs)`
+- Registered with the generic `AnimationManager` via `addSpriteAnimationManager(animationManager, spriteManager)`
 - Attached to a `SceneContext` via `attachSpriteAnimationsToScene(scene, manager)` to update in `scene._beforeRender`
 - Attached to a `SpriteRenderer` via `attachSpriteAnimationsToRenderer(sr, manager)` to update before layer uploads
 
@@ -2143,6 +2144,10 @@ export function clearSpriteAnimations(manager: SpriteAnimationManager): void;
 export function updateSpriteAnimationManager(manager: SpriteAnimationManager, deltaMs: number): void;
 export function playSpriteFrameAnimation(anim: SpriteFrameAnimation, from?: number, to?: number, loop?: boolean, delayMs?: number, options?: PlaySpriteAnimationOptions): void;
 export function stopSpriteAnimation(anim: SpriteFrameAnimation): void;
+
+// Generic AnimationManager task adapter
+export function addSpriteAnimationManager(manager: AnimationManager, spriteManager: SpriteAnimationManager): void;
+export function removeSpriteAnimationManager(manager: AnimationManager, spriteManager: SpriteAnimationManager): void;
 export function startSpriteAnimationManager(manager: SpriteAnimationManager): void;
 export function stopSpriteAnimationManager(manager: SpriteAnimationManager): void;
 
@@ -2229,7 +2234,8 @@ const binding = attachSpriteAnimationsToRenderer(sr, animMgr);
 ### Implementation Notes
 
 - `updateSpriteAnimationManager` iterates `manager.animations`, accumulates time, advances frame when `accumulatedMs > delayMs` (not `>=`), and removes finished non-loop animations after the callback/removal path has run.
-- `startSpriteAnimationManager` / `stopSpriteAnimationManager` reuse the internal `animation-loop.ts` RAF lifecycle helper shared with the 3D `AnimationManager`; sprite-specific scene/renderer attachments remain in this module.
+- `sprite-animation-task.ts` creates the sprite-side `AnimationTask` adapter and registers it with the generic `AnimationManager`. This lets one manager advance glTF/property animation groups and sprite frame animations in the same loop without the animation core importing sprite code.
+- `startSpriteAnimationManager` / `stopSpriteAnimationManager` keep the existing standalone sprite API, but internally schedule the sprite manager through a private generic `AnimationManager` in `sprite-animation-task.ts`. Sprite-specific scene/renderer attachments remain in `sprite-animation.ts`.
 - Attachment helpers:
   - `attachSpriteAnimationsToScene` unshifts a `_beforeRender` hook that receives scene delta and calls `updateSpriteAnimationManager`. Dispose via `disposeSpriteAnimationBinding`; disposal splices the hook and clears the manager's internal binding state. Scene-attached bindings also register the same cleanup with scene disposal, so `disposeScene(scene)` releases that binding state.
   - `attachSpriteAnimationsToRenderer` pushes a callback into the renderer's internal before-update hook list; `SpriteRenderer._update` passes the engine's current delta to these hooks before layer upload. Dispose splices only that callback via `disposeSpriteAnimationBinding` and clears the manager's internal binding state. Renderer-attached bindings register the same cleanup with `disposeSpriteRenderer`, so renderer disposal also releases that binding state.

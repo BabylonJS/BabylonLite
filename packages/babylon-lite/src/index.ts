@@ -131,17 +131,19 @@ export { enableAnimationBlending, setAnimationAdditive } from "./animation/weigh
 export type { CrossFadeAnimationGroupsOptions, FadeAnimationWeightOptions } from "./animation/animation-weight.js";
 export type { AnimationAdditiveOptions } from "./animation/weighted-gltf-mixer.js";
 export {
-    addAnimationGroup,
-    addAnimationGroups,
+    addAnimationTask,
     clearAnimationManager,
     createAnimationManager,
-    createPropertyAnimationClip,
-    createPropertyAnimationGroup,
-    removeAnimationGroup,
+    createAnimationTask,
+    removeAnimationTask,
+    setAnimationTaskCategoryHandler,
     startAnimationManager,
     stopAnimationManager,
     updateAnimationManager,
 } from "./animation/animation-manager.js";
+export { addAnimationGroup, addAnimationGroups, getAnimationGroups, removeAnimationGroup } from "./animation/animation-group-task.js";
+export { createPropertyAnimationClip, createPropertyAnimationGroup } from "./animation/property-animation.js";
+export type { AnimationTask, AnimationTaskCategoryHandler, AnimationTaskOptions, AnimationTaskUpdate } from "./animation/animation-manager.js";
 export { createMorphTargets } from "./morph/create-morph-targets.js";
 export type { MorphTargetData } from "./animation/types.js";
 
@@ -204,18 +206,17 @@ export type { ShadowGenerator, ShadowGeneratorConfig } from "./shadow/shadow-gen
 export type { PcfShadowGeneratorConfig } from "./shadow/pcf-shadow-generator.js";
 export type { AnimationController } from "./skeleton/skeleton-updater.js";
 export type { AnimationGroup } from "./animation/animation-group.js";
+export type { AnimationManager, AnimationManagerOptions } from "./animation/animation-manager.js";
 export type {
     AnimationKeyframe,
     AnimationKeyframeValue,
-    AnimationManager,
-    AnimationManagerOptions,
     CreatePropertyAnimationGroupOptions,
     PropertyAnimationClip,
     PropertyAnimationClipOptions,
     PropertyAnimationInterpolation,
     PropertyAnimationTrack,
     PropertyAnimationTrackOptions,
-} from "./animation/animation-manager.js";
+} from "./animation/property-animation.js";
 export type { AnimationClip, GltfAnimationData } from "./animation/types.js";
 export type { SphereOptions } from "./mesh/create-sphere.js";
 export type { TorusOptions } from "./mesh/create-torus.js";
@@ -296,12 +297,11 @@ export {
     updateSpriteAnimationManager,
     playSpriteFrameAnimation,
     stopSpriteAnimation,
-    startSpriteAnimationManager,
-    stopSpriteAnimationManager,
     attachSpriteAnimationsToScene,
     attachSpriteAnimationsToRenderer,
     disposeSpriteAnimationBinding,
 } from "./sprite/sprite-animation.js";
+export { addSpriteAnimationManager, removeSpriteAnimationManager, startSpriteAnimationManager, stopSpriteAnimationManager } from "./sprite/sprite-animation-task.js";
 export { playSprite2DIndexAnimation } from "./sprite/sprite-2d-index-animation.js";
 export { playSprite2DAnimation } from "./sprite/sprite-2d-handle-animation.js";
 export { playBillboardSpriteIndexAnimation } from "./sprite/billboard-sprite-index-animation.js";

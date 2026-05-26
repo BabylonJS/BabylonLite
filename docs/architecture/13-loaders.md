@@ -43,10 +43,10 @@ export interface LoaderResult {
    */
   entities: Array<Mesh | TransformNode | LightBase>;
 
-  /** Animation groups from the file. scene.add() auto-ticks them each frame. */
+  /** Animation groups from the file. addToScene() auto-ticks them each frame. */
   animationGroups?: AnimationGroup[];
 
-  /** Scene clear color from the file. scene.add() applies it to ctx.clearColor. */
+  /** Scene clear color from the file. addToScene() applies it to ctx.clearColor. */
   clearColor?: GPUColorDict;
 }
 ```
@@ -84,7 +84,7 @@ export interface GltfMaterialData {
 export async function loadGltf(engine: Engine, url: string): Promise<LoaderResult>;
 ```
 
-> **Note**: `loadGltf` takes an `Engine` (not `SceneContext`) and returns a `LoaderResult`. The result's `entities` array contains a **single** `TransformNode` (the glTF scene root). All meshes hang off that root's hierarchy. Pass the result to `scene.add()` — it will traverse the hierarchy, register animation ticks, and integrate everything into the scene. To access the root node directly: `const root = result.entities[0] as TransformNode`. Meshes are the standard `Mesh` type with GPU data in the `_gpu` field and bounding box on `Mesh.boundMin`/`Mesh.boundMax`.
+> **Note**: `loadGltf` takes an `Engine` (not `SceneContext`) and returns a `LoaderResult`. The result's `entities` array contains a **single** `TransformNode` (the glTF scene root). All meshes hang off that root's hierarchy. Pass the result to `addToScene()` — it will traverse the hierarchy, register animation ticks, and integrate everything into the scene. To access the root node directly: `const root = result.entities[0] as TransformNode`. Meshes are the standard `Mesh` type with GPU data in the `_gpu` field and bounding box on `Mesh.boundMin`/`Mesh.boundMax`.
 
 ### `load-env.ts`
 
@@ -155,12 +155,12 @@ Mesh[] + root TransformNode
 createAnimationGroups(json, ...)       // extract glTF animations → AnimationGroup[]
   ↓
 LoaderResult { entities: [root], animationGroups }
-  → returned to caller; scene.add() dispatches entities + registers animation ticks
+  → returned to caller; addToScene() dispatches entities + registers animation ticks
 ```
 
 **Texture caching**: Textures are cached per bitmap identity + sRGB flag to avoid duplicate GPU uploads. The hot-path cache uses a numeric key (`bitmapId * 2 + +srgb`) so plain-image glTF assets do not pay string-key overhead. Feature modules can maintain their own caches for extension-owned image sources.
 
-**Animation support**: `loadGltf` extracts glTF animations, creates `AnimationGroup[]` via `createAnimationGroups()`, and returns them in `LoaderResult.animationGroups`. `scene.add()` registers `_beforeRender` callbacks for playback.
+**Animation support**: `loadGltf` extracts glTF animations, creates `AnimationGroup[]` via `createAnimationGroups()`, and returns them in `LoaderResult.animationGroups`. `addToScene()` registers scene tick callbacks for playback.
 
 **PBR materials**: Each `PbrMaterialProps` created during upload includes `_buildGroup: pbrGroupBuilder`, imported from `pbr-material.ts`.
 

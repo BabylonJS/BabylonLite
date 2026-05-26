@@ -1,6 +1,8 @@
 import { tickAnimation } from "./animation-group.js";
 import type { AnimationGroup, AnimationPropertyMixer } from "./animation-group.js";
-import type { AnimationManager } from "./animation-manager-core.js";
+import { ANIMATION_GROUP_TASK_CATEGORY, getAnimationGroups } from "./animation-group-task.js";
+import { setAnimationTaskCategoryHandler } from "./animation-manager.js";
+import type { AnimationManager } from "./animation-manager.js";
 import type { AnimationChannel } from "./types.js";
 import { evaluateSampler } from "./evaluate.js";
 
@@ -30,7 +32,7 @@ interface WeightedPointerScratch {
     readonly fades: AnimationWeightFade[];
 }
 
-const _scratch = new WeakMap<AnimationManager, WeightedPointerScratch>();
+let scratchByManager: WeakMap<AnimationManager, WeightedPointerScratch> | undefined;
 
 interface AnimationWeightFade {
     readonly group: AnimationGroup;
@@ -52,11 +54,12 @@ export interface CrossFadeAnimationGroupsOptions {
 }
 
 export function attachWeightedAnimationMixer(manager: AnimationManager): void {
-    manager._wu = updateWeightedPointerAnimations;
+    setAnimationTaskCategoryHandler(manager, ANIMATION_GROUP_TASK_CATEGORY, updateWeightedPointerAnimations);
 }
 
 function getScratch(manager: AnimationManager): WeightedPointerScratch {
-    let scratch = _scratch.get(manager);
+    scratchByManager ??= new WeakMap();
+    let scratch = scratchByManager.get(manager);
     if (!scratch) {
         scratch = {
             keys: new Set<object>(),
@@ -64,7 +67,7 @@ function getScratch(manager: AnimationManager): WeightedPointerScratch {
             sample: new Float32Array(16),
             fades: [],
         };
-        _scratch.set(manager, scratch);
+        scratchByManager.set(manager, scratch);
     }
     return scratch;
 }
@@ -99,7 +102,7 @@ function updateWeightedPointerAnimations(manager: AnimationManager, deltaMs: num
     const keys = scratch.keys;
     keys.clear();
 
-    for (const group of manager.animationGroups) {
+    for (const group of getAnimationGroups(manager)) {
         const mixer = group._pm;
         if (group._stopped || group.weight === 1 || !mixer) {
             continue;
@@ -121,7 +124,7 @@ function updateWeightedPointerAnimations(manager: AnimationManager, deltaMs: num
         bucket.values.fill(0);
     }
 
-    for (const group of manager.animationGroups) {
+    for (const group of getAnimationGroups(manager)) {
         if (group._stopped) {
             continue;
         }

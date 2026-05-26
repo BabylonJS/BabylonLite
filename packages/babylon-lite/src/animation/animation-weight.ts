@@ -1,6 +1,6 @@
 import type { AnimationGroup } from "./animation-group.js";
-import { getAnimationGroupOwner } from "./animation-manager-core.js";
-import type { AnimationManager } from "./animation-manager-core.js";
+import { getAnimationGroupOwner } from "./animation-group-task.js";
+import type { AnimationManager } from "./animation-manager.js";
 import {
     attachWeightedAnimationMixer,
     crossFadeAnimationGroups as crossFadeAnimationGroupsCore,
