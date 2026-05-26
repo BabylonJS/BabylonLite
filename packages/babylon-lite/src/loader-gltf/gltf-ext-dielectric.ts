@@ -50,10 +50,10 @@ const ext: GltfFeature = {
         }
 
         const [specTex, specColTex, thickTex, transTex] = await Promise.all([
-            ctx.texture(eSp?.specularTexture, false),
-            ctx.texture(eSp?.specularColorTexture, true),
-            ctx.texture(eVol?.thicknessTexture, false),
-            ctx.texture(eTx?.transmissionTexture, false),
+            ctx._texture(eSp?.specularTexture, false),
+            ctx._texture(eSp?.specularColorTexture, true),
+            ctx._texture(eVol?.thicknessTexture, false),
+            ctx._texture(eTx?.transmissionTexture, false),
         ]);
 
         const out: Partial<PbrMaterialProps> = {};

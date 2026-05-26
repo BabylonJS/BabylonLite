@@ -410,15 +410,15 @@ async function uploadMeshes(meshDatas: GltfMeshData[], features: GltfFeature[], 
     const extImageCache = matExts.length ? new Map<number, Promise<ImageBitmap>>() : null;
     const extFetchImg = extImageCache ? makeImageFetcher(json, binChunk, baseUrl, extImageCache) : null;
     const extCtx: GltfMatExtCtx = {
-        engine,
-        async texture(texInfo, sRGB) {
+        _engine: engine,
+        async _texture(texInfo, sRGB) {
             if (!texInfo || !extFetchImg) {
                 return undefined;
             }
             const img = await extFetchImg(texInfo);
             return img ? wrapTex(getCachedTexture(img, sRGB), texInfo) : undefined;
         },
-        uploadImage(bitmap, sRGB) {
+        _uploadImage(bitmap, sRGB) {
             return uploadTex(engine, bitmap, sRGB, sampler, _generateMipmaps!);
         },
     };
