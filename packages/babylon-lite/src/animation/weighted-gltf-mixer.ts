@@ -7,6 +7,7 @@ import type { NodeRest, SkeletonBinding } from "./types.js";
 import { PATH_ROTATION, PATH_SCALE, PATH_TRANSLATION } from "./types.js";
 import { evaluateSampler } from "./evaluate.js";
 import type { EngineContextInternal } from "../engine/engine.js";
+import { RH_TO_LH } from "../math/rh-to-lh.js";
 import { mat4ComposeInto } from "../math/mat4-compose-into.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
 
@@ -18,9 +19,6 @@ const T_OFF = 0;
 const R_OFF = 3;
 const S_OFF = 7;
 
-// RH->LH root transform (same as skeleton-updater.ts)
-// prettier-ignore
-const RH_TO_LH = new Float32Array([-1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1]);
 const _boneTmp = new Float32Array(16);
 
 interface WeightedGltfTarget {
@@ -93,7 +91,9 @@ function updateWeightedGltfAnimations(manager: AnimationManager, deltaMs: number
     const keys = scratch.keys;
     keys.clear();
 
-    for (const group of getAnimationGroups(manager)) {
+    const groups = getAnimationGroups(manager);
+    for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+        const group = groups[groupIndex]!;
         const mixer = group._gm;
         if (group._stopped || !mixer || (group.weight === 1 && !group._am)) {
             continue;
@@ -105,15 +105,10 @@ function updateWeightedGltfAnimations(manager: AnimationManager, deltaMs: number
         return false;
     }
 
-    for (const target of scratch.targets.values()) {
-        target.active = false;
-        target.tWeight.fill(0);
-        target.rWeight.fill(0);
-        target.sWeight.fill(0);
-        resetTarget(target);
-    }
+    scratch.targets.forEach(resetWeightedGltfTarget);
 
-    for (const group of getAnimationGroups(manager)) {
+    for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+        const group = groups[groupIndex]!;
         if (group._stopped) {
             continue;
         }
@@ -132,20 +127,29 @@ function updateWeightedGltfAnimations(manager: AnimationManager, deltaMs: number
         tickAnimation(group, deltaMs, manager.engine);
     }
 
-    for (const group of getAnimationGroups(manager)) {
+    for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+        const group = groups[groupIndex]!;
         const mixer = group._gm;
         if (!group._stopped && group._am && mixer && keys.has(mixer[GLTF_NODES])) {
             accumulateAdditiveGroup(scratch, group, mixer);
         }
     }
 
-    for (const [key, target] of scratch.targets) {
+    scratch.targets.forEach((target, key) => {
         if (target.active && keys.has(key)) {
             uploadTarget(manager, target);
         }
-    }
+    });
 
     return true;
+}
+
+function resetWeightedGltfTarget(target: WeightedGltfTarget): void {
+    target.active = false;
+    target.tWeight.fill(0);
+    target.rWeight.fill(0);
+    target.sWeight.fill(0);
+    resetTarget(target);
 }
 
 function getTarget(scratch: WeightedGltfScratch, mixer: AnimationGltfMixer): WeightedGltfTarget {
@@ -198,7 +202,8 @@ function accumulateAdditiveGroup(scratch: WeightedGltfScratch, group: AnimationG
     const target = getTarget(scratch, mixer);
     const clip = mixer[GLTF_CLIP];
     const t = group.currentFrame;
-    for (const ch of clip.channels) {
+    for (let channelIndex = 0; channelIndex < clip.channels.length; channelIndex++) {
+        const ch = clip.channels[channelIndex]!;
         const sampler = clip.samplers[ch.samplerIdx]!;
         const nodeIdx = ch.nodeIdx;
         const base = nodeIdx * TRS_STRIDE;
@@ -241,7 +246,8 @@ function accumulateGroup(manager: AnimationManager, scratch: WeightedGltfScratch
     }
 
     const clip = mixer[GLTF_CLIP];
-    for (const ch of clip.channels) {
+    for (let channelIndex = 0; channelIndex < clip.channels.length; channelIndex++) {
+        const ch = clip.channels[channelIndex]!;
         const sampler = clip.samplers[ch.samplerIdx]!;
         const nodeIdx = ch.nodeIdx;
         const base = nodeIdx * TRS_STRIDE;
@@ -367,7 +373,8 @@ function uploadTarget(manager: AnimationManager, target: WeightedGltfTarget): vo
         }
     }
 
-    for (const skel of target.skeletons) {
+    for (let skeletonIndex = 0; skeletonIndex < target.skeletons.length; skeletonIndex++) {
+        const skel = target.skeletons[skeletonIndex]!;
         const boneData = skel.boneMatrices;
         for (let bi = 0; bi < skel.boneCount; bi++) {
             const jointIdx = skel.jointNodes[bi]!;

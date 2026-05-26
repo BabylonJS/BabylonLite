@@ -105,12 +105,16 @@ function updateWeightedPointerAnimations(manager: AnimationManager, deltaMs: num
     const keys = scratch.keys;
     keys.length = 0;
 
-    for (const group of getAnimationGroups(manager)) {
+    const groups = getAnimationGroups(manager);
+    for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+        const group = groups[groupIndex]!;
         const mixer = group._pm;
         if (group._stopped || group.weight === 1 || !mixer) {
             continue;
         }
-        for (const track of mixer[MIX_TRACKS]) {
+        const tracks = mixer[MIX_TRACKS];
+        for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
+            const track = tracks[trackIndex]!;
             addWeightedKey(keys, track);
         }
     }
@@ -119,13 +123,15 @@ function updateWeightedPointerAnimations(manager: AnimationManager, deltaMs: num
         return false;
     }
 
-    for (const bucket of scratch.buckets) {
+    for (let bucketIndex = 0; bucketIndex < scratch.buckets.length; bucketIndex++) {
+        const bucket = scratch.buckets[bucketIndex]!;
         bucket.active = false;
         bucket.hasReference = false;
         bucket.values.fill(0);
     }
 
-    for (const group of getAnimationGroups(manager)) {
+    for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+        const group = groups[groupIndex]!;
         if (group._stopped) {
             continue;
         }
@@ -143,7 +149,8 @@ function updateWeightedPointerAnimations(manager: AnimationManager, deltaMs: num
             continue;
         }
 
-        for (const track of tracks) {
+        for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
+            const track = tracks[trackIndex]!;
             evaluateSampler(track.sampler, t, track.stride, track.quaternion, scratch.sample, 0);
             if (!isWeightedTrack(track, keys)) {
                 track.writer(scratch.sample, 0);
@@ -153,7 +160,8 @@ function updateWeightedPointerAnimations(manager: AnimationManager, deltaMs: num
         }
     }
 
-    for (const bucket of scratch.buckets) {
+    for (let bucketIndex = 0; bucketIndex < scratch.buckets.length; bucketIndex++) {
+        const bucket = scratch.buckets[bucketIndex]!;
         if (!bucket.active) {
             continue;
         }
@@ -216,7 +224,8 @@ function addWeightedKey(keys: WeightedPointerKey[], track: AnimationPropertyRunt
 }
 
 function hasWeightedTrack(tracks: readonly AnimationPropertyRuntimeTrack[], keys: readonly WeightedPointerKey[]): boolean {
-    for (const track of tracks) {
+    for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
+        const track = tracks[trackIndex]!;
         if (isWeightedTrack(track, keys)) {
             return true;
         }
@@ -225,7 +234,8 @@ function hasWeightedTrack(tracks: readonly AnimationPropertyRuntimeTrack[], keys
 }
 
 function isWeightedTrack(track: AnimationPropertyRuntimeTrack, keys: readonly WeightedPointerKey[]): boolean {
-    for (const key of keys) {
+    for (let keyIndex = 0; keyIndex < keys.length; keyIndex++) {
+        const key = keys[keyIndex]!;
         if (key.target === track.mixTarget && key.property === track.mixProperty) {
             return true;
         }
@@ -236,7 +246,8 @@ function isWeightedTrack(track: AnimationPropertyRuntimeTrack, keys: readonly We
 function getTrackScratch(buckets: WeightedPointerBucket[], track: AnimationPropertyRuntimeTrack): WeightedPointerBucket {
     const arity = track.stride;
     let bucket: WeightedPointerBucket | undefined;
-    for (const candidate of buckets) {
+    for (let bucketIndex = 0; bucketIndex < buckets.length; bucketIndex++) {
+        const candidate = buckets[bucketIndex]!;
         if (candidate.target === track.mixTarget && candidate.property === track.mixProperty) {
             bucket = candidate;
             break;

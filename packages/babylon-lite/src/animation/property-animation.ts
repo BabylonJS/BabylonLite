@@ -154,7 +154,8 @@ function createPointerAnimationGroup(
             } else {
                 ctrl.time = Math.min(Math.max(ctrl.time, fromTime), toTime);
             }
-            for (const track of tracks) {
+            for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
+                const track = tracks[trackIndex]!;
                 evaluateSampler(track.sampler, ctrl.time, track.stride, track.quaternion, _pointerScratch, 0);
                 track.writer(_pointerScratch, 0);
             }

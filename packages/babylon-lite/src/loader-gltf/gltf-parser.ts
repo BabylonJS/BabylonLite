@@ -7,6 +7,7 @@
 import type { Mat4 } from "../math/types.js";
 import { mat4ComposeInto } from "../math/mat4-compose-into.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
+import { RH_TO_LH } from "../math/rh-to-lh.js";
 
 // glTF 2.0 component types
 const FLOAT = 5126;
@@ -90,9 +91,7 @@ export async function resolveImage(json: any, binChunk: DataView, imageIdx: numb
 
 // --- Node Hierarchy → World Matrix (Memoized) ---
 
-// Babylon.js RH→LH root: rotation [0,1,0,0] + scale [1,1,-1] = diag(-1,1,1,1)
-// prettier-ignore
-const RH_TO_LH_ROOT = new Float32Array([-1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1]) as Mat4;
+const RH_TO_LH_ROOT = RH_TO_LH as Mat4;
 
 /** Build a parent index map by scanning node.children arrays once. O(n). */
 export function buildParentMap(json: any): Map<number, number> {
