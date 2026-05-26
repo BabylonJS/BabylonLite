@@ -129,7 +129,7 @@ export interface AnimationTask {
     active: boolean;
 }
 
-export type AnimationTaskUpdate = (manager: AnimationManager, deltaMs: number) => boolean | void;
+export type AnimationTaskUpdate = (manager: AnimationManager, deltaMs: number, task: AnimationTask) => void;
 export type AnimationTaskCategoryHandler = (manager: AnimationManager, deltaMs: number) => boolean;
 
 export interface AnimationTaskOptions {

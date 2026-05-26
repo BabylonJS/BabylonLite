@@ -11,12 +11,11 @@ import {
 } from "../../packages/babylon-lite/src/animation/animation-manager";
 
 describe("AnimationManager", () => {
-    it("updates generic animation tasks and removes inactive tasks", () => {
+    it("updates generic animation tasks and removes tasks explicitly", () => {
         const manager = createAnimationManager();
         const deltas: number[] = [];
         const task = createAnimationTask((_manager, deltaMs) => {
             deltas.push(deltaMs);
-            return deltas.length < 2;
         });
 
         addAnimationTask(manager, task);
@@ -29,12 +28,9 @@ describe("AnimationManager", () => {
 
         updateAnimationManager(manager, 12);
         expect(deltas).toEqual([10, 12]);
-        expect(task.active).toBe(false);
-        expect(manager.animations).toEqual([]);
-
-        addAnimationTask(manager, task);
         removeAnimationTask(manager, task);
         expect(manager.animations).toEqual([]);
+        expect(task.active).toBe(false);
     });
 
     it("uses fixed deltas for manual and autonomous updates", () => {
