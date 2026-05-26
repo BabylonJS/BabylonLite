@@ -918,6 +918,30 @@
         "tags": ["gaussian-splatting", "material-plugin"]
     },
     {
+        "id": 127,
+        "slug": "scene127-gs-depth-rendering",
+        "name": "Scene 127 — Gaussian Splatting Depth Rendering",
+        "maxMad": 3,
+        "description": "Port of PG #V80DRL#12 — visualizes camera-space linear depth for box+sphere+ground+GS, using createLinearDepthMaterial on standard meshes and gsLinearDepthFragment on the GS splat.",
+        "tags": ["gaussian-splatting", "depth-rendering"]
+    },
+    {
+        "id": 128,
+        "slug": "scene128-gs-depth-rendering-alpha",
+        "name": "Scene 128 — Gaussian Splatting Depth Rendering (Alpha-blended)",
+        "maxMad": 1,
+        "description": "Port of PG #V80DRL#19 — same as scene 127 but uses gsAlphaBlendedDepthFragment so the GS splat writes alpha-modulated depth for soft-edged splats.",
+        "tags": ["gaussian-splatting", "depth-rendering", "alpha-blend"]
+    },
+    {
+        "id": 129,
+        "slug": "scene129-gs-gpu-picking",
+        "name": "Scene 129 — Gaussian Splatting GPU Picking",
+        "maxMad": 1,
+        "description": "Minimal port of PG #3LNCE6#36 — extends GPU picking to handle GaussianSplattingMesh via the gsGpuPickingFragment plugin and the dedicated gs-picking-pipeline. Single GS + sphere + ground; no compound parts / gizmo / GUI.",
+        "tags": ["gaussian-splatting", "gpu-picking"]
+    },
+    {
         "id": 140,
         "slug": "scene140-nme-pcf-alpha-discard-shadows",
         "name": "Scene 140 — NME PCF Alpha Discard Shadows",

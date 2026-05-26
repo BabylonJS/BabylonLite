@@ -36,6 +36,69 @@ interface PipelineEntry {
 // lazy init (no top-level `new Map`) — see GUIDANCE §4.
 let _cache: { device: GPUDevice; modules: Map<string, GPUShaderModule>; entries: Map<string, PipelineEntry> } | null = null;
 
+/** Field-name mangler for the GS shader. Mirrors `mangleGaussianSplattingWgsl`
+ *  in `scripts/bundle-scenes-core.ts` (build-time mangling of the base WGSL).
+ *
+ *  The build-time mangler renames struct fields like `u.projection → u.p` in
+ *  the bundled `gaussian-splatting.wgsl`. Fragment-plugin code (e.g.
+ *  `gsLinearDepthFragment`) lives in TS string constants that reference the
+ *  un-mangled names (`u.projection`), so without normalisation the spliced
+ *  WGSL has both `u.projection` (from the fragment) and `u.p` (from the base),
+ *  causing a WebGPU parse error.
+ *
+ *  Running the same mangler at runtime on the final spliced string makes both
+ *  parts use the mangled names. The substitution is idempotent (single-letter
+ *  mangled names don't match the `\bfullName\b` regexes) and harmless in dev
+ *  mode (where the base WGSL is un-mangled, so this just normalises everything
+ *  to the mangled form — WebGPU accepts both).
+ *
+ *  KEEP IN SYNC with `scripts/bundle-scenes-core.ts:mangleGaussianSplattingWgsl`. */
+const GS_FIELD_MANGLE: readonly (readonly [string, string])[] = [
+    ["world", "w"],
+    ["view", "v"],
+    ["projection", "p"],
+    ["viewport", "vp"],
+    ["focal", "f"],
+    ["dataSize", "ds"],
+    ["alpha", "a"],
+    ["_pad", "_p"],
+    ["vColor", "vc"],
+    ["vPos", "vq"],
+    ["dataUv", "du"],
+    ["splatIndex", "si"],
+    ["corner", "co"],
+    ["center", "ce"],
+    ["color", "cl"],
+    ["covA", "ca"],
+    ["covB", "cb"],
+    ["worldPos", "wp"],
+    ["modelView", "mv"],
+    ["camspace", "cs"],
+    ["pos2d", "p2"],
+    ["bounds", "bd"],
+    ["Vrk", "vr"],
+    ["invZ2", "iz2"],
+    ["invZ", "iz"],
+    ["cov2d", "c2"],
+    ["kernelSize", "ks"],
+    ["radius", "ra"],
+    ["epsilon", "ep"],
+    ["lambda1", "l1"],
+    ["lambda2", "l2"],
+    ["diag", "dg"],
+    ["majorAxis", "ma"],
+    ["minorAxis", "mi"],
+    ["vCenter", "vc2"],
+];
+
+function mangleGsFields(code: string): string {
+    let out = code;
+    for (const [from, to] of GS_FIELD_MANGLE) {
+        out = out.replace(new RegExp(`\\b${from}\\b`, "g"), to);
+    }
+    return out;
+}
+
 export function applyGsFragments(wgsl: string, fragments: readonly GsShaderFragment[]): string {
     const slotCode: Record<string, string> = {};
     for (const frag of fragments) {
@@ -46,7 +109,8 @@ export function applyGsFragments(wgsl: string, fragments: readonly GsShaderFragm
             slotCode[slot] = (slotCode[slot] ?? "") + code + "\n";
         }
     }
-    return wgsl.replace(/\/\*(GS_FRAGMENT_\w+)\*\//g, (_, slot: string) => slotCode[slot] ?? "");
+    const spliced = wgsl.replace(/\/\*(GS_FRAGMENT_\w+)\*\//g, (_, slot: string) => slotCode[slot] ?? "");
+    return mangleGsFields(spliced);
 }
 
 function getOrCreatePipeline(engine: EngineContextInternal, sig: RenderTargetSignature, fragments?: readonly GsShaderFragment[]): PipelineEntry {
@@ -277,7 +341,14 @@ export function buildGaussianSplattingRenderable(scene: SceneContext, mesh: Gaus
  *  registers a disposer that frees per-mesh GPU buffers and the worker.
  *  Called from the deferred builder installed by `addToScene`. */
 export function attachGaussianSplattingMesh(scene: SceneContext, mesh: GaussianSplattingMesh, fragments?: readonly GsShaderFragment[]): void {
-    const ctx = scene as unknown as { _renderables: Renderable[]; _disposables: (() => void)[] };
+    const ctx = scene as unknown as { _renderables: Renderable[]; _disposables: (() => void)[]; _gsMeshes: GaussianSplattingMesh[] };
     ctx._renderables.push(buildGaussianSplattingRenderable(scene, mesh, fragments));
-    ctx._disposables.push(() => disposeGaussianSplattingMesh(mesh));
+    ctx._gsMeshes.push(mesh);
+    ctx._disposables.push(() => {
+        const i = ctx._gsMeshes.indexOf(mesh);
+        if (i >= 0) {
+            ctx._gsMeshes.splice(i, 1);
+        }
+        disposeGaussianSplattingMesh(mesh);
+    });
 }
