@@ -199,7 +199,7 @@ babylon-lite/
 │   │   │   ├── cube-texture.ts    # 6-face cube texture loader
 │   │   │   ├── rtt.ts             # Eager render-target texture helper
 │   │   │   ├── ktx2-loader.ts      # KTX2/BasisU upload for KHR_texture_basisu
-│   │   │   ├── rtt-mip.ts          # Mipmapped render-target texture helper
+│   │   │   ├── mip-count.ts        # Biased mip-count helper
 │   │   │   └── generate-mipmaps.ts # GPU mipmap generation
 │   │   ├── loader-gltf/
 │   │   │   ├── load-gltf.ts       # GLB parser, GPU upload
@@ -1458,7 +1458,7 @@ For production builds, switch to `"./dist/index.js"`.
 | `src/texture/cube-texture.ts` | 6-face cube texture loader | 141 |
 | `src/texture/rtt.ts` | Render-target texture helper | — |
 | `src/texture/ktx2-loader.ts` | KTX2/BasisU upload for `KHR_texture_basisu` | — |
-| `src/texture/rtt-mip.ts` | Mipmapped render-target texture helper | — |
+| `src/texture/mip-count.ts` | Biased mip-count helper | — |
 | `src/texture/generate-mipmaps.ts` | GPU mipmap generation and encoder-local mipmap recording | — |
 | `src/loader-gltf/load-gltf.ts` | GLB parser + GPU upload | 390 |
 | `src/loader-gltf/gltf-parser.ts` | glTF JSON parsing helpers | — |

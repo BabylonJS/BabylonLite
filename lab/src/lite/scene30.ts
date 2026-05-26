@@ -1,20 +1,9 @@
 // Scene 30 — KHR_materials_volume_testing — matches Babylon #YG3BBF#16
 // Loads the Khronos volume/transmission testing glb and displays it against the
-// default IBL environment (environmentSpecular.env). This scene intentionally
-// stays on the legacy env-only refraction path; Scene 142 is the frame-graph
-// scene-texture transmission workbench.
+// default IBL environment (environmentSpecular.env) with frame-graph
+// scene-texture transmission enabled.
 
-import { addToScene, startEngine, createEngine, createSceneContext, createArcRotateCamera, loadEnvironment, loadGltf, attachControl, registerScene } from "babylon-lite";
-
-function disableTransmissiveMaterials(entity: unknown): void {
-    const node = entity as { material?: { transmissive?: boolean }; children?: readonly unknown[] };
-    if (node.material) {
-        node.material.transmissive = false;
-    }
-    for (const child of node.children ?? []) {
-        disableTransmissiveMaterials(child);
-    }
-}
+import { addToScene, startEngine, createEngine, createSceneContext, createArcRotateCamera, loadEnvironment, loadGltf, attachControl, registerScene, getFrameGraph, type RenderTask } from "babylon-lite";
 
 async function main(): Promise<void> {
     const __initStart = performance.now();
@@ -22,6 +11,7 @@ async function main(): Promise<void> {
 
     const engine = await createEngine(canvas);
     const scene = createSceneContext(engine);
+    (getFrameGraph(scene)._tasks[0] as RenderTask)._config.transmission = { copyCount: 1 };
 
     // Exact camera values captured from the playground scene.
     const cam = createArcRotateCamera(Math.PI / 2, Math.PI / 2, 1.1856086997830126, { x: -0.2914360649171073, y: 0.4, z: 0.3975263311541397 });
@@ -31,18 +21,14 @@ async function main(): Promise<void> {
     scene.camera = cam;
     attachControl(cam, canvas, scene);
 
-    const [asset] = await Promise.all([
-        loadGltf(engine, "https://assets.babylonjs.com/meshes/KHR_materials_volume_testing.glb"),
+    await Promise.all([
+        loadGltf(engine, "https://assets.babylonjs.com/meshes/KHR_materials_volume_testing.glb").then((asset) => addToScene(scene, asset)),
         loadEnvironment(scene, "https://assets.babylonjs.com/core/environments/environmentSpecular.env", {
             skipSkybox: true,
             skipGround: true,
             brdfUrl: "/brdf-lut.png",
         }),
     ]);
-    for (const entity of asset.entities) {
-        disableTransmissiveMaterials(entity);
-    }
-    addToScene(scene, asset);
 
     await registerScene(engine, scene);
     await startEngine(engine);

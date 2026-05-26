@@ -92,7 +92,6 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     let hasAnyAnisotropy = false;
     let hasAnySubsurface = false;
     let hasAlphaTest = false;
-    let hasRefraction = false;
     let hasTransmissionRefraction = false;
     let needsEmissiveColor = false;
     let hasSomeSkeletons = false;
@@ -114,7 +113,6 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         hasAnyAnisotropy ||= !!mat.anisotropy?.isEnabled;
         hasAnySubsurface ||= !!mat.subsurface?.translucency;
         hasAlphaTest ||= mat.alphaCutOff! > 0;
-        hasRefraction ||= refractionIntensity > 0;
         hasTransmissionRefraction ||= refractionIntensity > 0 && !!mat.transmissive;
         needsEmissiveColor ||= !!mat.emissiveColor;
         hasSomeSkeletons ||= !!m.skeleton;
@@ -192,9 +190,9 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         const mod = await import("./fragments/subsurface-fragment.js");
         _registerPbrExt(mod.subsurfaceExt);
     }
-    if (hasRefraction) {
+    if (hasTransmissionRefraction) {
         const mod = await import("./pbr-refraction.js");
-        await mod.registerPbrRefraction(scene as SceneContextInternal, engine, _registerPbrExt, hasTransmissionRefraction);
+        await mod.registerPbrRefraction(scene as SceneContextInternal, engine, _registerPbrExt);
     }
     if (needsEmissiveColor) {
         const mod = await import("./fragments/emissive-fragment.js");
@@ -363,12 +361,14 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
 
         let _lastWorldVersion = -1;
         let _lastLightsCount = s.lights.length;
-        const sortCenter = [mesh.worldMatrix[12]!, mesh.worldMatrix[13]!, mesh.worldMatrix[14]!] as [number, number, number];
+        const sortCenter = isTransparent || needsTaskRefraction ? ([mesh.worldMatrix[12]!, mesh.worldMatrix[13]!, mesh.worldMatrix[14]!] as [number, number, number]) : null;
         const update = (): void => {
             if (mesh.worldMatrixVersion !== _lastWorldVersion || s.lights.length !== _lastLightsCount) {
-                sortCenter[0] = mesh.worldMatrix[12]!;
-                sortCenter[1] = mesh.worldMatrix[13]!;
-                sortCenter[2] = mesh.worldMatrix[14]!;
+                if (sortCenter) {
+                    sortCenter[0] = mesh.worldMatrix[12]!;
+                    sortCenter[1] = mesh.worldMatrix[13]!;
+                    sortCenter[2] = mesh.worldMatrix[14]!;
+                }
                 meshUboData.set(mesh.worldMatrix, 0);
                 writeMeshLightSelection(mesh, s.lights, meshUboData);
                 device.queue.writeBuffer(meshUBO, 0, meshUboData as Float32Array<ArrayBuffer>);
@@ -454,7 +454,9 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
                 };
             },
         };
-        r._worldCenter = sortCenter;
+        if (sortCenter) {
+            r._worldCenter = sortCenter;
+        }
         let _lastUboVersion = mat._uboVersion;
         return r;
     };

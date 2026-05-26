@@ -287,12 +287,10 @@
         "id": 30,
         "slug": "scene30-volume-testing",
         "name": "Scene 30 — KHR_materials_volume_testing",
-        "maxMad": 20,
-        "maxRawKB": 88.4,
-        "description": "KHR_materials_volume_testing.glb (transmission + volume + ior + specular) against default IBL environment. Legacy env-only refraction path. Matches PG #YG3BBF#16.",
-        "note": "MAD ceiling temporarily relaxed (18.59 actual vs 0.02 target). Kept on the legacy env-only refraction path; Scene 142 is the frame-graph scene-texture transmission workbench.",
+        "maxMad": 0.15,
+        "maxRawKB": 94,
+        "description": "KHR_materials_volume_testing.glb (transmission + volume + ior + specular) against default IBL environment with frame-graph scene-texture transmission. Matches PG #YG3BBF#16.",
         "tags": ["pbr", "gltf", "env", "transmission", "volume"],
-        "skipParity": true,
         "skipPerf": true
     },
     {
@@ -319,10 +317,9 @@
         "id": 33,
         "slug": "scene33-lights-punctual",
         "name": "Scene 33 — KHR_lights_punctual",
-        "maxMad": 0.5,
-        "maxRawKB": 88.7,
+        "maxMad": 0.07,
+        "maxRawKB": 93,
         "description": "LightsPunctualLamp.glb (KHR_lights_punctual point lights + KHR_materials_transmission) with default IBL environment. Matches PG #YG3BBF#54.",
-        "note": "MAD ceiling temporarily relaxed (0.5 actual vs 0.02 target). Glass lampshade needs correct transmission parity (see scene 30) to tighten maxMad below 0.5.",
         "tags": ["pbr", "gltf", "env", "lights-punctual", "transmission"],
         "skipPerf": true
     },
@@ -803,10 +800,11 @@
         "id": 112,
         "slug": "scene112-khr-texture-basisu",
         "name": "Scene 112 — KHR_texture_basisu Flight Helmet",
-        "maxMad": 0.2,
+        "maxMad": 0.3,
         "maxRawKB": 110,
-        "description": "BabylonJS/Assets FlightHelmetKTX glTF model using KHR_texture_basisu KTX2 source textures for base color, normal, and occlusion/roughness/metallic maps.",
-        "tags": ["pbr", "gltf", "env", "basis"],
+        "description": "BabylonJS/Assets FlightHelmetKTX glTF model using KHR_texture_basisu KTX2 source textures and frame-graph scene-texture transmission.",
+        "note": "Frame-graph transmission renders through a linear half-float target before final image processing; residual background blending variance stays within 5 RGB levels.",
+        "tags": ["pbr", "gltf", "env", "basis", "transmission"],
         "skipPerf": true
     },
     {
@@ -935,16 +933,6 @@
         "maxRawKB": 137,
         "description": "Scene 65 ESM directional-shadow setup with three caster materials: NodeMaterial, Standard, and PBR spheres all cast shadows onto a NodeMaterial receiver.",
         "tags": ["nme", "standard", "pbr", "shadows"],
-        "skipPerf": true
-    },
-    {
-        "id": 142,
-        "slug": "scene142-volume-transmission",
-        "name": "Scene 142 — KHR_materials_volume_testing Transmission",
-        "maxMad": 0.15,
-        "maxRawKB": 110,
-        "description": "Copy of Scene 30 using frame-graph scene-texture transmission for KHR_materials_volume_testing.glb.",
-        "tags": ["pbr", "gltf", "env", "transmission", "volume", "frame-graph"],
         "skipPerf": true
     },
     {

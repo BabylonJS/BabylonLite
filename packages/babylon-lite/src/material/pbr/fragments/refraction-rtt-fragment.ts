@@ -1,6 +1,4 @@
 import type { ShaderFragment, UboField } from "../../../shader/fragment-types.js";
-import type { Texture2D } from "../../../texture/texture-2d.js";
-import type { AssetContainer } from "../../../asset-container.js";
 import type { PbrMaterialProps, SubSurfaceProps } from "../pbr-material.js";
 import type { PbrExt } from "../pbr-flags.js";
 import { getTrilinearAnisotropicSampler } from "../../../resource/trilinear-anisotropic-sampler.js";
@@ -13,36 +11,8 @@ import {
     PBR2_LINEAR_IMAGE_PROCESSING,
 } from "../pbr-flag-bits.js";
 
-let opaqueSceneTexture: Texture2D | null = null;
-type OpaqueRefractionMat = PbrMaterialProps & { _opaqueRefractionIntensity?: number; _linearImageProcessing?: boolean };
+type TransmissionMat = PbrMaterialProps & { _linearImageProcessing?: boolean };
 const LINEAR_IMAGE_PROCESSING_SLOTS = { NI: `if(scene.vImageInfos.w>=0.0){`, BC: `}` };
-
-export function setOpaqueSceneRefractionTexture(texture: Texture2D): void {
-    opaqueSceneTexture = texture;
-}
-
-export function useOpaqueSceneRefraction(container: AssetContainer): void {
-    for (const entity of container.entities) {
-        visitMaterialNode(entity);
-    }
-}
-
-function visitMaterialNode(entity: unknown): void {
-    const node = entity as { material?: OpaqueRefractionMat; children?: readonly unknown[] };
-    const mat = node.material;
-    if (mat) {
-        const refr = mat.subsurface?.refraction;
-        mat._linearImageProcessing = true;
-        if ((refr?.intensity ?? 0) > 0) {
-            mat._opaqueRefractionIntensity = refr!.intensity;
-            mat.transmissive = false;
-            refr!.intensity = 0;
-        }
-    }
-    for (const child of node.children ?? []) {
-        visitMaterialNode(child);
-    }
-}
 
 function makeRefractionMod(hasVolume: boolean, hasMap: boolean, hasThicknessMap: boolean, useGltfThicknessChannel: boolean): string {
     const thicknessScaleLine = hasVolume || hasThicknessMap ? `let ts=max(length(mesh.world[0].xyz),max(length(mesh.world[1].xyz),length(mesh.world[2].xyz)));` : ``;
@@ -126,7 +96,7 @@ function writeRefractionUBO(data: Float32Array, mat: PbrMaterialProps, offsets: 
         return;
     }
     const o = off / 4;
-    data[o] = (mat as OpaqueRefractionMat)._opaqueRefractionIntensity ?? refr.intensity ?? 0;
+    data[o] = refr.intensity ?? 0;
     const ior = refr.indexOfRefraction ?? 1.5;
     const thick = ss!.thickness;
     data[o + 1] = 1.0 / (refr.useThicknessAsDepth && thick?.max ? ior : 1.0);
@@ -158,11 +128,11 @@ export const refractionRttExt: PbrExt = {
     id: "refraction",
     phase: "fragment",
     detect(mat) {
-        const m = mat as OpaqueRefractionMat;
+        const m = mat as TransmissionMat;
         const ss = m.subsurface as SubSurfaceProps | undefined;
         const refr = ss?.refraction;
         const linearImageProcessing = m._linearImageProcessing ? PBR2_LINEAR_IMAGE_PROCESSING : 0;
-        const intensity = m._opaqueRefractionIntensity ?? (m.transmissive ? (refr?.intensity ?? 0) : 0);
+        const intensity = m.transmissive ? (refr?.intensity ?? 0) : 0;
         if (intensity <= 0) {
             return { f: 0, f2: linearImageProcessing };
         }
@@ -185,7 +155,7 @@ export const refractionRttExt: PbrExt = {
     frag(ctx) {
         const linearImageProcessing = (ctx._features2 & PBR2_LINEAR_IMAGE_PROCESSING) !== 0;
         if (!(ctx._features2 & PBR2_HAS_REFRACTION)) {
-            return linearImageProcessing ? { _id: "opaque-linear", _fragmentSlots: LINEAR_IMAGE_PROCESSING_SLOTS } : null;
+            return linearImageProcessing ? { _id: "linear", _fragmentSlots: LINEAR_IMAGE_PROCESSING_SLOTS } : null;
         }
         return createRefractionRttFragment(
             (ctx._features2 & PBR2_HAS_VOLUME) !== 0,
@@ -202,9 +172,9 @@ export const refractionRttExt: PbrExt = {
         if (!(ctx._features2 & PBR2_HAS_REFRACTION)) {
             return b;
         }
-        const texture = ctx._refractionTexture ?? opaqueSceneTexture;
+        const texture = ctx._refractionTexture;
         if (!texture) {
-            throw new Error("PBR refraction requires an opaque scene texture.");
+            throw new Error("PBR transmission requires a frame-graph refraction texture.");
         }
         entries.push({ binding: b++, resource: texture.view });
         entries.push({ binding: b++, resource: texture.sampler });

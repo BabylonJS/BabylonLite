@@ -271,7 +271,7 @@ export interface ThicknessProps {
 }
 
 /** Refraction sub-feature (KHR_materials_transmission + _volume + _ior).
- *  Presence enables transmission. Requires an opaque-scene RTT at render time. */
+ *  Presence enables frame-graph scene-texture transmission. */
 export interface RefractionProps {
     /** Transmission factor (0=off, 1=fully transmissive). Default 0.
      *  Maps to KHR_materials_transmission.transmissionFactor. */
@@ -306,7 +306,7 @@ export interface SubSurfaceProps {
     tint?: TintProps;
     /** Refraction: physical light transmission through the surface
      *  (KHR_materials_transmission + _volume + _ior). Presence enables it.
-     *  Requires the engine to produce an opaque-scene render target. */
+     *  Requires the frame graph to produce a transmission refraction texture. */
     refraction?: RefractionProps;
 }
 

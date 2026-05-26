@@ -192,7 +192,7 @@ const _features: GltfFeatureLoader[] = [
     [hasMatExt("unlit"), () => import("./gltf-ext-unlit.js")],
     [hasMatExt("pbrSpecularGlossiness"), () => import("./gltf-ext-spec-gloss.js")],
     // Dielectric cluster (ior/specular/transmission/volume) — any of the four triggers the loader;
-    // refraction render path is wired via fragments/refraction-fragment.ts (env-only V1).
+    // transmission refraction is wired dynamically by the PBR material path when the loaded material needs it.
     [(j) => ["transmission", "volume", "ior", "specular"].some((e) => hasMatExt(e)(j)), () => import("./gltf-ext-dielectric.js")],
     [hasExt("KHR_texture_transform"), () => import("./gltf-ext-uv-transform.js")],
     [hasExt("KHR_texture_basisu"), () => import("./gltf-ext-basisu.js")],

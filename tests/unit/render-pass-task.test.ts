@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 
 import type { Camera } from "../../packages/babylon-lite/src/camera/camera";
 import type { EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
-import { enablePbrOpaqueRefraction, selectOpaqueSceneRefractionRenderables } from "../../packages/babylon-lite/src/material/pbr/pbr-refraction-setup";
 import type { Mat4 } from "../../packages/babylon-lite/src/math/types";
 import type { DrawBinding, DrawUpdateContext, Renderable } from "../../packages/babylon-lite/src/render/renderable";
 import { createSceneContext, registerScene } from "../../packages/babylon-lite/src/scene/scene";
@@ -222,15 +221,6 @@ describe("RenderPassTask transparent sorting", () => {
         expect(drawOrder).toEqual(["opaque", "dynamic-depth-write", "transmissive", "transparent"]);
     });
 
-    it("keeps dynamic depth-write renderables in the opaque refraction RTT and excludes true transmissive surfaces", () => {
-        const drawOrder: string[] = [];
-        const opaque = makeDrawOrderRenderable("opaque", { order: 100 }, drawOrder);
-        const dynamicDepthWrite = makeDrawOrderRenderable("dynamic-depth-write", { order: 110, _direct: true }, drawOrder);
-        const transmissive = makeDrawOrderRenderable("transmissive", { order: 140, _transmissive: true }, drawOrder);
-
-        expect(selectOpaqueSceneRefractionRenderables([opaque, dynamicDepthWrite, transmissive])).toEqual([opaque, dynamicDepthWrite]);
-    });
-
     it("updates per-task transmission snapshots according to copy count", async () => {
         let defaultCopies = 0;
         const defaultEngine = makeMockEngine({ msaaSamples: 1, onCopy: () => defaultCopies++ });
@@ -316,17 +306,6 @@ describe("RenderPassTask transparent sorting", () => {
             (descriptor) => descriptor.format === "rgba16float" && (descriptor.size as GPUExtent3DDict).width === 1024 && (descriptor.usage & GPUTextureUsage.COPY_DST) !== 0
         );
         expect(refractionTexture?.mipLevelCount).toBe(1);
-    });
-
-    it("allocates only biased refraction mips for the opaque refraction RTT", () => {
-        const textures: GPUTextureDescriptor[] = [];
-        const engine = makeMockEngine({ textures });
-        const scene = createSceneContext(engine) as SceneContextInternal;
-
-        enablePbrOpaqueRefraction(scene, engine);
-
-        const refractionTexture = textures.find((descriptor) => descriptor.label === "opaqueSceneTexture" && descriptor.format === "rgba16float");
-        expect(refractionTexture?.mipLevelCount).toBe(7);
     });
 
     it("samples the MSAA color texture directly for transmission copies and image processing", async () => {
