@@ -549,7 +549,14 @@ export function attachGaussianSplattingMeshSH(scene: SceneContext, mesh: Gaussia
     (mesh._gs as { shTextures: GPUTexture[]; shViews: GPUTextureView[] }).shTextures = textures;
     (mesh._gs as { shTextures: GPUTexture[]; shViews: GPUTextureView[] }).shViews = views;
 
-    const ctx = scene as unknown as { _renderables: Renderable[]; _disposables: (() => void)[] };
+    const ctx = scene as unknown as { _renderables: Renderable[]; _disposables: (() => void)[]; _gsMeshes: GaussianSplattingMesh[] };
     ctx._renderables.push(buildGaussianSplattingRenderableSH(scene, mesh, fragments));
-    ctx._disposables.push(() => disposeGaussianSplattingMesh(mesh));
+    ctx._gsMeshes.push(mesh);
+    ctx._disposables.push(() => {
+        const i = ctx._gsMeshes.indexOf(mesh);
+        if (i >= 0) {
+            ctx._gsMeshes.splice(i, 1);
+        }
+        disposeGaussianSplattingMesh(mesh);
+    });
 }
