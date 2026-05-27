@@ -170,7 +170,7 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
             { view: rt.colorView, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: "clear", storeOp: "store" },
             { view: rt.depthColorView, clearValue: { r: 1, g: 0, b: 0, a: 0 }, loadOp: "clear", storeOp: "store" },
         ],
-        depthStencilAttachment: { view: rt.depthView, depthClearValue: 1.0, depthLoadOp: "clear", depthStoreOp: "discard" },
+        depthStencilAttachment: { view: rt.depthView, depthClearValue: 0, depthLoadOp: "clear", depthStoreOp: "discard" },
     });
 
     const regularPipeline = getPickingPipeline(engine);

@@ -337,7 +337,7 @@ function getOrCreateShPipeline(engine: EngineContextInternal, sig: RenderTargetS
             entryPoint: "fs",
             targets: [
                 {
-                    format: sig.colorFormat!,
+                    format: sig._colorFormat!,
                     blend: {
                         color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
                         alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
@@ -348,11 +348,11 @@ function getOrCreateShPipeline(engine: EngineContextInternal, sig: RenderTargetS
         },
         primitive: { topology: "triangle-list", cullMode: "none" },
         depthStencil: {
-            format: sig.depthStencilFormat ?? "depth24plus-stencil8",
-            depthCompare: "less-equal",
+            format: sig._depthStencilFormat ?? "depth24plus-stencil8",
+            depthCompare: sig._depthCompare ?? "greater-equal",
             depthWriteEnabled: false,
         },
-        multisample: { count: sig.sampleCount },
+        multisample: { count: sig._sampleCount },
     });
     entry = { pipeline, meshBindGroupLayout, shTextureCount };
     _cache.entries.set(key, entry);
