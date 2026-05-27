@@ -98,7 +98,7 @@ function getOrCreatePipeline(engine: EngineContextInternal, sig: RenderTargetSig
             entryPoint: "fs",
             targets: [
                 {
-                    format: sig.colorFormat!,
+                    format: sig._colorFormat!,
                     blend: {
                         // BJS GS material uses ALPHA_COMBINE: src*srcAlpha + dst*(1-srcAlpha)
                         color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
@@ -110,11 +110,11 @@ function getOrCreatePipeline(engine: EngineContextInternal, sig: RenderTargetSig
         },
         primitive: { topology: "triangle-list", cullMode: "none" },
         depthStencil: {
-            format: sig.depthStencilFormat ?? "depth24plus-stencil8",
-            depthCompare: "less-equal",
+            format: sig._depthStencilFormat ?? "depth24plus-stencil8",
+            depthCompare: sig._depthCompare ?? "greater-equal",
             depthWriteEnabled: false,
         },
-        multisample: { count: sig.sampleCount },
+        multisample: { count: sig._sampleCount },
     });
     entry = { pipeline, meshBindGroupLayout };
     _cache.entries.set(key, entry);
