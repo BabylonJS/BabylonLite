@@ -938,7 +938,7 @@
         "slug": "scene129-gs-gpu-picking",
         "name": "Scene 129 — Gaussian Splatting GPU Picking",
         "maxMad": 1,
-        "description": "Minimal port of PG #3LNCE6#36 — extends GPU picking to handle GaussianSplattingMesh via the gsGpuPickingFragment plugin and the dedicated gs-picking-pipeline. Single GS + sphere + ground; no compound parts / gizmo / GUI.",
+        "description": "Minimal port of PG #3LNCE6#36 — extends GPU picking to handle GaussianSplattingMesh via the gsGpuPickingFragment plugin and the dedicated gs-picking-pipeline. Ground disappears when picking is not valid;",
         "tags": ["gaussian-splatting", "gpu-picking"]
     },
     {
