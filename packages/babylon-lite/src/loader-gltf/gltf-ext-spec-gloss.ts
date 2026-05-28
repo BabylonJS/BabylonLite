@@ -32,6 +32,10 @@ const ext: GltfFeature = {
         if (specGloss) {
             out.specGlossTexture = specGloss;
         }
+        out.metallicFactor = 0;
+        out.roughnessFactor = 1 - (sg.glossinessFactor ?? 1);
+        const sf = sg.specularFactor ?? [1, 1, 1];
+        out.reflectance = Math.max(sf[0], sf[1], sf[2]);
         return out;
     },
 };

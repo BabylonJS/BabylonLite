@@ -4,7 +4,7 @@ import type { EngineContext } from "../engine/engine.js";
 import type { EngineContextInternal } from "../engine/engine.js";
 import type { TransformNode } from "../scene/transform-node.js";
 import type { AssetContainer } from "../asset-container.js";
-import { createTransformNode } from "../scene/transform-node.js";
+import { createTransformNode, createTransformNodeFromMatrix } from "../scene/transform-node.js";
 import type { Texture2D } from "../texture/texture-2d.js";
 import type { PbrMaterialPropsInternal } from "../material/pbr/pbr-material.js";
 import type { Mesh, MeshGPU, MeshInternal } from "../mesh/mesh.js";
@@ -241,10 +241,14 @@ function buildNodeHierarchy(json: any, meshes: Mesh[], meshDatas: GltfMeshData[]
     // Recursive builder
     function buildNode(nodeIdx: number): TransformNode {
         const node = json.nodes[nodeIdx];
-        const t = node.translation ?? [0, 0, 0];
-        const r = node.rotation ?? [0, 0, 0, 1];
-        const s = node.scale ?? [1, 1, 1];
-        const tn = createTransformNode(node.name ?? `node_${nodeIdx}`, t[0], t[1], t[2], r[0], r[1], r[2], r[3], s[0], s[1], s[2]);
+        const tn = node.matrix
+            ? createTransformNodeFromMatrix(node.name ?? `node_${nodeIdx}`, new Float32Array(node.matrix) as Mat4)
+            : (() => {
+                  const t = node.translation ?? [0, 0, 0];
+                  const r = node.rotation ?? [0, 0, 0, 1];
+                  const s = node.scale ?? [1, 1, 1];
+                  return createTransformNode(node.name ?? `node_${nodeIdx}`, t[0], t[1], t[2], r[0], r[1], r[2], r[3], s[0], s[1], s[2]);
+              })();
         nodeMap[nodeIdx] = tn;
         if (node.children) {
             for (const childIdx of node.children) {

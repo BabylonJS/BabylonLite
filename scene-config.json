@@ -960,6 +960,36 @@
         "skipPerf": true
     },
     {
+        "id": 142,
+        "slug": "scene142-post-process-viewports",
+        "name": "Scene 142 — Post-process Viewports",
+        "maxMad": 0.05,
+        "maxRawKB": 65,
+        "description": "Deterministic colored boxes rendered into four Lite frame-graph post-process viewport quadrants.",
+        "tags": ["post-process", "frame-graph", "procedural"],
+        "skipPerf": true
+    },
+    {
+        "id": 143,
+        "slug": "scene143-pipelined-post-processes",
+        "name": "Scene 143 — Pipelined Post-processes",
+        "maxMad": 0.05,
+        "maxRawKB": 73,
+        "description": "Sponza rendered through a Lite frame-graph blur task followed by chromatic aberration.",
+        "tags": ["post-process", "frame-graph", "babylon"],
+        "skipPerf": true
+    },
+    {
+        "id": 144,
+        "slug": "scene144-bloom-post-process",
+        "name": "Scene 144 — Bloom Post-process",
+        "maxMad": 0.05,
+        "maxRawKB": 112,
+        "description": "Tarisland dragon asset rendered through a Lite frame-graph bloom task using the Babylon.js Playground bloom settings.",
+        "tags": ["post-process", "frame-graph", "gltf", "animation"],
+        "skipPerf": true
+    },
+    {
         "id": 150,
         "slug": "scene150-manual-x-slide",
         "name": "Scene 150 — Manual X Slide Animation",
