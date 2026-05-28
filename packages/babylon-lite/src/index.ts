@@ -123,6 +123,12 @@ export type { GaussianSplattingMesh } from "./mesh/GaussianSplatting/gaussian-sp
 export { bakeCurrentTransformIntoVertices, bakeTransformIntoVertices } from "./mesh/GaussianSplatting/gaussian-splatting-bake.js";
 export type { GsShaderFragment, GsFragmentSlot } from "./mesh/GaussianSplatting/gaussian-splatting-mesh.js";
 export { createProceduralGaussianSplattingMesh } from "./mesh/GaussianSplatting/create-gaussian-splatting-mesh.js";
+export { gsLinearDepthFragment, gsAlphaBlendedDepthFragment } from "./mesh/GaussianSplatting/gs-depth-fragments.js";
+export { gsGpuPickingFragment, encodeIdToColor } from "./mesh/GaussianSplatting/gs-gpu-picking-fragment.js";
+
+// ─── Linear-depth material (matches BJS DepthRenderer's linear depth output) ──
+export { createLinearDepthMaterial } from "./render/linear-depth-material.js";
+export type { LinearDepthMaterialOptions } from "./render/linear-depth-material.js";
 
 // ─── Shadows ─────────────────────────────────────────────────────────
 export { createEsmDirectionalShadowGenerator } from "./shadow/esm-directional-shadow-generator.js";
