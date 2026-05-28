@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import * as path from "path";
-import { attachCompareArtifacts, compareImages, getSceneConfig } from "../compare-utils";
+import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
 
 const sceneConfig = getSceneConfig(144);
 const REFERENCE_DIR = path.resolve(__dirname, "../../../reference/scene144-bloom-post-process");
@@ -10,6 +10,9 @@ test.skip(!!sceneConfig.skipParity, "Scene 144 skipped via skipParity in scene-c
 
 test("Scene 144 — Bloom frame-graph post-process matches Babylon.js reference", async ({ page }, testInfo) => {
     test.setTimeout(180_000);
+
+    const browser = page.context().browser()!;
+    await captureGolden(browser, { sceneId: 144, timeout: 120_000, settleMs: 5_000 });
 
     await page.goto("/scene144.html");
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 120_000 });
