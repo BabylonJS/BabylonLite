@@ -26,6 +26,10 @@ export interface Camera {
     _vpCache?: Float32Array;
     _vpVer?: number;
     _vpAspect?: number;
+    /** @internal Bound scene precision policy (set by addToScene on first attach). */
+    _boundPolicy?: import("../scene/_scene-precision.js").ScenePrecisionPolicy | null;
+    /** @internal Reallocate matrix-owning caches via the bound allocator. Invoked on first bind. */
+    _rebindAllocator?: (allocator: import("../math/_matrix-allocator.js").MatrixAllocator) => void;
 }
 
 /** Babylon-compatible normalized camera viewport. x/y/width/height are fractions of the render target. */

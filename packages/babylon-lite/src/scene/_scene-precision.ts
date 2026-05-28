@@ -15,9 +15,21 @@ export interface ScenePrecisionPolicy {
 
 /** @internal Resolve a scene's matrix policy from its owning engine.
  *  M0: pure mirror. The structural seam exists so M1 can layer floating-origin
- *  validation here without touching `createSceneContext`. */
+ *  validation here without touching `createSceneContext`.
+ *
+ *  Falls back to a default F32 allocator if the engine lacks `_matrixPolicy`.
+ *  This is purely a test-ergonomics affordance: the synthetic engine objects
+ *  used by some unit tests don't go through `createEngine` and therefore
+ *  don't have the field populated. Production engines created via
+ *  `createEngine` always set it, so the fallback path is never taken at
+ *  runtime — keeping HPM-off bit-exact behavior unchanged. */
 export function resolveScenePrecisionPolicy(engine: EngineContextInternal, _sceneOptions: SceneContextOptions): ScenePrecisionPolicy {
-    const allocator = engine._matrixPolicy;
+    const allocator: MatrixAllocator =
+        engine._matrixPolicy ??
+        ({
+            storageKind: "f32",
+            allocate: () => new Float32Array(16) as unknown as never,
+        } as MatrixAllocator);
     return {
         useHighPrecisionMatrix: allocator.storageKind === "f64",
         storageKind: allocator.storageKind,

@@ -39,6 +39,10 @@ export interface SceneNode {
     /** Self-visibility. Undefined/true = visible; `false` skips render + camera AABB.
      *  Cascade is materialized at write-time by `setSubtreeVisible`. */
     visible?: boolean;
+    /** @internal Bound scene precision policy (set by addToScene on first attach). */
+    _boundPolicy?: import("./_scene-precision.js").ScenePrecisionPolicy | null;
+    /** @internal Reallocate matrix-owning caches via the bound allocator. Invoked on first bind. */
+    _rebindAllocator?: (allocator: import("../math/_matrix-allocator.js").MatrixAllocator) => void;
 }
 
 // ─── Math helpers ─────────────────────────────────────────────────────
