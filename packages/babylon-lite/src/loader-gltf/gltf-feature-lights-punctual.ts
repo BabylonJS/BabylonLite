@@ -50,7 +50,7 @@ const feature: GltfFeature = {
             if (!def) {
                 continue;
             }
-            const world = computeNodeWorldMatrix(ctx._json, nodeIdx, ctx._parentMap, ctx._worldMatrixCache);
+            const world = computeNodeWorldMatrix(ctx._json, nodeIdx, ctx._parentMap, ctx._worldMatrixCache, ctx._scratch);
             const px = world[12]!;
             const py = world[13]!;
             const pz = world[14]!;

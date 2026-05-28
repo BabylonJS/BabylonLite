@@ -21,6 +21,7 @@ import { computeAabb } from "../math/compute-aabb.js";
 import { mat4ComposeInto } from "../math/mat4-compose-into.js";
 import { mat4Multiply } from "../math/mat4-multiply.js";
 import type { Mat4 } from "../math/types.js";
+import { asMat4Storage } from "../math/_mat4-storage.js";
 import { setThinInstances } from "../mesh/thin-instance.js";
 
 /** Collect every Mesh child (direct children only — matches buildNodeHierarchy). */
@@ -102,7 +103,7 @@ const ext: GltfFeature = {
             const nodeWorld = ctx._worldMatrixCache.get(nodeIdx);
             for (const mesh of meshesForNode) {
                 setThinInstances(mesh, matrices, count);
-                expandMeshAabbForInstances(mesh as MeshInternal, matrices, count, nodeWorld);
+                expandMeshAabbForInstances(mesh as MeshInternal, matrices, count, nodeWorld, ctx._scratch);
             }
         }
         return {};
@@ -111,8 +112,16 @@ const ext: GltfFeature = {
 export default ext;
 
 /** Expand a mesh's world-space AABB to enclose all thin instances so that
- *  auto-framing cameras see the full instanced grid, not just the base mesh. */
-function expandMeshAabbForInstances(mesh: MeshInternal, matrices: Float32Array, count: number, nodeWorld: Mat4 | undefined): void {
+ *  auto-framing cameras see the full instanced grid, not just the base mesh.
+ *  Uses `scratch.tmpInstance` from the per-load pool for the per-iteration
+ *  instance world matrix — no per-call allocation. */
+function expandMeshAabbForInstances(
+    mesh: MeshInternal,
+    matrices: Float32Array,
+    count: number,
+    nodeWorld: Mat4 | undefined,
+    scratch: import("./_loader-scratch.js").LoaderScratch
+): void {
     const positions = mesh._cpuPositions;
     if (!positions || !nodeWorld || count === 0) {
         return;
@@ -155,11 +164,11 @@ function expandMeshAabbForInstances(mesh: MeshInternal, matrices: Float32Array, 
     let wMaxX = -Infinity,
         wMaxY = -Infinity,
         wMaxZ = -Infinity;
-    const instWorldBuf = new Float32Array(16);
-    const instWorld = instWorldBuf as unknown as Mat4;
+    const instWorld = scratch.tmpInstance;
+    const instBuf = asMat4Storage(instWorld);
     for (let i = 0; i < count; i++) {
         for (let k = 0; k < 16; k++) {
-            instWorldBuf[k] = matrices[i * 16 + k]!;
+            instBuf[k] = matrices[i * 16 + k]!;
         }
         const combined = mat4Multiply(nodeWorld, instWorld);
         const [imin, imax] = computeAabb(corners, combined);

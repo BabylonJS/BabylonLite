@@ -12,6 +12,7 @@ import { initMeshTransform } from "../mesh/mesh.js";
 import { getOrCreateSampler } from "../resource/gpu-pool.js";
 import { createMappedBuffer } from "../resource/gpu-buffers.js";
 import { resolveAccessor, buildParentMap, computeNodeWorldMatrix, getTextureImageIndex } from "./gltf-parser.js";
+import { createLoaderScratch } from "./_loader-scratch.js";
 import type { GltfMaterialData, GltfMatExtCtx } from "./gltf-material.js";
 import { assembleMaterial, makeImageFetcher } from "./gltf-material.js";
 import type { DecodedPrimitive, GltfFeature, GltfLoadCtx } from "./gltf-feature.js";
@@ -56,6 +57,9 @@ export async function loadGltf(engine: EngineContext, url: string): Promise<Asse
     // Build parent map + world-matrix cache once for O(n) hierarchy traversal
     const parentMap = buildParentMap(json);
     const worldMatrixCache = new Map<number, Mat4>();
+    // Per-load scratch pool sourced from the engine matrix-precision policy.
+    // Replaces the old module-local _localScratch (REQ-ARCH-3 fix).
+    const scratch = createLoaderScratch(engine as EngineContextInternal);
 
     // Discover every triggered feature (material exts, skeleton, morph,
     // animations, variants, …) and dynamic-import them concurrently with
@@ -78,7 +82,7 @@ export async function loadGltf(engine: EngineContext, url: string): Promise<Asse
         }
     }
 
-    const meshDatas = await extractAllMeshes(json, binChunk, baseUrl, parentMap, worldMatrixCache, decodedPrimitives);
+    const meshDatas = await extractAllMeshes(json, binChunk, baseUrl, parentMap, worldMatrixCache, decodedPrimitives, scratch);
 
     const ctx: GltfLoadCtx = {
         _engine: engine as EngineContextInternal,
@@ -89,6 +93,7 @@ export async function loadGltf(engine: EngineContext, url: string): Promise<Asse
         _worldMatrixCache: worldMatrixCache,
         _matExts: matExts,
         _wrapTex: wrapTex,
+        _scratch: scratch,
     };
 
     const meshes = await uploadMeshes(meshDatas, features, ctx);
@@ -273,7 +278,8 @@ async function extractAllMeshes(
     baseUrl: string,
     parentMap: Map<number, number>,
     worldMatrixCache: Map<number, Mat4>,
-    decodedPrimitives: Map<unknown, DecodedPrimitive>
+    decodedPrimitives: Map<unknown, DecodedPrimitive>,
+    scratch: import("./_loader-scratch.js").LoaderScratch
 ): Promise<GltfMeshData[]> {
     // Per-load image cache — avoids decoding the same glTF image index multiple times
     const imageCache = new Map<number, Promise<ImageBitmap>>();
@@ -301,7 +307,7 @@ async function extractAllMeshes(
         }
 
         const mesh = json.meshes[node.mesh];
-        const worldMatrix = computeNodeWorldMatrix(json, nodeIdx, parentMap, worldMatrixCache);
+        const worldMatrix = computeNodeWorldMatrix(json, nodeIdx, parentMap, worldMatrixCache, scratch);
 
         for (const primitive of mesh.primitives) {
             const attrs = primitive.attributes;

@@ -77,23 +77,25 @@ export function extractSkin(
     skinIdx: number,
     meshWorldMatrix: Mat4,
     parentMap: Map<number, number>,
-    worldMatrixCache: Map<number, Mat4>
+    worldMatrixCache: Map<number, Mat4>,
+    scratch: import("./_loader-scratch.js").LoaderScratch
 ): GltfSkinData {
     const skin = json.skins[skinIdx];
     const jointNodes: number[] = skin.joints;
     const inverseBindMatrices = resolveIBMs(json, binChunk, skin);
-    const jointWorldMatrices: Mat4[] = jointNodes.map((nodeIdx) => computeNodeWorldMatrix(json, nodeIdx, parentMap, worldMatrixCache));
+    const jointWorldMatrices: Mat4[] = jointNodes.map((nodeIdx) => computeNodeWorldMatrix(json, nodeIdx, parentMap, worldMatrixCache, scratch));
     return { jointNodes, inverseBindMatrices, jointWorldMatrices, meshWorldMatrix };
 }
 
 /** Compute rest-pose bone texture data. Each bone gets 4 vec4 (one 4×4 matrix).
  *  Formula: boneMatrix[i] = inverse(meshWorld) * jointWorld[i] * IBM[i]
- *  At rest pose this simplifies to identity for each bone. */
-export function computeBoneTextureData(skin: GltfSkinData): Float32Array {
+ *  At rest pose this simplifies to identity for each bone.
+ *  `scratch.tmpAnim` is the per-load mat4 scratch threaded in from the caller. */
+export function computeBoneTextureData(skin: GltfSkinData, scratch: import("./_loader-scratch.js").LoaderScratch): Float32Array {
     const numBones = skin.jointNodes.length;
     const data = new Float32Array(numBones * 16);
     const invMeshWorld = mat4Invert(skin.meshWorldMatrix) ?? mat4Identity();
-    const tmp = new Float32Array(16);
+    const tmp = asMat4Storage(scratch.tmpAnim);
     for (let i = 0; i < numBones; i++) {
         mat4MultiplyInto(tmp, 0, asMat4Storage(invMeshWorld), 0, asMat4Storage(skin.jointWorldMatrices[i]!), 0);
         mat4MultiplyInto(data, i * 16, tmp, 0, skin.inverseBindMatrices, i * 16);
@@ -130,6 +132,7 @@ export function parseAnimationData(
     meshes: Mesh[],
     parentMap: Map<number, number>,
     worldMatrixCache: Map<number, Mat4>,
+    scratch: import("./_loader-scratch.js").LoaderScratch,
     nodeMap?: readonly (SceneNode | undefined)[]
 ): GltfAnimationData | null {
     if (!json.animations || json.animations.length === 0) {
@@ -249,7 +252,7 @@ export function parseAnimationData(
         const jointNodes: number[] = skin.joints;
         const inverseBindMatrices = resolveIBMs(json, binChunk, skin);
 
-        const meshWorldMatrix = computeNodeWorldMatrix(json, nodeIdx, parentMap, worldMatrixCache);
+        const meshWorldMatrix = computeNodeWorldMatrix(json, nodeIdx, parentMap, worldMatrixCache, scratch);
         const invMeshWorld = mat4Invert(meshWorldMatrix) ?? mat4Identity();
 
         // Create a binding for EACH mesh primitive of this skinned node

@@ -8,6 +8,7 @@ import type { Mat4 } from "../math/types.js";
 import { mat4ComposeInto } from "../math/mat4-compose-into.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
 import { asMat4Storage } from "../math/_mat4-storage.js";
+import type { LoaderScratch } from "./_loader-scratch.js";
 
 // glTF 2.0 component types
 const FLOAT = 5126;
@@ -132,7 +133,7 @@ export function findParent(parentMap: Map<number, number>, childIdx: number): nu
  * (the cached world matrix itself) instead of two. Recursion always resolves
  * `parentWorld` before touching the scratch, so the shared buffer is safe.
  */
-export function computeNodeWorldMatrix(json: any, nodeIdx: number, parentMap: Map<number, number>, cache: Map<number, Mat4>): Mat4 {
+export function computeNodeWorldMatrix(json: any, nodeIdx: number, parentMap: Map<number, number>, cache: Map<number, Mat4>, scratch: LoaderScratch): Mat4 {
     const cached = cache.get(nodeIdx);
     if (cached) {
         return cached;
@@ -141,9 +142,9 @@ export function computeNodeWorldMatrix(json: any, nodeIdx: number, parentMap: Ma
     const node = json.nodes[nodeIdx];
     const parentIdx = findParent(parentMap, nodeIdx);
     // Resolve parent FIRST so any recursive call can safely reuse the shared scratch below.
-    const parentWorld: Mat4 = parentIdx !== -1 ? computeNodeWorldMatrix(json, parentIdx, parentMap, cache) : RH_TO_LH_ROOT;
+    const parentWorld: Mat4 = parentIdx !== -1 ? computeNodeWorldMatrix(json, parentIdx, parentMap, cache, scratch) : RH_TO_LH_ROOT;
 
-    let localBuf: Float32Array;
+    let localBuf: import("../math/_mat4-storage.js").Mat4Storage;
     if (node.matrix) {
         // Pre-built matrix — copy into a fresh Float32Array (cannot alias scratch safely across calls).
         localBuf = new Float32Array(node.matrix);
@@ -151,25 +152,19 @@ export function computeNodeWorldMatrix(json: any, nodeIdx: number, parentMap: Ma
         const t = node.translation ?? [0, 0, 0];
         const r = node.rotation ?? [0, 0, 0, 1];
         const s = node.scale ?? [1, 1, 1];
-        const scratch = _getLocalScratch();
-        mat4ComposeInto(scratch, 0, t[0], t[1], t[2], r[0], r[1], r[2], r[3], s[0], s[1], s[2]);
-        localBuf = scratch;
+        const local = asMat4Storage(scratch.tmpLocal);
+        mat4ComposeInto(local, 0, t[0], t[1], t[2], r[0], r[1], r[2], r[3], s[0], s[1], s[2]);
+        localBuf = local;
     }
 
-    // TODO(M0/01_03): allocate via engine policy
+    // Per-node world is allocated fresh because recursion mutates the parser's
+    // scratch; it cannot alias the per-call `tmpLocal`. The result is then
+    // stashed in the per-load `cache` (Map<nodeIdx, Mat4>) and never shared
+    // across loadGltf calls. Allocates F32; mesh world matrices are later
+    // recomputed via the bound policy when meshes attach to the scene.
     const world = new Float32Array(16) as unknown as Mat4;
     mat4MultiplyInto(asMat4Storage(world), 0, asMat4Storage(parentWorld), 0, localBuf, 0);
 
     cache.set(nodeIdx, world);
     return world;
-}
-
-// Lazy-init shared scratch for TRS composition. Module-level `new Float32Array` would kill
-// tree-shaking per GUIDANCE — defer until first use.
-let _localScratch: Float32Array | null = null;
-function _getLocalScratch(): Float32Array {
-    if (!_localScratch) {
-        _localScratch = new Float32Array(16);
-    }
-    return _localScratch;
 }
