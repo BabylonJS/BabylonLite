@@ -4,11 +4,9 @@
  * ~1 KB string cost in their bundle. Dynamic-imported by pbr-renderable.ts
  * when PBR_HAS_SKYBOX is set.
  *
- * Matches BJS's MIX_IBL_RADIANCE_WITH_IRRADIANCE path: the sampled (prefiltered)
- * radiance is blended toward SH-evaluated irradiance by alphaG. This keeps the
- * skybox brightness aligned with BJS at low alphaG (smooth skybox materials)
- * without darkening it uniformly by `alphaG` (which would happen if we mixed
- * with zero).
+ * Matches BJS's disableLighting skybox-material path, where
+ * MIX_IBL_RADIANCE_WITH_IRRADIANCE is not defined and the skybox uses the
+ * sampled prefiltered radiance directly.
  */
 
 export const IBL_SKYBOX_CALCULATION = `let R_raw = -V;
@@ -30,7 +28,6 @@ let maxLod = f32(textureNumLevels(iblTexture) - 1);
 let cubemapDim = f32(textureDimensions(iblTexture).x);
 var specLod = log2(cubemapDim * alphaG) * scene.vImageInfos.z;
 var environmentRadiance = textureSampleLevel(iblTexture, iblSampler, R, clamp(specLod, 0.0, maxLod)).rgb * material.environmentIntensity;
-environmentRadiance = mix(environmentRadiance, environmentIrradiance, alphaG);
 let finalIrradiance = environmentIrradiance * surfaceAlbedo * occlusion;
 let finalSpecularScaled = directSpecular * energyConservation;
 let finalRadianceScaled = environmentRadiance * colorSpecularEnvReflectance * energyConservation;
