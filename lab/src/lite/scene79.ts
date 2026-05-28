@@ -4,7 +4,6 @@ import { addToScene, attachControl, createArcRotateCamera, createEngine, createP
 import { SCENE79_NME_JSON } from "../shared/scene79-nme.js";
 
 async function main(): Promise<void> {
-    const initStart = performance.now();
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
     const engine = await createEngine(canvas);
     const scene = createSceneContext(engine);
@@ -23,8 +22,6 @@ async function main(): Promise<void> {
 
     await registerScene(engine, scene);
     await startEngine(engine);
-    canvas.dataset.drawCalls = String(engine.drawCallCount);
-    canvas.dataset.initMs = String(performance.now() - initStart);
     canvas.dataset.ready = "true";
 }
 

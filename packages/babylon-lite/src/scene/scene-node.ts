@@ -110,10 +110,9 @@ export function createSceneNodeFromMatrix(name: string, matrix: Mat4): SceneNode
 }
 
 function createSceneNodeCore(name: string, matrix: Mat4 | null, px = 0, py = 0, pz = 0, qx = 0, qy = 0, qz = 0, qw = 1, sx = 1, sy = 1, sz = 1): SceneNode {
-    const localMatrix = matrix ? (new Float32Array(matrix) as Mat4) : null;
     const wm = createWorldMatrixState(() => {
-        if (localMatrix) {
-            return localMatrix;
+        if (matrix) {
+            return matrix;
         }
         const p = node.position,
             rq = node.rotationQuaternion,
@@ -122,7 +121,7 @@ function createSceneNodeCore(name: string, matrix: Mat4 | null, px = 0, py = 0, 
         return isIdentity ? mat4Identity() : mat4Compose(p.x, p.y, p.z, rq.x, rq.y, rq.z, rq.w, s.x, s.y, s.z);
     });
     const onWmDirty = () => {
-        if (!localMatrix) {
+        if (!matrix) {
             wm.markLocalDirty();
         }
     };
@@ -149,8 +148,8 @@ function createSceneNodeCore(name: string, matrix: Mat4 | null, px = 0, py = 0, 
             return wm.getWorldMatrixVersion();
         },
     };
-    if (localMatrix) {
-        node._localMatrix = localMatrix;
+    if (matrix) {
+        node._localMatrix = matrix;
     }
     return node;
 }

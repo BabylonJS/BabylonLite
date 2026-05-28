@@ -11,15 +11,6 @@ type QuatTuple = [number, number, number, number];
 const PICK_TARGET_X_RATIO = 0.625;
 const PICK_TARGET_Y_RATIO = 0.625;
 
-interface PickMarkerState {
-    markerPlaced: boolean;
-    normalMarkerPlaced: boolean;
-    normalMarkerAligned: boolean;
-    markerNearPick: boolean;
-    normalMarkerNearPick: boolean;
-    point: Vec3Tuple | null;
-}
-
 function createUnlitMaterial(color: ColorTuple) {
     const material = createStandardMaterial();
     material.diffuseColor = [1, 1, 1];
@@ -29,60 +20,13 @@ function createUnlitMaterial(color: ColorTuple) {
     return material;
 }
 
-function cross(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
-    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-
 function computeNormalBasisQuaternion(normal: Vec3Tuple): QuatTuple {
-    const yAxis = normalizeVec3(normal[0], normal[1], normal[2], 1e-8);
-    const reference: Vec3Tuple = Math.abs(yAxis[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
-    const xBasis = cross(reference, yAxis);
-    const xAxis = normalizeVec3(xBasis[0], xBasis[1], xBasis[2], 1e-8);
-    const zAxis = cross(xAxis, yAxis);
-
-    const m00 = xAxis[0];
-    const m01 = yAxis[0];
-    const m02 = zAxis[0];
-    const m10 = xAxis[1];
-    const m11 = yAxis[1];
-    const m12 = zAxis[1];
-    const m20 = xAxis[2];
-    const m21 = yAxis[2];
-    const m22 = zAxis[2];
-    const trace = m00 + m11 + m22;
-
-    let qx: number;
-    let qy: number;
-    let qz: number;
-    let qw: number;
-    if (trace > 0) {
-        const s = Math.sqrt(trace + 1) * 2;
-        qw = 0.25 * s;
-        qx = (m21 - m12) / s;
-        qy = (m02 - m20) / s;
-        qz = (m10 - m01) / s;
-    } else if (m00 > m11 && m00 > m22) {
-        const s = Math.sqrt(1 + m00 - m11 - m22) * 2;
-        qw = (m21 - m12) / s;
-        qx = 0.25 * s;
-        qy = (m01 + m10) / s;
-        qz = (m02 + m20) / s;
-    } else if (m11 > m22) {
-        const s = Math.sqrt(1 + m11 - m00 - m22) * 2;
-        qw = (m02 - m20) / s;
-        qx = (m01 + m10) / s;
-        qy = 0.25 * s;
-        qz = (m12 + m21) / s;
-    } else {
-        const s = Math.sqrt(1 + m22 - m00 - m11) * 2;
-        qw = (m10 - m01) / s;
-        qx = (m02 + m20) / s;
-        qy = (m12 + m21) / s;
-        qz = 0.25 * s;
+    const w = 1 + normal[1];
+    if (w < 1e-8) {
+        return [1, 0, 0, 0];
     }
-
-    const len = Math.hypot(qx, qy, qz, qw);
-    return len < 1e-8 ? [0, 0, 0, 1] : [qx / len, qy / len, qz / len, qw / len];
+    const len = Math.hypot(normal[2], normal[0], w);
+    return [normal[2] / len, 0, -normal[0] / len, w / len];
 }
 
 function rotateLocalYAxis(q: QuatTuple): Vec3Tuple {
@@ -122,9 +66,9 @@ function formatVec3(value: Vec3Tuple | null): string {
     return value ? value.map((v) => v.toPrecision(12)).join(",") : "";
 }
 
-function placeMarkers(info: PickingInfo, surfaceMarker: Mesh, normalMarker: Mesh): PickMarkerState {
+function placeMarkers(info: PickingInfo, surfaceMarker: Mesh, normalMarker: Mesh): [Vec3Tuple | null, boolean, boolean, boolean, boolean, boolean] {
     if (!info.hit || !info.pickedPoint) {
-        return { markerPlaced: false, normalMarkerPlaced: false, normalMarkerAligned: false, markerNearPick: false, normalMarkerNearPick: false, point: null };
+        return [null, false, false, false, false, false];
     }
 
     const point = info.pickedPoint;
@@ -137,14 +81,7 @@ function placeMarkers(info: PickingInfo, surfaceMarker: Mesh, normalMarker: Mesh
     normalMarker.rotationQuaternion.set(q[0], q[1], q[2], q[3]);
 
     const alignedAxis = rotateLocalYAxis(q);
-    return {
-        markerPlaced: true,
-        normalMarkerPlaced: true,
-        normalMarkerAligned: dot(alignedAxis, normal) > 0.999,
-        markerNearPick: markerNearPick(surfaceMarker, point, 1e-8),
-        normalMarkerNearPick: markerNearPick(normalMarker, point, 0.2),
-        point,
-    };
+    return [point, true, true, dot(alignedAxis, normal) > 0.999, markerNearPick(surfaceMarker, point, 1e-8), markerNearPick(normalMarker, point, 0.2)];
 }
 
 async function waitFrames(frameCount: number): Promise<void> {
@@ -189,12 +126,12 @@ async function main(): Promise<void> {
     canvas.dataset.drawCalls = String(engine.drawCallCount);
     canvas.dataset.initMs = String(performance.now() - __initStart);
     canvas.dataset.pickedHit = pickInfo.hit ? pickInfo.pickedMesh?.name ?? "" : "miss";
-    canvas.dataset.pickPoint = formatVec3(state.point);
-    canvas.dataset.markerPlaced = String(state.markerPlaced);
-    canvas.dataset.normalMarkerPlaced = String(state.normalMarkerPlaced);
-    canvas.dataset.normalMarkerAligned = String(state.normalMarkerAligned);
-    canvas.dataset.markerNearPick = String(state.markerNearPick);
-    canvas.dataset.normalMarkerNearPick = String(state.normalMarkerNearPick);
+    canvas.dataset.pickPoint = formatVec3(state[0]);
+    canvas.dataset.markerPlaced = String(state[1]);
+    canvas.dataset.normalMarkerPlaced = String(state[2]);
+    canvas.dataset.normalMarkerAligned = String(state[3]);
+    canvas.dataset.markerNearPick = String(state[4]);
+    canvas.dataset.normalMarkerNearPick = String(state[5]);
     canvas.dataset.ready = "true";
 }
 

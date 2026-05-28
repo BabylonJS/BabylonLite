@@ -3,7 +3,6 @@
  *  TransformNode is now a pure type alias for SceneNode, giving all scene entities
  *  a common base. createTransformNode delegates to createSceneNode. */
 
-import type { Mat4 } from "../math/types.js";
 import type { Mesh, MeshInternal } from "../mesh/mesh.js";
 import { initMeshTransform } from "../mesh/mesh.js";
 import type { SceneNode } from "./scene-node.js";
@@ -20,15 +19,11 @@ export function createTransformNode(name: string, px = 0, py = 0, pz = 0, qx = 0
     return createSceneNode(name, px, py, pz, qx, qy, qz, qw, sx, sy, sz);
 }
 
-export function createTransformNodeFromMatrix(name: string, matrix: Mat4): TransformNode {
-    return createSceneNodeFromMatrix(name, matrix);
-}
-
 /** Deep-clone a SceneNode tree. Meshes are shallow-cloned (shared GPU buffers).
  *  Lights, cameras, and other non-mesh/non-TN children are shallow-cloned. */
 export function cloneTransformNode(src: SceneNode): SceneNode {
     const clone = src._localMatrix
-        ? createTransformNodeFromMatrix(src.name + "_clone", src._localMatrix)
+        ? createSceneNodeFromMatrix(src.name + "_clone", src._localMatrix)
         : createTransformNode(
               src.name + "_clone",
               src.position.x,

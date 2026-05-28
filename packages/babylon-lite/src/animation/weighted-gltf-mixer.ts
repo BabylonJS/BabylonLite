@@ -343,8 +343,8 @@ function uploadTarget(manager: AnimationManager, target: WeightedGltfTarget): vo
         const nodeIdx = target.topoOrder[idx]!;
         const node = nodes[nodeIdx]!;
         const off = nodeIdx * TRS_STRIDE;
-        if (node.matrix) {
-            localMat.set(node.matrix, nodeIdx * 16);
+        if (node._matrix) {
+            localMat.set(node._matrix, nodeIdx * 16);
         } else {
             mat4ComposeInto(
                 localMat,
