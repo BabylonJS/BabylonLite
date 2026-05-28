@@ -251,7 +251,6 @@
         "maxRawKB": 90.7,
         "description": "Georgia Tech Dragon with PBR subsurface translucency, thickness map, point light, DDS environment.",
         "tags": ["pbr", "gltf", "env"],
-        "skipParity": true,
         "skipPerf": true
     },
     {
