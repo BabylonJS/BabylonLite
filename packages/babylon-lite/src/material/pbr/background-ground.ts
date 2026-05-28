@@ -2,7 +2,9 @@
  *  Contains the ground material, mesh buffers, texture loading, and UBO creation.
  *  Tree-shaken away from scenes that use `skipGround: true`. */
 
-import type { Mat4 } from "../../math/types.js";
+// Mat4 type removed: this file stores its tiny local world matrix as a plain
+// Float32Array since it's never exposed as a Mat4 to consumers.
+
 import type { EngineContextInternal } from "../../engine/engine.js";
 import type { Renderable } from "../../render/renderable.js";
 import type { RenderTargetSignature } from "../../engine/render-target.js";
@@ -58,7 +60,7 @@ export async function buildGroundRenderable(
     // Column-major for WGSL: ground quad in XY plane, normal +Z → world +Y
     // Offset Y by -0.01 to prevent z-fighting with scene floor geometry.
     const eps = 2.220446049250313e-16;
-    const groundWorld = new Float32Array(16) as Mat4;
+    const groundWorld = new Float32Array(16);
     groundWorld[0] = 1;
     groundWorld[5] = eps;
     groundWorld[6] = -1;
@@ -243,7 +245,7 @@ function createGroundBuffers(
 
 // ─── Ground UBO ─────────────────────────────────────────────────────────────
 
-function createBgMeshUBO(engine: EngineContextInternal, world: Mat4, primaryColor: [number, number, number]): GPUBuffer {
+function createBgMeshUBO(engine: EngineContextInternal, world: Float32Array, primaryColor: [number, number, number]): GPUBuffer {
     const data = new Float32Array(BG_MESH_UNIFORM_SIZE / 4);
     data.set(world, 0); // offset 0: world mat4x4
     data[16] = primaryColor[0]; // offset 64: primaryColor.r

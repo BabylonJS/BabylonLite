@@ -17,7 +17,7 @@ export interface DirectionalLight extends LightBase {
 }
 
 export function createDirectionalLight(direction: [number, number, number], intensity = 1): DirectionalLight {
-    const _localMatrix = new Float32Array(16) as Mat4;
+    const _localMatrix = new Float32Array(16) as unknown as Mat4;
     const { wm, onDirty, lvs } = createLightBase(() =>
         localMatrixFromDirection(light.direction.x, light.direction.y, light.direction.z, light.position.x, light.position.y, light.position.z, _localMatrix)
     );

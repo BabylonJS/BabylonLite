@@ -8,7 +8,7 @@
 import type { SceneContext } from "../../scene/scene.js";
 import type { EngineContextInternal } from "../../engine/engine.js";
 import type { EnvironmentTextures } from "../../loader-env/load-env.js";
-import type { Mat4 } from "../../math/types.js";
+// Mat4 import removed: local world matrices stored as Float32Array.
 import type { Renderable } from "../../render/renderable.js";
 import type { RenderTargetSignature } from "../../engine/render-target.js";
 
@@ -46,8 +46,8 @@ function createSkyboxBuffers(engine: EngineContextInternal, S: number): { posBuf
     };
 }
 
-function buildSkyboxWorldMatrix(rootPosition: [number, number, number]): Mat4 {
-    const world = new Float32Array(16) as Mat4;
+function buildSkyboxWorldMatrix(rootPosition: [number, number, number]): Float32Array {
+    const world = new Float32Array(16);
     world[0] = 1;
     world[5] = 1;
     world[10] = 1;
@@ -163,7 +163,7 @@ export function buildSolidSkyboxRenderable(
     return r;
 }
 
-function createSkyMeshUBO(engine: EngineContextInternal, world: Mat4, primaryColor: [number, number, number], skyOutputColor: [number, number, number]): GPUBuffer {
+function createSkyMeshUBO(engine: EngineContextInternal, world: Float32Array, primaryColor: [number, number, number], skyOutputColor: [number, number, number]): GPUBuffer {
     const data = new Float32Array(SKY_MESH_UNIFORM_SIZE / 4);
     data.set(world, 0);
     data[16] = primaryColor[0];

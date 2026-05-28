@@ -19,7 +19,7 @@ export interface HemisphericLight extends LightBase {
 /** Create a hemispheric light. Returns plain data — caller adds to scene.
  *  Matches Babylon.js HemisphericLight behavior. */
 export function createHemisphericLight(direction: [number, number, number] = [0, 1, 0], intensity: number = 1.0): HemisphericLight {
-    const _localMatrix = new Float32Array(16) as Mat4;
+    const _localMatrix = new Float32Array(16) as unknown as Mat4;
     const { wm, onDirty, lvs } = createLightBase(() => localMatrixFromDirection(light.direction.x, light.direction.y, light.direction.z, 0, 0, 0, _localMatrix));
 
     const light = applyWorldMatrixAccessors<HemisphericLight>(

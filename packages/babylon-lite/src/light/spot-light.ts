@@ -23,7 +23,7 @@ export interface SpotLight extends LightBase {
 }
 
 export function createSpotLight(position: [number, number, number], direction: [number, number, number], angle: number, exponent: number, intensity = 1.0): SpotLight {
-    const _localMatrix = new Float32Array(16) as Mat4;
+    const _localMatrix = new Float32Array(16) as unknown as Mat4;
     const { wm, onDirty, lvs } = createLightBase(() =>
         localMatrixFromDirection(light.direction.x, light.direction.y, light.direction.z, light.position.x, light.position.y, light.position.z, _localMatrix)
     );

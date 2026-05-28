@@ -66,7 +66,7 @@ export function createArcRotateCamera(alpha: number, beta: number, radius: numbe
         const eye = localEyePosition();
         const v = mat4LookAtLH(eye, cam.target, Vec3Up);
         // Transpose upper 3×3 of view = camera-to-world rotation; translation = eye.
-        return new Float32Array([v[0]!, v[4]!, v[8]!, 0, v[1]!, v[5]!, v[9]!, 0, v[2]!, v[6]!, v[10]!, 0, eye.x, eye.y, eye.z, 1]) as Mat4;
+        return new Float32Array([v[0]!, v[4]!, v[8]!, 0, v[1]!, v[5]!, v[9]!, 0, v[2]!, v[6]!, v[10]!, 0, eye.x, eye.y, eye.z, 1]) as unknown as Mat4;
     }
 
     const wm = createWorldMatrixState(cameraLocalWorldMatrix);

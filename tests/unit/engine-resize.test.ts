@@ -14,6 +14,7 @@ function makeEngine(canvas: Partial<HTMLCanvasElement>, contexts: RenderingConte
         canvas: canvas as HTMLCanvasElement,
         msaaSamples: 4,
         drawCallCount: 0,
+        useHighPrecisionMatrix: false,
         device: {} as GPUDevice,
         context: {} as GPUCanvasContext,
         format: "bgra8unorm",

@@ -4,6 +4,9 @@ import type { Texture2D, Texture2DOptions } from "../texture/texture-2d.js";
 /** Babylon Lite version string. */
 export const VERSION = "0.1.0";
 
+import type { Mat4 } from "../math/types.js";
+import type { MatrixAllocator } from "../math/_matrix-allocator.js";
+
 // Module-scoped visibility epoch. setSubtreeVisible (scene/visibility.ts,
 // loaded only by KHR_node_visibility / KHR_animation_pointer features) bumps
 // this. Per-scene bundle caches compare against it for invalidation.
@@ -22,6 +25,12 @@ export interface EngineContext {
 
     /** Number of GPU draw calls in the last rendered frame. */
     drawCallCount: number;
+
+    /**
+     * When true, world matrices are computed using Float64 intermediate precision
+     * and downcast to Float32 at GPU upload time. Defaults to false.
+     */
+    useHighPrecisionMatrix: boolean;
 }
 
 /**
@@ -81,6 +90,12 @@ export interface EngineContextInternal extends EngineContext {
     /** Frame delta in ms (read by scenes that don't override fixedDeltaMs). */
     _currentDelta: number;
     _cbs: GPUCommandBuffer[];
+
+    /** @internal Per-engine matrix allocator captured at createEngine.
+     *  Resolved from `options.useHighPrecisionMatrix`. F32 by default; F64 when
+     *  HPM is enabled. Phase 2 will capture this onto scenes/entities so caches
+     *  can allocate via the policy. */
+    _matrixPolicy: MatrixAllocator;
 }
 
 /** @internal Return true if `context` is already registered with `engine`. */
@@ -126,6 +141,22 @@ export interface EngineOptions {
      * with alpha < 1 will let HTML content underneath show through). Defaults to "opaque".
      */
     alphaMode?: GPUCanvasAlphaMode;
+    /**
+     * Enable Float64 intermediate precision for world matrix computations. Defaults to false.
+     */
+    useHighPrecisionMatrix?: boolean;
+}
+
+/** @internal F32-backed Mat4 allocator. Colocated with createEngine so that
+ *  the only outbound mat4-storage import dependency is the F64 module (which
+ *  is tree-shaken when HPM is off). */
+function createF32MatrixAllocator(): MatrixAllocator {
+    return {
+        storageKind: "f32",
+        allocate(): Mat4 {
+            return new Float32Array(16) as unknown as Mat4;
+        },
+    };
 }
 
 /** Create the Babylon Lite engine. Acquires GPU adapter + device, configures swapchain. */
@@ -163,6 +194,20 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
 
     const msaaSamples: 1 | 4 = options?.msaaSamples === 1 ? 1 : 4;
 
+    const useHpm = options?.useHighPrecisionMatrix === true;
+    // Dynamic `await import` keeps the F64 module out of HPM-off bundles entirely:
+    // bundlers cannot prove the truthy branch of a runtime ternary is dead, so a
+    // static import of `_mat4-storage-f64.js` was retained in every bundle even
+    // with `sideEffects: false`. Splitting it behind `if (useHpm)` lets HPM-off
+    // builds drop the module; HPM-on builds load it as a side chunk on demand.
+    let matrixPolicy: MatrixAllocator;
+    if (useHpm) {
+        const { createF64MatrixAllocator } = await import("../math/_mat4-storage-f64.js");
+        matrixPolicy = createF64MatrixAllocator();
+    } else {
+        matrixPolicy = createF32MatrixAllocator();
+    }
+
     const engine: EngineContextInternal = {
         device,
         context,
@@ -171,6 +216,7 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
         canvas,
         msaaSamples,
         drawCallCount: 0,
+        useHighPrecisionMatrix: useHpm,
         _animFrameId: 0,
         _renderFn: null,
         _renderingContexts: [],
@@ -178,6 +224,7 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
         _swapchainView: undefined!,
         _currentDelta: 0,
         _cbs: [],
+        _matrixPolicy: matrixPolicy,
     };
 
     resizeEngine(engine);

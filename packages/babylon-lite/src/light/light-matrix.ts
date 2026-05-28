@@ -1,6 +1,7 @@
 /** Shared light matrix helper — builds a local matrix from a direction vector + optional position. */
 
 import type { Mat4 } from "../math/types.js";
+import { asMat4Storage } from "../math/_mat4-storage.js";
 
 /** Build a local matrix from a direction vector + optional position.
  *  Column 2 = forward (normalized direction), column 0 = right, column 1 = up. */
@@ -23,7 +24,9 @@ export function localMatrixFromDirection(dx: number, dy: number, dz: number, px 
         uy = fz * rx - fx * rz,
         uz = fx * ry - fy * rx;
 
-    const m = out ?? (new Float32Array(16) as Mat4);
+    // TODO(M0/01_03): allocate via engine policy
+    const out4: Mat4 = out ?? (new Float32Array(16) as unknown as Mat4);
+    const m = asMat4Storage(out4);
     m[0] = rx;
     m[1] = ry;
     m[2] = rz;
@@ -40,5 +43,5 @@ export function localMatrixFromDirection(dx: number, dy: number, dz: number, px 
     m[13] = py;
     m[14] = pz;
     m[15] = 1;
-    return m;
+    return out4;
 }

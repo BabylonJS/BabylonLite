@@ -2,6 +2,7 @@ import type { Vec3, Mat4 } from "../math/types.js";
 import type { SceneNode } from "../scene/scene-node.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
 import { mat4PerspectiveLHToRef } from "../math/mat4-perspective-lh-to-ref.js";
+import { asMat4Storage } from "../math/_mat4-storage.js";
 
 /** Minimal camera contract — any camera that can provide view/projection matrices.
  *  Both ArcRotateCamera and FreeCamera implement this interface.
@@ -90,7 +91,7 @@ export function getViewProjectionMatrix(camera: Camera, aspectRatio: number): Ma
     if (!camera._vpCache) {
         camera._vpCache = new Float32Array(16);
     }
-    mat4MultiplyInto(camera._vpCache, 0, getProjectionMatrix(camera, aspectRatio), 0, getViewMatrix(camera), 0);
+    mat4MultiplyInto(camera._vpCache, 0, asMat4Storage(getProjectionMatrix(camera, aspectRatio)), 0, asMat4Storage(getViewMatrix(camera)), 0);
     camera._vpVer = ver;
     camera._vpAspect = aspectRatio;
     return camera._vpCache as unknown as Mat4;

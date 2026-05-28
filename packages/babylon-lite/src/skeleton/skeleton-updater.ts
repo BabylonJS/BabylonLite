@@ -8,6 +8,7 @@ import { PATH_TRANSLATION, PATH_ROTATION, PATH_SCALE, PATH_WEIGHTS, PATH_POINTER
 import { evaluateSampler } from "../animation/evaluate.js";
 import { mat4ComposeInto } from "../math/mat4-compose-into.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
+import { asMat4Storage } from "../math/_mat4-storage.js";
 
 // RH→LH root transform (same as load-gltf.ts): diag(-1, 1, 1, 1)
 // prettier-ignore
@@ -232,7 +233,7 @@ export function createAnimationController(
                     const jointIdx = skel.jointNodes[bi]!;
                     const ibmOff = bi * 16;
                     // boneMatrix = invMeshWorld * jointWorld * IBM
-                    mat4MultiplyInto(_boneTmp, 0, skel.invMeshWorld, 0, worldMat, jointIdx * 16);
+                    mat4MultiplyInto(_boneTmp, 0, asMat4Storage(skel.invMeshWorld), 0, worldMat, jointIdx * 16);
                     mat4MultiplyInto(boneData, bi * 16, _boneTmp, 0, skel.inverseBindMatrices, ibmOff);
                 }
 

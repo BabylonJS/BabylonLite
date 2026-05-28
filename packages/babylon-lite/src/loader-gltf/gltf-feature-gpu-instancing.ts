@@ -155,10 +155,11 @@ function expandMeshAabbForInstances(mesh: MeshInternal, matrices: Float32Array, 
     let wMaxX = -Infinity,
         wMaxY = -Infinity,
         wMaxZ = -Infinity;
-    const instWorld = new Float32Array(16) as Mat4;
+    const instWorldBuf = new Float32Array(16);
+    const instWorld = instWorldBuf as unknown as Mat4;
     for (let i = 0; i < count; i++) {
         for (let k = 0; k < 16; k++) {
-            instWorld[k] = matrices[i * 16 + k]!;
+            instWorldBuf[k] = matrices[i * 16 + k]!;
         }
         const combined = mat4Multiply(nodeWorld, instWorld);
         const [imin, imax] = computeAabb(corners, combined);

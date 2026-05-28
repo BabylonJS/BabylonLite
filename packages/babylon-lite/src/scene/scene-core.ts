@@ -20,6 +20,13 @@ import { createRenderTarget } from "../engine/render-target.js";
 import type { AssetContainer } from "../asset-container.js";
 import type { SceneLightGpuState } from "../render/lights-ubo.js";
 import type { GaussianSplattingMesh } from "../mesh/GaussianSplatting/gaussian-splatting-mesh.js";
+import { updateFloatingOriginOffset, type FloatingOriginMode } from "../large-world/floating-origin.js";
+
+/** Options accepted by `createSceneContext`. */
+export interface SceneContextOptions {
+    /** Enable floating-origin offsetting (default false). */
+    useFloatingOrigin?: boolean;
+}
 
 /** Image processing configuration. */
 export interface ImageProcessingConfig {
@@ -63,6 +70,9 @@ export interface SceneContext {
 
     /** Fixed delta time in ms for deterministic animation. 0 = use real rAF delta. */
     fixedDeltaMs: number;
+
+    /** Read-only floating origin offset. Zero when floating origin is disabled. */
+    readonly floatingOriginOffset: readonly [number, number, number];
 }
 
 /** @internal SceneContext with internal rendering state — for renderable/loader code only. Not re-exported from index.ts. */
@@ -103,6 +113,13 @@ export interface SceneContextInternal extends SceneContext, RenderingContext {
     /** Scene-owned shared LightsUniforms UBO state (group 0 binding 1). */
     _lightGpuState?: SceneLightGpuState;
 
+    /** Floating-origin mode for this scene. */
+    _floatingOriginMode: FloatingOriginMode;
+    /** Camera world-space eye position cached each frame. */
+    _eyePosition: [number, number, number];
+    /** Mutable backing store for public floatingOriginOffset. */
+    _floatingOriginOffset: [number, number, number];
+
     /** Frame graph driving this scene's rendering. Created eagerly by
      *  `createSceneContext` with a default `RenderTask` that mirrors
      *  `_renderables` into the swapchain. User code may add additional tasks
@@ -139,8 +156,10 @@ function installMaterialSetter(scene: SceneContextInternal, mesh: Mesh): void {
 }
 
 /** Create an empty scene context bound to the given engine. */
-export function createSceneContext(engine: EngineContext): SceneContext {
+export function createSceneContext(engine: EngineContext, options: SceneContextOptions = {}): SceneContext {
     const eng = engine as EngineContextInternal;
+    const eyePosition: [number, number, number] = [0, 0, 0];
+    const floatingOriginOffset: [number, number, number] = [0, 0, 0];
 
     // Closures below capture `ctx` by-reference via this object.
     const ctxLocal: Omit<SceneContextInternal, "_frameGraph"> = {
@@ -154,6 +173,7 @@ export function createSceneContext(engine: EngineContext): SceneContext {
         clipPlane: null,
         shadowGenerators: [],
         imageProcessing: { exposure: 1.0, contrast: 1.0, toneMappingEnabled: false },
+        floatingOriginOffset,
         _renderables: [],
         _prePasses: [],
         _gsMeshes: [],
@@ -167,8 +187,12 @@ export function createSceneContext(engine: EngineContext): SceneContext {
         _materialSwapQueue: [],
         _renderableVersion: 0,
         _drawCallsPre: 0,
+        _floatingOriginMode: options.useFloatingOrigin === true,
+        _eyePosition: eyePosition,
+        _floatingOriginOffset: floatingOriginOffset,
 
         _update(): void {
+            updateFloatingOriginOffset(ctx);
             const d = ctx.fixedDeltaMs > 0 ? ctx.fixedDeltaMs : eng._currentDelta;
             const encoder = eng._currentEncoder;
             let draws = 0;
@@ -262,6 +286,11 @@ export function addDeferredSceneRenderables(
     });
 }
 
+/**
+ * Add an entity (mesh, light, camera, transform node, shadow generator, or asset container)
+ * to the scene. Optional scene-hosted systems such as depth-hosted sprites expose their own
+ * opt-in add functions so mesh-only scenes do not pay feature-specific routing bytes here.
+ */
 export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camera | ShadowGenerator | TransformNode | AssetContainer): void {
     const ctx = scene as SceneContextInternal;
     // AssetContainer from loadGltf / loadBabylon — process each field present
@@ -294,7 +323,7 @@ export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camer
         const mesh = entity as unknown as Mesh;
         ctx.meshes.push(mesh);
         installMaterialSetter(ctx, mesh);
-        const build = mesh.material?._buildGroup;
+        const build = mesh.material ? (mesh.material as unknown as { _buildGroup?: MeshGroupBuilder })._buildGroup : undefined;
         if (build) {
             let group = ctx._groups.get(build);
             if (!group) {

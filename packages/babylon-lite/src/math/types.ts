@@ -33,9 +33,16 @@ export interface Color4 {
     a: number;
 }
 
-/** 4x4 column-major matrix stored as a flat Float32Array (16 elements).
- *  Layout matches WebGPU/WGSL mat4x4<f32> memory order. */
-export type Mat4 = Float32Array & { readonly __brand: "Mat4" };
+/** 4x4 column-major matrix (16 elements).
+ *  Layout matches WebGPU/WGSL mat4x4<f32> memory order. Opaque-by-convention:
+ *  callers MUST NOT depend on the underlying storage (Float32Array vs
+ *  Float64Array). Internal kernels and uploaders use the `Mat4Storage` view
+ *  from `_mat4-storage.ts` to access the concrete typed array behind the brand. */
+export interface Mat4 {
+    readonly __brand: "Mat4";
+    readonly length: 16;
+    readonly [index: number]: number;
+}
 
 /** Quaternion rotation */
 export interface Quat {

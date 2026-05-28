@@ -40,7 +40,7 @@ export function createFreeCamera(position: Vec3, target: Vec3): FreeCamera {
     const dy = target.y - position.y;
     const dz = target.z - position.z;
 
-    const _localMat = new Float32Array(16) as Mat4;
+    const _localMat = new Float32Array(16);
 
     function cameraLocalWorldMatrix(): Mat4 {
         const view = mat4LookAtLH(cam.position, cam.target, Vec3Up);
@@ -61,7 +61,7 @@ export function createFreeCamera(position: Vec3, target: Vec3): FreeCamera {
         _localMat[13] = cam.position.y;
         _localMat[14] = cam.position.z;
         _localMat[15] = 1;
-        return _localMat;
+        return _localMat as unknown as Mat4;
     }
 
     const wm = createWorldMatrixState(cameraLocalWorldMatrix);

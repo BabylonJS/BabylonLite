@@ -43,6 +43,7 @@ function makeMockEngine(): EngineContext {
         canvas: {} as HTMLCanvasElement,
         msaaSamples: 4,
         drawCallCount: 0,
+        useHighPrecisionMatrix: false,
         device,
         context: {} as GPUCanvasContext,
         format: "bgra8unorm",

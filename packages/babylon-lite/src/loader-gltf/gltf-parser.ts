@@ -7,6 +7,7 @@
 import type { Mat4 } from "../math/types.js";
 import { mat4ComposeInto } from "../math/mat4-compose-into.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
+import { asMat4Storage } from "../math/_mat4-storage.js";
 
 // glTF 2.0 component types
 const FLOAT = 5126;
@@ -98,7 +99,7 @@ export async function resolveImage(json: any, binChunk: DataView, imageIdx: numb
 
 // Babylon.js RH→LH root: rotation [0,1,0,0] + scale [1,1,-1] = diag(-1,1,1,1)
 // prettier-ignore
-const RH_TO_LH_ROOT = new Float32Array([-1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1]) as Mat4;
+const RH_TO_LH_ROOT = new Float32Array([-1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1]) as unknown as Mat4;
 
 /** Build a parent index map by scanning node.children arrays once. O(n). */
 export function buildParentMap(json: any): Map<number, number> {
@@ -155,8 +156,9 @@ export function computeNodeWorldMatrix(json: any, nodeIdx: number, parentMap: Ma
         localBuf = scratch;
     }
 
-    const world = new Float32Array(16) as Mat4;
-    mat4MultiplyInto(world, 0, parentWorld, 0, localBuf, 0);
+    // TODO(M0/01_03): allocate via engine policy
+    const world = new Float32Array(16) as unknown as Mat4;
+    mat4MultiplyInto(asMat4Storage(world), 0, asMat4Storage(parentWorld), 0, localBuf, 0);
 
     cache.set(nodeIdx, world);
     return world;
