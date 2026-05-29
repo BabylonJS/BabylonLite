@@ -19,7 +19,7 @@ async function main(): Promise<void> {
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
     const engine = await createEngine(canvas);
     const scene = createSceneContext(engine);
-    scene.clearColor = { r: 0.4, g: 0.5, b: 0.6, a: 1 }; // sky placeholder
+    scene.clearColor = { r: 0, g: 0, b: 0, a: 1 };
 
     const res = await fetch(WAD_URL);
     if (!res.ok) throw new Error(`Failed to fetch ${WAD_URL}: ${res.status}. Run \`pnpm fetch:freedoom\`.`);

@@ -2,7 +2,7 @@
 // builds per-texture geometry batches, uploads them as meshes, and installs a
 // free-fly camera at the player-1 start with keyboard controls.
 
-import { addToScene, createFreeCamera, createMeshFromData, createTexture2DFromPixels, onBeforeRender, type EngineContext, type SceneContext } from "babylon-lite";
+import { addToScene, createFreeCamera, createMeshFromData, createTexture2DFromPixels, onBeforeRender, type EngineContext, type Mesh, type SceneContext } from "babylon-lite";
 
 import { parseWad } from "./wad/wad-file.js";
 import { parseMap } from "./wad/map.js";
@@ -10,6 +10,7 @@ import type { DoomMap } from "./wad/map.js";
 import { parsePlaypal, parseColormap, buildColormapLut } from "./wad/palette.js";
 import { DoomTextureCache } from "./render/texture-cache.js";
 import { createDoomMaterial } from "./render/doom-material.js";
+import { createSky } from "./render/sky.js";
 import { buildLevelBatches } from "./geometry/build-level-geometry.js";
 import { DynamicGeometry } from "./geometry/dynamic-geometry.js";
 import { SpecialsManager } from "./specials/specials.js";
@@ -69,12 +70,16 @@ export function buildDoomLevel(engine: EngineContext, scene: SceneContext, wadBy
 
     const dynamicGeo = new DynamicGeometry(engine, scene, map, textures, colormapTex, specials);
 
-    installCamera(scene, map, specials, dynamicGeo, playerSectorRef);
+    const skyTex = textures.getWall("SKY1");
+    const sky = skyTex ? createSky(engine, skyTex.texture, colormapTex) : null;
+    if (sky) addToScene(scene, sky);
+
+    installCamera(scene, map, specials, dynamicGeo, playerSectorRef, sky);
 
     return { map, dispose: () => {} };
 }
 
-function installCamera(scene: SceneContext, map: DoomMap, specials: SpecialsManager, dynamicGeo: DynamicGeometry, playerSectorRef: { value: number }): void {
+function installCamera(scene: SceneContext, map: DoomMap, specials: SpecialsManager, dynamicGeo: DynamicGeometry, playerSectorRef: { value: number }, sky: Mesh | null): void {
     const start = map.things.find((t) => t.type === 1) ?? map.things[0];
     const sx = start ? start.x : 0;
     const sz = start ? start.y : 0;
@@ -157,6 +162,13 @@ function installCamera(scene: SceneContext, map: DoomMap, specials: SpecialsMana
 
         // Recompute eye height after movers have run so the view tracks lifts/floors.
         eye.y = floorHeightAt(map, eye.x, eye.z) + VIEW_HEIGHT;
+
+        // Keep the sky dome centered on the camera so it has no parallax (infinite sky).
+        if (sky) {
+            sky.position.x = eye.x;
+            sky.position.y = eye.y;
+            sky.position.z = eye.z;
+        }
 
         cam.position.x = eye.x;
         cam.position.y = eye.y;
