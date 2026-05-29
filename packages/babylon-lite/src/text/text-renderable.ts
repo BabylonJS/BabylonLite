@@ -51,8 +51,6 @@ interface TextRenderableGpu {
     textU: GPUBuffer;
     instanceBuf: GPUBuffer;
     instanceCap: number;
-    bindGroup: GPUBindGroup | null;
-    bindGroupVersion: number;
     pipeline: GPURenderPipeline;
     uploadedDataVersion: number;
     uploadedWorldVersion: number;
@@ -140,8 +138,6 @@ function ensureGpu(r: TextRenderable, engine: EngineContextInternal, target: Ren
                     usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
                 }),
                 instanceCap: cap,
-                bindGroup: null,
-                bindGroupVersion: -1,
                 pipeline,
                 uploadedDataVersion: -1,
                 uploadedWorldVersion: -1,
@@ -154,7 +150,12 @@ function ensureGpu(r: TextRenderable, engine: EngineContextInternal, target: Ren
         } else {
             gpu.pipeline = pipeline;
             gpu.targetKey = key;
-            gpu.bindGroup = null;
+            // Pipeline change — per-group bind groups must be rebuilt against the new bgl1.
+            const internals = getTextDataInternalsOrThrow(r._data);
+            for (const g of internals.groups) {
+                g._bindGroup = null;
+                g._bindGroupVersion = -1;
+            }
         }
     }
     return gpu;
@@ -208,10 +209,21 @@ function updateTextRenderable(
 ): void {
     const device = engine.device;
 
-    // Sync atlas to GPU; may recreate textures.
-    const { rebuilt, gpu: atlasGpu } = ensureSharedAtlasGpu(device, internals.atlas);
-    if (rebuilt) {
-        gpu.bindGroup = null;
+    // Sync every group's atlas to the GPU; track which need bind-group rebuild.
+    for (const g of internals.groups) {
+        const { rebuilt, gpu: atlasGpu } = ensureSharedAtlasGpu(device, g.atlas);
+        if (rebuilt || !g._bindGroup || g._bindGroupVersion !== atlasGpu.uploadedVersion) {
+            g._bindGroup = device.createBindGroup({
+                label: "text-bg1-" + g.curveSetId,
+                layout: bgl1,
+                entries: [
+                    { binding: 0, resource: { buffer: gpu.textU } },
+                    { binding: 1, resource: atlasGpu.curveTex.createView() },
+                    { binding: 2, resource: atlasGpu.bandTex.createView() },
+                ],
+            });
+            g._bindGroupVersion = atlasGpu.uploadedVersion;
+        }
     }
 
     // Sync instance buffer if data changed.
@@ -248,30 +260,24 @@ function updateTextRenderable(
         uc[2] = c[2];
         uc[3] = c[3];
     }
-
-    if (!gpu.bindGroup || gpu.bindGroupVersion !== atlasGpu.uploadedVersion) {
-        gpu.bindGroup = device.createBindGroup({
-            label: "text-bg1",
-            layout: bgl1,
-            entries: [
-                { binding: 0, resource: { buffer: gpu.textU } },
-                { binding: 1, resource: atlasGpu.curveTex.createView() },
-                { binding: 2, resource: atlasGpu.bandTex.createView() },
-            ],
-        });
-        gpu.bindGroupVersion = atlasGpu.uploadedVersion;
-    }
 }
 
 function drawTextRenderable(gpu: TextRenderableGpu, internals: TextDataInternals, quadVertex: GPUBuffer, pass: GPURenderPassEncoder | GPURenderBundleEncoder): number {
-    if (internals.instanceCount === 0 || !gpu.bindGroup) {
+    if (internals.instanceCount === 0) {
         return 0;
     }
-    pass.setBindGroup(1, gpu.bindGroup);
     pass.setVertexBuffer(0, quadVertex);
     pass.setVertexBuffer(1, gpu.instanceBuf);
-    pass.draw(6, internals.instanceCount, 0, 0);
-    return 1;
+    let draws = 0;
+    for (const g of internals.groups) {
+        if (g.instanceCount === 0 || !g._bindGroup) {
+            continue;
+        }
+        pass.setBindGroup(1, g._bindGroup);
+        pass.draw(6, g.instanceCount, 0, g.instanceStart);
+        draws++;
+    }
+    return draws;
 }
 
 export function disposeTextRenderable(renderable: TextRenderable): void {

@@ -300,7 +300,7 @@ export {
 // ─── Text ────────────────────────────────────────────────────────────
 export type { Font } from "./text/internal.js";
 export { loadFont, createFontFromBuffer, getGlyphId, getGlyphIds } from "./text/font.js";
-export type { QuadCurve, GlyphBounds, GlyphCurves, PlacedGlyph, GlyphRun, TextDescriptor, TextLayoutOptions } from "./text/public-types.js";
+export type { QuadCurve, GlyphBounds, GlyphCurves, PlacedGlyph, GlyphRun, TextDescriptor, TextLayoutOptions, CurveSetId } from "./text/public-types.js";
 export { extractGlyphCurves } from "./text/curves.js";
 export type { DefaultTextDescriptor } from "./text/internal.js";
 export { createDefaultTextDescriptor, updateDefaultTextDescriptor } from "./text/default-descriptor.js";

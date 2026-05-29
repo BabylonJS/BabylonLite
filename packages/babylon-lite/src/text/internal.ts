@@ -2,7 +2,7 @@
  *  Not re-exported from `src/index.ts`. */
 
 import type { Font as TextShaperFont } from "text-shaper";
-import type { GlyphCurves, GlyphRun, TextLayoutOptions } from "./public-types.js";
+import type { CurveSetId, GlyphCurves, GlyphRun, TextLayoutOptions } from "./public-types.js";
 import type { GlyphBands } from "./slug-bands.js";
 
 // ─── Brand symbols (nominal-typing only — never instantiated at runtime) ───
@@ -16,8 +16,8 @@ export type TextData = {
     readonly [TEXT_DATA_BRAND]: never;
 };
 export type DefaultTextDescriptor = {
-    readonly curves: ReadonlyMap<number, GlyphCurves>;
-    readonly run: GlyphRun;
+    readonly curves: ReadonlyMap<CurveSetId, ReadonlyMap<number, GlyphCurves>>;
+    readonly runs: readonly GlyphRun[];
     /** Pixel-space width of the laid-out run (max line width). */
     readonly width: number;
     /** Pixel-space height of the laid-out run (lines × line-height). */
@@ -70,20 +70,37 @@ export type SharedAtlasGpu = {
     uploadedVersion: number;
 };
 
-export type TextDataInternals = {
+/** Per-curve-set draw group within a TextData. One group per unique font used by the descriptor's runs.
+ *  Groups index into the TextData's single contiguous instance buffer. */
+export type TextDataDrawGroup = {
+    /** Curve-set id (matches the descriptor key). */
+    curveSetId: CurveSetId;
+    /** Shared atlas for this curve set. May be reused across `TextData`s referencing the same inner map. */
     atlas: SharedAtlas;
-    /** Pooled per-instance float buffer (12 floats per instance). */
-    instances: Float32Array;
+    /** Instance buffer offset in *instances* (not bytes) where this group's quads begin. */
+    instanceStart: number;
+    /** Number of instances in this group. */
     instanceCount: number;
-    /** Last seen `descriptor.curves.size` — fast-path skip when unchanged. */
-    lastCurvesSize: number;
-    /** Last seen curves map reference for identity check. */
-    lastCurvesRef: ReadonlyMap<number, GlyphCurves> | null;
-    /** Glyph ids known to the atlas at the time of the last update (for diffing). */
-    knownGlyphIds: Set<number>;
+    /** Lazy GPU bind group for this group's atlas (recreated on atlas-grow or first bind). */
+    _bindGroup: GPUBindGroup | null;
+    /** Atlas-GPU upload version captured when `_bindGroup` was last (re)built. */
+    _bindGroupVersion: number;
+};
+
+export type TextDataInternals = {
+    /** Per-curve-set draw groups. Length = number of unique curveSet ids referenced by descriptor.runs. */
+    groups: TextDataDrawGroup[];
+    /** Pooled per-instance float buffer (TEXT_INSTANCE_FLOATS per instance). */
+    instances: Float32Array;
+    /** Total instances across all groups (= sum of group.instanceCount). */
+    instanceCount: number;
+    /** Last seen `descriptor.runs` reference for identity fast-path. */
+    lastRunsRef: readonly GlyphRun[] | null;
+    /** Last seen sizes of each per-curveSet inner map (parallel to `groups`) for grow detection. */
+    lastCurvesSizes: Map<CurveSetId, number>;
     /** Monotonic version bumped on any structural change. */
     version: number;
-    /** Lazy per-text-block GPU resources (instance buffer). */
+    /** Lazy per-text-block GPU resources (single instance buffer covering all groups). */
     _gpu: TextDataGpu | null;
 };
 
@@ -98,6 +115,10 @@ export type DefaultTextDescriptorInternals = {
     font: Font;
     fontSizePx: number;
     options: TextLayoutOptions | undefined;
+    /** Curve-set id derived from the font's family name (or `"font"` as fallback).
+     *  Captured at create-time and reused on every update so the inner curves map
+     *  stays addressable by the same key. */
+    curveSetId: CurveSetId;
 };
 
 // ─── Lazy WeakMaps (zero module-level side effects per GUIDANCE §4) ───

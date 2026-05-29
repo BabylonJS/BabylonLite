@@ -1,8 +1,9 @@
-/** TextData — owns the packed glyph atlas (shared across same-curves descriptors) and the
- *  per-instance vertex buffer for a single text block. Mutates in place under streaming. */
+/** TextData — owns one or more per-curve-set atlases (shared across same-curves descriptors)
+ *  and a single packed per-instance vertex buffer for a text block.
+ *  Multi-font: one draw group per unique `GlyphRun.curveSet`. */
 
-import type { GlyphCurves, TextDescriptor } from "./public-types.js";
-import type { SharedAtlas, TextData, TextDataInternals } from "./internal.js";
+import type { CurveSetId, GlyphCurves, GlyphRun, TextDescriptor } from "./public-types.js";
+import type { SharedAtlas, TextData, TextDataDrawGroup, TextDataInternals } from "./internal.js";
 import { getSharedAtlasForCurves, setSharedAtlasForCurves, getTextDataInternals, setTextDataInternals } from "./internal.js";
 import { createSharedAtlas, packAppendGlyph } from "./slug-pack.js";
 
@@ -10,44 +11,41 @@ import { createSharedAtlas, packAppendGlyph } from "./slug-pack.js";
 export const TEXT_INSTANCE_FLOATS = 16;
 export const TEXT_INSTANCE_BYTES = TEXT_INSTANCE_FLOATS * 4;
 
-function getOrCreateAtlas(descriptor: TextDescriptor): SharedAtlas {
-    let atlas = getSharedAtlasForCurves(descriptor.curves);
+function resolveCurves(descriptor: TextDescriptor, id: CurveSetId): ReadonlyMap<number, GlyphCurves> {
+    const m = descriptor.curves.get(id);
+    if (!m) {
+        throw new Error(`TextDescriptor: GlyphRun references unknown curveSet "${id}" (not present in descriptor.curves).`);
+    }
+    return m;
+}
+
+function getOrCreateAtlas(curves: ReadonlyMap<number, GlyphCurves>): SharedAtlas {
+    let atlas = getSharedAtlasForCurves(curves);
     if (!atlas) {
         atlas = createSharedAtlas();
-        setSharedAtlasForCurves(descriptor.curves, atlas);
+        setSharedAtlasForCurves(curves, atlas);
     }
     return atlas;
 }
 
-/** Append any glyphs referenced by `descriptor.curves` that aren't yet in the atlas. */
-function syncAtlasGlyphs(atlas: SharedAtlas, descriptor: TextDescriptor, knownByThisData: Set<number>): void {
-    for (const [glyphId, glyph] of descriptor.curves) {
+/** Append any glyphs in `curves` that aren't yet packed into `atlas`. */
+function syncAtlasGlyphs(atlas: SharedAtlas, curves: ReadonlyMap<number, GlyphCurves>): void {
+    for (const [glyphId, glyph] of curves) {
         if (!atlas.glyphSlots.has(glyphId)) {
             atlas.glyphSlots.set(glyphId, packAppendGlyph(atlas, glyph));
         }
-        knownByThisData.add(glyphId);
     }
 }
 
-/** Resolve a glyph descriptor by id from the descriptor (covers the case where it has no atlas slot — e.g. an absent outline). */
-function buildInstances(internals: TextDataInternals, descriptor: TextDescriptor): void {
-    const atlas = internals.atlas;
-    const glyphs = descriptor.run.glyphs;
-    const required = glyphs.length * TEXT_INSTANCE_FLOATS;
-    if (internals.instances.length < required) {
-        let newLen = Math.max(internals.instances.length * 2, TEXT_INSTANCE_FLOATS);
-        while (newLen < required) {
-            newLen *= 2;
-        }
-        internals.instances = new Float32Array(newLen);
-    }
-    const out = internals.instances;
-    let w = 0;
+/** Write one run's placed glyphs into the instance buffer at `writeFloatOffset`.
+ *  Returns the number of instances actually written (omitting glyphs with no atlas slot). */
+function writeRunInstances(out: Float32Array, writeFloatOffset: number, atlas: SharedAtlas, curves: ReadonlyMap<number, GlyphCurves>, run: GlyphRun): number {
+    let w = writeFloatOffset;
     let count = 0;
-    const scale = descriptor.run.pixelsPerFontUnit;
+    const scale = run.pixelsPerFontUnit;
     const invScale = scale !== 0 ? 1 / scale : 0;
-    for (const pg of glyphs) {
-        const glyph: GlyphCurves | undefined = descriptor.curves.get(pg.glyphId);
+    for (const pg of run.glyphs) {
+        const glyph = curves.get(pg.glyphId);
         const slot = atlas.glyphSlots.get(pg.glyphId);
         if (!glyph || !slot) {
             continue;
@@ -59,22 +57,18 @@ function buildInstances(internals: TextDataInternals, descriptor: TextDescriptor
         const bandScaleY = heightFu > 0 ? slot.hBandCount / heightFu : 0;
         const bandOffsetX = -xMin * bandScaleX;
         const bandOffsetY = -yMin * bandScaleY;
-        // slugBounds (em-space).
         out[w] = xMin;
         out[w + 1] = yMin;
         out[w + 2] = xMax;
         out[w + 3] = yMax;
-        // slugAnchor (object-space anchor + invScale + reserved).
         out[w + 4] = pg.x;
         out[w + 5] = pg.y;
         out[w + 6] = invScale;
         out[w + 7] = 0;
-        // slugAtlas (glyphLocX, glyphLocY, bandMaxX, bandMaxY).
         out[w + 8] = slot.glyphLocX;
         out[w + 9] = slot.glyphLocY;
         out[w + 10] = slot.bandMaxX;
         out[w + 11] = slot.bandMaxY;
-        // slugBand.
         out[w + 12] = bandScaleX;
         out[w + 13] = bandScaleY;
         out[w + 14] = bandOffsetX;
@@ -82,26 +76,107 @@ function buildInstances(internals: TextDataInternals, descriptor: TextDescriptor
         w += TEXT_INSTANCE_FLOATS;
         count++;
     }
-    internals.instanceCount = count;
+    return count;
+}
+
+/** Build/update per-curve-set draw groups and pack all runs' instances contiguously
+ *  into the pooled buffer. Groups are coalesced by `curveSet` (one draw call per unique font). */
+function buildGroupsAndInstances(internals: TextDataInternals, descriptor: TextDescriptor): void {
+    let totalGlyphs = 0;
+    for (const run of descriptor.runs) {
+        totalGlyphs += run.glyphs.length;
+    }
+    const required = totalGlyphs * TEXT_INSTANCE_FLOATS;
+    if (internals.instances.length < required) {
+        let newLen = Math.max(internals.instances.length * 2, TEXT_INSTANCE_FLOATS);
+        while (newLen < required) {
+            newLen *= 2;
+        }
+        internals.instances = new Float32Array(newLen);
+    }
+
+    // Reuse existing group entries when possible (preserves bindGroup cache across updates).
+    const prevGroupByCurveSet = new Map<CurveSetId, TextDataDrawGroup>();
+    for (const g of internals.groups) {
+        prevGroupByCurveSet.set(g.curveSetId, g);
+    }
+
+    // Group runs by curveSet to pack them contiguously (one draw call per group).
+    const runsByCurveSet = new Map<CurveSetId, GlyphRun[]>();
+    for (const run of descriptor.runs) {
+        let list = runsByCurveSet.get(run.curveSet);
+        if (!list) {
+            list = [];
+            runsByCurveSet.set(run.curveSet, list);
+        }
+        list.push(run);
+    }
+
+    const newGroups: TextDataDrawGroup[] = [];
+    let writeFloatOffset = 0;
+    let totalInstances = 0;
+    for (const [curveSetId, runs] of runsByCurveSet) {
+        const curves = resolveCurves(descriptor, curveSetId);
+        const atlas = getOrCreateAtlas(curves);
+        syncAtlasGlyphs(atlas, curves);
+
+        const existing = prevGroupByCurveSet.get(curveSetId);
+        const group: TextDataDrawGroup =
+            existing ??
+            ({
+                curveSetId,
+                atlas,
+                instanceStart: 0,
+                instanceCount: 0,
+                _bindGroup: null,
+                _bindGroupVersion: -1,
+            } as TextDataDrawGroup);
+        if (existing && existing.atlas !== atlas) {
+            existing.atlas = atlas;
+            existing._bindGroup = null;
+            existing._bindGroupVersion = -1;
+        }
+
+        const groupStartInstance = writeFloatOffset / TEXT_INSTANCE_FLOATS;
+        let groupInstances = 0;
+        for (const run of runs) {
+            const written = writeRunInstances(internals.instances, writeFloatOffset, atlas, curves, run);
+            groupInstances += written;
+            writeFloatOffset += written * TEXT_INSTANCE_FLOATS;
+        }
+        group.instanceStart = groupStartInstance;
+        group.instanceCount = groupInstances;
+        totalInstances += groupInstances;
+        newGroups.push(group);
+
+        internals.lastCurvesSizes.set(curveSetId, curves.size);
+    }
+
+    if (internals.lastCurvesSizes.size > runsByCurveSet.size) {
+        for (const id of internals.lastCurvesSizes.keys()) {
+            if (!runsByCurveSet.has(id)) {
+                internals.lastCurvesSizes.delete(id);
+            }
+        }
+    }
+
+    internals.groups = newGroups;
+    internals.instanceCount = totalInstances;
 }
 
 export function createTextData(descriptor: TextDescriptor): TextData {
-    const atlas = getOrCreateAtlas(descriptor);
-    const known = new Set<number>();
-    syncAtlasGlyphs(atlas, descriptor, known);
     const data = {} as TextData;
     const internals: TextDataInternals = {
-        atlas,
+        groups: [],
         instances: new Float32Array(TEXT_INSTANCE_FLOATS),
         instanceCount: 0,
-        lastCurvesSize: descriptor.curves.size,
-        lastCurvesRef: descriptor.curves,
-        knownGlyphIds: known,
+        lastRunsRef: descriptor.runs,
+        lastCurvesSizes: new Map(),
         version: 1,
         _gpu: null,
     };
-    buildInstances(internals, descriptor);
     setTextDataInternals(data, internals);
+    buildGroupsAndInstances(internals, descriptor);
     return data;
 }
 
@@ -110,27 +185,8 @@ export function updateTextData(data: TextData, descriptor: TextDescriptor): void
     if (!internals) {
         throw new Error("updateTextData: invalid TextData (was it produced by createTextData?).");
     }
-    // Atlas-update fast path: same curves reference + same size → no new glyphs.
-    const sameRef = internals.lastCurvesRef === descriptor.curves;
-    const grew = !sameRef || descriptor.curves.size !== internals.lastCurvesSize;
-    if (grew) {
-        const atlas = getOrCreateAtlas(descriptor);
-        if (atlas !== internals.atlas) {
-            // Switched to a different curves map → switch atlases and re-track known ids.
-            internals.atlas = atlas;
-            internals.knownGlyphIds = new Set();
-        }
-        // Append any glyphs not yet in the atlas (and not yet known to this TextData).
-        for (const [glyphId, glyph] of descriptor.curves) {
-            if (!internals.atlas.glyphSlots.has(glyphId)) {
-                internals.atlas.glyphSlots.set(glyphId, packAppendGlyph(internals.atlas, glyph));
-            }
-            internals.knownGlyphIds.add(glyphId);
-        }
-        internals.lastCurvesRef = descriptor.curves;
-        internals.lastCurvesSize = descriptor.curves.size;
-    }
-    buildInstances(internals, descriptor);
+    buildGroupsAndInstances(internals, descriptor);
+    internals.lastRunsRef = descriptor.runs;
     internals.version++;
 }
 
@@ -143,9 +199,13 @@ export function disposeTextData(data: TextData): void {
         internals._gpu.instanceBuf.destroy();
         internals._gpu = null;
     }
+    for (const g of internals.groups) {
+        g._bindGroup = null;
+    }
+    internals.groups = [];
     internals.instanceCount = 0;
-    // Note: SharedAtlas is kept — it may still be in use by other TextData blocks.
-    // It is naturally reclaimed when the user drops the `curves` Map (WeakMap key).
+    // SharedAtlases are kept — they may still be in use by other TextData blocks,
+    // and the curves WeakMap reclaims them naturally when the caller drops the curves map.
 }
 
 /** @internal Read TextData internals from a renderable. */

@@ -3,7 +3,7 @@
 import { UnicodeBuffer, shape } from "text-shaper";
 import type { Font } from "./internal.js";
 import { getRawFont } from "./font.js";
-import type { GlyphRun, PlacedGlyph, TextLayoutOptions } from "./public-types.js";
+import type { PlacedGlyph, TextLayoutOptions } from "./public-types.js";
 
 interface ShapedEntry {
     glyphId: number;
@@ -24,8 +24,9 @@ interface LayoutGlyph {
     yOffset: number;
 }
 
-/** @internal Default LTR + word-wrap + align layout. Returns the `GlyphRun` plus the run's pixel-space bounding size. */
-export function layoutText(font: Font, text: string, fontSizePx: number, options?: TextLayoutOptions): { run: GlyphRun; width: number; height: number } {
+/** @internal Default LTR + word-wrap + align layout. Returns placed glyphs, the layout scale,
+ *  and the run's pixel-space bounding size. Caller wraps into a `GlyphRun` with the appropriate `curveSet`. */
+export function layoutText(font: Font, text: string, fontSizePx: number, options?: TextLayoutOptions) {
     const rawFont = getRawFont(font);
     const maxWidth = options?.maxWidth ?? Infinity;
     const lineHeightMult = options?.lineHeight ?? 1.2;
@@ -149,5 +150,5 @@ export function layoutText(font: Font, text: string, fontSizePx: number, options
         }
     }
 
-    return { run: { glyphs: placed, pixelsPerFontUnit: scale }, width: totalWidth, height: totalHeight };
+    return { glyphs: placed, pixelsPerFontUnit: scale, width: totalWidth, height: totalHeight };
 }

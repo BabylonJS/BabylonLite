@@ -29,15 +29,26 @@ export type PlacedGlyph = {
     readonly y: number;
 };
 
+/** Identifier for a curve set (a font's glyph-curves map) within a `TextDescriptor.curves` dictionary.
+ *  Strings let callers use a human-readable key (e.g. the font face name) for easy debugging. */
+export type CurveSetId = string;
+
 export type GlyphRun = {
+    /** Which entry in `TextDescriptor.curves` these glyph ids index into. */
+    readonly curveSet: CurveSetId;
     readonly glyphs: readonly PlacedGlyph[];
     /** Font-units → pixels scale used by the layout. */
     readonly pixelsPerFontUnit: number;
 };
 
 export type TextDescriptor = {
-    readonly curves: ReadonlyMap<number, GlyphCurves>;
-    readonly run: GlyphRun;
+    /** Glyph outlines, keyed by curve-set id. Each value is a glyph-id → outline map for one font.
+     *  Atlas sharing across `TextData`s keys off the inner-map identity, so prefer to keep the
+     *  same inner-map reference across edits (e.g. by growing it in place via `extractGlyphCurves`). */
+    readonly curves: ReadonlyMap<CurveSetId, ReadonlyMap<number, GlyphCurves>>;
+    /** One or more glyph runs. Runs sharing the same `curveSet` collapse to a single draw call;
+     *  runs against different fonts produce one draw call per distinct `curveSet`. */
+    readonly runs: readonly GlyphRun[];
 };
 
 export type TextLayoutOptions = {
