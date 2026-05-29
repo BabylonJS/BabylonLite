@@ -124,49 +124,92 @@ _Validation_:
   decision, not a goal of zero.
 - `pnpm test` (build + parity) green. No `test:perf`.
 
-## Milestone 1 — Floating-origin plumbing (math + scene wiring, no rendering changes yet)
+## Milestone 1 — Floating-origin plumbing + mesh/view rendering path
 
 Depends on M0. With the dual-precision layer in place, floating-origin
 becomes "subtract the eye offset on the F64 side, then downcast at upload"
 — a clean overlay on the existing precision substrate.
 
-- **a1-types**: Add `large-world/floating-origin.ts` module skeleton with
-  `getFloatingOriginOffset(scene)` returning `Vec3` (zero when off). Add
-  `useFloatingOrigin?: boolean` to `SceneContextOptions` and a
-  `floatingOriginMode` field on `SceneContextInternal`.
+**Scope shipped in M1 (commits LWR M1.1–M1.5):**
+
+- **a1-types**: Add `useFloatingOrigin?: boolean` to `SceneContextOptions` and
+  a `_floatingOriginOffset: Vec3` (mutable by-reference array, default
+  `[0,0,0]`) on `SceneContextInternal`. `ScenePrecisionPolicy` gains a
+  `floatingOriginOffset` field threaded through by
+  `resolveScenePrecisionPolicy` so matrix-bound entities read the offset from
+  `_boundPolicy` without holding a scene pointer (preserves one-way
+  ownership, pillar 4b).
 - **a1-validate-precondition**: At `createSceneContext` time, throw a clear
-  error if `useFloatingOrigin: true` is set on an engine that wasn't
-  created with `useHighPrecisionMatrix: true`. The offset trick requires
-  the precision substrate to be on; mixing them silently would ship a
-  precision bug.
-- **a1-eye-tracking**: Compute and cache `scene._eyePosition` from active
-  camera world matrix every frame (free — already derivable via
-  `getCameraPosition`, now reads from F64 storage).
+  error if `useFloatingOrigin: true` is set on an engine that wasn't created
+  with `useHighPrecisionMatrix: true`.
+- **a1-pack-helper**: Add `packMat4IntoF32WithOffset(dst, src, dstOffset,
+  foOffset)` next to `packMat4IntoF32`. When `foOffset` is `[0,0,0]` the
+  result is bit-identical to `packMat4IntoF32`; otherwise it subtracts
+  `foOffset` from the translation column `[12..14]` while downcasting F64
+  → F32. Used for mesh-WORLD matrices only.
+- **a1-world-matrix-upload**: Route every mesh-world-matrix UBO write through
+  `packMat4IntoF32WithOffset`:
+  - `material/standard/standard-renderable.ts` (build + per-frame update)
+  - `material/pbr/pbr-renderable.ts` (build + per-frame update)
+  - `material/node/node-renderable.ts` (build + per-packet update)
+  - Intentionally LEFT on plain `packMat4IntoF32` (precision-only):
+    `mesh/thin-instance-gpu.ts` (thin-instances are mesh-local, not world),
+    and `render-task.ts` view/viewProj uploads (see next bullet).
+- **a1-view-baked-offset**: Bake the floating-origin offset into the view
+  matrix at *construction* time, NOT at upload time. `getViewMatrix` reads
+  `_boundPolicy.floatingOriginOffset` and subtracts it from the camera world
+  position BEFORE computing `R_inv * -cameraPos`. When `offset ==
+  cameraPos`, the resulting translation column is mathematically zero. The
+  view + viewProj uploads in `frame-graph/render-task.ts` therefore stay on
+  the precision-only `packMat4IntoF32` helper — a second subtraction at
+  upload would double-bias the translation.
+- **a1-eye-position-uniform**: `writePassSceneUBO` writes
+  `camera.worldMatrix[12..14] - scene._floatingOriginOffset[0..2]` for
+  `vEyePosition`. Shader expressions of the form
+  `scene.vEyePosition.xyz - input.worldPos` now produce the eye-relative
+  vector at full precision because both sides live in the small-magnitude
+  eye-relative frame.
+- **a1-camera-lazy-bind**: `scene-core._update` calls
+  `bindEntityMatrixPolicy(scene._boundPolicy, scene.camera)` once per
+  active-camera assignment. `scene.camera = cam` is a bare property
+  assignment (cameras never reference the scene), so binding cannot happen
+  at assignment time. Doing it at `_update` is idempotent (same-engine
+  reattach is a no-op) and ensures cameras assigned directly get
+  F64-allocated caches + a populated `_boundPolicy.floatingOriginOffset`
+  before the first `getViewMatrix` call.
 
-_Validation_: Mirror floating-origin cases from `babylon.instancedMesh.lwr.test.ts`
-as pure-math unit tests against the `large-world/floating-origin.ts` helper
-(no GPU needed). M0's precision tests already cover the F64 substrate.
+_Validation (M1 acceptance gate)_:
 
-## Milestone 2 — Mesh + thin-instance rendering (the 80% case)
+- Pure-math unit tests for `packMat4IntoF32WithOffset` (zero-offset
+  identity, non-zero translation subtraction, F64 source → F32 dst).
+- Integration test: `scene200` (HPM off, FO off baseline) vs `scene201`
+  (HPM on, FO on, camera + meshes at 1e6) MUST diverge with MAD ≥ 5.0,
+  proving the offset path is engaged and meaningfully shifts pixels.
+  Both Lite-only scenes (no BJS golden yet — the parity scene with
+  golden is M2 scope).
 
-First renderable milestone. Lands the core LWR rendering path plus its
-parity scene.
+## Milestone 2 — Thin-instances + LWR engine convenience flag + golden parity
 
-- **a2-world-matrix-upload**: In the per-mesh world-matrix uploader,
-  subtract offset from `[12..14]` before writing to the GPU UBO when
-  `floatingOriginMode` is on.
-- **a2-view-zero**: When LWR is on, write `view` matrix with translation
-  zeroed (camera conceptually at origin).
-- **a2-vp-recompose**: Same for any pre-composed `viewProjection` /
-  `worldView` / `worldViewProjection` matrices the renderer uploads.
-- **a2-eye-uniform**: Subtract offset from `vEyePosition` uniform
-  (PBR/Standard).
+Builds on M1's per-mesh path. M1 already handles the 80% case for
+ordinary meshes; M2 finishes the rendering coverage and lands the first
+golden-validated parity scene.
+
 - **a2-thin-instances**: In `setThinInstances` upload path, subtract offset
-  from translation columns (F64 source → F32 GPU). This is where Lite's
-  thin-instance scenes live; instanced rendering must keep precision.
-- **a2-double-offset-guard**: Add the `TempFinalMat === mat` short-circuit
-  pattern so the offset isn't subtracted twice when an upload chain
-  forwards the same matrix instance.
+  from translation columns (F64 source → F32 GPU). M1 deliberately left
+  thin-instance matrices on the precision-only packer because they are
+  *mesh-local*, not world-space — but a thin-instance hierarchy whose
+  PARENT mesh is at ECEF-scale still needs the offset applied to the
+  parent's world matrix (already covered in M1) plus the local instance
+  packed in mesh-local space. This item only adds work if Lite grows
+  scenes whose instance matrices themselves carry world translations.
+- **a2-double-offset-guard**: Audit the upload chain for any path that
+  could subtract the offset twice (e.g. a pre-composed `worldView` whose
+  `world` was already offset-packed AND whose `view` was already
+  offset-baked). Today there is no such path — every upload site either
+  packs `world` with offset, OR uploads `view` whose offset was baked in
+  at construction (per a1-view-baked-offset), never both. Add a sanity
+  assertion in dev builds if/when a new upload path is introduced that
+  composes the two.
 - **a2-engine-convenience**: Add `useLargeWorldRendering?: boolean` to
   `EngineOptions`. When `true`:
   - Force `useHighPrecisionMatrix: true` on the engine (throw if the user
