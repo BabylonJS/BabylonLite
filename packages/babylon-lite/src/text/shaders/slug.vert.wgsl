@@ -6,11 +6,11 @@
 // Per-instance: bounds (em-space), anchor (object-space) + invScale, atlas locs, band transform.
 
 struct TextU {
-worldMatrix: mat4x4<f32>,
+mvp: mat4x4<f32>,
 viewport: vec4<f32>,
 color: vec4<f32>,
 };
-@group(1) @binding(0) var<uniform> textU: TextU;
+@group(0) @binding(0) var<uniform> textU: TextU;
 
 struct VIn {
 @location(0) slugCorner: vec2<f32>,
@@ -41,7 +41,7 @@ let pos = in.slugAnchor.xy + tex * scale;
 let normal = in.slugCorner;
 let jac = vec4<f32>(invScale, 0.0, 0.0, invScale);
 
-let mvp = scene.viewProjection * textU.worldMatrix;
+let mvp = textU.mvp;
 
 // Extract MVP matrix rows from column-major storage.
 let row0 = vec4<f32>(mvp[0].x, mvp[1].x, mvp[2].x, mvp[3].x);

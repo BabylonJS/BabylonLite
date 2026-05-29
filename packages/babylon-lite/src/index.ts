@@ -308,6 +308,10 @@ export type { TextData } from "./text/internal.js";
 export { createTextData, updateTextData, disposeTextData } from "./text/text-data.js";
 export type { TextRenderableOptions, TextRenderable } from "./text/text-renderable.js";
 export { createTextRenderable, disposeTextRenderable, addTextRenderable } from "./text/text-renderable.js";
+export type { TextLayer, TextLayerOptions } from "./text/text-layer.js";
+export { createTextLayer, setTextLayerPosition } from "./text/text-layer.js";
+export type { TextRenderer, TextRendererOptions } from "./text/text-renderer.js";
+export { createTextRenderer, addTextRendererLayer, removeTextRendererLayer, registerTextRenderer, unregisterTextRenderer, disposeTextRenderer } from "./text/text-renderer.js";
 
 // ─── Physics ─────────────────────────────────────────────────────────
 export {

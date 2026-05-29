@@ -1,7 +1,7 @@
 // Slug GPU Font — Fragment Shader (WGSL). Per-pixel coverage from quadratic Bézier bands.
 
-@group(1) @binding(1) var curveTex: texture_2d<f32>;
-@group(1) @binding(2) var bandTex: texture_2d<f32>;
+@group(0) @binding(1) var curveTex: texture_2d<f32>;
+@group(0) @binding(2) var bandTex: texture_2d<f32>;
 
 struct FIn {
 @location(0) vTexcoord: vec2<f32>,

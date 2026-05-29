@@ -15,6 +15,8 @@ import { createEmptyUniformBuffer } from "../resource/gpu-buffers.js";
 import { addDeferredSceneRenderables } from "../scene/scene-core.js";
 import type { SceneContext } from "../scene/scene-core.js";
 import type { Vec3 } from "../math/types.js";
+import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
+import { getViewProjectionMatrix, getEffectiveAspectRatio } from "../camera/camera.js";
 import type { TextData } from "./internal.js";
 import type { TextDataInternals } from "./internal.js";
 import { getTextDataInternalsOrThrow, TEXT_INSTANCE_BYTES } from "./text-data.js";
@@ -60,7 +62,8 @@ interface TextRenderableGpu {
     targetKey: string;
 }
 
-const TEXT_UBO_BYTES = 64 /* world */ + 16 /* viewport */ + 16; /* color */
+const TEXT_UBO_BYTES = 64 /* mvp */ + 16 /* viewport */ + 16; /* color */
+const _mvpScratch = new Float32Array(16);
 
 function targetSig(target: RenderTargetSignature): string {
     return (target.colorFormat ?? "-") + ":" + (target.sampleCount ?? 1) + ":" + (target.depthStencilFormat ?? "-") + ":" + (target.flipY ? "y" : "n");
@@ -185,13 +188,13 @@ function bindTextRenderable(r: TextRenderable, engine: EngineContext, target: Re
     const internals = getTextDataInternalsOrThrow(r._data);
     const { cache } = getOrCreateTextPipeline(eng, target.colorFormat!, target.sampleCount === 1 ? 1 : 4, target.depthStencilFormat ?? null, !r.ignoreDepth, target.flipY === true);
     const quadVertex = cache.quadVertexBuffer;
-    const bgl1 = cache.bgl1;
+    const bgl0 = cache.bgl0;
 
     return {
         renderable: r,
         pipeline: gpu.pipeline,
         update(context: DrawUpdateContext): void {
-            updateTextRenderable(r, eng, gpu, internals, bgl1, context);
+            updateTextRenderable(r, eng, gpu, internals, bgl0, context);
         },
         draw(pass): number {
             return drawTextRenderable(gpu, internals, quadVertex, pass);
@@ -204,7 +207,7 @@ function updateTextRenderable(
     engine: EngineContextInternal,
     gpu: TextRenderableGpu,
     internals: TextDataInternals,
-    bgl1: GPUBindGroupLayout,
+    bgl0: GPUBindGroupLayout,
     context: DrawUpdateContext
 ): void {
     const device = engine.device;
@@ -214,8 +217,8 @@ function updateTextRenderable(
         const { rebuilt, gpu: atlasGpu } = ensureSharedAtlasGpu(device, g.atlas);
         if (rebuilt || !g._bindGroup || g._bindGroupVersion !== atlasGpu.uploadedVersion) {
             g._bindGroup = device.createBindGroup({
-                label: "text-bg1-" + g.curveSetId,
-                layout: bgl1,
+                label: "text-bg0-" + g.curveSetId,
+                layout: bgl0,
                 entries: [
                     { binding: 0, resource: { buffer: gpu.textU } },
                     { binding: 1, resource: atlasGpu.curveTex.createView() },
@@ -236,11 +239,15 @@ function updateTextRenderable(
         gpu.uploadedDataVersion = internals.version;
     }
 
-    // Sync text UBO: worldMatrix + viewport + color.
-    const wmDirty = r._wmDirty;
-    if (wmDirty) {
+    // Sync text UBO: mvp (vp * world) + viewport + color. The scene UBO is no longer
+    // consumed by the text pipeline, so we compose the mvp here from the active camera.
+    const camera = context._camera ?? null;
+    if (camera) {
+        const aspect = getEffectiveAspectRatio(camera, context.targetWidth, context.targetHeight);
+        const vp = getViewProjectionMatrix(camera, aspect) as unknown as Float32Array;
         const wm = r._worldMatrix();
-        device.queue.writeBuffer(gpu.textU, 0, wm.buffer as ArrayBuffer, wm.byteOffset, 64);
+        mat4MultiplyInto(_mvpScratch, 0, vp, 0, wm, 0);
+        device.queue.writeBuffer(gpu.textU, 0, _mvpScratch.buffer as ArrayBuffer, _mvpScratch.byteOffset, 64);
         r._wmDirty = false;
         gpu.uploadedWorldVersion++;
     }
@@ -273,7 +280,7 @@ function drawTextRenderable(gpu: TextRenderableGpu, internals: TextDataInternals
         if (g.instanceCount === 0 || !g._bindGroup) {
             continue;
         }
-        pass.setBindGroup(1, g._bindGroup);
+        pass.setBindGroup(0, g._bindGroup);
         pass.draw(6, g.instanceCount, 0, g.instanceStart);
         draws++;
     }

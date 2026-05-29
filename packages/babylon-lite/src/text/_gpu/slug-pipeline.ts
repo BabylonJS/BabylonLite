@@ -1,14 +1,12 @@
 /** Owns the text render pipeline + bind-group layouts. Lazy per-device cache. */
 
 import type { EngineContextInternal } from "../../engine/engine.js";
-import { getSceneBindGroupLayout } from "../../render/scene-helpers.js";
-import { SCENE_UBO_WGSL } from "../../shader/scene-uniforms.js";
 import vertSrc from "../shaders/slug.vert.wgsl?raw";
 import fragSrc from "../shaders/slug.frag.wgsl?raw";
 import { TEXT_INSTANCE_BYTES } from "../text-data.js";
 
 export interface TextPipelineDeviceCache {
-    bgl1: GPUBindGroupLayout;
+    bgl0: GPUBindGroupLayout;
     vertModule: GPUShaderModule;
     fragModule: GPUShaderModule;
     quadVertexBuffer: GPUBuffer;
@@ -27,15 +25,15 @@ function getOrCreateDeviceCache(engine: EngineContextInternal): TextPipelineDevi
         return cache;
     }
     const device = engine.device;
-    const bgl1 = device.createBindGroupLayout({
-        label: "text-bgl1",
+    const bgl0 = device.createBindGroupLayout({
+        label: "text-bgl0",
         entries: [
             { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
             { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float" } },
             { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float" } },
         ],
     });
-    const vertModule = device.createShaderModule({ label: "text-vert", code: SCENE_UBO_WGSL + "\n" + vertSrc });
+    const vertModule = device.createShaderModule({ label: "text-vert", code: vertSrc });
     const fragModule = device.createShaderModule({ label: "text-frag", code: fragSrc });
     const corners = new Float32Array(QUAD_CORNERS);
     const quadVertexBuffer = device.createBuffer({
@@ -47,7 +45,7 @@ function getOrCreateDeviceCache(engine: EngineContextInternal): TextPipelineDevi
     new Float32Array(quadVertexBuffer.getMappedRange()).set(corners);
     quadVertexBuffer.unmap();
 
-    cache = { bgl1, vertModule, fragModule, quadVertexBuffer, pipelines: new Map() };
+    cache = { bgl0, vertModule, fragModule, quadVertexBuffer, pipelines: new Map() };
     _cache.set(device, cache);
     return cache;
 }
@@ -71,10 +69,9 @@ export function getOrCreateTextPipeline(
         return { pipeline, cache };
     }
     const device = engine.device;
-    const sceneBGL = getSceneBindGroupLayout(engine);
     const descriptor: GPURenderPipelineDescriptor = {
         label: "text-pipeline",
-        layout: device.createPipelineLayout({ bindGroupLayouts: [sceneBGL, cache.bgl1] }),
+        layout: device.createPipelineLayout({ bindGroupLayouts: [cache.bgl0] }),
         vertex: {
             module: cache.vertModule,
             entryPoint: "main",
