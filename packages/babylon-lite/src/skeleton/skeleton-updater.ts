@@ -6,12 +6,15 @@ import type { AnimationClip, NodeRest, SkeletonBinding } from "../animation/type
 import type { MorphBinding } from "../animation/types.js";
 import { PATH_TRANSLATION, PATH_ROTATION, PATH_SCALE, PATH_WEIGHTS, PATH_POINTER } from "../animation/types.js";
 import { evaluateSampler } from "../animation/evaluate.js";
-import { RH_TO_LH } from "../math/rh-to-lh.js";
 import { mat4ComposeInto } from "../math/mat4-compose-into.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
 
 // Scratch 4x4 used during bone-matrix composition; reused across frames + bones.
 const _boneTmp = new Float32Array(16);
+
+// RH→LH root transform (same as load-gltf.ts): diag(-1, 1, 1, 1)
+// prettier-ignore
+const RH_TO_LH = new Float32Array([-1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1]);
 
 /** TRS layout per node in the scratch buffer: 12 floats.
  *  [0..2] = translation, [3..6] = rotation (xyzw), [7..9] = scale, [10..11] = padding */

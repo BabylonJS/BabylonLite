@@ -7,7 +7,6 @@ import type { NodeRest, SkeletonBinding } from "./types.js";
 import { PATH_ROTATION, PATH_SCALE, PATH_TRANSLATION } from "./types.js";
 import { evaluateSampler } from "./evaluate.js";
 import type { EngineContextInternal } from "../engine/engine.js";
-import { RH_TO_LH } from "../math/rh-to-lh.js";
 import { mat4ComposeInto } from "../math/mat4-compose-into.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
 
@@ -18,6 +17,10 @@ const TRS_STRIDE = 12;
 const T_OFF = 0;
 const R_OFF = 3;
 const S_OFF = 7;
+
+// RH->LH root transform (same as skeleton-updater.ts)
+// prettier-ignore
+const RH_TO_LH = new Float32Array([-1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1]);
 
 const _boneTmp = new Float32Array(16);
 
