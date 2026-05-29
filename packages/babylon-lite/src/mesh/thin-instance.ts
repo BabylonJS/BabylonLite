@@ -8,8 +8,8 @@ import type { Mesh } from "./mesh.js";
 
 export interface ThinInstanceData {
     /** CPU-side instance world matrices (16 floats per instance). Storage may
-     *  be Float32Array (HPM-off default) or Float64Array (HPM-on, when the
-     *  caller built the slab from the scene's precision policy). The GPU
+     *  be Float32Array (default) or Float64Array (after an HPM engine is
+     *  constructed; the caller built the slab via `allocateMat4()`). The GPU
      *  upload path in thin-instance-gpu.ts handles both (REQ-API-3, D5). */
     matrices: Float32Array | Float64Array;
     /** Active instance count. */

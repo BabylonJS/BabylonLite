@@ -7,11 +7,11 @@
  * module in their runtime payload. We enforce this two ways:
  *
  *   1. **String-tag absence.** The F64 module exports a unique build-time
- *      tag string `@@MAT4_STORAGE_F64@@` which is embedded as a computed-key
- *      property inside `createF64MatrixAllocator`. Minifiers do not rename
- *      string contents, so the tag survives terser verbatim in the
- *      surviving chunk. The assertion: HPM-off scenes' entry + transitively
- *      loaded chunks contain ZERO occurrences of that tag.
+ *      tag string `@@MAT4_STORAGE_F64@@` which is referenced inside
+ *      `allocateF64Mat4` so it survives Rollup tree-shaking. Minifiers do
+ *      not rename string contents, so the tag survives terser verbatim in
+ *      the surviving chunk. The assertion: HPM-off scenes' entry +
+ *      transitively loaded chunks contain ZERO occurrences of that tag.
  *
  *   2. **Manifest disjointness.** `lab/public/bundle/manifest.json` lists
  *      every chunk fetched at runtime for each scene. We verify that
@@ -20,10 +20,12 @@
  *      somehow embed the chunk reference into an HPM-off path.
  *
  * Engine.ts uses `await import("..._mat4-storage-f64.js")` inside
- * `if (useHpm)`. With `useHighPrecisionMatrix` left at its default `false`,
- * the chunk is built (because some HPM-on scene reaches it, OR because Vite
- * always emits dynamic-import targets) but is never *fetched* by HPM-off
- * scenes. This test enforces both invariants.
+ * `if (useHpm)` and installs the resulting `allocateF64Mat4` into the
+ * process-global matrix allocator singleton (see GUIDANCE pillar 4b″).
+ * With `useHighPrecisionMatrix` left at its default `false`, the chunk is
+ * built (because some HPM-on scene reaches it, OR because Vite always
+ * emits dynamic-import targets) but is never *fetched* by HPM-off scenes.
+ * This test enforces both invariants.
  *
  * Requires a prior `pnpm build:bundle-scenes` run. The bundle-size test
  * suite has the same precondition.

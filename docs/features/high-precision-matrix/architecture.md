@@ -1,5 +1,30 @@
 # Architecture: `high-precision-matrix`
 
+> **⚠ HISTORICAL — superseded by `GUIDANCE.md` pillar 4b″ ("Single Matrix Precision Per Page").**
+> This document describes the M0 architecture as originally designed
+> (per-engine `_matrixPolicy` field, `ScenePrecisionPolicy` resolver,
+> `addToScene` precision binding, cross-engine fast-fail). That design
+> shipped, then was simplified twice:
+>
+> 1. Commit `07be57e` collapsed `ScenePrecisionPolicy` + the resolver +
+>    the bind-at-attach machinery by making entities take `engine` at
+>    construction.
+> 2. Commit `7569f9b` collapsed `engine._matrixPolicy` and the per-loadGltf
+>    `LoaderScratch` factory by promoting the allocator to a process-global
+>    lazy-init singleton (`math/_matrix-allocator.ts` exports
+>    `allocateMat4`, `_setHpmAllocator`). Entity factories no longer take
+>    `engine` at all.
+>
+> The trade-off accepted in (2) is that the page can run only one matrix
+> precision at a time — mixing HPM and non-HPM engines on the same page
+> is unsupported (silent wrong-storage on the second engine, no runtime
+> check). See `GUIDANCE.md` pillar 4b″ for the current contract.
+>
+> The historical content below is preserved as a record of the original
+> design and the requirements it satisfied.
+
+---
+
 > Child feature doc for Large World Rendering M0. Read with the parent architecture: [`../../architecture/27-large-world-rendering.md`](../../architecture/27-large-world-rendering.md).
 
 ## Executive summary

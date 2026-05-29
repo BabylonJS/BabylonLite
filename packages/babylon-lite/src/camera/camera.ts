@@ -8,10 +8,10 @@ import type { Mat4Storage } from "../math/types.js";
  *  Both ArcRotateCamera and FreeCamera implement this interface.
  *  Pure state, no scene knowledge (pillar 4b).
  *
- *  Note: camera factories (`createArcRotateCamera`, `createFreeCamera`) take
- *  the engine at construction so the matrix caches below are allocated from
- *  the engine's precision policy (F32 by default, F64 with HPM on). The
- *  storage type is fixed at construction and never changes. */
+ *  The view/projection matrix caches below are allocated by the camera factory
+ *  via the process-global `allocateMat4()` singleton — F32 by default, F64
+ *  after any HPM engine is constructed (GUIDANCE pillar 4b″). The storage
+ *  type is fixed at construction and never changes. */
 export interface Camera {
     fov: number;
     nearPlane: number;
@@ -20,8 +20,8 @@ export interface Camera {
     children: SceneNode[];
     readonly worldMatrix: Mat4;
     readonly worldMatrixVersion: number;
-    /** @internal View matrix cache. Pre-allocated by the camera factory from the
-     *  engine's `_matrixPolicy` allocator. F32 by default, F64 with HPM on. */
+    /** @internal View matrix cache. Pre-allocated by the camera factory via
+     *  `allocateMat4()`. F32 by default, F64 after an HPM engine is created. */
     _viewCache: Mat4Storage;
     _viewVer?: number;
     /** @internal Projection matrix cache. Same allocator as `_viewCache`. */

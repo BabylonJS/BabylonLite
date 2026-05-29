@@ -1,5 +1,15 @@
 # Task Board: high-precision-matrix
 
+> **⚠ HISTORICAL.** All tasks below were completed, then several of them
+> were collapsed by post-M0 simplification (commits `07be57e` and `7569f9b`).
+> The shipped substrate is described by `GUIDANCE.md` pillar 4b″
+> ("Single Matrix Precision Per Page") and lives in
+> `packages/babylon-lite/src/math/_matrix-allocator.ts` (process-global
+> lazy-init singleton). Several "completed" tasks below (`_matrixPolicy`,
+> `ScenePrecisionPolicy`, `resolveScenePrecisionPolicy`, per-loadGltf
+> `LoaderScratch` factory) no longer exist in the codebase. Reference
+> only as historical record of what was built and subsequently inlined.
+
 ## Queue
 
 | M | ID | Task | Skill | Notes |

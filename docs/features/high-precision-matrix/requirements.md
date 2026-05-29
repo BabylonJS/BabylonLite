@@ -1,5 +1,21 @@
 # Requirements: `high-precision-matrix`
 
+> **⚠ HISTORICAL — REQ-ARCH-1..3 are no longer satisfied as originally
+> written.** The shipped implementation uses a process-global lazy-init
+> matrix allocator singleton (see `GUIDANCE.md` pillar 4b″), explicitly
+> trading away per-engine isolation for ~300-500 bytes per bundle and
+> simpler factory signatures. The original "no module-level lazy state"
+> constraint (REQ-ARCH-2/3) was relaxed to "no module-level *eagerly
+> initialised* state" — lazy-init (`let _x: T | null = null` form)
+> remains permitted per GUIDANCE pillar 4 and is in fact the chosen
+> implementation. Concretely: pages that mix HPM and non-HPM engines
+> are unsupported.
+>
+> Other requirements (REQ-API-1/4, REQ-MAT-1/2, REQ-CPU-1..3, REQ-UPL-1..3,
+> REQ-INT-1/2, REQ-COMP-1..3, REQ-ARCH-4..6) remain accurate.
+
+---
+
 > M0 foundation milestone for Large World Rendering (LWR).
 > This document defines the feature requirements for `docs/features/high-precision-matrix/` and should be read together with:
 >

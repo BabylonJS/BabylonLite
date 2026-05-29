@@ -160,8 +160,11 @@ export function computeNodeWorldMatrix(json: any, nodeIdx: number, parentMap: Ma
     // Per-node world is allocated fresh because recursion mutates the parser's
     // scratch; it cannot alias the per-call `tmpLocal`. The result is then
     // stashed in the per-load `cache` (Map<nodeIdx, Mat4>) and never shared
-    // across loadGltf calls. Allocates F32; mesh world matrices are later
-    // recomputed via the bound policy when meshes attach to the scene.
+    // across loadGltf calls. Allocates F32 directly here — these loader-local
+    // world matrices are throwaway intermediaries used only during parsing;
+    // mesh runtime world-matrix caches are separately allocated via
+    // `allocateMat4()` in `initMeshTransform` and pick up whatever precision
+    // the process-global allocator was set to.
     const world = new Float32Array(16) as unknown as Mat4;
     mat4MultiplyInto(world as unknown as Mat4Storage, 0, parentWorld as unknown as Mat4Storage, 0, localBuf, 0);
 

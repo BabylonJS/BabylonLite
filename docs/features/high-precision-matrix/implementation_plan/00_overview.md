@@ -1,5 +1,15 @@
 # high-precision-matrix — Implementation Plan
 
+> **⚠ HISTORICAL.** This plan describes the M0 substrate as originally
+> conceived (per-engine `_matrixPolicy`, `ScenePrecisionPolicy`,
+> `addToScene` precision binding, per-loadGltf `LoaderScratch` factory).
+> All four were collapsed post-M0 by commits `07be57e` (engine-at-construction
+> simplification) and `7569f9b` (process-global lazy-init allocator
+> singleton + drop `engine` param from entity factories). The shipped
+> substrate is described by `GUIDANCE.md` pillar 4b″ ("Single Matrix
+> Precision Per Page"). Individual phase docs below are annotated where
+> superseded.
+
 ## Summary
 
 Make the existing engine flag `useHighPrecisionMatrix` load-bearing by introducing an opaque dual-precision `Mat4`, an engine-owned matrix-precision policy, a single F64→F32 GPU upload boundary (`packMat4IntoF32`), and a new parity scene that demonstrates the ~1e5-coordinate jitter case. M0 ships only the requirements-named uploader inventory; adjacent uploaders are deferred. Floating-origin and `useLargeWorldRendering` are LWR M1, not M0.
