@@ -31,10 +31,6 @@ export type PlacedGlyph = {
 
 export type GlyphRun = {
     readonly glyphs: readonly PlacedGlyph[];
-    /** Pixel-space width of the whole laid-out run. */
-    readonly width: number;
-    /** Pixel-space height of the whole laid-out run. */
-    readonly height: number;
     /** Font-units → pixels scale used by the layout. */
     readonly pixelsPerFontUnit: number;
 };

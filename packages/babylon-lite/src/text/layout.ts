@@ -24,8 +24,8 @@ interface LayoutGlyph {
     yOffset: number;
 }
 
-/** Default LTR + word-wrap + align layout. Returns a pixel-space `GlyphRun`. */
-export function layoutText(font: Font, text: string, fontSizePx: number, options?: TextLayoutOptions): GlyphRun {
+/** @internal Default LTR + word-wrap + align layout. Returns the `GlyphRun` plus the run's pixel-space bounding size. */
+export function layoutText(font: Font, text: string, fontSizePx: number, options?: TextLayoutOptions): { run: GlyphRun; width: number; height: number } {
     const rawFont = getRawFont(font);
     const maxWidth = options?.maxWidth ?? Infinity;
     const lineHeightMult = options?.lineHeight ?? 1.2;
@@ -149,5 +149,5 @@ export function layoutText(font: Font, text: string, fontSizePx: number, options
         }
     }
 
-    return { glyphs: placed, width: totalWidth, height: totalHeight, pixelsPerFontUnit: scale };
+    return { run: { glyphs: placed, pixelsPerFontUnit: scale }, width: totalWidth, height: totalHeight };
 }

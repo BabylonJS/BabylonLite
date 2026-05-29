@@ -85,15 +85,11 @@ function buildInstances(internals: TextDataInternals, descriptor: TextDescriptor
     internals.instanceCount = count;
 }
 
-function brandedTextData(width: number, height: number): TextData {
-    return { width, height } as unknown as TextData;
-}
-
 export function createTextData(descriptor: TextDescriptor): TextData {
     const atlas = getOrCreateAtlas(descriptor);
     const known = new Set<number>();
     syncAtlasGlyphs(atlas, descriptor, known);
-    const data = brandedTextData(descriptor.run.width, descriptor.run.height);
+    const data = {} as TextData;
     const internals: TextDataInternals = {
         atlas,
         instances: new Float32Array(TEXT_INSTANCE_FLOATS),
@@ -136,11 +132,6 @@ export function updateTextData(data: TextData, descriptor: TextDescriptor): void
     }
     buildInstances(internals, descriptor);
     internals.version++;
-    // Mutate the public branded shape's read-only fields (this is the documented
-    // mutation point — TextData is intentionally mutable internally even though
-    // the public type marks the fields readonly).
-    (data as unknown as { width: number; height: number }).width = descriptor.run.width;
-    (data as unknown as { width: number; height: number }).height = descriptor.run.height;
 }
 
 export function disposeTextData(data: TextData): void {

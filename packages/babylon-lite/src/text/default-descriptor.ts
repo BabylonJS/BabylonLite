@@ -6,21 +6,21 @@ import type { GlyphCurves, GlyphRun, TextLayoutOptions } from "./public-types.js
 import { extractGlyphCurves } from "./curves.js";
 import { layoutText } from "./layout.js";
 
-function brandedDescriptor(curves: ReadonlyMap<number, GlyphCurves>, run: GlyphRun): DefaultTextDescriptor {
-    const d = { curves, run } as { curves: ReadonlyMap<number, GlyphCurves>; run: GlyphRun };
+function brandedDescriptor(curves: ReadonlyMap<number, GlyphCurves>, run: GlyphRun, width: number, height: number): DefaultTextDescriptor {
+    const d = { curves, run, width, height } as { curves: ReadonlyMap<number, GlyphCurves>; run: GlyphRun; width: number; height: number };
     return d as DefaultTextDescriptor;
 }
 
 /** Shape `text` with the default layout, extract glyph curves, and bundle into a `DefaultTextDescriptor`. */
 export function createDefaultTextDescriptor(font: Font, text: string, fontSizePx: number, options?: TextLayoutOptions): DefaultTextDescriptor {
-    const run = layoutText(font, text, fontSizePx, options);
+    const { run, width, height } = layoutText(font, text, fontSizePx, options);
     const curves = new Map<number, GlyphCurves>();
     const ids = new Set<number>();
     for (const g of run.glyphs) {
         ids.add(g.glyphId);
     }
     extractGlyphCurves(font, ids, curves);
-    const out = brandedDescriptor(curves, run);
+    const out = brandedDescriptor(curves, run, width, height);
     setDefaultDescriptorInternals(out, { font, fontSizePx, options });
     return out;
 }
@@ -31,14 +31,14 @@ export function updateDefaultTextDescriptor(prior: DefaultTextDescriptor, text: 
     if (!state) {
         throw new Error("updateDefaultTextDescriptor: invalid descriptor (was it produced by createDefaultTextDescriptor?).");
     }
-    const run = layoutText(state.font, text, state.fontSizePx, state.options);
+    const { run, width, height } = layoutText(state.font, text, state.fontSizePx, state.options);
     const curves = prior.curves as Map<number, GlyphCurves>;
     const ids = new Set<number>();
     for (const g of run.glyphs) {
         ids.add(g.glyphId);
     }
     extractGlyphCurves(state.font, ids, curves);
-    const out = brandedDescriptor(curves, run);
+    const out = brandedDescriptor(curves, run, width, height);
     setDefaultDescriptorInternals(out, state);
     return out;
 }

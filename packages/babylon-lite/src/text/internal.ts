@@ -13,13 +13,15 @@ export declare const DEFAULT_TEXT_DESCRIPTOR_BRAND: unique symbol;
 // ─── Branded public types ───
 export type Font = { readonly [FONT_BRAND]: never };
 export type TextData = {
-    readonly width: number;
-    readonly height: number;
     readonly [TEXT_DATA_BRAND]: never;
 };
 export type DefaultTextDescriptor = {
     readonly curves: ReadonlyMap<number, GlyphCurves>;
     readonly run: GlyphRun;
+    /** Pixel-space width of the laid-out run (max line width). */
+    readonly width: number;
+    /** Pixel-space height of the laid-out run (lines × line-height). */
+    readonly height: number;
     readonly [DEFAULT_TEXT_DESCRIPTOR_BRAND]: never;
 };
 
