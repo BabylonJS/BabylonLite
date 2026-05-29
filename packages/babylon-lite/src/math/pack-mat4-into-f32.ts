@@ -1,5 +1,5 @@
 import type { Mat4 } from "./types.js";
-import { asMat4Storage } from "./_mat4-storage.js";
+import type { Mat4Storage } from "./_mat4-storage.js";
 
 /** @internal Pack one Mat4 into a Float32Array upload view at the given float
  *  offset. Source storage may be F32 or F64; this is the only place in the
@@ -18,7 +18,7 @@ import { asMat4Storage } from "./_mat4-storage.js";
  *  `view.set(src, offsetFloats)` — that pattern is the one Task 4.1 audits OUT
  *  outside this single helper. */
 export function packMat4IntoF32(view: Float32Array, mat: Mat4 | Float32Array | Float64Array, offsetFloats: number = 0, srcOffsetFloats: number = 0): void {
-    const src = asMat4Storage(mat as Mat4);
+    const src = mat as Mat4 as unknown as Mat4Storage;
     const s = srcOffsetFloats;
     const o = offsetFloats;
     view[o + 0] = src[s + 0]!;

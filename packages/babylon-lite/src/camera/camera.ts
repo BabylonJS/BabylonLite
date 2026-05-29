@@ -2,7 +2,7 @@ import type { Vec3, Mat4 } from "../math/types.js";
 import type { SceneNode } from "../scene/scene-node.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
 import { mat4PerspectiveLHToRef } from "../math/mat4-perspective-lh-to-ref.js";
-import { asMat4Storage, type Mat4Storage } from "../math/_mat4-storage.js";
+import type { Mat4Storage } from "../math/_mat4-storage.js";
 
 /** Minimal camera contract — any camera that can provide view/projection matrices.
  *  Both ArcRotateCamera and FreeCamera implement this interface.
@@ -45,7 +45,7 @@ export interface NormalizedViewport {
  *  Falls back to Float32Array if the camera has not been attached to a scene yet. */
 function allocateCameraCache(camera: Camera): Mat4Storage {
     const alloc = camera._boundPolicy?.allocator;
-    return alloc ? asMat4Storage(alloc.allocate()) : new Float32Array(16);
+    return alloc ? (alloc.allocate() as unknown as Mat4Storage) : new Float32Array(16);
 }
 
 /** Compute the view matrix for a camera. Cached per worldMatrixVersion.
@@ -114,7 +114,7 @@ export function getViewProjectionMatrix(camera: Camera, aspectRatio: number): Ma
         return camera._vpCache as unknown as Mat4;
     }
     const vp = camera._vpCache ?? (camera._vpCache = allocateCameraCache(camera));
-    mat4MultiplyInto(vp, 0, asMat4Storage(getProjectionMatrix(camera, aspectRatio)), 0, asMat4Storage(getViewMatrix(camera)), 0);
+    mat4MultiplyInto(vp, 0, getProjectionMatrix(camera, aspectRatio) as unknown as Mat4Storage, 0, getViewMatrix(camera) as unknown as Mat4Storage, 0);
     camera._vpVer = ver;
     camera._vpAspect = aspectRatio;
     return vp as unknown as Mat4;

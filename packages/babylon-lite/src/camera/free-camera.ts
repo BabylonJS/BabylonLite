@@ -6,7 +6,7 @@ import type { IWorldMatrixProvider, IParentable } from "../scene/parentable.js";
 import { createWorldMatrixState } from "../scene/world-matrix-state.js";
 import { ObservableVec3 } from "../math/observable-vec3.js";
 import type { SceneNode } from "../scene/scene-node.js";
-import { asMat4Storage } from "../math/_mat4-storage.js";
+import type { Mat4Storage } from "../math/_mat4-storage.js";
 
 /** FreeCamera — positioned in world space, looking at a target point.
  *  Matches Babylon.js FreeCamera: position + target, left-handed.
@@ -51,7 +51,7 @@ export function createFreeCamera(position: Vec3, target: Vec3): FreeCamera {
             _localMat = (a ? a.allocate() : new Float32Array(16)) as unknown as Mat4;
         }
         const view = mat4LookAtLH(cam.position, cam.target, Vec3Up);
-        const m = asMat4Storage(_localMat);
+        const m = _localMat as unknown as Mat4Storage;
         // Camera-to-world = transpose upper 3×3 of view + eye position
         m[0] = view[0]!;
         m[1] = view[4]!;

@@ -1,9 +1,9 @@
 import type { Mat4 } from "./types.js";
-import { asMat4Storage } from "./_mat4-storage.js";
+import type { Mat4Storage } from "./_mat4-storage.js";
 
 /** Compute inverse of a Mat4. Returns null if singular. */
 export function mat4Invert(input: Mat4): Mat4 | null {
-    const m = asMat4Storage(input);
+    const m = input as unknown as Mat4Storage;
     const a00 = m[0]!,
         a01 = m[1]!,
         a02 = m[2]!,

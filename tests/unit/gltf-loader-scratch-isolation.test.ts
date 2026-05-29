@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
 import type { MatrixAllocator } from "../../packages/babylon-lite/src/math/_matrix-allocator";
-import { createF64MatrixAllocator } from "../../packages/babylon-lite/src/math/_mat4-storage-f64";
-import { asMat4Storage } from "../../packages/babylon-lite/src/math/_mat4-storage";
+import type { Mat4Storage } from "../../packages/babylon-lite/src/math/_mat4-storage-f64";
 import { createLoaderScratch } from "../../packages/babylon-lite/src/loader-gltf/_loader-scratch";
 
 // `loadGltf` requires a real WebGPU engine + an asset to fetch, neither of
@@ -25,16 +24,16 @@ function fakeEngine(allocator: MatrixAllocator): EngineContextInternal {
 describe("glTF loader scratch isolation", () => {
     it("HPM-off engine produces F32-backed scratch buffers", () => {
         const scratch = createLoaderScratch(fakeEngine(f32Allocator()));
-        expect(asMat4Storage(scratch.tmpLocal)).toBeInstanceOf(Float32Array);
-        expect(asMat4Storage(scratch.tmpAnim)).toBeInstanceOf(Float32Array);
-        expect(asMat4Storage(scratch.tmpInstance)).toBeInstanceOf(Float32Array);
+        expect(scratch.tmpLocal as unknown as Mat4Storage).toBeInstanceOf(Float32Array);
+        expect(scratch.tmpAnim as unknown as Mat4Storage).toBeInstanceOf(Float32Array);
+        expect(scratch.tmpInstance as unknown as Mat4Storage).toBeInstanceOf(Float32Array);
     });
 
     it("HPM-on engine produces F64-backed scratch buffers", () => {
         const scratch = createLoaderScratch(fakeEngine(createF64MatrixAllocator()));
-        expect(asMat4Storage(scratch.tmpLocal)).toBeInstanceOf(Float64Array);
-        expect(asMat4Storage(scratch.tmpAnim)).toBeInstanceOf(Float64Array);
-        expect(asMat4Storage(scratch.tmpInstance)).toBeInstanceOf(Float64Array);
+        expect(scratch.tmpLocal as unknown as Mat4Storage).toBeInstanceOf(Float64Array);
+        expect(scratch.tmpAnim as unknown as Mat4Storage).toBeInstanceOf(Float64Array);
+        expect(scratch.tmpInstance as unknown as Mat4Storage).toBeInstanceOf(Float64Array);
     });
 
     it("two engines on the same page get independent scratch (REQ-ARCH-3)", () => {
@@ -44,11 +43,11 @@ describe("glTF loader scratch isolation", () => {
         const a = createLoaderScratch(fakeEngine(f32Allocator()));
         const b = createLoaderScratch(fakeEngine(createF64MatrixAllocator()));
         expect(a.tmpLocal).not.toBe(b.tmpLocal);
-        expect(asMat4Storage(a.tmpLocal)).toBeInstanceOf(Float32Array);
-        expect(asMat4Storage(b.tmpLocal)).toBeInstanceOf(Float64Array);
+        expect(a.tmpLocal as unknown as Mat4Storage).toBeInstanceOf(Float32Array);
+        expect(b.tmpLocal as unknown as Mat4Storage).toBeInstanceOf(Float64Array);
         // Writing to one must not leak into the other.
-        asMat4Storage(a.tmpLocal)[0] = 42;
-        expect(asMat4Storage(b.tmpLocal)[0]).toBe(0);
+        (a.tmpLocal as unknown as Mat4Storage)[0] = 42;
+        expect((b.tmpLocal as unknown as Mat4Storage)[0]).toBe(0);
     });
 
     it("repeated calls on the same engine return fresh, independent scratch", () => {

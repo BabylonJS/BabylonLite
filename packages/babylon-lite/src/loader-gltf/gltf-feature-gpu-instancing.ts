@@ -21,7 +21,7 @@ import { computeAabb } from "../math/compute-aabb.js";
 import { mat4ComposeInto } from "../math/mat4-compose-into.js";
 import { mat4Multiply } from "../math/mat4-multiply.js";
 import type { Mat4 } from "../math/types.js";
-import { asMat4Storage } from "../math/_mat4-storage.js";
+import type { Mat4Storage } from "../math/_mat4-storage.js";
 import { setThinInstances } from "../mesh/thin-instance.js";
 
 /** Collect every Mesh child (direct children only — matches buildNodeHierarchy). */
@@ -165,7 +165,7 @@ function expandMeshAabbForInstances(
         wMaxY = -Infinity,
         wMaxZ = -Infinity;
     const instWorld = scratch.tmpInstance;
-    const instBuf = asMat4Storage(instWorld);
+    const instBuf = instWorld as unknown as Mat4Storage;
     for (let i = 0; i < count; i++) {
         for (let k = 0; k < 16; k++) {
             instBuf[k] = matrices[i * 16 + k]!;

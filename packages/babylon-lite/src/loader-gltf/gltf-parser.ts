@@ -7,7 +7,7 @@
 import type { Mat4 } from "../math/types.js";
 import { mat4ComposeInto } from "../math/mat4-compose-into.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
-import { asMat4Storage } from "../math/_mat4-storage.js";
+import type { Mat4Storage } from "../math/_mat4-storage.js";
 import type { LoaderScratch } from "./_loader-scratch.js";
 
 // glTF 2.0 component types
@@ -152,7 +152,7 @@ export function computeNodeWorldMatrix(json: any, nodeIdx: number, parentMap: Ma
         const t = node.translation ?? [0, 0, 0];
         const r = node.rotation ?? [0, 0, 0, 1];
         const s = node.scale ?? [1, 1, 1];
-        const local = asMat4Storage(scratch.tmpLocal);
+        const local = scratch.tmpLocal as unknown as Mat4Storage;
         mat4ComposeInto(local, 0, t[0], t[1], t[2], r[0], r[1], r[2], r[3], s[0], s[1], s[2]);
         localBuf = local;
     }
@@ -163,7 +163,7 @@ export function computeNodeWorldMatrix(json: any, nodeIdx: number, parentMap: Ma
     // across loadGltf calls. Allocates F32; mesh world matrices are later
     // recomputed via the bound policy when meshes attach to the scene.
     const world = new Float32Array(16) as unknown as Mat4;
-    mat4MultiplyInto(asMat4Storage(world), 0, asMat4Storage(parentWorld), 0, localBuf, 0);
+    mat4MultiplyInto(world as unknown as Mat4Storage, 0, parentWorld as unknown as Mat4Storage, 0, localBuf, 0);
 
     cache.set(nodeIdx, world);
     return world;

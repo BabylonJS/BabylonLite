@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
 import type { MatrixAllocator } from "../../packages/babylon-lite/src/math/_matrix-allocator";
-import { createF64MatrixAllocator } from "../../packages/babylon-lite/src/math/_mat4-storage-f64";
-import { asMat4Storage } from "../../packages/babylon-lite/src/math/_mat4-storage";
+import type { Mat4Storage } from "../../packages/babylon-lite/src/math/_mat4-storage-f64";
 import { resolveScenePrecisionPolicy } from "../../packages/babylon-lite/src/scene/_scene-precision";
 import { bindEntityMatrixPolicy } from "../../packages/babylon-lite/src/scene/_entity-precision-bind";
 import { createSceneNode } from "../../packages/babylon-lite/src/scene/scene-node";
@@ -47,7 +46,7 @@ describe("matrix cache storage follows precision policy", () => {
             bind(parent, alloc);
             node.parent = parent;
             const w = node.worldMatrix;
-            expect(asMat4Storage(w)).toBeInstanceOf(Float32Array);
+            expect(w as unknown as Mat4Storage).toBeInstanceOf(Float32Array);
         });
 
         it("arc-rotate camera local matrix + view/proj/vp caches are Float32Array", () => {
@@ -61,27 +60,27 @@ describe("matrix cache storage follows precision policy", () => {
             expect(cam._projCache).toBeInstanceOf(Float32Array);
             expect(cam._vpCache).toBeInstanceOf(Float32Array);
             // World matrix flows through _localMat (re-allocated by _rebindAllocator)
-            expect(asMat4Storage(cam.worldMatrix)).toBeInstanceOf(Float32Array);
+            expect(cam.worldMatrix as unknown as Mat4Storage).toBeInstanceOf(Float32Array);
         });
 
         it("free camera local matrix is Float32Array", () => {
             const cam = createFreeCamera({ x: 0, y: 1, z: -5 }, { x: 0, y: 0, z: 0 });
             bind(cam, alloc);
-            expect(asMat4Storage(cam.worldMatrix)).toBeInstanceOf(Float32Array);
+            expect(cam.worldMatrix as unknown as Mat4Storage).toBeInstanceOf(Float32Array);
         });
 
         it("directional / hemispheric / spot light local matrices are Float32Array", () => {
             const d = createDirectionalLight([0, -1, 0]);
             bind(d, alloc);
-            expect(asMat4Storage(d.worldMatrix)).toBeInstanceOf(Float32Array);
+            expect(d.worldMatrix as unknown as Mat4Storage).toBeInstanceOf(Float32Array);
 
             const h = createHemisphericLight([0, 1, 0]);
             bind(h, alloc);
-            expect(asMat4Storage(h.worldMatrix)).toBeInstanceOf(Float32Array);
+            expect(h.worldMatrix as unknown as Mat4Storage).toBeInstanceOf(Float32Array);
 
             const s = createSpotLight([0, 5, 0], [0, -1, 0], Math.PI / 4, 1);
             bind(s, alloc);
-            expect(asMat4Storage(s.worldMatrix)).toBeInstanceOf(Float32Array);
+            expect(s.worldMatrix as unknown as Mat4Storage).toBeInstanceOf(Float32Array);
         });
     });
 
@@ -95,7 +94,7 @@ describe("matrix cache storage follows precision policy", () => {
             bind(parent, alloc);
             node.parent = parent;
             const w = node.worldMatrix;
-            expect(asMat4Storage(w)).toBeInstanceOf(Float64Array);
+            expect(w as unknown as Mat4Storage).toBeInstanceOf(Float64Array);
         });
 
         it("arc-rotate camera local matrix + view/proj/vp caches are Float64Array", () => {
@@ -107,27 +106,27 @@ describe("matrix cache storage follows precision policy", () => {
             expect(cam._viewCache).toBeInstanceOf(Float64Array);
             expect(cam._projCache).toBeInstanceOf(Float64Array);
             expect(cam._vpCache).toBeInstanceOf(Float64Array);
-            expect(asMat4Storage(cam.worldMatrix)).toBeInstanceOf(Float64Array);
+            expect(cam.worldMatrix as unknown as Mat4Storage).toBeInstanceOf(Float64Array);
         });
 
         it("free camera local matrix is Float64Array", () => {
             const cam = createFreeCamera({ x: 0, y: 1, z: -5 }, { x: 0, y: 0, z: 0 });
             bind(cam, alloc);
-            expect(asMat4Storage(cam.worldMatrix)).toBeInstanceOf(Float64Array);
+            expect(cam.worldMatrix as unknown as Mat4Storage).toBeInstanceOf(Float64Array);
         });
 
         it("directional / hemispheric / spot light local matrices are Float64Array", () => {
             const d = createDirectionalLight([0, -1, 0]);
             bind(d, alloc);
-            expect(asMat4Storage(d.worldMatrix)).toBeInstanceOf(Float64Array);
+            expect(d.worldMatrix as unknown as Mat4Storage).toBeInstanceOf(Float64Array);
 
             const h = createHemisphericLight([0, 1, 0]);
             bind(h, alloc);
-            expect(asMat4Storage(h.worldMatrix)).toBeInstanceOf(Float64Array);
+            expect(h.worldMatrix as unknown as Mat4Storage).toBeInstanceOf(Float64Array);
 
             const s = createSpotLight([0, 5, 0], [0, -1, 0], Math.PI / 4, 1);
             bind(s, alloc);
-            expect(asMat4Storage(s.worldMatrix)).toBeInstanceOf(Float64Array);
+            expect(s.worldMatrix as unknown as Mat4Storage).toBeInstanceOf(Float64Array);
         });
     });
 
@@ -136,6 +135,6 @@ describe("matrix cache storage follows precision policy", () => {
         const parent = createSceneNode("p", 4, 5, 6);
         node.parent = parent;
         const w = node.worldMatrix;
-        expect(asMat4Storage(w)).toBeInstanceOf(Float32Array);
+        expect(w as unknown as Mat4Storage).toBeInstanceOf(Float32Array);
     });
 });

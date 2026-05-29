@@ -14,7 +14,7 @@ import { INTERP_LINEAR, INTERP_STEP, INTERP_CUBICSPLINE, PATH_TRANSLATION, PATH_
 import { mat4Identity } from "../math/mat4-identity.js";
 import { mat4Invert } from "../math/mat4-invert.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
-import { asMat4Storage } from "../math/_mat4-storage.js";
+import type { Mat4Storage } from "../math/_mat4-storage.js";
 import { resolveAccessor, computeNodeWorldMatrix, findParent } from "./gltf-parser.js";
 import type { SceneNode } from "../scene/scene-node.js";
 
@@ -95,9 +95,9 @@ export function computeBoneTextureData(skin: GltfSkinData, scratch: import("./_l
     const numBones = skin.jointNodes.length;
     const data = new Float32Array(numBones * 16);
     const invMeshWorld = mat4Invert(skin.meshWorldMatrix) ?? mat4Identity();
-    const tmp = asMat4Storage(scratch.tmpAnim);
+    const tmp = scratch.tmpAnim as unknown as Mat4Storage;
     for (let i = 0; i < numBones; i++) {
-        mat4MultiplyInto(tmp, 0, asMat4Storage(invMeshWorld), 0, asMat4Storage(skin.jointWorldMatrices[i]!), 0);
+        mat4MultiplyInto(tmp, 0, invMeshWorld as unknown as Mat4Storage, 0, skin.jointWorldMatrices[i]! as unknown as Mat4Storage, 0);
         mat4MultiplyInto(data, i * 16, tmp, 0, skin.inverseBindMatrices, i * 16);
     }
     return data;

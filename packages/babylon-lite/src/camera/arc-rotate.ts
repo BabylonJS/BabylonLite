@@ -6,7 +6,7 @@ import type { IWorldMatrixProvider, IParentable } from "../scene/parentable.js";
 import { createWorldMatrixState } from "../scene/world-matrix-state.js";
 import { ObservableVec3 } from "../math/observable-vec3.js";
 import type { SceneNode } from "../scene/scene-node.js";
-import { asMat4Storage } from "../math/_mat4-storage.js";
+import type { Mat4Storage } from "../math/_mat4-storage.js";
 
 /** ArcRotateCamera — orbits around a target point.
  *  Uses Babylon.js convention: left-handed, alpha=rotation around Y, beta=elevation.
@@ -73,7 +73,7 @@ export function createArcRotateCamera(alpha: number, beta: number, radius: numbe
         }
         const eye = localEyePosition();
         const v = mat4LookAtLH(eye, cam.target, Vec3Up);
-        const m = asMat4Storage(_localMat);
+        const m = _localMat as unknown as Mat4Storage;
         // Transpose upper 3×3 of view = camera-to-world rotation; translation = eye.
         m[0] = v[0]!;
         m[1] = v[4]!;

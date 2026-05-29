@@ -1,5 +1,5 @@
 import type { Mat4 } from "./types.js";
-import { asMat4Storage } from "./_mat4-storage.js";
+import type { Mat4Storage } from "./_mat4-storage.js";
 
 /** @internal Pack a world-space Mat4 into a Float32Array upload view, applying
  *  a floating-origin offset subtraction at the translation column.
@@ -31,7 +31,7 @@ export function packMat4IntoF32WithOffset(
     offsetFloats: number = 0,
     srcOffsetFloats: number = 0
 ): void {
-    const src = asMat4Storage(mat as Mat4);
+    const src = mat as Mat4 as unknown as Mat4Storage;
     const s = srcOffsetFloats;
     const o = offsetFloats;
     view[o + 0] = src[s + 0]!;
