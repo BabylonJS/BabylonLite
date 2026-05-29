@@ -1180,30 +1180,20 @@
     {
         "id": 200,
         "slug": "scene200-high-precision-jitter-hpm-off",
-        "name": "Scene 200 - High-Precision Matrix Jitter (HPM off)",
+        "name": "Scene 200 - LWR Demo (HPM off, FO off)",
         "maxMad": 5.0,
         "maxRawKB": 50,
-        "description": "Pillar + satellites at world (~1e6, *, ~1e6) with useHighPrecisionMatrix=false. CPU view-proj chain stored as Float32Array; locks in the F32-only baseline output for the F64 substrate (HPM Phase 4.3).",
-        "tags": ["hpm", "precision", "procedural", "std"],
+        "description": "5×5 grid of boxes + pillar at world (~5e6, *, ~5e6) with useHighPrecisionMatrix=false. F32 view-proj chain visibly jitters at this magnitude — stair-stepped silhouettes, mis-aligned cube faces. Compare to scene 201 (FO on) for the precision win.",
+        "tags": ["hpm", "lwr", "precision", "procedural", "std"],
         "skipPerf": true
     },
     {
         "id": 201,
         "slug": "scene201-high-precision-jitter-hpm-on",
-        "name": "Scene 201 - High-Precision Matrix Jitter (HPM on)",
+        "name": "Scene 201 - LWR Demo (HPM on, FO on)",
         "maxMad": 0.5,
         "maxRawKB": 50,
-        "description": "Same geometry as scene 200 but useHighPrecisionMatrix=true. F64 storage of the view-proj chain; tightens parity tolerance to verify HPM-on render stays stable (HPM Phase 4.3).",
-        "tags": ["hpm", "precision", "procedural", "std"],
-        "skipPerf": true
-    },
-    {
-        "id": 202,
-        "slug": "scene202-lwr-side-by-side",
-        "name": "Scene 202 - LWR Side-by-Side (HPM on, FO off vs on)",
-        "maxMad": 5.0,
-        "maxRawKB": 60,
-        "description": "Single canvas, single engine (useHighPrecisionMatrix=true). Two scenes split into left/right viewports: left uses useFloatingOrigin=false, right uses true. Identical 5×5 grid + pillar at world OFFSET=5e6 in both. Demonstrates the LWR substrate's eye-relative upload path producing stable rasterization where the F32 path jitters.",
+        "description": "Same 5×5 grid + pillar as scene 200, but useHighPrecisionMatrix=true and useFloatingOrigin=true. F64 caches + eye-relative upload trick keep GPU-facing translations small; rasterization is crisp.",
         "tags": ["hpm", "lwr", "floating-origin", "precision", "procedural", "std"],
         "skipPerf": true
     }

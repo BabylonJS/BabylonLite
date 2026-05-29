@@ -3,13 +3,11 @@
  *
  * Asserts that scene 200 (HPM-off, floating-origin off) and scene 201
  * (HPM-on, floating-origin on) produce visibly different golden images
- * when rendered at world coordinates ~1e6, and that the new side-by-side
- * scene 202 produces visible divergence between its left half (FO-off)
- * and right half (FO-on) drawn at OFFSET=5e6.
+ * when rendered at world coordinates 5e6 with a 5×5 grid + pillar.
  *
  * Two failure modes this test exists to catch:
  *
- *   1. **Substrate not load-bearing.** If the HPM-on goldens are pixel-
+ *   1. **Substrate not load-bearing.** If the HPM-on golden is pixel-
  *      identical to the HPM-off baseline, the F64 + floating-origin path
  *      isn't actually producing different bytes — the offset is being
  *      undone somewhere downstream.
@@ -22,7 +20,7 @@
  *      frustum. Caught now by `assertContainsGeometry`.
  *
  * Threshold: cross-golden MAD must exceed 1.0 (well above the per-scene
- * `maxMad` tolerances) to count as visibly diverging.
+ * `maxMad` tolerances) to count as visibly diverging at OFFSET=5e6.
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -31,7 +29,6 @@ import { PNG } from "pngjs";
 
 const SCENE200_GOLDEN = resolve(__dirname, "../../reference/scene200-high-precision-jitter-hpm-off/babylon-ref-golden.png");
 const SCENE201_GOLDEN = resolve(__dirname, "../../reference/scene201-high-precision-jitter-hpm-on/babylon-ref-golden.png");
-const SCENE202_GOLDEN = resolve(__dirname, "../../reference/scene202-lwr-side-by-side/babylon-ref-golden.png");
 
 function loadPng(p: string): PNG {
     return PNG.sync.read(readFileSync(p));
@@ -56,18 +53,6 @@ interface PixelWindow {
 
 function fullImage(p: PNG): PixelWindow {
     return { data: p.data, stride: p.width * 4, x0: 0, y0: 0, w: p.width, h: p.height };
-}
-
-function halfImage(p: PNG, side: "left" | "right"): PixelWindow {
-    const halfW = Math.floor(p.width / 2);
-    return {
-        data: p.data,
-        stride: p.width * 4,
-        x0: side === "left" ? 0 : halfW,
-        y0: 0,
-        w: halfW,
-        h: p.height,
-    };
 }
 
 function windowMad(a: PixelWindow, b: PixelWindow): Stats {
@@ -133,22 +118,21 @@ function assertContainsGeometry(window: PixelWindow, clear: readonly [number, nu
     ).toBeGreaterThan(minFrac);
 }
 
-// Clear colours used by each scene (see source).
-const SCENE200_201_CLEAR = [51, 51, 76] as const; // {r:0.2,g:0.2,b:0.3} → sRGB ~ (51,51,76)
-const SCENE202_CLEAR = [13, 13, 20] as const; //    {r:0.05,g:0.05,b:0.08} → sRGB ~ (13,13,20)
+// Clear colour used by both scenes — {r:0.05, g:0.05, b:0.08} → sRGB ~ (13, 13, 20).
+const SCENE_CLEAR = [13, 13, 20] as const;
 
 describe("LWR M1 — scene 200 vs scene 201 divergence proof", () => {
     it("scene 200 golden contains visible geometry (non-blank guard)", () => {
         const a = loadPng(SCENE200_GOLDEN);
-        assertContainsGeometry(fullImage(a), SCENE200_201_CLEAR, "scene 200 (HPM-off)");
+        assertContainsGeometry(fullImage(a), SCENE_CLEAR, "scene 200 (HPM-off, FO-off)");
     });
 
     it("scene 201 golden contains visible geometry (non-blank guard)", () => {
         const b = loadPng(SCENE201_GOLDEN);
-        assertContainsGeometry(fullImage(b), SCENE200_201_CLEAR, "scene 201 (HPM-on + FO-on)");
+        assertContainsGeometry(fullImage(b), SCENE_CLEAR, "scene 201 (HPM-on, FO-on)");
     });
 
-    it("scene 200 and scene 201 goldens diverge (any non-trivial delta)", () => {
+    it("scene 200 and scene 201 goldens must visibly diverge (MAD > 1.0)", () => {
         const a = loadPng(SCENE200_GOLDEN);
         const b = loadPng(SCENE201_GOLDEN);
         const stats = windowMad(fullImage(a), fullImage(b));
@@ -159,43 +143,15 @@ describe("LWR M1 — scene 200 vs scene 201 divergence proof", () => {
             `scene200 vs scene201 cross-golden: MAD=${stats.mad.toFixed(3)}, ` + `differingPixels=${stats.differingPixels}/${stats.totalPixels}, maxDiff=${stats.maxDiff}`
         );
 
-        // The substrate-only scenes render at world coords ~1e6. F32 jitter
-        // at that magnitude is sub-pixel, so the visible delta between
-        // HPM-off (scene 200) and HPM-on + FO-on (scene 201) is small but
-        // non-zero — typical observed MAD is ~0.4. We only assert "some
-        // measurable delta" here (MAD > 0.05); the load-bearing
-        // demonstration of LWR precision lives in the scene 202 left/right
-        // halves below, at OFFSET=5e6 where the delta is obvious.
+        // At OFFSET=5e6 with the 5×5 grid + pillar geometry, scene 200
+        // (HPM-off, FO-off) exhibits visible F32 stair-stepping while
+        // scene 201 (HPM-on, FO-on) renders crisply. Observed MAD on the
+        // reference machine is ~25 — far above the 1.0 gate. If this
+        // assertion fails the LWR substrate isn't producing the precision
+        // gain it claims; investigate the upload path before relaxing.
         expect(
             stats.mad,
-            `Substrate proof: HPM-on + FO-on must produce different bytes than HPM-off F32 baseline. ` +
-                `If MAD~0 the offset/HPM plumbing is producing identical output — investigate the upload path.`
-        ).toBeGreaterThan(0.05);
-    });
-});
-
-describe("LWR M1 — scene 202 side-by-side divergence proof", () => {
-    it("scene 202 left half (FO-off) contains visible geometry", () => {
-        const img = loadPng(SCENE202_GOLDEN);
-        assertContainsGeometry(halfImage(img, "left"), SCENE202_CLEAR, "scene 202 left (FO-off)");
-    });
-
-    it("scene 202 right half (FO-on) contains visible geometry", () => {
-        const img = loadPng(SCENE202_GOLDEN);
-        assertContainsGeometry(halfImage(img, "right"), SCENE202_CLEAR, "scene 202 right (FO-on)");
-    });
-
-    it("scene 202 left half and right half must visibly diverge (MAD > 1.0)", () => {
-        const img = loadPng(SCENE202_GOLDEN);
-        const stats = windowMad(halfImage(img, "left"), halfImage(img, "right"));
-
-        console.warn(
-            `scene202 left (FO-off) vs right (FO-on): MAD=${stats.mad.toFixed(3)}, ` + `differingPixels=${stats.differingPixels}/${stats.totalPixels}, maxDiff=${stats.maxDiff}`
-        );
-
-        expect(
-            stats.mad,
-            `LWR side-by-side proof: at OFFSET=5e6 the FO-off half must visibly differ from the FO-on half. ` +
+            `LWR proof: at OFFSET=5e6 the HPM-on + FO-on render must visibly differ from the HPM-off F32 baseline. ` +
                 `If this fails the LWR substrate isn't producing the precision gain it claims.`
         ).toBeGreaterThan(1.0);
     });
