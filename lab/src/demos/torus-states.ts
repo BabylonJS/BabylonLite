@@ -165,8 +165,6 @@ async function main(): Promise<void> {
         fragmentWGSL: FRAGMENT_WGSL,
         bindings: [{ binding: 0, kind: "uniform", uniformByteLength: 80 }],
     });
-    const renderer = createEffectRenderer(engine, effect);
-
     const u = new Float32Array(20);
     const start = performance.now();
     let from = STATES[0];
@@ -175,41 +173,43 @@ async function main(): Promise<void> {
     let transStart = -DURATION_MS;
     let lastSwitch = 0;
 
-    renderer._update = () => {
-        const now = performance.now();
-        const elapsed = now - start;
+    const renderer = createEffectRenderer(engine, effect, {
+        update: () => {
+            const now = performance.now();
+            const elapsed = now - start;
 
-        if (elapsed - lastSwitch >= DWELL_MS) {
-            lastSwitch += DWELL_MS;
-            from = lerpState(from, to, cubicInOut(Math.min(1, (now - transStart) / DURATION_MS)));
-            idx = (idx + 1) % STATES.length;
-            to = STATES[idx];
-            transStart = now;
-        }
-        const s = lerpState(from, to, cubicInOut(Math.min(1, (now - transStart) / DURATION_MS)));
+            if (elapsed - lastSwitch >= DWELL_MS) {
+                lastSwitch += DWELL_MS;
+                from = lerpState(from, to, cubicInOut(Math.min(1, (now - transStart) / DURATION_MS)));
+                idx = (idx + 1) % STATES.length;
+                to = STATES[idx];
+                transStart = now;
+            }
+            const s = lerpState(from, to, cubicInOut(Math.min(1, (now - transStart) / DURATION_MS)));
 
-        u[0] = canvas.width;
-        u[1] = canvas.height;
-        u[2] = elapsed / 1000;
-        u[3] = 1.0; // uAnimSpeed
-        u[4] = s.colorOffset[0];
-        u[5] = s.colorOffset[1];
-        u[6] = s.colorOffset[2];
-        u[7] = 3.0; // uFlowSpeed
-        u[8] = 1.04; // uMajorR
-        u[9] = s.tubeSize;
-        u[10] = 2.0; // uTwistsPerRev
-        u[11] = 8.0; // uStepDiv
-        u[12] = s.aspect;
-        u[13] = s.squircle;
-        u[14] = 0.3; // uRotXSpeed
-        u[15] = 0.0; // uRotYSpeed
-        u[16] = 0.3; // uGlowStrength
-        u[17] = 1.0; // uSpecStrength
-        u[18] = 32.0; // uSpecPower
-        u[19] = 0.5; // uFresnelStrength
-        setEffectUniforms(effect, u);
-    };
+            u[0] = canvas.width;
+            u[1] = canvas.height;
+            u[2] = elapsed / 1000;
+            u[3] = 1.0; // uAnimSpeed
+            u[4] = s.colorOffset[0];
+            u[5] = s.colorOffset[1];
+            u[6] = s.colorOffset[2];
+            u[7] = 3.0; // uFlowSpeed
+            u[8] = 1.04; // uMajorR
+            u[9] = s.tubeSize;
+            u[10] = 2.0; // uTwistsPerRev
+            u[11] = 8.0; // uStepDiv
+            u[12] = s.aspect;
+            u[13] = s.squircle;
+            u[14] = 0.3; // uRotXSpeed
+            u[15] = 0.0; // uRotYSpeed
+            u[16] = 0.3; // uGlowStrength
+            u[17] = 1.0; // uSpecStrength
+            u[18] = 32.0; // uSpecPower
+            u[19] = 0.5; // uFresnelStrength
+            setEffectUniforms(effect, u);
+        },
+    });
 
     registerEffectRenderer(renderer);
     await startEngine(engine);
