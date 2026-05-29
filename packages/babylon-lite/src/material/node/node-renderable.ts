@@ -55,6 +55,7 @@ interface NodePacket {
     readonly _meshBG: GPUBindGroup;
     readonly _meshScratch: Float32Array;
     _lastWorldVersion: number;
+    _lastFoVersion: number;
     _lastReceivesShadow: number;
     _lastLightsCount: number;
 }
@@ -174,7 +175,8 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[], ma
                 _meshUBO,
                 _meshBG,
                 _meshScratch,
-                _lastWorldVersion: _mesh.worldMatrixVersion,
+                _lastWorldVersion: -1,
+                _lastFoVersion: -1,
                 _lastReceivesShadow: recv,
                 _lastLightsCount: scene.lights.length,
             });
@@ -185,10 +187,12 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[], ma
 
         const updatePacketUBO = (pkt: NodePacket): void => {
             const recv = pkt._mesh.receiveShadows ? 1 : 0;
+            const foVer = (scene as SceneContextInternal)._floatingOriginVersion;
             const worldChanged = pkt._mesh.worldMatrixVersion !== pkt._lastWorldVersion;
+            const foChanged = foVer !== pkt._lastFoVersion;
             const recvChanged = recv !== pkt._lastReceivesShadow;
             const lightsChanged = scene.lights.length !== pkt._lastLightsCount;
-            if (worldChanged || recvChanged || lightsChanged) {
+            if (worldChanged || foChanged || recvChanged || lightsChanged) {
                 packMat4IntoF32WithOffset(pkt._meshScratch, pkt._mesh.worldMatrix, _foOffset, 0);
                 pkt._meshScratch[16] = recv;
                 if (compile._usesMeshAttributeFlags) {
@@ -197,6 +201,7 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[], ma
                 writeMeshLightSelection(pkt._mesh, scene.lights, pkt._meshScratch.subarray(4));
                 device.queue.writeBuffer(pkt._meshUBO, 0, pkt._meshScratch as Float32Array<ArrayBuffer>);
                 pkt._lastWorldVersion = pkt._mesh.worldMatrixVersion;
+                pkt._lastFoVersion = foVer;
                 pkt._lastReceivesShadow = recv;
                 pkt._lastLightsCount = scene.lights.length;
             }

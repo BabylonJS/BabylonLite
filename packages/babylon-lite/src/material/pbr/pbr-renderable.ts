@@ -362,10 +362,12 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         const hasTIColor = (meshFeatures & MSH_HAS_INSTANCE_COLOR) !== 0;
 
         let _lastWorldVersion = -1;
+        let _lastFoVersion = -1;
         let _lastLightsCount = s.lights.length;
         const sortCenter = isTransparent || needsTaskRefraction ? ([mesh.worldMatrix[12]!, mesh.worldMatrix[13]!, mesh.worldMatrix[14]!] as [number, number, number]) : null;
         const update = (): void => {
-            if (mesh.worldMatrixVersion !== _lastWorldVersion || s.lights.length !== _lastLightsCount) {
+            const foVer = (s as SceneContextInternal)._floatingOriginVersion;
+            if (mesh.worldMatrixVersion !== _lastWorldVersion || foVer !== _lastFoVersion || s.lights.length !== _lastLightsCount) {
                 if (sortCenter) {
                     sortCenter[0] = mesh.worldMatrix[12]!;
                     sortCenter[1] = mesh.worldMatrix[13]!;
@@ -375,6 +377,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
                 writeMeshLightSelection(mesh, s.lights, meshUboData);
                 device.queue.writeBuffer(meshUBO, 0, meshUboData as Float32Array<ArrayBuffer>);
                 _lastWorldVersion = mesh.worldMatrixVersion;
+                _lastFoVersion = foVer;
                 _lastLightsCount = s.lights.length;
             }
             const uboVersion = mat._uboVersion;

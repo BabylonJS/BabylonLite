@@ -155,11 +155,13 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
             },
         ]);
 
-        let _lastWorldVersion = mesh.worldMatrixVersion;
+        let _lastWorldVersion = -1;
+        let _lastFoVersion = -1;
         let _lastLightsCount = s.lights.length;
         const sortCenter = [mesh.worldMatrix[12]!, mesh.worldMatrix[13]!, mesh.worldMatrix[14]!] as [number, number, number];
         const update = (): void => {
-            if (mesh.worldMatrixVersion !== _lastWorldVersion || s.lights.length !== _lastLightsCount) {
+            const foVer = (s as SceneContextInternal)._floatingOriginVersion;
+            if (mesh.worldMatrixVersion !== _lastWorldVersion || foVer !== _lastFoVersion || s.lights.length !== _lastLightsCount) {
                 sortCenter[0] = mesh.worldMatrix[12]!;
                 sortCenter[1] = mesh.worldMatrix[13]!;
                 sortCenter[2] = mesh.worldMatrix[14]!;
@@ -167,6 +169,7 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
                 writeMeshLightSelection(mesh, s.lights, meshUboData);
                 device.queue.writeBuffer(meshUBO, 0, meshUboData as Float32Array<ArrayBuffer>);
                 _lastWorldVersion = mesh.worldMatrixVersion;
+                _lastFoVersion = foVer;
                 _lastLightsCount = s.lights.length;
             }
             const uboVersion = mat._uboVersion;

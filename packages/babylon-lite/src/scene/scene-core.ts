@@ -122,6 +122,18 @@ export interface SceneContextInternal extends SceneContext, RenderingContext {
     _eyePosition: [number, number, number];
     /** Mutable backing store for public floatingOriginOffset. */
     _floatingOriginOffset: [number, number, number];
+    /** Monotonic version of `_floatingOriginOffset` — bumped by
+     *  `updateFloatingOriginOffset` whenever the offset numerically changes.
+     *  Renderable per-mesh UBO updaters compare against this to re-pack the
+     *  mesh world matrix (which has the offset subtracted at pack time) when
+     *  the offset drifts but the mesh itself hasn't moved. Without this gate,
+     *  stale offsets leave mesh world matrices in raw world-coord space while
+     *  the view matrix has the offset baked in — producing view×world products
+     *  that project the mesh out of the frustum (the scene 201 blank-render
+     *  bug). Initialised to 0; renderables init their `_lastFoVersion` to -1
+     *  so the first frame always re-packs even when the offset stayed at
+     *  [0,0,0]. */
+    _floatingOriginVersion: number;
 
     /** @internal Captured matrix-precision policy for this scene. */
     _matrixPolicy: ScenePrecisionPolicy;
@@ -197,6 +209,7 @@ export function createSceneContext(engine: EngineContext, options: SceneContextO
         _floatingOriginMode: options.useFloatingOrigin === true,
         _eyePosition: eyePosition,
         _floatingOriginOffset: floatingOriginOffset,
+        _floatingOriginVersion: 0,
         _matrixPolicy: matrixPolicy,
 
         _update(): void {
