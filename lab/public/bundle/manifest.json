@@ -822,7 +822,9 @@
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene58.js"
-    ]
+    ],
+    "bjsRawKB": 792.5,
+    "bjsGzipKB": 195.2
   },
   "scene59": {
     "rawKB": 59.5,
@@ -834,7 +836,9 @@
       "scene59-standard-renderable-sfjFPozK.js",
       "scene59-wgsl-helpers-WTsokIfK.js",
       "scene59.js"
-    ]
+    ],
+    "bjsRawKB": 1502,
+    "bjsGzipKB": 357.7
   },
   "scene60": {
     "rawKB": 53.6,
