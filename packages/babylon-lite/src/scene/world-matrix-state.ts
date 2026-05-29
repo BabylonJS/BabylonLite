@@ -7,7 +7,7 @@
  *
  *  Backing storage comes from `allocateMat4()` — process-global lazy singleton
  *  in `_matrix-allocator.ts`. F32 by default; F64 after an HPM engine is
- *  constructed (see GUIDANCE pillar 4b″, "single precision per page"). */
+ *  constructed (see `docs/architecture/30-high-precision-matrix.md`). */
 
 import type { Mat4 } from "../math/types.js";
 import type { IWorldMatrixProvider } from "./parentable.js";

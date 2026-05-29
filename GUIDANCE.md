@@ -42,15 +42,6 @@
 - Factory functions like `createHemisphericLight()` return plain data — they do NOT take a **scene** parameter. The caller adds the result to the scene via `addToScene()`.
 - This ensures zero circular dependencies, trivial serialization, and maximum tree-shakability.
 
-### 4b″. Single Matrix Precision Per Page (Critical)
-
-- **All engines on a page share the same matrix-precision policy.** The matrix allocator is a process-global lazy-init singleton (`packages/babylon-lite/src/math/_matrix-allocator.ts`). The first `createEngine` call with `useHighPrecisionMatrix: true` dynamic-imports `_mat4-storage-f64.ts` and installs F64 as the allocator; this is permanent for the process lifetime. Subsequent engines silently inherit it.
-- **Why singleton instead of per-engine policy:** entity factories (cameras, lights, transform nodes) and loader scratch buffers are plain functions/modules. Threading a per-engine allocator through every factory signature and every loader function adds ~300-500 bytes per bundle (signatures, closure captures, the `LoaderScratch` plumbing). A process-global singleton — accessed via `allocateMat4()` — costs zero per call-site bytes.
-- **The cost of the simplification:** mixing HPM and non-HPM engines on the same page is unsupported. The second engine inherits the first's precision; meshes/cameras created against it will use the wrong storage. There is no runtime check — violating the rule produces silently incorrect results.
-- **Tree-shaking preserved:** `_mat4-storage-f64.ts` is dynamic-imported only when `useHighPrecisionMatrix: true`; HPM-off bundles never reference it statically. Tested by `tests/bundle-content-no-f64.test.ts`.
-- **Lazy-init pattern compliance:** the singleton uses `let _allocate: () => Mat4 = (() => new Float32Array(16) as unknown as Mat4)` — a function-expression assignment, which is pure at import time and tree-shakable (GUIDANCE pillar 4 line 35 explicitly permits this form).
-- Factory functions like `createArcRotateCamera`, `createHemisphericLight`, `createTransformNode` do NOT take an `engine` parameter. They allocate matrices via the global singleton. Mesh factories and loaders still take `engine` because they need the GPU device for upload.
-
 ### 4b′. Pure State Interfaces (Critical)
 
 - **All public interfaces are pure state — no attached methods.**

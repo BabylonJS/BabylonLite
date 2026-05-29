@@ -83,7 +83,7 @@ The allocator is **process-global** — a single `let _allocate: () => Mat4` mod
 
 This violates the original M0 design (which had `engine._matrixPolicy` as a per-engine field) for the sake of bundle size: passing a per-engine allocator through every entity factory, scene cache, and loader scratch added ~300-500 bytes per bundle. The singleton's lazy-init form (`let _allocate = () => …` is a function-expression assignment, not initialization) keeps the module tree-shakable per GUIDANCE pillar 4 line 35.
 
-**Constraint:** pages that mix HPM and non-HPM engines are unsupported (silent wrong-storage on the second engine, no runtime check). See `GUIDANCE.md` pillar 4b″ for the rationale.
+**Constraint:** pages that mix HPM and non-HPM engines on the same page are unsupported. The second engine silently inherits the first's precision; meshes and cameras created against it will use the wrong storage. There is no runtime check — violating the rule produces silently incorrect results. This is the trade we accepted for the bundle-size savings of the singleton over the original per-engine `_matrixPolicy` field.
 
 ### Dynamic-import gate for the F64 backing
 

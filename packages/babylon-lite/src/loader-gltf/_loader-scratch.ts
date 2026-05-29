@@ -16,7 +16,7 @@
  *
  *  Backing precision tracks the process-global allocator in
  *  `_matrix-allocator.ts` — F32 by default, F64 after an HPM engine is
- *  constructed (see GUIDANCE pillar 4b″, "single precision per page"). */
+ *  constructed (see `docs/architecture/30-high-precision-matrix.md`). */
 
 import type { Mat4 } from "../math/types.js";
 import { allocateMat4 } from "../math/_matrix-allocator.js";
