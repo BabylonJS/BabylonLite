@@ -764,7 +764,7 @@
     "bjsGzipKB": 368.8
   },
   "scene54": {
-    "rawKB": 56.1,
+    "rawKB": 56,
     "gzipKB": 22.5,
     "ignoredRawKB": 0,
     "runtimeChunks": [
@@ -778,7 +778,7 @@
     "bjsGzipKB": 368.7
   },
   "scene55": {
-    "rawKB": 29.4,
+    "rawKB": 29.3,
     "gzipKB": 12,
     "ignoredRawKB": 0,
     "runtimeChunks": [
