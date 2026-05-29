@@ -494,7 +494,7 @@ function writePassSceneUBO(task: RenderTask, eng: EngineContextInternal, scene: 
     // shader sees the camera at world (cameraPos - offset). When floating
     // origin is disabled the offset is [0,0,0] and this is a bit-equivalent
     // copy of wm[12..14]. Mesh world matrices have the same offset subtracted
-    // at upload (packMat4IntoF32WithOffset), so shader expressions like
+    // at upload (packMat4IntoF32 with foOffset), so shader expressions like
     // `vEyePosition - worldPos` and `worldPos - vEyePosition` produce the
     // same eye-relative vector as without the offset, only with the digits
     // of precision rotated into the small-magnitude range. (LWR M1.3)

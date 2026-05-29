@@ -21,7 +21,7 @@ import type { ShadowGenerator } from "../../shadow/shadow-generator.js";
 import { writeMeshLightSelection } from "../../render/lights-ubo.js";
 import type { Material, MaterialRenderFeatures } from "../material.js";
 import { _computeMeshFeatures, MSH_HAS_INSTANCE_COLOR, MSH_HAS_THIN_INSTANCES, MSH_RECEIVE_SHADOWS } from "../mesh-features.js";
-import { packMat4IntoF32WithOffset } from "../../math/pack-mat4-into-f32-with-offset.js";
+import { packMat4IntoF32 } from "../../math/pack-mat4-into-f32.js";
 
 /** Scratch buffer for material UBO writes (24 floats = 96 bytes). Reused across
  *  every Standard renderable since binding updates are single-threaded per frame. */
@@ -108,7 +108,7 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
 
         const meshUboData = new Float32Array(bindings._composed._meshUboSpec._totalBytes / 4);
         const _foOffset = (s as SceneContextInternal)._floatingOriginOffset;
-        packMat4IntoF32WithOffset(meshUboData, mesh.worldMatrix, _foOffset, 0);
+        packMat4IntoF32(meshUboData, mesh.worldMatrix, 0, 0, _foOffset);
         writeMeshLightSelection(mesh, s.lights, meshUboData);
         const meshUBO = createUniformBuffer(engine, meshUboData);
         const textureLevel = (features & NEEDS_UV) !== 0 ? 1.0 : 0;
@@ -165,7 +165,7 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
                 sortCenter[0] = mesh.worldMatrix[12]!;
                 sortCenter[1] = mesh.worldMatrix[13]!;
                 sortCenter[2] = mesh.worldMatrix[14]!;
-                packMat4IntoF32WithOffset(meshUboData, mesh.worldMatrix, _foOffset, 0);
+                packMat4IntoF32(meshUboData, mesh.worldMatrix, 0, 0, _foOffset);
                 writeMeshLightSelection(mesh, s.lights, meshUboData);
                 device.queue.writeBuffer(meshUBO, 0, meshUboData as Float32Array<ArrayBuffer>);
                 _lastWorldVersion = mesh.worldMatrixVersion;

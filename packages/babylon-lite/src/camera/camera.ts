@@ -57,7 +57,7 @@ export interface NormalizedViewport {
  *  translation becomes `-R_inv * (cameraPos - offset)`, which is small when
  *  offset == cameraPos (the standard floating-origin bookkeeping). Mesh
  *  world matrices are also offset-subtracted at upload via
- *  packMat4IntoF32WithOffset, so vertex-shader `view * world` math is
+ *  packMat4IntoF32(..., foOffset), so vertex-shader `view * world` math is
  *  preserved end-to-end.
  *
  *  When the offset is null (FO disabled, or camera not currently scene.camera),
