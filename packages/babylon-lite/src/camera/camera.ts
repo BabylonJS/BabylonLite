@@ -48,7 +48,21 @@ function allocateCameraCache(camera: Camera): Mat4Storage {
     return alloc ? asMat4Storage(alloc.allocate()) : new Float32Array(16);
 }
 
-/** Compute the view matrix for a camera. Cached per worldMatrixVersion. */
+/** Compute the view matrix for a camera. Cached per worldMatrixVersion.
+ *
+ *  Floating-origin awareness: when the camera is bound to a scene whose
+ *  policy carries a non-zero `floatingOriginOffset` (LWR M1), that offset
+ *  is subtracted from the camera world position BEFORE the translation
+ *  column is computed via the (R_inv * -cameraPos) form. The effect is
+ *  that the view matrix translation becomes `-R_inv * (cameraPos - offset)`,
+ *  which is small when offset == cameraPos (the standard floating-origin
+ *  bookkeeping). Mesh world matrices are also offset-subtracted at upload
+ *  via packMat4IntoF32WithOffset, so vertex-shader `view * world` math is
+ *  preserved end-to-end.
+ *
+ *  When the offset is `[0,0,0]` (HPM-off scenes, or HPM-on scenes that did
+ *  not opt into floating origin), the subtraction is a no-op and this path
+ *  is bit-identical to the M0 view matrix. */
 export function getViewMatrix(camera: Camera): Mat4 {
     const ver = camera.worldMatrixVersion;
     if (camera._viewVer === ver && camera._viewCache) {
@@ -56,6 +70,10 @@ export function getViewMatrix(camera: Camera): Mat4 {
     }
     const v = camera._viewCache ?? (camera._viewCache = allocateCameraCache(camera));
     const w = camera.worldMatrix;
+    const off = camera._boundPolicy?.floatingOriginOffset;
+    const cx = off ? w[12]! - off[0]! : w[12]!;
+    const cy = off ? w[13]! - off[1]! : w[13]!;
+    const cz = off ? w[14]! - off[2]! : w[14]!;
     v[0] = w[0]!;
     v[1] = w[4]!;
     v[2] = w[8]!;
@@ -68,9 +86,9 @@ export function getViewMatrix(camera: Camera): Mat4 {
     v[9] = w[6]!;
     v[10] = w[10]!;
     v[11] = 0;
-    v[12] = -(w[0]! * w[12]! + w[1]! * w[13]! + w[2]! * w[14]!);
-    v[13] = -(w[4]! * w[12]! + w[5]! * w[13]! + w[6]! * w[14]!);
-    v[14] = -(w[8]! * w[12]! + w[9]! * w[13]! + w[10]! * w[14]!);
+    v[12] = -(w[0]! * cx + w[1]! * cy + w[2]! * cz);
+    v[13] = -(w[4]! * cx + w[5]! * cy + w[6]! * cz);
+    v[14] = -(w[8]! * cx + w[9]! * cy + w[10]! * cz);
     v[15] = 1;
     camera._viewVer = ver;
     return v as unknown as Mat4;

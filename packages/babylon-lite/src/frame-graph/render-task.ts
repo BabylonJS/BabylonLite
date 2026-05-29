@@ -490,9 +490,18 @@ function writePassSceneUBO(task: RenderTask, eng: EngineContextInternal, scene: 
         data[13] = -data[13]!;
     }
     packMat4IntoF32(data, viewMat, 16);
-    data[32] = wm[12]!;
-    data[33] = wm[13]!;
-    data[34] = wm[14]!;
+    // Eye position uniform — pre-subtract the floating-origin offset so the
+    // shader sees the camera at world (cameraPos - offset). When floating
+    // origin is disabled the offset is [0,0,0] and this is a bit-equivalent
+    // copy of wm[12..14]. Mesh world matrices have the same offset subtracted
+    // at upload (packMat4IntoF32WithOffset), so shader expressions like
+    // `vEyePosition - worldPos` and `worldPos - vEyePosition` produce the
+    // same eye-relative vector as without the offset, only with the digits
+    // of precision rotated into the small-magnitude range. (LWR M1.3)
+    const _foOffset = scene._floatingOriginOffset;
+    data[32] = wm[12]! - _foOffset[0]!;
+    data[33] = wm[13]! - _foOffset[1]!;
+    data[34] = wm[14]! - _foOffset[2]!;
 
     if (fog) {
         data[80] = fog.mode;

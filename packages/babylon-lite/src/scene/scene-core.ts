@@ -166,7 +166,7 @@ export function createSceneContext(engine: EngineContext, options: SceneContextO
     const eng = engine as EngineContextInternal;
     const eyePosition: [number, number, number] = [0, 0, 0];
     const floatingOriginOffset: [number, number, number] = [0, 0, 0];
-    const matrixPolicy = resolveScenePrecisionPolicy(eng, options);
+    const matrixPolicy = resolveScenePrecisionPolicy(eng, options, floatingOriginOffset);
 
     // Closures below capture `ctx` by-reference via this object.
     const ctxLocal: Omit<SceneContextInternal, "_frameGraph"> = {
@@ -200,6 +200,15 @@ export function createSceneContext(engine: EngineContext, options: SceneContextO
         _matrixPolicy: matrixPolicy,
 
         _update(): void {
+            // Lazily bind the active camera to the scene's matrix-precision policy
+            // so its view/proj caches use the correct allocator (F64 in HPM-on)
+            // and getViewMatrix can read floatingOriginOffset via _boundPolicy.
+            // `scene.camera = cam` is a bare property set (pillar 4b: cameras
+            // never reference the scene), so binding happens here on first use.
+            // `bindEntityMatrixPolicy` is idempotent for same-engine reattach.
+            if (ctx.camera) {
+                bindEntityMatrixPolicy(ctx.camera as unknown as MatrixBindable, ctx._matrixPolicy);
+            }
             updateFloatingOriginOffset(ctx);
             const d = ctx.fixedDeltaMs > 0 ? ctx.fixedDeltaMs : eng._currentDelta;
             const encoder = eng._currentEncoder;
