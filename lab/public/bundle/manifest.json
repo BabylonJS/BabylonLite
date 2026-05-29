@@ -817,8 +817,8 @@
     "bjsGzipKB": 348.6
   },
   "scene58": {
-    "rawKB": 18.5,
-    "gzipKB": 7.5,
+    "rawKB": 18.4,
+    "gzipKB": 7.4,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene58.js"
@@ -827,8 +827,8 @@
     "bjsGzipKB": 195.2
   },
   "scene59": {
-    "rawKB": 59.5,
-    "gzipKB": 23.7,
+    "rawKB": 59.4,
+    "gzipKB": 23.6,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene59-billboard-renderable-eiU6Rs3N.js",
