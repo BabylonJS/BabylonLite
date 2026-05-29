@@ -7,7 +7,7 @@
  */
 
 import type { EngineContextInternal } from "../../engine/engine.js";
-import type { SceneContext } from "../../scene/scene.js";
+import type { SceneContext, SceneContextInternal } from "../../scene/scene.js";
 import type { Mesh, MeshInternal } from "../../mesh/mesh.js";
 import type { MeshGPU } from "../../mesh/mesh.js";
 import type { MeshGroupBuildResult, Renderable } from "../../render/renderable.js";
@@ -18,7 +18,7 @@ import { compileNodePipeline } from "./node-pipeline.js";
 import { NODE_ESM_SHADOW_OUTPUT, NODE_NO_COLOR_OUTPUT } from "./node-flags.js";
 import { writeMeshLightSelection } from "../../render/lights-ubo.js";
 import { MAX_LIGHTS } from "../../light/types.js";
-import { packMat4IntoF32 } from "../../math/pack-mat4-into-f32.js";
+import { packMat4IntoF32WithOffset } from "../../math/pack-mat4-into-f32-with-offset.js";
 
 // Per-engine cached no-op morph target: a 1×1 rgba32float texture + a UBO with
 // count=0 + sensible texWidth/rowsPerBand. Meshes without their own morph
@@ -112,13 +112,14 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[], ma
             material._nodeUBO = nodeUBO;
         }
 
+        const _foOffset = (scene as SceneContextInternal)._floatingOriginOffset;
         const packets: NodePacket[] = [];
         for (const _mesh of matMeshes) {
             // Mesh UBO layout: world (64B) + receivesShadow (vec4, 16B) + lightCount/indices.
             const meshUboBytes = 96 + 16 * Math.ceil(MAX_LIGHTS / 4);
             const _meshUBO = device.createBuffer({ label: "node-mesh-ubo", size: (meshUboBytes + 15) & ~15, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             const _meshScratch = new Float32Array(((meshUboBytes + 15) & ~15) / 4);
-            packMat4IntoF32(_meshScratch, _mesh.worldMatrix, 0);
+            packMat4IntoF32WithOffset(_meshScratch, _mesh.worldMatrix, _foOffset, 0);
             const recv = _mesh.receiveShadows ? 1 : 0;
             _meshScratch[16] = recv;
             if (compile._usesMeshAttributeFlags) {
@@ -188,7 +189,7 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[], ma
             const recvChanged = recv !== pkt._lastReceivesShadow;
             const lightsChanged = scene.lights.length !== pkt._lastLightsCount;
             if (worldChanged || recvChanged || lightsChanged) {
-                packMat4IntoF32(pkt._meshScratch, pkt._mesh.worldMatrix, 0);
+                packMat4IntoF32WithOffset(pkt._meshScratch, pkt._mesh.worldMatrix, _foOffset, 0);
                 pkt._meshScratch[16] = recv;
                 if (compile._usesMeshAttributeFlags) {
                     writeAttributeFlags(pkt._mesh, pkt._meshScratch);
