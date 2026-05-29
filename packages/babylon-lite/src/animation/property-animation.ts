@@ -118,7 +118,7 @@ export function createPropertyAnimationGroup(
     const group = createPointerAnimationGroup(clip.name, clip.duration, clip.frameRate, runtimeTracks, fromTime, toTime, options);
     group.loopAnimation = options?.loop ?? true;
     group.speedRatio = options?.speedRatio ?? 1;
-    group._pm = [runtimeTracks, fromTime, toTime, clip.duration];
+    group._propertyMixer = [runtimeTracks, fromTime, toTime, clip.duration];
     playAnimation(group);
     addAnimationGroup(manager, group);
     return group;

@@ -63,7 +63,7 @@ export function setAnimationAdditive(group: AnimationGroup, options?: AnimationA
     if (!Number.isFinite(referenceTime) || referenceTime < 0) {
         throw new Error(`Additive animation reference time must be a finite non-negative number, got ${referenceTime}`);
     }
-    group._am = { referenceTime };
+    group._additive = { referenceTime };
     const owner = getAnimationGroupOwner(group);
     if (owner) {
         enableAnimationBlending(owner);
@@ -94,8 +94,8 @@ function updateWeightedGltfAnimations(manager: AnimationManager, deltaMs: number
     const groups = getAnimationGroups(manager);
     for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
         const group = groups[groupIndex]!;
-        const mixer = group._gm;
-        if (group._stopped || !mixer || (group.weight === 1 && !group._am)) {
+        const mixer = group._gltfMixer;
+        if (group._stopped || !mixer || (group.weight === 1 && !group._additive)) {
             continue;
         }
         keys.add(mixer[GLTF_NODES]);
@@ -113,9 +113,9 @@ function updateWeightedGltfAnimations(manager: AnimationManager, deltaMs: number
             continue;
         }
 
-        const mixer = group._gm;
+        const mixer = group._gltfMixer;
         if (mixer && keys.has(mixer[GLTF_NODES])) {
-            if (group._am) {
+            if (group._additive) {
                 getTarget(scratch, mixer).active = true;
                 advanceGroupTime(group, mixer, deltaMs);
             } else {
@@ -129,8 +129,8 @@ function updateWeightedGltfAnimations(manager: AnimationManager, deltaMs: number
 
     for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
         const group = groups[groupIndex]!;
-        const mixer = group._gm;
-        if (!group._stopped && group._am && mixer && keys.has(mixer[GLTF_NODES])) {
+        const mixer = group._gltfMixer;
+        if (!group._stopped && group._additive && mixer && keys.has(mixer[GLTF_NODES])) {
             accumulateAdditiveGroup(scratch, group, mixer);
         }
     }
@@ -193,7 +193,7 @@ function resetTarget(target: WeightedGltfTarget): void {
 }
 
 function accumulateAdditiveGroup(scratch: WeightedGltfScratch, group: AnimationGroup, mixer: AnimationGltfMixer): void {
-    const additive = group._am;
+    const additive = group._additive;
     const weight = group.weight;
     if (!additive || weight === 0) {
         return;

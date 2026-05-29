@@ -111,7 +111,7 @@ function updateWeightedPointerAnimations(manager: AnimationManager, deltaMs: num
     const groups = getAnimationGroups(manager);
     for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
         const group = groups[groupIndex]!;
-        const mixer = group._pm;
+        const mixer = group._propertyMixer;
         if (group._stopped || group.weight === 1 || !mixer) {
             continue;
         }
@@ -136,7 +136,7 @@ function updateWeightedPointerAnimations(manager: AnimationManager, deltaMs: num
             continue;
         }
 
-        const mixer = group._pm;
+        const mixer = group._propertyMixer;
         const tracks = mixer?.[MIX_TRACKS];
         if (!tracks) {
             tickAnimation(group, deltaMs, manager.engine);

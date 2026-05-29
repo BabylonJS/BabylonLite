@@ -44,11 +44,11 @@ export interface AnimationGroup {
     /** Debug: internal animation controller. */
     readonly _ctrl?: AnimationController;
     /** @internal Manual property animation metadata used by the optional weighted mixer. */
-    _pm?: AnimationPropertyMixer;
+    _propertyMixer?: AnimationPropertyMixer;
     /** @internal glTF skeleton metadata used by the optional weighted mixer. */
-    _gm?: AnimationGltfMixer;
+    _gltfMixer?: AnimationGltfMixer;
     /** @internal Additive animation metadata used by the optional blending mixer. */
-    _am?: AnimationAdditiveMixer;
+    _additive?: AnimationAdditiveMixer;
     /** @internal Whether stop() was called (suppresses tickAnimation). */
     _stopped: boolean;
 }
@@ -78,7 +78,7 @@ export function goToFrame(group: AnimationGroup, frame: number, engine?: EngineC
     group.isPlaying = false;
     if (ctrl) {
         syncControllerFromGroup(group, ctrl);
-        if (engine || !group._stopped || !group._gm) {
+        if (engine || !group._stopped || !group._gltfMixer) {
             ctrl.tick(0, engine);
             group.currentFrame = ctrl.time;
         }
@@ -125,7 +125,7 @@ export function createAnimationGroups(animData: GltfAnimationData): AnimationGro
             _stopped: false,
         };
         if (skeletons[0]) {
-            group._gm = [clip, nodes, skeletons];
+            group._gltfMixer = [clip, nodes, skeletons];
         }
         return group;
     });
