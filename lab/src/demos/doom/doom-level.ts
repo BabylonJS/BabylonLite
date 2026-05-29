@@ -12,8 +12,8 @@ import { DoomTextureCache } from "./render/texture-cache.js";
 import { createDoomMaterial } from "./render/doom-material.js";
 import { buildLevelBatches } from "./geometry/build-level-geometry.js";
 import { NF_SUBSECTOR } from "./wad/map.js";
+import { buildCollisionLines, tryMove, VIEW_HEIGHT } from "./physics/collision.js";
 
-const VIEW_HEIGHT = 41;
 const MOVE_SPEED = 320; // map units per second
 const TURN_SPEED = 2.4; // radians per second
 
@@ -73,6 +73,7 @@ function installCamera(scene: SceneContext, map: DoomMap): void {
 
     let yaw = yaw0;
     let pitch = 0;
+    const collLines = buildCollisionLines(map);
     const keys = new Set<string>();
     const onDown = (e: KeyboardEvent): void => {
         keys.add(e.code);
@@ -110,8 +111,10 @@ function installCamera(scene: SceneContext, map: DoomMap): void {
             mx -= fz;
             mz += fx;
         }
-        eye.x += mx * speed;
-        eye.z += mz * speed;
+        const currentFloor = floorHeightAt(map, eye.x, eye.z);
+        const moved = tryMove(collLines, eye.x, eye.z, mx * speed, mz * speed, currentFloor);
+        eye.x = moved.x;
+        eye.z = moved.y;
         eye.y = floorHeightAt(map, eye.x, eye.z) + VIEW_HEIGHT;
 
         cam.position.x = eye.x;
