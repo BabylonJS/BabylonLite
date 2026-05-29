@@ -1,19 +1,19 @@
-// Scene 200 — High-Precision Matrix jitter, HPM **OFF** (F32 storage).
+// Scene 200 — High-Precision Matrix jitter, HPM **OFF**, floating-origin **OFF**.
 //
-// Renders a tall pillar + four satellites at world (~1e6, *, ~1e6) with
-// `useHighPrecisionMatrix: false`. The CPU-side view-projection chain is
-// stored as Float32Array, which at this magnitude causes the composed view
-// matrix translation and resulting view-proj to round to ULP-scale steps
-// of ~0.06 m. The rendered frame is the baseline F32 output for the same
-// geometry; scene 201 renders the HPM-on counterpart.
+// The "bad case". Renders a tall pillar + four satellites at world
+// (~1e6, *, ~1e6) with `useHighPrecisionMatrix: false` and
+// `useFloatingOrigin: false`. CPU-side matrix storage is Float32Array;
+// no eye-relative offset is applied at upload. At this magnitude F32
+// ULP on the translation column is ~0.06 m, which surfaces as visible
+// stair-stepping / jitter on cube edges.
 //
-// Deterministic single steady frame; the parity spec
-// `tests/parity/scenes/scene200-high-precision-jitter-hpm-off.spec.ts`
-// screenshots and diffs against the committed golden.
+// Scene 201 is the matching "good case" (HPM-on, FO-on). The parity
+// proof is that the two scenes MUST diverge — see
+// tests/unit/hpm-divergence.test.ts.
 
 import { runHpmJitterScene } from "../_shared/hpm-jitter-scene";
 
-runHpmJitterScene({ useHighPrecisionMatrix: false }).catch((err) => {
+runHpmJitterScene({ useHighPrecisionMatrix: false, useFloatingOrigin: false }).catch((err) => {
     // eslint-disable-next-line no-console
     console.error(err);
 });

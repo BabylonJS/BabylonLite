@@ -31,6 +31,11 @@ const FAR_Z = 1_000_000;
 
 export interface HpmJitterOptions {
     useHighPrecisionMatrix: boolean;
+    /** When true, also create the SceneContext with `useFloatingOrigin: true`.
+     *  Defaults to false. Scene 201 sets this to true to prove that
+     *  HPM-on + floating-origin actually delivers stable rendering at large
+     *  world coordinates vs the HPM-off F32 baseline (scene 200). */
+    useFloatingOrigin?: boolean;
 }
 
 export async function runHpmJitterScene(opts: HpmJitterOptions): Promise<void> {
@@ -40,7 +45,7 @@ export async function runHpmJitterScene(opts: HpmJitterOptions): Promise<void> {
     const engine = await createEngine(canvas, {
         useHighPrecisionMatrix: opts.useHighPrecisionMatrix,
     });
-    const scene = createSceneContext(engine);
+    const scene = createSceneContext(engine, { useFloatingOrigin: opts.useFloatingOrigin === true });
 
     // Camera orbits around the far box at a small radius — eye position is
     // (FAR_X + cos*8, ..., FAR_Z + sin*8), so the view matrix translation
@@ -97,5 +102,6 @@ export async function runHpmJitterScene(opts: HpmJitterOptions): Promise<void> {
     canvas.dataset.drawCalls = String(engine.drawCallCount);
     canvas.dataset.initMs = String(performance.now() - __initStart);
     canvas.dataset.useHighPrecisionMatrix = String(engine.useHighPrecisionMatrix);
+    canvas.dataset.useFloatingOrigin = String(opts.useFloatingOrigin === true);
     canvas.dataset.ready = "true";
 }
