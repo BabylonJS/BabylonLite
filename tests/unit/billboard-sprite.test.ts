@@ -119,6 +119,9 @@ function makeIdentityCamera(worldMatrixVersion = 7): Camera {
         children: [],
         worldMatrix,
         worldMatrixVersion,
+        _viewCache: new Float32Array(16),
+        _projCache: new Float32Array(16),
+        _vpCache: new Float32Array(16),
     } as Camera;
 }
 

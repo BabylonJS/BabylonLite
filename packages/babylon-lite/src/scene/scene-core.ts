@@ -20,13 +20,6 @@ import { createRenderTarget } from "../engine/render-target.js";
 import type { AssetContainer } from "../asset-container.js";
 import type { SceneLightGpuState } from "../render/lights-ubo.js";
 import type { GaussianSplattingMesh } from "../mesh/GaussianSplatting/gaussian-splatting-mesh.js";
-import { updateFloatingOriginOffset, type FloatingOriginMode } from "../large-world/floating-origin.js";
-
-/** Options accepted by `createSceneContext`. */
-export interface SceneContextOptions {
-    /** Enable floating-origin offsetting (default false). */
-    useFloatingOrigin?: boolean;
-}
 
 /** Image processing configuration. */
 export interface ImageProcessingConfig {
@@ -113,8 +106,6 @@ export interface SceneContextInternal extends SceneContext, RenderingContext {
     /** Scene-owned shared LightsUniforms UBO state (group 0 binding 1). */
     _lightGpuState?: SceneLightGpuState;
 
-    /** Floating-origin mode for this scene. */
-    _floatingOriginMode: FloatingOriginMode;
     /** Camera world-space eye position cached each frame. */
     _eyePosition: [number, number, number];
     /** Mutable backing store for public floatingOriginOffset. */
@@ -168,7 +159,7 @@ function installMaterialSetter(scene: SceneContextInternal, mesh: Mesh): void {
 }
 
 /** Create an empty scene context bound to the given engine. */
-export function createSceneContext(engine: EngineContext, options: SceneContextOptions = {}): SceneContext {
+export function createSceneContext(engine: EngineContext): SceneContext {
     const eng = engine as EngineContextInternal;
     const eyePosition: [number, number, number] = [0, 0, 0];
     const floatingOriginOffset: [number, number, number] = [0, 0, 0];
@@ -199,7 +190,6 @@ export function createSceneContext(engine: EngineContext, options: SceneContextO
         _materialSwapQueue: [],
         _renderableVersion: 0,
         _drawCallsPre: 0,
-        _floatingOriginMode: options.useFloatingOrigin === true,
         _eyePosition: eyePosition,
         _floatingOriginOffset: floatingOriginOffset,
         _floatingOriginVersion: 0,
@@ -212,14 +202,16 @@ export function createSceneContext(engine: EngineContext, options: SceneContextO
             // is reassigned to a different scene later, this re-wires it
             // automatically — no staleness risk.
             //
-            // When floating-origin is disabled (`_floatingOriginMode = false`),
-            // `_floatingOriginOffset` stays `[0, 0, 0]`, so `getViewMatrix`
-            // sees the offset and the subtraction is a no-op — view matrix is
-            // bit-identical to a standard non-FO matrix.
+            // When the engine was created without `useFloatingOrigin: true`,
+            // `eng._updateFOOffset` is undefined and the LWR runtime module
+            // is never statically referenced (tree-shaken out of non-LWR
+            // bundles). `_floatingOriginOffset` stays `[0, 0, 0]` and
+            // `getViewMatrix`'s offset subtraction is a no-op — view matrix
+            // is bit-identical to a standard non-FO matrix.
             if (ctx.camera && ctx.camera._floatingOriginOffset !== ctx._floatingOriginOffset) {
                 ctx.camera._floatingOriginOffset = ctx._floatingOriginOffset;
             }
-            updateFloatingOriginOffset(ctx);
+            eng._updateFOOffset?.(ctx);
             const d = ctx.fixedDeltaMs > 0 ? ctx.fixedDeltaMs : eng._currentDelta;
             const encoder = eng._currentEncoder;
             let draws = 0;

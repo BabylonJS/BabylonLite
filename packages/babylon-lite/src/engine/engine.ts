@@ -31,6 +31,18 @@ export interface EngineContext {
      * and downcast to Float32 at GPU upload time. Defaults to false.
      */
     useHighPrecisionMatrix: boolean;
+
+    /**
+     * When true, every scene on this engine uses the floating-origin (eye-relative
+     * upload) trick to render large-world coordinates without F32 jitter. Requires
+     * `useHighPrecisionMatrix: true`. Defaults to false.
+     *
+     * LWR is engine-wide: all scenes created against this engine inherit the
+     * mode. The LWR runtime module (`large-world/floating-origin.js`) is
+     * dynamically imported during `createEngine` only when this flag is true,
+     * so non-LWR engines never pull the module into their bundle.
+     */
+    useFloatingOrigin: boolean;
 }
 
 /**
@@ -93,9 +105,19 @@ export interface EngineContextInternal extends EngineContext {
 
     /** @internal Per-engine matrix allocator captured at createEngine.
      *  Resolved from `options.useHighPrecisionMatrix`. F32 by default; F64 when
-     *  HPM is enabled. Phase 2 will capture this onto scenes/entities so caches
-     *  can allocate via the policy. */
+     *  HPM is enabled. Captured into scenes/entities so caches allocate via
+     *  the policy. */
     _matrixPolicy: MatrixAllocator;
+
+    /** @internal Per-frame floating-origin offset updater. Set when the engine
+     *  was created with `useFloatingOrigin: true` (which requires
+     *  `useHighPrecisionMatrix: true`). Undefined when FO is off — scene
+     *  `_update` does `eng._updateFOOffset?.(scene)` so FO-off engines never
+     *  pull the LWR module (`large-world/floating-origin.js`) into their
+     *  bundle. The function reads `scene.camera.worldMatrix` and writes the
+     *  resulting world position into `scene._floatingOriginOffset`, bumping
+     *  `scene._floatingOriginVersion` whenever the value changes. */
+    _updateFOOffset?: (scene: import("../scene/scene-core.js").SceneContextInternal) => void;
 }
 
 /** @internal Return true if `context` is already registered with `engine`. */
@@ -145,6 +167,17 @@ export interface EngineOptions {
      * Enable Float64 intermediate precision for world matrix computations. Defaults to false.
      */
     useHighPrecisionMatrix?: boolean;
+    /**
+     * Enable floating-origin (Large World Rendering) for every scene on this engine.
+     * Requires `useHighPrecisionMatrix: true` — throws synchronously if set without it.
+     * Defaults to false.
+     *
+     * When true, `createEngine` dynamically imports the LWR runtime
+     * (`large-world/floating-origin.js`) so engines without LWR never pull the
+     * module into their bundle (tree-shaken via the dynamic-import gate, same
+     * pattern as the F64 storage module).
+     */
+    useFloatingOrigin?: boolean;
 }
 
 /** @internal F32-backed Mat4 allocator. Colocated with createEngine so that
@@ -195,6 +228,10 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
     const msaaSamples: 1 | 4 = options?.msaaSamples === 1 ? 1 : 4;
 
     const useHpm = options?.useHighPrecisionMatrix === true;
+    const useFO = options?.useFloatingOrigin === true;
+    if (useFO && !useHpm) {
+        throw new Error("Babylon Lite: useFloatingOrigin requires useHighPrecisionMatrix on the engine.");
+    }
     // Dynamic `await import` keeps the F64 module out of HPM-off bundles entirely:
     // bundlers cannot prove the truthy branch of a runtime ternary is dead, so a
     // static import of `_mat4-storage-f64.js` was retained in every bundle even
@@ -208,6 +245,17 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
         matrixPolicy = createF32MatrixAllocator();
     }
 
+    // Same dynamic-import trick for the LWR runtime. When `useFloatingOrigin` is
+    // false (the default) the `floating-origin.js` module is never referenced
+    // statically anywhere in the package — scene `_update` does
+    // `eng._updateFOOffset?.(scene)` which is a no-op when the field is
+    // undefined. Tree-shakers drop the module from non-LWR bundles.
+    let _updateFOOffset: ((scene: import("../scene/scene-core.js").SceneContextInternal) => void) | undefined;
+    if (useFO) {
+        const { updateFloatingOriginOffset } = await import("../large-world/floating-origin.js");
+        _updateFOOffset = updateFloatingOriginOffset;
+    }
+
     const engine: EngineContextInternal = {
         device,
         context,
@@ -217,6 +265,7 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
         msaaSamples,
         drawCallCount: 0,
         useHighPrecisionMatrix: useHpm,
+        useFloatingOrigin: useFO,
         _animFrameId: 0,
         _renderFn: null,
         _renderingContexts: [],
@@ -225,6 +274,7 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
         _currentDelta: 0,
         _cbs: [],
         _matrixPolicy: matrixPolicy,
+        _updateFOOffset,
     };
 
     resizeEngine(engine);

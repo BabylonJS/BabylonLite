@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
 import type { MatrixAllocator } from "../../packages/babylon-lite/src/math/_matrix-allocator";
-import type { Mat4Storage } from "../../packages/babylon-lite/src/math/_mat4-storage-f64";
+import { createF64MatrixAllocator } from "../../packages/babylon-lite/src/math/_mat4-storage-f64";
 import { createLoaderScratch } from "../../packages/babylon-lite/src/loader-gltf/_loader-scratch";
 
 // `loadGltf` requires a real WebGPU engine + an asset to fetch, neither of

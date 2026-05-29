@@ -40,6 +40,9 @@ function makeCamera(): Camera {
         children: [],
         worldMatrix: makeIdentityMatrix(),
         worldMatrixVersion: 1,
+        _viewCache: new Float32Array(16),
+        _projCache: new Float32Array(16),
+        _vpCache: new Float32Array(16),
     };
 }
 

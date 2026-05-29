@@ -172,7 +172,7 @@ export { addThinInstance, removeThinInstance, setThinInstanceMatrix, setThinInst
 export type { ThinInstanceData } from "./mesh/thin-instance.js";
 
 // ─── Types ───────────────────────────────────────────────────────────
-export type { SceneContext, SceneContextOptions, ImageProcessingConfig, ClipPlane } from "./scene/scene.js";
+export type { SceneContext, ImageProcessingConfig, ClipPlane } from "./scene/scene.js";
 export type { ArcRotateCamera } from "./camera/arc-rotate.js";
 export type { Camera, NormalizedViewport } from "./camera/camera.js";
 export { getViewMatrix, getProjectionMatrix, getViewProjectionMatrix, getCameraPosition } from "./camera/camera.js";

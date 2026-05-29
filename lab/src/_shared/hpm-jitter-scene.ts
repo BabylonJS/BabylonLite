@@ -38,10 +38,11 @@ const OFFSET = 5_000_000;
 
 export interface HpmJitterOptions {
     useHighPrecisionMatrix: boolean;
-    /** When true, also create the SceneContext with `useFloatingOrigin: true`.
+    /** When true, also create the engine with `useFloatingOrigin: true`.
      *  Defaults to false. Scene 201 sets this to true to prove that
      *  HPM-on + floating-origin actually delivers stable rendering at large
-     *  world coordinates vs the HPM-off F32 baseline (scene 200). */
+     *  world coordinates vs the HPM-off F32 baseline (scene 200). FO is an
+     *  engine-wide flag — every scene on the engine participates. */
     useFloatingOrigin?: boolean;
 }
 
@@ -51,8 +52,9 @@ export async function runHpmJitterScene(opts: HpmJitterOptions): Promise<void> {
 
     const engine = await createEngine(canvas, {
         useHighPrecisionMatrix: opts.useHighPrecisionMatrix,
+        useFloatingOrigin: opts.useFloatingOrigin === true,
     });
-    const scene = createSceneContext(engine, { useFloatingOrigin: opts.useFloatingOrigin === true });
+    const scene = createSceneContext(engine);
     scene.clearColor = { r: 0.05, g: 0.05, b: 0.08, a: 1 };
 
     // ArcRotate camera ~25m back from the grid centre. Eye position is

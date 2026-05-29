@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createFreeCamera } from "../../packages/babylon-lite/src/camera/free-camera";
 import type { EngineContext, EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
 import { createF64MatrixAllocator } from "../../packages/babylon-lite/src/math/_mat4-storage-f64";
-import { getFloatingOriginOffset } from "../../packages/babylon-lite/src/large-world/floating-origin";
+import { getFloatingOriginOffset, updateFloatingOriginOffset } from "../../packages/babylon-lite/src/large-world/floating-origin";
 import { createSceneContext } from "../../packages/babylon-lite/src/scene/scene";
 import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
 
@@ -17,7 +17,7 @@ gpuGlobals.GPUShaderStage ??= { VERTEX: 0x1, FRAGMENT: 0x2 };
 gpuGlobals.GPUBufferUsage ??= { UNIFORM: 0x40, COPY_DST: 0x8 };
 gpuGlobals.GPUTextureUsage ??= { RENDER_ATTACHMENT: 0x10, TEXTURE_BINDING: 0x4 };
 
-function makeMockEngine(hpm = false): EngineContext {
+function makeMockEngine(hpm = false, useFO = false): EngineContext {
     const device = {
         createBindGroupLayout: (descriptor: GPUBindGroupLayoutDescriptor) => descriptor as unknown as GPUBindGroupLayout,
         createBuffer: (descriptor: GPUBufferDescriptor) => ({ descriptor, destroy: () => undefined }) as unknown as GPUBuffer,
@@ -33,11 +33,16 @@ function makeMockEngine(hpm = false): EngineContext {
         },
     } as unknown as GPUDevice;
 
+    // Mirror createEngine's dynamic-import pattern statically for the fake:
+    // when useFO is true, hook the real updateFloatingOriginOffset into
+    // `_updateFOOffset` so scene._update will call it. When false, leave the
+    // field undefined — the FO module is never referenced.
     return {
         canvas: {} as HTMLCanvasElement,
         msaaSamples: 4,
         drawCallCount: 0,
         useHighPrecisionMatrix: hpm,
+        useFloatingOrigin: useFO,
         device,
         context: {} as GPUCanvasContext,
         format: "bgra8unorm",
@@ -50,13 +55,14 @@ function makeMockEngine(hpm = false): EngineContext {
         _currentDelta: 16.67,
         _cbs: [],
         _matrixPolicy: hpm ? createF64MatrixAllocator() : { storageKind: "f32" as const, allocate: () => new Float32Array(16) as unknown as never },
+        _updateFOOffset: useFO ? updateFloatingOriginOffset : undefined,
     } as EngineContextInternal;
 }
 
 describe("floating origin", () => {
-    it("tracks camera eye position as floating origin offset when enabled", () => {
-        const engine = makeMockEngine();
-        const scene = createSceneContext(engine, { useFloatingOrigin: true }) as SceneContextInternal;
+    it("tracks camera eye position as floating origin offset when engine has FO on", () => {
+        const engine = makeMockEngine(true, true);
+        const scene = createSceneContext(engine) as SceneContextInternal;
         scene.camera = createFreeCamera(engine, { x: 1_000_000.25, y: -2_000_000.5, z: 3_000_000.75 }, { x: 0, y: 0, z: 0 });
 
         scene._update();
@@ -67,8 +73,8 @@ describe("floating origin", () => {
         expect(offset.z).toBeCloseTo(3_000_000.75, 6);
     });
 
-    it("keeps floating origin offset at zero when disabled", () => {
-        const engine = makeMockEngine();
+    it("keeps floating origin offset at zero when engine has FO off", () => {
+        const engine = makeMockEngine(false, false);
         const scene = createSceneContext(engine) as SceneContextInternal;
         scene.camera = createFreeCamera(engine, { x: 1234, y: 5678, z: 9012 }, { x: 0, y: 0, z: 0 });
 
@@ -81,8 +87,8 @@ describe("floating origin", () => {
     });
 
     it("scene._update wires the camera's _floatingOriginOffset to the scene's offset array", () => {
-        const engine = makeMockEngine();
-        const scene = createSceneContext(engine, { useFloatingOrigin: true }) as SceneContextInternal;
+        const engine = makeMockEngine(true, true);
+        const scene = createSceneContext(engine) as SceneContextInternal;
         const cam = createFreeCamera(engine, { x: 100, y: 0, z: 0 }, { x: 0, y: 0, z: 0 });
         scene.camera = cam;
 
