@@ -217,12 +217,12 @@ function emitWallSegment(
     const { width: texW, height: texH } = tex;
     const textureMid = textureMidFn(texH);
 
-    // DOOM maps wall columns left-to-right along v1->v2 as seen from the side the
-    // texture faces. Front sides are viewed from the front sector, back sides from
-    // the back sector — i.e. the opposite direction — so their U must run the other
-    // way to avoid a horizontal mirror. Both anchor xOffset at v1.
-    const u1 = side.xOffset / texW;
-    const u2 = (side.xOffset + (backSide ? -len : len)) / texW;
+    // DOOM textures front sides starting from v1, back sides from v2 (the opposite
+    // viewpoint). Both cover the SAME texel window [xOffset, xOffset+len] so the
+    // designer-authored xOffset still lands the graphic correctly; only the endpoint
+    // -> U assignment is swapped for back sides, which un-mirrors them.
+    const u1 = (side.xOffset + (backSide ? len : 0)) / texW;
+    const u2 = (side.xOffset + (backSide ? 0 : len)) / texW;
     const vTop = (textureMid - yTop) / texH;
     const vBottom = (textureMid - yBottom) / texH;
 
@@ -281,8 +281,8 @@ function emitMidtexture(
     const drawBottom = Math.max(yBottom, openBottom);
     if (drawTop <= drawBottom) return;
 
-    const u1 = side.xOffset / texW;
-    const u2 = (side.xOffset + (backSide ? -len : len)) / texW;
+    const u1 = (side.xOffset + (backSide ? len : 0)) / texW;
+    const u2 = (side.xOffset + (backSide ? 0 : len)) / texW;
     const vTop = (unclippedTop - drawTop) / texH;
     const vBottom = (unclippedTop - drawBottom) / texH;
 
