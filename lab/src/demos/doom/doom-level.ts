@@ -164,7 +164,9 @@ function installCamera(scene: SceneContext, map: DoomMap, specials: SpecialsMana
             specials.tic();
             ticAccum -= TIC_SECONDS;
         }
-        if (specials.consumeDirty()) dynamicGeo.rebuild();
+        if (specials.consumeDirty()) {
+            dynamicGeo.rebuild();
+        }
 
         // Recompute eye height after movers have run so the view tracks lifts/floors.
         eye.y = floorHeightAt(map, eye.x, eye.z) + VIEW_HEIGHT;
