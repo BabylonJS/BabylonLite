@@ -292,7 +292,20 @@ function installPlayerControls(
     // buttons transition; a second button pressed afterwards arrives as `pointermove`,
     // so firing must be edge-detected from `e.buttons`, not bound to `pointerdown`.
     const LEFT_BUTTON = 1;
+    const RIGHT_BUTTON = 2;
     let prevButtons = 0;
+    let locked = false;
+    const requestLock = (): void => {
+        if (document.pointerLockElement !== canvas) void canvas.requestPointerLock();
+    };
+    const exitLock = (): void => {
+        if (document.pointerLockElement === canvas) document.exitPointerLock();
+    };
+    document.addEventListener("pointerlockchange", () => {
+        locked = document.pointerLockElement === canvas;
+        if (!locked) dragging = false;
+    });
+    const maxPitch = Math.PI / 2 - 0.01;
 
     const fire = (): void => {
         if (player.dead || player.ammo <= 0) return;
@@ -303,12 +316,17 @@ function installPlayerControls(
         const dir: [number, number, number] = [Math.cos(view.yaw) * cp, Math.sin(view.yaw) * cp, Math.sin(view.pitch)];
         const monPoint = monsters.hitscan(eye, dir, SHOTGUN_RANGE, SHOTGUN_DAMAGE);
         if (monPoint) {
-            impacts.spawn(monPoint, true);
+            // Pull the blood marker a little toward the shooter so it sits proud of the body.
+            impacts.spawn([monPoint[0] - dir[0] * 6, monPoint[1] - dir[1] * 6, monPoint[2] - dir[2] * 6], true);
         } else {
             // No monster hit: mark where the pellets strike world geometry.
             const end: [number, number, number] = [eye[0] + dir[0] * SHOTGUN_RANGE, eye[1] + dir[1] * SHOTGUN_RANGE, eye[2] + dir[2] * SHOTGUN_RANGE];
             const wall = physics.castMove(eye, end);
-            if (wall.fraction < 1) impacts.spawn(wall.endpos, false);
+            if (wall.fraction < 1) {
+                const n = wall.normal ?? [0, 0, 0];
+                // Push the spark out along the surface normal so it isn't embedded in the wall.
+                impacts.spawn([wall.endpos[0] + n[0] * 4, wall.endpos[1] + n[1] * 4, wall.endpos[2] + n[2] * 4], false);
+            }
         }
         hud.muzzle();
         viewmodel.fire();
@@ -321,9 +339,12 @@ function installPlayerControls(
         if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
     });
     canvas.addEventListener("keyup", (e) => keys.delete(e.code));
-    // Fire on the rising edge of the left button, regardless of other buttons held.
+    // Fire on the rising edge of the left button; grab/release the mouse (pointer
+    // lock) on the rising/falling edge of the right button so look is free-cursor.
     const handleButtons = (buttons: number): void => {
         if ((buttons & LEFT_BUTTON) && !(prevButtons & LEFT_BUTTON)) fire();
+        if ((buttons & RIGHT_BUTTON) && !(prevButtons & RIGHT_BUTTON)) requestLock();
+        if (!(buttons & RIGHT_BUTTON) && (prevButtons & RIGHT_BUTTON)) exitLock();
         prevButtons = buttons;
     };
     canvas.addEventListener("pointerdown", (e) => {
@@ -346,11 +367,20 @@ function installPlayerControls(
     canvas.addEventListener("pointercancel", () => {
         prevButtons = 0;
         dragging = false;
+        exitLock();
     });
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
     canvas.addEventListener("pointermove", (e) => {
         // A button pressed while another is held arrives here, not as pointerdown.
         handleButtons(e.buttons);
+        // While the mouse is captured (right button held), look comes from raw
+        // movement deltas with no cursor; otherwise fall back to drag-look.
+        if (locked) {
+            view.yaw -= e.movementX * LOOK_SENS;
+            view.pitch -= e.movementY * LOOK_SENS;
+            view.pitch = Math.max(-maxPitch, Math.min(maxPitch, view.pitch));
+            return;
+        }
         if (e.buttons === 0) {
             dragging = false;
             return;
@@ -367,7 +397,6 @@ function installPlayerControls(
         lastY = e.clientY;
         view.yaw -= dx * LOOK_SENS;
         view.pitch -= dy * LOOK_SENS;
-        const maxPitch = Math.PI / 2 - 0.01;
         view.pitch = Math.max(-maxPitch, Math.min(maxPitch, view.pitch));
     });
 
@@ -486,8 +515,8 @@ class ImpactFx {
     private readonly pool: Mesh[] = [];
     private readonly born: number[] = [];
     private next = 0;
-    private static readonly SIZE = 12;
-    private static readonly LIFE = 0.16;
+    private static readonly SIZE = 14;
+    private static readonly LIFE = 0.45;
 
     constructor(engine: Engine, scene: ReturnType<typeof createSceneContext>, count = 16) {
         for (let i = 0; i < count; i++) {
@@ -520,11 +549,13 @@ class ImpactFx {
         const now = performance.now() / 1000;
         for (let i = 0; i < this.pool.length; i++) {
             if (this.born[i] < 0) continue;
-            const k = 1 - (now - this.born[i]) / ImpactFx.LIFE;
-            if (k <= 0) {
+            const t = (now - this.born[i]) / ImpactFx.LIFE;
+            if (t >= 1) {
                 this.pool[i].visible = false;
                 this.born[i] = -1;
             } else {
+                // Hold full size briefly, then shrink so the hit is clearly seen.
+                const k = t < 0.45 ? 1 : 1 - (t - 0.45) / 0.55;
                 this.pool[i].scaling.set(k, k, k);
             }
         }
