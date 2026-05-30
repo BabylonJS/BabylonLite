@@ -42,6 +42,7 @@ import { MonsterSystem } from "./quake/combat/monsters.js";
 import { Viewmodel } from "./quake/render/viewmodel.js";
 import { spawnItemModels, type SpawnedItem } from "./quake/render/items.js";
 import { QuakeSound } from "./quake/audio/sound.js";
+import { SbarHud } from "./quake/hud/sbar.js";
 
 const BSP_URL = "/librequake/lq_e1m1.bsp";
 const PALETTE_URL = "/librequake/palette.lmp";
@@ -140,7 +141,7 @@ async function main(): Promise<void> {
     if (yawParam && Number.isFinite(Number(yawParam))) view.yaw = (Number(yawParam) * Math.PI) / 180;
     const physics = new QuakePhysics(bsp, [origin[0], origin[1], origin[2]]);
 
-    const hud = createHud();
+    const hud = await createHud(palette);
     const sound = new QuakeSound();
     sound.preload(["weapons/guncock.wav", "weapons/lock4.wav", "weapons/pkup.wav", "items/health1.wav", "items/armor1.wav", "player/pain1.wav", "player/pain2.wav", "soldier/sight1.wav"]);
     const movers = new MoverSystem(bsp, entities, physics, {
@@ -745,18 +746,25 @@ function hurtPlayer(player: Player, amount: number, hud: Hud, sound: QuakeSound)
     hud.message("");
 }
 
-/** DOM HUD: stats bar, transient messages, muzzle flash, death + level-complete overlays. */
-function createHud(): Hud {
+/** DOM HUD: transient messages, muzzle flash, death + level-complete overlays,
+ *  plus the authentic Quake status bar (sbar/ibar) rendered to an overlay canvas. */
+async function createHud(palette: Palette): Promise<Hud> {
     const msg = document.createElement("div");
     msg.style.cssText =
         "position:fixed;left:0;right:0;top:16px;margin:auto;max-width:80%;text-align:center;color:#ffe;font:16px monospace;text-shadow:0 0 4px #000,0 2px 4px #000;pointer-events:none;z-index:9998;opacity:0;transition:opacity .3s;";
     document.body.appendChild(msg);
     let hideTimer = 0;
 
-    const stats = document.createElement("div");
-    stats.style.cssText =
-        "position:fixed;left:0;right:0;bottom:12px;text-align:center;color:#ffe;font:bold 20px monospace;text-shadow:0 0 4px #000,0 2px 4px #000;pointer-events:none;z-index:9998;letter-spacing:1px;";
-    document.body.appendChild(stats);
+    // Authentic Quake sbar/ibar. Falls back to a simple text stats line if
+    // gfx.wad is unavailable (e.g. assets not fetched).
+    const sbar = await SbarHud.create(palette);
+    let stats: HTMLDivElement | null = null;
+    if (!sbar) {
+        stats = document.createElement("div");
+        stats.style.cssText =
+            "position:fixed;left:0;right:0;bottom:12px;text-align:center;color:#ffe;font:bold 20px monospace;text-shadow:0 0 4px #000,0 2px 4px #000;pointer-events:none;z-index:9998;letter-spacing:1px;";
+        document.body.appendChild(stats);
+    }
 
     const flash = document.createElement("div");
     flash.style.cssText = "position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:9997;transition:opacity .08s;";
@@ -776,7 +784,17 @@ function createHud(): Hud {
             hideTimer = window.setTimeout(() => (msg.style.opacity = "0"), 3000);
         },
         setStats(player: Player, kills: number, total: number) {
-            stats.innerHTML =
+            if (sbar) {
+                sbar.setStats({
+                    health: player.health,
+                    armor: player.armor,
+                    ammo: player.ammo,
+                    kills,
+                    total,
+                });
+                return;
+            }
+            stats!.innerHTML =
                 `<span style="color:#ff6b6b">HEALTH ${Math.max(0, Math.ceil(player.health))}</span>` +
                 `&nbsp;&nbsp;<span style="color:#6bb6ff">ARMOR ${Math.max(0, Math.round(player.armor))}</span>` +
                 `&nbsp;&nbsp;<span style="color:#ffd86b">SHELLS ${player.ammo}</span>` +

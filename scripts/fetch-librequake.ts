@@ -59,6 +59,10 @@ const PAK_WANTED: Record<string, string> = {
     "maps/b_bh25.bsp": "maps/b_bh25.bsp", // health (25)
     "maps/b_bh100.bsp": "maps/b_bh100.bsp", // megahealth (100)
     "maps/b_explob.bsp": "maps/b_explob.bsp", // exploding box
+    // Classic HUD status-bar graphics (WAD2). Contains SBAR/IBAR backgrounds,
+    // NUM_/ANUM_ digits, FACE animation, SB_* ammo/armor/powerup icons, INV_*
+    // weapon icons and CONCHARS. Parsed + decoded to textures at runtime.
+    "gfx.wad": "gfx.wad",
     // Sound effects (RIFF WAV) for weapon fire, pickups, player + monster
     // pain/death and doors. Decoded at runtime via the Web Audio API.
     "sound/weapons/guncock.wav": "sound/weapons/guncock.wav", // shotgun fire
