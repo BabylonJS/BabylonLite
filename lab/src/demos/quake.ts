@@ -103,6 +103,7 @@ interface Player {
     weapon: WeaponId;
     owned: Set<WeaponId>;
     dead: boolean;
+    godmode: boolean;
 }
 
 async function fetchBytes(url: string, hint: string): Promise<ArrayBuffer> {
@@ -255,7 +256,8 @@ async function main(): Promise<void> {
     const items = await spawnItemModels({ engine, scene, palette, lightTex, whiteUV: atlas.whiteUV, physics }, movers.ents);
 
     // Enemies + combat.
-    const player: Player = { health: START_HEALTH, armor: 0, shells: START_SHELLS, nails: START_NAILS, rockets: START_ROCKETS, weapon: "shotgun", owned: new Set<WeaponId>(["shotgun"]), dead: false };
+    const godmode = params.get("godmode") !== null && params.get("godmode") !== "0";
+    const player: Player = { health: START_HEALTH, armor: 0, shells: START_SHELLS, nails: START_NAILS, rockets: START_ROCKETS, weapon: "shotgun", owned: new Set<WeaponId>(["shotgun"]), dead: false, godmode };
     const monsters = new MonsterSystem(engine, scene, physics, lightTex, atlas.whiteUV, palette, {
         damage: (amount) => {
             hurtPlayer(player, amount, hud, sound);
@@ -933,6 +935,7 @@ interface Hud {
 /** Apply damage to the player (armor soaks 60%); shows the death overlay at 0 HP. */
 function hurtPlayer(player: Player, amount: number, hud: Hud, sound: QuakeSound): void {
     if (player.dead) return;
+    if (player.godmode) return;
     const soak = Math.min(player.armor, amount * 0.6);
     player.armor -= soak;
     player.health -= amount - soak;
