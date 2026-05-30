@@ -92,10 +92,10 @@ export class WeaponView {
         const data = new ImageData(img.width, img.height);
         for (let i = 0; i < img.width * img.height; i++) {
             if (!img.opaque[i]) continue;
-            const p = img.indices[i] * 3;
-            data.data[i * 4 + 0] = this.palette[p];
-            data.data[i * 4 + 1] = this.palette[p + 1];
-            data.data[i * 4 + 2] = this.palette[p + 2];
+            const p = img.indices[i]! * 3;
+            data.data[i * 4 + 0] = this.palette[p]!;
+            data.data[i * 4 + 1] = this.palette[p + 1]!;
+            data.data[i * 4 + 2] = this.palette[p + 2]!;
             data.data[i * 4 + 3] = 255;
         }
         c.getContext("2d")!.putImageData(data, 0, 0);

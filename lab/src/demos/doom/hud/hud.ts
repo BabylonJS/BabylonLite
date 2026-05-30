@@ -140,10 +140,10 @@ export class DoomHud {
         const data = new ImageData(img.width, img.height);
         for (let i = 0; i < img.width * img.height; i++) {
             if (!img.opaque[i]) continue;
-            const p = img.indices[i] * 3;
-            data.data[i * 4 + 0] = this.palette[p];
-            data.data[i * 4 + 1] = this.palette[p + 1];
-            data.data[i * 4 + 2] = this.palette[p + 2];
+            const p = img.indices[i]! * 3;
+            data.data[i * 4 + 0] = this.palette[p]!;
+            data.data[i * 4 + 1] = this.palette[p + 1]!;
+            data.data[i * 4 + 2] = this.palette[p + 2]!;
             data.data[i * 4 + 3] = 255;
         }
         c.getContext("2d")!.putImageData(data, 0, 0);
@@ -220,7 +220,7 @@ export class DoomHud {
 
         // ARMS: light owned slots with the yellow digit over the baked-in grey.
         for (let i = 0; i < ARMS_WEAPONS.length; i++) {
-            if (!p.weaponsOwned.has(ARMS_WEAPONS[i])) continue;
+            if (!p.weaponsOwned.has(ARMS_WEAPONS[i]!)) continue;
             const x = 111 + (i % 3) * 12;
             const ry = 172 + Math.floor(i / 3) * 10;
             this.drawPatch(`STYSNUM${i + 2}`, x, ry, scale, frameLeft);
@@ -231,7 +231,7 @@ export class DoomHud {
 
         // Keys: combined card+skull icon if both are held.
         for (let c = 0; c < KEY_ROWS.length; c++) {
-            const [card, skull, ky] = KEY_ROWS[c];
+            const [card, skull, ky] = KEY_ROWS[c]!;
             const hasCard = p.keys.has(card);
             const hasSkull = p.keys.has(skull);
             let lump: string | null = null;
@@ -243,8 +243,8 @@ export class DoomHud {
 
         // Per-type ammo list: current (right edge 288) and max (right edge 314).
         for (const [idx, ay] of AMMO_ROWS) {
-            this.drawNum(p.ammo[idx], 288, ay, "STYSNUM", this.shortW, 3, scale, frameLeft);
-            this.drawNum(p.maxAmmo[idx], 314, ay, "STYSNUM", this.shortW, 3, scale, frameLeft);
+            this.drawNum(p.ammo[idx]!, 288, ay, "STYSNUM", this.shortW, 3, scale, frameLeft);
+            this.drawNum(p.maxAmmo[idx]!, 314, ay, "STYSNUM", this.shortW, 3, scale, frameLeft);
         }
 
         // DOM feedback overlays.

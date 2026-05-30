@@ -91,7 +91,7 @@ function aChase(world: DoomWorld, m: Mobj): void {
     if (m.moveDir === Dir.NONE || m.moveCount <= 0 || !tryWalk(world, m, m.moveDir)) {
         newChaseDir(world, m, t);
     }
-    if (m.moveDir !== Dir.NONE) m.angle = DIR_ANGLE[m.moveDir];
+    if (m.moveDir !== Dir.NONE) m.angle = DIR_ANGLE[m.moveDir]!;
 }
 
 /** Chooses a movement direction toward the target, with a simple slide fallback. */

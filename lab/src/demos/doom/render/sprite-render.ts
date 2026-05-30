@@ -119,7 +119,7 @@ export class SpriteRenderer {
         const ah = this.store.atlasHeight;
 
         for (let i = 0; i < n; i++) {
-            const s = sprites[i];
+            const s = sprites[i]!;
             const img = s.image;
             let left: number;
             let right: number;
