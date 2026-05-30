@@ -12,9 +12,9 @@ const ATLAS_H = 2048;
 const PAD = 1;
 
 // Brightness for non-special faces that ship with no lightmap data (lightOfs < 0).
-// Quake clears such surfaces to "no light" rather than fullbright; we use a dim
-// flat value so they read as ordinary dim walls instead of glaring fullbright.
-const UNLIT_AMBIENT = 48;
+// Quake clears such surfaces to "no light"; we render them fully dark (black)
+// rather than fullbright so they don't glare at map borders.
+const UNLIT_AMBIENT = 0;
 
 export interface FaceLightmap {
     atlasX: number;

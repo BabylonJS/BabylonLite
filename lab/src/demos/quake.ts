@@ -87,6 +87,11 @@ const ITEM_SPIN_SPEED = 1.6; // radians/sec — Quake-3-style pickup rotation.
 const STEPSIZE = 18; // Quake STEPSIZE — must match physics; used for view-Z stair smoothing.
 const STAIR_SMOOTH_SPEED = 180; // units/sec the smoothed eye catches up after a step-up.
 
+// Liquid leaf contents (Quake): water=-3, slime=-4, lava=-5.
+const CONTENTS_SLIME = -4;
+const CONTENTS_LAVA = -5;
+const ENVIROSUIT_TIME = 30; // seconds of liquid immunity from the environment suit.
+
 type Engine = Awaited<ReturnType<typeof createEngine>>;
 
 interface View {
@@ -104,6 +109,7 @@ interface Player {
     owned: Set<WeaponId>;
     dead: boolean;
     godmode: boolean;
+    suitTime: number;
 }
 
 async function fetchBytes(url: string, hint: string): Promise<ArrayBuffer> {
@@ -257,7 +263,7 @@ async function main(): Promise<void> {
 
     // Enemies + combat.
     const godmode = params.get("godmode") !== null && params.get("godmode") !== "0";
-    const player: Player = { health: START_HEALTH, armor: 0, shells: START_SHELLS, nails: START_NAILS, rockets: START_ROCKETS, weapon: "shotgun", owned: new Set<WeaponId>(["shotgun"]), dead: false, godmode };
+    const player: Player = { health: START_HEALTH, armor: 0, shells: START_SHELLS, nails: START_NAILS, rockets: START_ROCKETS, weapon: "shotgun", owned: new Set<WeaponId>(["shotgun"]), dead: false, godmode, suitTime: 0 };
     const monsters = new MonsterSystem(engine, scene, physics, lightTex, atlas.whiteUV, palette, {
         damage: (amount) => {
             hurtPlayer(player, amount, hud, sound);
@@ -629,6 +635,7 @@ function installPlayerControls(
 
     let smoothEyeZ = physics.eye[2];
     let itemSpin = 0;
+    let liquidDmgTimer = 0;
     onBeforeRender(scene, (deltaMs) => {
         const dt = Math.min(deltaMs / 1000, MAX_FRAME);
         let forward = 0;
@@ -644,6 +651,28 @@ function installPlayerControls(
         sound.setListener([physics.eye[0], physics.eye[1], physics.eye[2]], view.yaw);
         // Underwater view blend while the eyes are submerged.
         hud.underwater(physics.waterLevel >= 3 ? physics.waterType : 0);
+
+        // Slime/lava burn: jumping into a goo/lava pool hurts (and kills) the
+        // player on a Quake-style damage tick, unless the environment suit is
+        // active. Slime is fully blocked by the suit; lava is only slowed.
+        if (player.suitTime > 0) player.suitTime = Math.max(0, player.suitTime - dt);
+        if (!player.dead && physics.waterLevel >= 1 && (physics.waterType === CONTENTS_SLIME || physics.waterType === CONTENTS_LAVA)) {
+            liquidDmgTimer -= dt;
+            if (liquidDmgTimer <= 0) {
+                const suited = player.suitTime > 0;
+                if (physics.waterType === CONTENTS_LAVA) {
+                    liquidDmgTimer = suited ? 1 : 0.2;
+                    hurtPlayer(player, 10 * physics.waterLevel, hud, sound);
+                    hud.setStats(player, monsters.kills, monsters.total);
+                } else if (!suited) {
+                    liquidDmgTimer = 1;
+                    hurtPlayer(player, 4 * physics.waterLevel, hud, sound);
+                    hud.setStats(player, monsters.kills, monsters.total);
+                }
+            }
+        } else {
+            liquidDmgTimer = 0; // out of liquid — first contact next time hurts immediately
+        }
 
         const riding = ridingEnt();
         movers.update(dt);
@@ -740,6 +769,10 @@ function grantPickup(player: Player, cls: string, flags: number): { label: strin
     if (cls === "item_armorInv") {
         player.armor = Math.max(player.armor, 200);
         return { label: "You got red armor", sound: "items/armor1.wav" };
+    }
+    if (cls === "item_artifact_envirosuit") {
+        player.suitTime = ENVIROSUIT_TIME;
+        return { label: "You got the environment suit", sound: "items/suit.wav" };
     }
     const artifacts: Record<string, { label: string; sound: string }> = {
         item_artifact_super_damage: { label: "Quad Damage!", sound: "items/damage.wav" },
