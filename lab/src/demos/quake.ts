@@ -334,11 +334,13 @@ function installPlayerControls(
         const dt = Math.min(deltaMs / 1000, MAX_FRAME);
         let forward = 0;
         let side = 0;
-        if (keys.has("KeyW") || keys.has("ArrowUp")) forward += MOVE_SPEED;
-        if (keys.has("KeyS") || keys.has("ArrowDown")) forward -= MOVE_SPEED;
-        if (keys.has("KeyD") || keys.has("ArrowRight")) side += MOVE_SPEED;
-        if (keys.has("KeyA") || keys.has("ArrowLeft")) side -= MOVE_SPEED;
-        const input: MoveInput = { forward, side, jump: keys.has("Space") };
+        if (!player.dead) {
+            if (keys.has("KeyW") || keys.has("ArrowUp")) forward += MOVE_SPEED;
+            if (keys.has("KeyS") || keys.has("ArrowDown")) forward -= MOVE_SPEED;
+            if (keys.has("KeyD") || keys.has("ArrowRight")) side += MOVE_SPEED;
+            if (keys.has("KeyA") || keys.has("ArrowLeft")) side -= MOVE_SPEED;
+        }
+        const input: MoveInput = { forward, side, jump: !player.dead && keys.has("Space") };
         physics.update(dt, input, view.yaw);
 
         const riding = ridingEnt();
