@@ -11,6 +11,11 @@ const ATLAS_W = 2048;
 const ATLAS_H = 2048;
 const PAD = 1;
 
+// Brightness for non-special faces that ship with no lightmap data (lightOfs < 0).
+// Quake clears such surfaces to "no light" rather than fullbright; we use a dim
+// flat value so they read as ordinary dim walls instead of glaring fullbright.
+const UNLIT_AMBIENT = 48;
+
 export interface FaceLightmap {
     atlasX: number;
     atlasY: number;
@@ -35,6 +40,11 @@ export class LightmapAtlas {
         this.pixels[1] = 255;
         this.pixels[2] = 255;
         this.pixels[3] = 255;
+        // Reserve a dim luxel at (1,0) for non-special faces that lack a lightmap.
+        this.pixels[4] = UNLIT_AMBIENT;
+        this.pixels[5] = UNLIT_AMBIENT;
+        this.pixels[6] = UNLIT_AMBIENT;
+        this.pixels[7] = 255;
         this.shelfX = 2; // leave the first column for the white texel
         this.shelfH = 2;
     }
@@ -42,6 +52,11 @@ export class LightmapAtlas {
     /** Atlas UV (0..1) of the reserved white/fullbright luxel center. */
     get whiteUV(): [number, number] {
         return [0.5 / ATLAS_W, 0.5 / ATLAS_H];
+    }
+
+    /** Atlas UV (0..1) of the reserved dim "unlit" luxel center. */
+    get darkUV(): [number, number] {
+        return [1.5 / ATLAS_W, 0.5 / ATLAS_H];
     }
 
     /**

@@ -117,6 +117,10 @@ export function buildModelGeometry(bsp: BspData, atlas: LightmapAtlas, firstFace
 
         const batch = getBatch(ti.miptex);
         const base = batch.pos.length / 3;
+        // Faces with no lightmap fall back to a reserved luxel: special surfaces
+        // (sky/liquid) stay fullbright (white); ordinary unlit faces use the dim
+        // luxel so they don't glare at OVERBRIGHT.
+        const [fbU, fbV] = special ? [whiteU, whiteV] : atlas.darkUV;
         for (let k = 0; k < n; k++) {
             const [ex, ey, ez] = quakeToEngine(qx[k] + nudgeX, qy[k] + nudgeY, qz[k] + nudgeZ);
             batch.pos.push(ex, ey, ez);
@@ -126,7 +130,7 @@ export function buildModelGeometry(bsp: BspData, atlas: LightmapAtlas, firstFace
                 const luxT = (tArr[k] - bminT * 16) / 16;
                 batch.uv2.push((lm.atlasX + luxS + 0.5) / atlas.width, (lm.atlasY + luxT + 0.5) / atlas.height);
             } else {
-                batch.uv2.push(whiteU, whiteV);
+                batch.uv2.push(fbU, fbV);
             }
         }
         for (let k = 1; k < n - 1; k++) {
