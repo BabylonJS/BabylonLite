@@ -507,76 +507,113 @@ function itemColor(cls: string): [number, number, number] {
 }
 
 /**
- * Short-lived hit-impact markers: a small emissive cube spawned at each shot's
- * impact point (yellow spark on geometry, red puff on a monster) that shrinks and
- * vanishes within a fraction of a second. Pooled so firing never allocates.
+ * Quake-style hit particle bursts. Each shot emits a small cluster of tiny
+ * particles from the impact point that fly outward, fall under gravity and pop
+ * out within a fraction of a second — a grey dust puff on world geometry and a
+ * red blood spray on a monster, matching vanilla Quake's R_RunParticleEffect.
+ * Pooled so firing never allocates; particles move purely via transform updates
+ * (no material mutation, no render-bundle invalidation).
  */
 class ImpactFx {
-    private readonly blood: Mesh[] = [];
-    private readonly spark: Mesh[] = [];
-    private readonly bornBlood: number[] = [];
-    private readonly bornSpark: number[] = [];
-    private nextBlood = 0;
-    private nextSpark = 0;
-    private static readonly SIZE = 9;
-    private static readonly LIFE = 0.45;
+    private readonly blood: Particles;
+    private readonly spark: Particles;
+    private last = performance.now() / 1000;
 
-    constructor(engine: Engine, scene: ReturnType<typeof createSceneContext>, count = 12) {
-        // Two fixed-colour pools (red blood / yellow spark). The colour is baked at
-        // construction because Standard material colour changes made after the scene is
-        // registered are not re-uploaded to the GPU; only transforms update per frame.
-        this.build(engine, scene, this.blood, this.bornBlood, [0.85, 0.04, 0.04], count);
-        this.build(engine, scene, this.spark, this.bornSpark, [1, 0.85, 0.35], count);
+    constructor(engine: Engine, scene: ReturnType<typeof createSceneContext>) {
+        // Two fixed-colour pools. Colours are baked at construction because Standard
+        // material colour changes made after the scene is registered are not re-uploaded
+        // to the GPU; only per-frame transforms (position/scale) update.
+        this.blood = new Particles(engine, scene, [0.62, 0.03, 0.03], 48);
+        this.spark = new Particles(engine, scene, [0.78, 0.76, 0.7], 40);
     }
 
-    private build(engine: Engine, scene: ReturnType<typeof createSceneContext>, pool: Mesh[], born: number[], color: [number, number, number], count: number): void {
-        for (let i = 0; i < count; i++) {
-            const mesh = createBox(engine, ImpactFx.SIZE);
-            const mat = createStandardMaterial();
-            mat.emissiveColor = color;
-            mat.diffuseColor = [0, 0, 0];
-            mesh.material = mat;
-            // Kept permanently in the scene (and thus in the cached opaque render bundle);
-            // hidden by collapsing to zero scale rather than toggling `visible`, which
-            // would not invalidate the bundle and so would never reappear.
-            mesh.scaling.set(0, 0, 0);
-            addToScene(scene, mesh);
-            pool.push(mesh);
-            born.push(-1);
-        }
-    }
-
-    /** point is in Quake space; blood=true uses the red pool, else the spark pool. */
+    /** point is in Quake space; blood=true sprays red, else a grey dust puff. */
     spawn(point: [number, number, number], blood: boolean): void {
-        const pool = blood ? this.blood : this.spark;
-        const born = blood ? this.bornBlood : this.bornSpark;
-        const i = blood ? this.nextBlood : this.nextSpark;
-        if (blood) this.nextBlood = (this.nextBlood + 1) % pool.length;
-        else this.nextSpark = (this.nextSpark + 1) % pool.length;
         const [ex, ey, ez] = quakeToEngine(point[0], point[1], point[2]);
-        pool[i].position.set(ex, ey, ez);
-        pool[i].scaling.set(1, 1, 1);
-        born[i] = performance.now() / 1000;
+        (blood ? this.blood : this.spark).burst(ex, ey, ez, blood ? 12 : 9);
     }
 
     update(): void {
         const now = performance.now() / 1000;
-        this.tick(now, this.blood, this.bornBlood);
-        this.tick(now, this.spark, this.bornSpark);
+        const dt = Math.min(now - this.last, 0.05);
+        this.last = now;
+        this.blood.tick(dt);
+        this.spark.tick(dt);
+    }
+}
+
+/** A single fixed-colour pool of tiny particle boxes with velocity + gravity. */
+class Particles {
+    private readonly mesh: Mesh[] = [];
+    private readonly px: number[] = [];
+    private readonly py: number[] = [];
+    private readonly pz: number[] = [];
+    private readonly vx: number[] = [];
+    private readonly vy: number[] = [];
+    private readonly vz: number[] = [];
+    private readonly life: number[] = [];
+    private next = 0;
+    private static readonly SIZE = 2.6;
+    private static readonly MAX_LIFE = 0.4;
+    private static readonly GRAVITY = 520; // engine units / s² (Y-up)
+
+    constructor(engine: Engine, scene: ReturnType<typeof createSceneContext>, color: [number, number, number], count: number) {
+        for (let i = 0; i < count; i++) {
+            const m = createBox(engine, Particles.SIZE);
+            const mat = createStandardMaterial();
+            mat.emissiveColor = color;
+            mat.diffuseColor = [0, 0, 0];
+            m.material = mat;
+            // Kept permanently in the scene (and thus in the cached opaque render bundle);
+            // hidden by collapsing to zero scale rather than toggling `visible`, which
+            // would not invalidate the bundle and so would never reappear.
+            m.scaling.set(0, 0, 0);
+            addToScene(scene, m);
+            this.mesh.push(m);
+            this.px.push(0); this.py.push(0); this.pz.push(0);
+            this.vx.push(0); this.vy.push(0); this.vz.push(0);
+            this.life.push(-1);
+        }
     }
 
-    private tick(now: number, pool: Mesh[], born: number[]): void {
-        for (let i = 0; i < pool.length; i++) {
-            if (born[i] < 0) continue;
-            const t = (now - born[i]) / ImpactFx.LIFE;
-            if (t >= 1) {
-                pool[i].scaling.set(0, 0, 0);
-                born[i] = -1;
-            } else {
-                // Hold full size briefly, then shrink so the hit is clearly seen.
-                const k = t < 0.45 ? 1 : 1 - (t - 0.45) / 0.55;
-                pool[i].scaling.set(k, k, k);
+    /** Emit `n` particles from (x,y,z) scattering in a hemisphere-ish puff. */
+    burst(x: number, y: number, z: number, n: number): void {
+        for (let k = 0; k < n; k++) {
+            const i = this.next;
+            this.next = (this.next + 1) % this.mesh.length;
+            // Random direction on a sphere, biased slightly upward.
+            const theta = Math.random() * Math.PI * 2;
+            const cosP = 2 * Math.random() - 1;
+            const sinP = Math.sqrt(1 - cosP * cosP);
+            const spd = 35 + Math.random() * 75;
+            this.px[i] = x; this.py[i] = y; this.pz[i] = z;
+            this.vx[i] = Math.cos(theta) * sinP * spd;
+            this.vy[i] = cosP * spd * 0.6 + 45;
+            this.vz[i] = Math.sin(theta) * sinP * spd;
+            this.life[i] = Particles.MAX_LIFE * (0.7 + Math.random() * 0.6);
+            this.mesh[i].position.set(x, y, z);
+            this.mesh[i].scaling.set(1, 1, 1);
+        }
+    }
+
+    tick(dt: number): void {
+        for (let i = 0; i < this.mesh.length; i++) {
+            if (this.life[i] < 0) continue;
+            this.life[i] -= dt;
+            if (this.life[i] <= 0) {
+                this.mesh[i].scaling.set(0, 0, 0);
+                this.life[i] = -1;
+                continue;
             }
+            this.vy[i] -= Particles.GRAVITY * dt;
+            this.px[i] += this.vx[i] * dt;
+            this.py[i] += this.vy[i] * dt;
+            this.pz[i] += this.vz[i] * dt;
+            this.mesh[i].position.set(this.px[i], this.py[i], this.pz[i]);
+            // Shrink to a point near end of life so it fades out rather than popping.
+            const f = this.life[i] / Particles.MAX_LIFE;
+            const k = f < 0.5 ? f * 2 : 1;
+            this.mesh[i].scaling.set(k, k, k);
         }
     }
 }
