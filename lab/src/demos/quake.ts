@@ -26,8 +26,10 @@ import {
     onBeforeRender,
     registerScene,
     setMeshVisible,
+    setShaderUniform,
     startEngine,
     type Mesh,
+    type ShaderMaterial,
 } from "babylon-lite";
 
 import { parseBsp } from "./quake/bsp/parse-bsp.js";
@@ -36,6 +38,7 @@ import { parseEntities, parseVec3, filterEntitiesBySkill } from "./quake/entitie
 import { buildLevelGeometry, buildModelGeometry, quakeToEngine, type GeometryBatch } from "./quake/geometry/build-geometry.js";
 import { QuakeTextureCache } from "./quake/render/texture-cache.js";
 import { createQuakeMaterial } from "./quake/render/quake-material.js";
+import { createSkyMaterial, createSkyTexture } from "./quake/render/sky-material.js";
 import { QuakePhysics, type MoveInput } from "./quake/physics/collision.js";
 import { MoverSystem, type WorldEnt } from "./quake/entities/mover-system.js";
 import { MonsterSystem } from "./quake/combat/monsters.js";
@@ -179,13 +182,19 @@ async function main(): Promise<void> {
         magFilter: "linear",
     });
 
+    // Sky surfaces (texture name "sky*") get the animated Quake dome shader instead
+    // of a flat-mapped texture; build its texture once and collect the materials so
+    // their scroll time can be advanced each frame.
+    const skyMipIndex = bsp.mipTextures.findIndex((m) => m && m.name.toLowerCase().startsWith("sky") && m.indices);
+    const skyTex = skyMipIndex >= 0 ? createSkyTexture(engine, bsp.mipTextures[skyMipIndex], palette) : null;
+    const skyMaterials: ShaderMaterial[] = [];
+
     let matId = 0;
     let drawn = 0;
     const makeMeshes = (batches: Map<number, GeometryBatch>, tag: string): Mesh[] => {
         const meshes: Mesh[] = [];
         for (const [miptex, batch] of batches) {
             if (batch.idx.length === 0) continue;
-            const diffuse = textures.get(miptex);
             const mesh = createMeshFromData(
                 engine,
                 `quake_${tag}_${matId}`,
@@ -195,7 +204,14 @@ async function main(): Promise<void> {
                 new Float32Array(batch.uv),
                 new Float32Array(batch.uv2)
             );
-            mesh.material = createQuakeMaterial(`quakeMat_${matId}`, diffuse.texture, lightTex);
+            const mtName = bsp.mipTextures[miptex]?.name?.toLowerCase() ?? "";
+            if (skyTex && mtName.startsWith("sky")) {
+                const skyMat = createSkyMaterial(`quakeSky_${matId}`, skyTex);
+                skyMaterials.push(skyMat);
+                mesh.material = skyMat;
+            } else {
+                mesh.material = createQuakeMaterial(`quakeMat_${matId}`, textures.get(miptex).texture, lightTex);
+            }
             addToScene(scene, mesh);
             meshes.push(mesh);
             drawn++;
@@ -357,6 +373,15 @@ async function main(): Promise<void> {
     scene.camera = cam;
 
     installPlayerControls(scene, canvas, physics, cam, view, movers, moverMeshes, items, monsters, viewmodel, grenades, player, hud, impacts, sound);
+
+    // Advance the sky scroll clock each frame.
+    if (skyMaterials.length > 0) {
+        let skyTime = 0;
+        onBeforeRender(scene, (deltaMs) => {
+            skyTime += deltaMs / 1000;
+            for (const m of skyMaterials) setShaderUniform(m, "sky", [skyTime, 0, 0, 0]);
+        });
+    }
 
     await registerScene(engine, scene);
     await startEngine(engine);

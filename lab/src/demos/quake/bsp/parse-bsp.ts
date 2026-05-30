@@ -60,10 +60,12 @@ export interface BspModel {
     numFaces: number;
 }
 
-/** Quake plane: normal·p = dist. */
+/** Quake plane: normal·p = planeDist. (Field intentionally NOT named `dist`: the
+ *  demo bundler's WGSL identifier-mangle pass rewrites the token `dist`→`dst`,
+ *  which would corrupt every `.dist` property access in the bundled JS.) */
 export interface BspPlane {
     normal: [number, number, number];
-    dist: number;
+    planeDist: number;
     type: number;
 }
 
@@ -195,7 +197,7 @@ function parsePlanes(buf: ArrayBuffer, lump: Lump): BspPlane[] {
         const o = i * SIZE;
         out.push({
             normal: [dv.getFloat32(o, true), dv.getFloat32(o + 4, true), dv.getFloat32(o + 8, true)],
-            dist: dv.getFloat32(o + 12, true),
+            planeDist: dv.getFloat32(o + 12, true),
             type: dv.getInt32(o + 16, true),
         });
     }

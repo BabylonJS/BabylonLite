@@ -78,7 +78,7 @@ export class QuakePhysics {
     private hullContentsAt(num: number, p: V3): number {
         while (num >= 0) {
             const plane = this.planes[this.clip.planeNum[num]];
-            const d = dot(plane.normal, p) - plane.dist;
+            const d = dot(plane.normal, p) - plane.planeDist;
             num = d < 0 ? this.clip.child1[num] : this.clip.child0[num];
         }
         return num;
@@ -125,8 +125,8 @@ export class QuakePhysics {
             return true; // empty
         }
         const plane = this.planes[this.clip.planeNum[num]];
-        const t1 = dot(plane.normal, p1) - plane.dist;
-        const t2 = dot(plane.normal, p2) - plane.dist;
+        const t1 = dot(plane.normal, p1) - plane.planeDist;
+        const t2 = dot(plane.normal, p2) - plane.planeDist;
         const child0 = this.clip.child0[num];
         const child1 = this.clip.child1[num];
         if (t1 >= 0 && t2 >= 0) return this.recurse(child0, p1f, p2f, p1, p2, tr);
