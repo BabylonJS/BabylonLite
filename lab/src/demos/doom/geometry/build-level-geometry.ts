@@ -154,7 +154,8 @@ function buildWalls(map: DoomMap, textures: DoomTextureCache, batches: LevelBatc
                 Math.min(frontSec.ceilHeight, backSec.ceilHeight),
                 midSide,
                 (ld.flags & ML_DONTPEGBOTTOM) !== 0,
-                light01(lightSec.light + contrast)
+                light01(lightSec.light + contrast),
+                midSide === backSide
             );
         }
 
@@ -172,7 +173,8 @@ function buildWalls(map: DoomMap, textures: DoomTextureCache, batches: LevelBatc
                     frontSec.floorHeight,
                     backSide,
                     (texH) => (ld.flags & ML_DONTPEGBOTTOM ? backSec.ceilHeight : frontSec.floorHeight + texH) + backSide.yOffset,
-                    light01(backSec.light + contrast)
+                    light01(backSec.light + contrast),
+                    true
                 );
             }
             if (!skyBoth && frontSec.ceilHeight < backSec.ceilHeight) {
@@ -187,7 +189,8 @@ function buildWalls(map: DoomMap, textures: DoomTextureCache, batches: LevelBatc
                     backSec.ceilHeight,
                     backSide,
                     (texH) => (ld.flags & ML_DONTPEGTOP ? backSec.ceilHeight : frontSec.ceilHeight + texH) + backSide.yOffset,
-                    light01(backSec.light + contrast)
+                    light01(backSec.light + contrast),
+                    true
                 );
             }
         }
@@ -205,7 +208,8 @@ function emitWallSegment(
     yTop: number,
     side: Sidedef,
     textureMidFn: (texH: number) => number,
-    lr: number
+    lr: number,
+    backSide = false
 ): void {
     if (yTop <= yBottom) return;
     const tex = textures.getWall(texName);
@@ -213,11 +217,12 @@ function emitWallSegment(
     const { width: texW, height: texH } = tex;
     const textureMid = textureMidFn(texH);
 
-    // DOOM maps wall columns left-to-right along v1->v2 on the player's side;
-    // our view space flips that handedness, so run U from v1 back toward v2
-    // (anchored at the sidedef xOffset on v1) to keep textures un-mirrored.
+    // DOOM maps wall columns left-to-right along v1->v2 as seen from the side the
+    // texture faces. Front sides are viewed from the front sector, back sides from
+    // the back sector — i.e. the opposite direction — so their U must run the other
+    // way to avoid a horizontal mirror. Both anchor xOffset at v1.
     const u1 = side.xOffset / texW;
-    const u2 = (side.xOffset - len) / texW;
+    const u2 = (side.xOffset + (backSide ? len : -len)) / texW;
     const vTop = (textureMid - yTop) / texH;
     const vBottom = (textureMid - yBottom) / texH;
 
@@ -251,7 +256,8 @@ function emitMidtexture(
     openTop: number,
     side: Sidedef,
     pegBottom: boolean,
-    lr: number
+    lr: number,
+    backSide = false
 ): void {
     if (openTop <= openBottom) return;
     const tex = textures.getWall(texName);
@@ -276,7 +282,7 @@ function emitMidtexture(
     if (drawTop <= drawBottom) return;
 
     const u1 = side.xOffset / texW;
-    const u2 = (side.xOffset - len) / texW;
+    const u2 = (side.xOffset + (backSide ? len : -len)) / texW;
     const vTop = (unclippedTop - drawTop) / texH;
     const vBottom = (unclippedTop - drawBottom) / texH;
 
