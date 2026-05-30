@@ -76,19 +76,21 @@ function aChase(world: DoomWorld, m: Mobj): void {
         }
     }
 
-    // Missile attack.
-    if (sets?.missile !== undefined && m.moveCount === 0 && checkSight(world, m, t)) {
-        if (Math.random() < 0.25) {
-            aFaceTarget(m);
-            setMobjState(world, m, sets.missile);
-            m.moveCount = 8 + Math.floor(Math.random() * 8);
-            return;
-        }
+    // Missile attack. The gate only opens when moveCount has counted down to 0
+    // (see the pre-decrement movement step below, mirroring Doom's A_Chase), so
+    // moveCount must NOT be reset here before this check or it would never fire.
+    if (sets?.missile !== undefined && m.moveCount === 0 && checkMissileRange(world, m, t, sets.melee !== undefined)) {
+        aFaceTarget(m);
+        setMobjState(world, m, sets.missile);
+        // Brief cooldown so it can't attack twice in a row (Doom's JUSTATTACKED).
+        m.moveCount = 8 + Math.floor(Math.random() * 8);
+        return;
     }
 
-    // Movement: keep walking in moveDir; pick a new one when needed.
-    if (m.moveCount > 0) m.moveCount--;
-    if (m.moveDir === Dir.NONE || m.moveCount <= 0 || !tryWalk(world, m, m.moveDir)) {
+    // Movement: keep walking in moveDir; pick a new one when needed. The
+    // pre-decrement compare (< 0, matching Doom) lets moveCount rest at 0 for one
+    // full tic so the missile gate above can see it before newChaseDir resets it.
+    if (--m.moveCount < 0 || m.moveDir === Dir.NONE || !tryWalk(world, m, m.moveDir)) {
         newChaseDir(world, m, t);
     }
     if (m.moveDir !== Dir.NONE) m.angle = DIR_ANGLE[m.moveDir]!;
@@ -135,6 +137,21 @@ function diagonal(h: Dir, v: Dir): Dir {
 }
 
 // ── Attacks ─────────────────────────────────────────────────────────────
+
+/**
+ * Doom's P_CheckMissileRange: a sight-gated, distance-weighted chance to fire.
+ * The closer the target, the higher the chance — at point-blank it fires almost
+ * every opportunity; far away it rarely does. Monsters with no melee attack
+ * (e.g. the zombieman) bias further toward shooting.
+ */
+function checkMissileRange(world: DoomWorld, m: Mobj, t: Mobj, hasMelee: boolean): boolean {
+    if (!checkSight(world, m, t)) return false;
+    if (m.reactionTime > 0) return false;
+    let dist = distTo(m, t) - 64;
+    if (!hasMelee) dist -= 128;
+    if (dist > 200) dist = 200;
+    return Math.random() * 256 >= dist;
+}
 
 function aPosAttack(world: DoomWorld, m: Mobj): void {
     if (!m.target) return;

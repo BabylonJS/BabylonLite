@@ -20,7 +20,6 @@ import { SpriteStore } from "./render/sprites.js";
 import { SpriteRenderer } from "./render/sprite-render.js";
 import { WeaponView } from "./render/weapon-view.js";
 import { DoomWorld } from "./mobj/world.js";
-import type { Mobj } from "./mobj/mobj.js";
 import { MF } from "./mobj/info.js";
 import { Player, Weapon } from "./player/player.js";
 import { DoomHud } from "./hud/hud.js";
@@ -36,17 +35,12 @@ const TIC_SECONDS = 1 / 35; // DOOM simulation tic rate
 // of sliding, and lifts teleport instead of gliding.
 const MAX_FRAME_SECONDS = 0.05;
 
-// Bump this whenever the demo bundle is rebuilt so we can confirm in-browser which
-// build is actually loaded (printed to console + flashed on screen at level start).
-const DOOM_BUILD_TAG = "2026-05-30c debug-overlay";
-
 export interface DoomLevel {
     map: DoomMap;
     dispose(): void;
 }
 
 export function buildDoomLevel(engine: EngineContext, scene: SceneContext, wadBytes: ArrayBuffer, mapName = "E1M1"): DoomLevel {
-    console.log("[doom] build " + DOOM_BUILD_TAG);
     const wad = parseWad(wadBytes);
     const map = parseMap(wad, mapName);
 
@@ -62,7 +56,6 @@ export function buildDoomLevel(engine: EngineContext, scene: SceneContext, wadBy
 
     const playerSectorRef = { value: -1 };
     const specials = new SpecialsManager(map, {
-        onExit: () => console.log("[doom] level exit triggered"),
         playerSector: () => playerSectorRef.value,
     });
 
@@ -122,7 +115,6 @@ export function buildDoomLevel(engine: EngineContext, scene: SceneContext, wadBy
     if (sky) addToScene(scene, sky);
 
     installCamera(scene, map, specials, dynamicGeo, playerSectorRef, sky, world, spriteRenderer, player, hud, sound, weaponView);
-    hud.flashMessage("BUILD " + DOOM_BUILD_TAG);
 
     return {
         map,
@@ -153,14 +145,6 @@ function installCamera(scene: SceneContext, map: DoomMap, specials: SpecialsMana
     let viewHeight = VIEW_HEIGHT;
     let wasDead = false;
     const collLines = buildCollisionLines(map);
-
-    // Lightweight diagnostic overlay (top-left): player position + the nearest
-    // live monster's distance, height delta, AI state and target. Lets us see why
-    // a monster in a pit isn't landing melee hits without guessing in headless sims.
-    const dbg = document.createElement("div");
-    dbg.style.cssText =
-        "position:fixed;top:4px;left:4px;z-index:9999;font:11px monospace;color:#0f0;background:rgba(0,0,0,.6);padding:3px 5px;white-space:pre;pointer-events:none;";
-    document.body.appendChild(dbg);
 
     // Doom death: the view sinks toward the floor; press USE to respawn at start.
     const DEATH_VIEW_HEIGHT = 6;
@@ -321,34 +305,5 @@ function installCamera(scene: SceneContext, map: DoomMap, specials: SpecialsMana
         spriteRenderer.rebuild(world.collectSprites(eye.x, eye.z));
         weaponView.update(player, dt, fromX !== eye.x || fromZ !== eye.z);
         hud.update(dt);
-
-        // Diagnostic overlay: nearest live COUNTKILL monster relative to the player.
-        let near: Mobj | null = null;
-        let nd2 = Infinity;
-        for (const m of world.mobjs) {
-            if (m.removed || m.health <= 0) continue;
-            if ((m.flags & MF.COUNTKILL) === 0) continue;
-            const ddx = m.x - world.player.x;
-            const ddy = m.y - world.player.y;
-            const d2 = ddx * ddx + ddy * ddy;
-            if (d2 < nd2) {
-                nd2 = d2;
-                near = m;
-            }
-        }
-        const px = Math.round(world.player.x);
-        const py = Math.round(world.player.y);
-        const pz = Math.round(world.player.z);
-        let line = `pos ${px},${py} z${pz}  hp${Math.round(player.health)}`;
-        if (near) {
-            const dist = Math.round(Math.sqrt(nd2));
-            const dz = Math.round(near.z - world.player.z);
-            const gate = Math.round(64 + world.player.radius);
-            const tgt = near.target === world.player ? "P" : near.target ? "?" : "-";
-            line += `\n${near.info.id} d${dist} (gate${gate}) dz${dz} st${near.stateId} tgt${tgt}`;
-        } else {
-            line += "\nno live monster";
-        }
-        dbg.textContent = line;
     });
 }
