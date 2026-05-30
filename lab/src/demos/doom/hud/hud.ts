@@ -11,6 +11,26 @@ const RED = "#d21d12";
 const STEEL = "#4f4f4f";
 const STEEL_DARK = "#2c2c2c";
 
+/** One ARMS panel entry: the on-screen slot number and the weapon it selects. */
+interface ArmsSlot {
+    slot: number;
+    weapon: Weapon;
+}
+
+/**
+ * Canonical DOOM ARMS slots (the STBAR shows weapon slots 2..7). The HUD only
+ * renders the subset that is actually obtainable on the loaded level so it never
+ * advertises a slot the player can never fill (e.g. the BFG is absent from E1M1).
+ */
+export const ARMS_SLOTS: readonly ArmsSlot[] = [
+    { slot: 2, weapon: Weapon.PISTOL },
+    { slot: 3, weapon: Weapon.SHOTGUN },
+    { slot: 4, weapon: Weapon.CHAINGUN },
+    { slot: 5, weapon: Weapon.ROCKET },
+    { slot: 6, weapon: Weapon.PLASMA },
+    { slot: 7, weapon: Weapon.BFG },
+];
+
 export class DoomHud {
     private readonly root: HTMLDivElement;
     private readonly crosshair: HTMLDivElement;
@@ -21,13 +41,13 @@ export class DoomHud {
     private readonly ammoBig: HTMLSpanElement;
     private readonly healthEl: HTMLSpanElement;
     private readonly armorEl: HTMLSpanElement;
-    private readonly armsCells: HTMLSpanElement[] = [];
+    private readonly armsCells: { el: HTMLSpanElement; weapon: Weapon }[] = [];
     private readonly ammoNow: HTMLSpanElement[] = [];
     private readonly ammoMax: HTMLSpanElement[] = [];
     private readonly keyDots: HTMLDivElement[] = [];
     private readonly faceEl: HTMLDivElement;
 
-    constructor(private readonly player: Player) {
+    constructor(private readonly player: Player, achievableWeapons: ReadonlySet<Weapon>) {
         // Red damage / pickup full-screen tint.
         const pain = document.createElement("div");
         pain.style.cssText = "position:fixed;inset:0;pointer-events:none;background:#ff0000;opacity:0;transition:opacity .1s linear;z-index:48";
@@ -85,7 +105,7 @@ export class DoomHud {
 
         root.appendChild(DoomHud.panel("AMMO", this.ammoBig, ""));
         root.appendChild(DoomHud.panel("HEALTH", this.healthEl, "%"));
-        root.appendChild(this.makeArms());
+        root.appendChild(this.makeArms(achievableWeapons));
         root.appendChild(this.makeFacePanel());
         root.appendChild(DoomHud.panel("ARMOR", this.armorEl, "%"));
         root.appendChild(this.makeAmmoList());
@@ -130,17 +150,18 @@ export class DoomHud {
         return wrap;
     }
 
-    /** ARMS panel: weapon slots 2-7, lit when owned. */
-    private makeArms(): HTMLDivElement {
+    /** ARMS panel: the obtainable weapon slots (from ARMS_SLOTS), lit when owned. */
+    private makeArms(achievableWeapons: ReadonlySet<Weapon>): HTMLDivElement {
         const wrap = document.createElement("div");
         wrap.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:4px 8px;" + DoomHud.bevel();
         const grid = document.createElement("div");
         grid.style.cssText = "display:grid;grid-template-columns:repeat(3,18px);grid-auto-rows:16px;gap:1px 6px";
-        for (let slot = 2; slot <= 7; slot++) {
+        for (const { slot, weapon } of ARMS_SLOTS) {
+            if (!achievableWeapons.has(weapon)) continue;
             const cell = document.createElement("span");
             cell.textContent = String(slot);
             cell.style.cssText = "font-weight:bold;font-size:15px;text-align:center;line-height:16px";
-            this.armsCells.push(cell);
+            this.armsCells.push({ el: cell, weapon });
             grid.appendChild(cell);
         }
         const l = document.createElement("span");
@@ -223,12 +244,11 @@ export class DoomHud {
         this.healthEl.textContent = String(p.health);
         this.armorEl.textContent = String(p.armor);
 
-        // ARMS: slot N (2..7) -> weapon index N-1.
-        const armsWeapons = [Weapon.PISTOL, Weapon.SHOTGUN, Weapon.CHAINGUN, Weapon.ROCKET, Weapon.PLASMA, Weapon.BFG];
-        for (let i = 0; i < this.armsCells.length; i++) {
-            const owned = p.weaponsOwned.has(armsWeapons[i]);
-            this.armsCells[i].style.color = owned ? RED : "#555";
-            this.armsCells[i].style.textShadow = owned ? "1px 1px 0 #000" : "none";
+        // ARMS: light each obtainable slot when its weapon is owned.
+        for (const { el, weapon } of this.armsCells) {
+            const owned = p.weaponsOwned.has(weapon);
+            el.style.color = owned ? RED : "#555";
+            el.style.textShadow = owned ? "1px 1px 0 #000" : "none";
         }
 
         for (let i = 0; i < 4; i++) {
