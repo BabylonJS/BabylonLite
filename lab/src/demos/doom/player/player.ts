@@ -93,7 +93,31 @@ export class Player {
             if (this.armor === 0) this.armorFactor = 0;
         }
         this.health = Math.max(0, this.health - dmg);
-        this.painFlash = Math.min(1, this.painFlash + dmg / 100 + 0.1);
+        // A kill triggers Doom's heavy red death flash; otherwise scale with hurt.
+        this.painFlash = this.health <= 0 ? 1 : Math.min(1, this.painFlash + dmg / 100 + 0.1);
+    }
+
+    /** True once the player has been killed. */
+    get dead(): boolean {
+        return this.health <= 0;
+    }
+
+    /** Reset to the pistol-start loadout for a fresh life after death. */
+    respawn(): void {
+        this.health = 100;
+        this.armor = 0;
+        this.armorFactor = 0;
+        this.ammo = [50, 0, 0, 0];
+        this.maxAmmo = [...MAX_AMMO];
+        this.weaponsOwned = new Set<Weapon>([Weapon.FIST, Weapon.PISTOL]);
+        this.weapon = Weapon.PISTOL;
+        this.pendingWeapon = null;
+        this.keys.clear();
+        this.refireDelay = 0;
+        this.painFlash = 0;
+        this.bonusFlash = 0;
+        this.message = "";
+        this.messageTics = 0;
     }
 
     selectWeapon(w: Weapon): void {

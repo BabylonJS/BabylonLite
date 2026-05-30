@@ -139,7 +139,22 @@ function installCamera(scene: SceneContext, map: DoomMap, specials: SpecialsMana
     let ticAccum = 0;
     let usePressed = false;
     let firing = false;
+    let viewHeight = VIEW_HEIGHT;
+    let wasDead = false;
     const collLines = buildCollisionLines(map);
+
+    // Doom death: the view sinks toward the floor; press USE to respawn at start.
+    const DEATH_VIEW_HEIGHT = 6;
+    const DEATH_SINK_SPEED = 36; // units/sec, ~1s from standing to corpse height
+    const respawn = (): void => {
+        player.respawn();
+        eye.x = sx;
+        eye.z = sz;
+        yaw = yaw0;
+        viewHeight = VIEW_HEIGHT;
+        eye.y = floorHeightAt(map, sx, sz) + VIEW_HEIGHT;
+        playerSectorRef.value = sectorIndexAt(map, sx, sz);
+    };
     const keys = new Set<string>();
     const weaponKeys: Record<string, Weapon> = {
         Digit1: Weapon.FIST,
@@ -178,6 +193,13 @@ function installCamera(scene: SceneContext, map: DoomMap, specials: SpecialsMana
 
     onBeforeRender(scene, (deltaMs) => {
         const dt = Math.min(deltaMs / 1000, MAX_FRAME_SECONDS);
+        const dead = player.dead;
+
+        // Play the death sound once on the kill, and reset the flag on respawn.
+        if (dead && !wasDead) sound.play("PLDETH");
+        wasDead = dead;
+
+        // The view can still be turned while dead (Doom lets you look around).
         const strafeMod = keys.has("AltLeft") || keys.has("AltRight");
         if (!strafeMod) {
             if (keys.has("ArrowLeft")) yaw += TURN_SPEED * dt;
@@ -189,23 +211,26 @@ function installCamera(scene: SceneContext, map: DoomMap, specials: SpecialsMana
         const speed = (keys.has("ShiftLeft") ? 2 : 1) * MOVE_SPEED * dt;
         let mx = 0;
         let mz = 0;
-        if (keys.has("ArrowUp")) {
-            mx += fx;
-            mz += fz;
-        }
-        if (keys.has("ArrowDown")) {
-            mx -= fx;
-            mz -= fz;
-        }
-        const strafeLeft = keys.has("Comma") || (strafeMod && keys.has("ArrowLeft"));
-        const strafeRight = keys.has("Period") || (strafeMod && keys.has("ArrowRight"));
-        if (strafeLeft) {
-            mx -= fz;
-            mz += fx;
-        }
-        if (strafeRight) {
-            mx += fz;
-            mz -= fx;
+        // No movement, firing, or door use once dead; SPACE respawns instead.
+        if (!dead) {
+            if (keys.has("ArrowUp")) {
+                mx += fx;
+                mz += fz;
+            }
+            if (keys.has("ArrowDown")) {
+                mx -= fx;
+                mz -= fz;
+            }
+            const strafeLeft = keys.has("Comma") || (strafeMod && keys.has("ArrowLeft"));
+            const strafeRight = keys.has("Period") || (strafeMod && keys.has("ArrowRight"));
+            if (strafeLeft) {
+                mx -= fz;
+                mz += fx;
+            }
+            if (strafeRight) {
+                mx += fz;
+                mz -= fx;
+            }
         }
         const fromX = eye.x;
         const fromZ = eye.z;
@@ -217,7 +242,11 @@ function installCamera(scene: SceneContext, map: DoomMap, specials: SpecialsMana
 
         // World interactivity: USE (Space), walk-over triggers, and timed movers.
         if (usePressed) {
-            specials.tryUse(eye.x, eye.z, yaw);
+            if (dead) {
+                respawn();
+            } else {
+                specials.tryUse(eye.x, eye.z, yaw);
+            }
             usePressed = false;
         }
         if (fromX !== eye.x || fromZ !== eye.z) {
@@ -231,7 +260,7 @@ function installCamera(scene: SceneContext, map: DoomMap, specials: SpecialsMana
             world.player.y = eye.z;
             world.player.z = floorHeightAt(map, eye.x, eye.z);
             world.player.angle = yaw;
-            if (firing) player.fire();
+            if (firing && !dead) player.fire();
             player.tic();
             world.tic();
             ticAccum -= TIC_SECONDS;
@@ -240,8 +269,14 @@ function installCamera(scene: SceneContext, map: DoomMap, specials: SpecialsMana
             dynamicGeo.rebuild();
         }
 
-        // Recompute eye height after movers have run so the view tracks lifts/floors.
-        eye.y = floorHeightAt(map, eye.x, eye.z) + VIEW_HEIGHT;
+        // View height: stand at eye level when alive; when dead, sink the camera
+        // toward the corpse height like Doom's P_DeathThink.
+        if (dead) {
+            viewHeight = Math.max(DEATH_VIEW_HEIGHT, viewHeight - DEATH_SINK_SPEED * dt);
+        } else {
+            viewHeight = VIEW_HEIGHT;
+        }
+        eye.y = floorHeightAt(map, eye.x, eye.z) + viewHeight;
 
         // Keep the sky dome centered on the camera so it has no parallax (infinite sky).
         if (sky) {

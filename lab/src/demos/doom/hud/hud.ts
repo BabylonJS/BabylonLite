@@ -16,6 +16,7 @@ export class DoomHud {
     private readonly crosshair: HTMLDivElement;
     private readonly messageEl: HTMLDivElement;
     private readonly painEl: HTMLDivElement;
+    private readonly deathEl: HTMLDivElement;
 
     private readonly ammoBig: HTMLSpanElement;
     private readonly healthEl: HTMLSpanElement;
@@ -48,6 +49,14 @@ export class DoomHud {
             `<div style="position:absolute;left:10px;top:10px;width:2px;height:2px;background:#34ff34"></div>`;
         this.crosshair = cross;
 
+        // Death prompt: hidden until the player is killed.
+        const death = document.createElement("div");
+        death.style.cssText = "position:fixed;left:50%;top:36%;transform:translateX(-50%);text-align:center;pointer-events:none;z-index:52;opacity:0;transition:opacity .4s linear;font-family:'Courier New',monospace";
+        death.innerHTML =
+            `<div style="color:#d21d12;font-weight:bold;font-size:52px;letter-spacing:4px;text-shadow:3px 3px 0 #000,0 0 16px rgba(210,29,18,.8)">YOU DIED</div>` +
+            `<div style="margin-top:14px;color:#e8e8b0;font-weight:bold;font-size:18px;text-shadow:2px 2px 0 #000">Press SPACE to restart</div>`;
+        this.deathEl = death;
+
         // Status bar container, centered like the original 320-wide STBAR.
         // The status bar is centered with left:50% + translateX(-50%) so it stays
         // centered regardless of the host page's layout / horizontal overflow
@@ -63,8 +72,7 @@ export class DoomHud {
             "align-items:stretch",
             "justify-content:center",
             "gap:6px",
-            "width:100%",
-            "max-width:860px",
+            "width:100vw",
             "padding:6px 10px",
             `background:linear-gradient(180deg,${STEEL} 0%,${STEEL_DARK} 100%)`,
             "border-top:2px solid #6b6b6b",
@@ -88,6 +96,7 @@ export class DoomHud {
 
         document.body.appendChild(pain);
         document.body.appendChild(cross);
+        document.body.appendChild(death);
         document.body.appendChild(message);
         document.body.appendChild(root);
         this.root = root;
@@ -245,11 +254,16 @@ export class DoomHud {
 
         this.messageEl.style.opacity = p.messageTics > 0 ? "1" : "0";
         this.painEl.style.opacity = (p.painFlash * 0.4).toFixed(2);
+
+        // Death overlay + hide the crosshair while dead.
+        this.deathEl.style.opacity = p.dead ? "1" : "0";
+        this.crosshair.style.opacity = p.dead ? "0" : ".85";
     }
 
     dispose(): void {
         this.root.remove();
         this.crosshair.remove();
+        this.deathEl.remove();
         this.messageEl.remove();
         this.painEl.remove();
     }
