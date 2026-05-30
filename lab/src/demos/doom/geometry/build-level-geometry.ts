@@ -213,8 +213,11 @@ function emitWallSegment(
     const { width: texW, height: texH } = tex;
     const textureMid = textureMidFn(texH);
 
+    // DOOM maps wall columns left-to-right along v1->v2 on the player's side;
+    // our view space flips that handedness, so run U from v1 back toward v2
+    // (anchored at the sidedef xOffset on v1) to keep textures un-mirrored.
     const u1 = side.xOffset / texW;
-    const u2 = (side.xOffset + len) / texW;
+    const u2 = (side.xOffset - len) / texW;
     const vTop = (textureMid - yTop) / texH;
     const vBottom = (textureMid - yBottom) / texH;
 
@@ -273,7 +276,7 @@ function emitMidtexture(
     if (drawTop <= drawBottom) return;
 
     const u1 = side.xOffset / texW;
-    const u2 = (side.xOffset + len) / texW;
+    const u2 = (side.xOffset - len) / texW;
     const vTop = (unclippedTop - drawTop) / texH;
     const vBottom = (unclippedTop - drawBottom) / texH;
 
