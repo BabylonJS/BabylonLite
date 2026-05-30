@@ -53,6 +53,9 @@ const SHOTGUN_DAMAGE = 24; // 4 pellets worth in one hitscan
 const START_AMMO = 25;
 const START_HEALTH = 100;
 
+const STEPSIZE = 18; // Quake STEPSIZE — must match physics; used for view-Z stair smoothing.
+const STAIR_SMOOTH_SPEED = 180; // units/sec the smoothed eye catches up after a step-up.
+
 type Engine = Awaited<ReturnType<typeof createEngine>>;
 
 interface View {
@@ -247,6 +250,8 @@ async function main(): Promise<void> {
     const viewmodel = new Viewmodel(engine, scene, lightTex, palette, atlas.whiteUV);
     await viewmodel.load();
 
+    const impacts = new ImpactFx(engine, scene);
+
     // Camera spawned at the player eye.
     const [cx, cy, cz] = quakeToEngine(physics.eye[0], physics.eye[1], physics.eye[2]);
     const cam = createFreeCamera({ x: cx, y: cy, z: cz }, { x: cx + Math.cos(view.yaw), y: cy, z: cz + Math.sin(view.yaw) });
@@ -254,7 +259,7 @@ async function main(): Promise<void> {
     cam.farPlane = 20000;
     scene.camera = cam;
 
-    installPlayerControls(scene, canvas, physics, cam, view, movers, moverMeshes, itemMeshes, monsters, viewmodel, player, hud);
+    installPlayerControls(scene, canvas, physics, cam, view, movers, moverMeshes, itemMeshes, monsters, viewmodel, player, hud, impacts);
 
     await registerScene(engine, scene);
     await startEngine(engine);
@@ -275,7 +280,8 @@ function installPlayerControls(
     monsters: MonsterSystem,
     viewmodel: Viewmodel,
     player: Player,
-    hud: Hud
+    hud: Hud,
+    impacts: ImpactFx
 ): void {
     const keys = new Set<string>();
     let dragging = false;
@@ -293,8 +299,17 @@ function installPlayerControls(
         player.ammo--;
         // Quake view direction from yaw/pitch (X fwd, Y left, Z up).
         const cp = Math.cos(view.pitch);
+        const eye: [number, number, number] = [physics.eye[0], physics.eye[1], physics.eye[2]];
         const dir: [number, number, number] = [Math.cos(view.yaw) * cp, Math.sin(view.yaw) * cp, Math.sin(view.pitch)];
-        monsters.hitscan([physics.eye[0], physics.eye[1], physics.eye[2]], dir, SHOTGUN_RANGE, SHOTGUN_DAMAGE);
+        const monPoint = monsters.hitscan(eye, dir, SHOTGUN_RANGE, SHOTGUN_DAMAGE);
+        if (monPoint) {
+            impacts.spawn(monPoint, true);
+        } else {
+            // No monster hit: mark where the pellets strike world geometry.
+            const end: [number, number, number] = [eye[0] + dir[0] * SHOTGUN_RANGE, eye[1] + dir[1] * SHOTGUN_RANGE, eye[2] + dir[2] * SHOTGUN_RANGE];
+            const wall = physics.castMove(eye, end);
+            if (wall.fraction < 1) impacts.spawn(wall.endpos, false);
+        }
         hud.muzzle();
         viewmodel.fire();
         hud.setStats(player, monsters.kills, monsters.total);
@@ -366,6 +381,7 @@ function installPlayerControls(
     };
 
     let spin = 0;
+    let smoothEyeZ = physics.eye[2];
     onBeforeRender(scene, (deltaMs) => {
         const dt = Math.min(deltaMs / 1000, MAX_FRAME);
         let forward = 0;
@@ -412,7 +428,18 @@ function installPlayerControls(
             }
         }
 
-        const [px, py, pz] = quakeToEngine(physics.eye[0], physics.eye[1], physics.eye[2]);
+        impacts.update();
+
+        // Stair-step view smoothing: ease the eye height up to its true value after
+        // a step-up so climbing stairs doesn't jolt the camera; snap otherwise.
+        const eyeQ = physics.eye;
+        if (physics.onGround && eyeQ[2] > smoothEyeZ) {
+            smoothEyeZ = Math.min(eyeQ[2], smoothEyeZ + dt * STAIR_SMOOTH_SPEED);
+            if (eyeQ[2] - smoothEyeZ > STEPSIZE) smoothEyeZ = eyeQ[2] - STEPSIZE;
+        } else {
+            smoothEyeZ = eyeQ[2];
+        }
+        const [px, py, pz] = quakeToEngine(eyeQ[0], eyeQ[1], smoothEyeZ);
         cam.position.set(px, py, pz);
         const cp = Math.cos(view.pitch);
         cam.target.set(px + Math.cos(view.yaw) * cp, py + Math.sin(view.pitch), pz + Math.sin(view.yaw) * cp);
@@ -448,6 +475,60 @@ function itemColor(cls: string): [number, number, number] {
     if (cls.includes("key")) return [0.9, 0.85, 0.2];
     if (cls.includes("artifact")) return [0.6, 0.2, 0.9];
     return [0.7, 0.7, 0.7];
+}
+
+/**
+ * Short-lived hit-impact markers: a small emissive cube spawned at each shot's
+ * impact point (yellow spark on geometry, red puff on a monster) that shrinks and
+ * vanishes within a fraction of a second. Pooled so firing never allocates.
+ */
+class ImpactFx {
+    private readonly pool: Mesh[] = [];
+    private readonly born: number[] = [];
+    private next = 0;
+    private static readonly SIZE = 12;
+    private static readonly LIFE = 0.16;
+
+    constructor(engine: Engine, scene: ReturnType<typeof createSceneContext>, count = 16) {
+        for (let i = 0; i < count; i++) {
+            const mesh = createBox(engine, ImpactFx.SIZE);
+            const mat = createStandardMaterial();
+            mat.emissiveColor = [1, 0.9, 0.4];
+            mat.diffuseColor = [0, 0, 0];
+            mesh.material = mat;
+            mesh.visible = false;
+            addToScene(scene, mesh);
+            this.pool.push(mesh);
+            this.born.push(-1);
+        }
+    }
+
+    /** point is in Quake space; blood=true tints the marker red. */
+    spawn(point: [number, number, number], blood: boolean): void {
+        const i = this.next;
+        this.next = (this.next + 1) % this.pool.length;
+        const mesh = this.pool[i];
+        const [ex, ey, ez] = quakeToEngine(point[0], point[1], point[2]);
+        mesh.position.set(ex, ey, ez);
+        mesh.scaling.set(1, 1, 1);
+        (mesh.material as ReturnType<typeof createStandardMaterial>).emissiveColor = blood ? [0.75, 0.05, 0.05] : [1, 0.9, 0.45];
+        mesh.visible = true;
+        this.born[i] = performance.now() / 1000;
+    }
+
+    update(): void {
+        const now = performance.now() / 1000;
+        for (let i = 0; i < this.pool.length; i++) {
+            if (this.born[i] < 0) continue;
+            const k = 1 - (now - this.born[i]) / ImpactFx.LIFE;
+            if (k <= 0) {
+                this.pool[i].visible = false;
+                this.born[i] = -1;
+            } else {
+                this.pool[i].scaling.set(k, k, k);
+            }
+        }
+    }
 }
 
 interface Hud {

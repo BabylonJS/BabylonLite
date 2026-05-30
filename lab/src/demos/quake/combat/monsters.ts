@@ -40,8 +40,8 @@ interface MonsterDef {
 }
 
 const DEFS: Record<string, MonsterDef> = {
-    monster_army: { classname: "monster_army", url: "/librequake/progs/soldier.mdl", health: 30, speed: 70, sightRange: 1200, attackRange: 600, attackDamage: 5, attackInterval: 1.0, alive: [2, 9], death: [104, 113], animFps: 8 },
-    monster_dog: { classname: "monster_dog", url: "/librequake/progs/dog.mdl", health: 25, speed: 150, sightRange: 1000, attackRange: 64, attackDamage: 6, attackInterval: 0.6, alive: [0, 11], death: [76, 85], animFps: 12 },
+    monster_army: { classname: "monster_army", url: "/librequake/progs/soldier.mdl", health: 30, speed: 70, sightRange: 1200, attackRange: 600, attackDamage: 5, attackInterval: 1.0, alive: [2, 9], death: [18, 28], animFps: 8 },
+    monster_dog: { classname: "monster_dog", url: "/librequake/progs/dog.mdl", health: 25, speed: 150, sightRange: 1000, attackRange: 64, attackDamage: 6, attackInterval: 0.6, alive: [0, 11], death: [32, 36], animFps: 12 },
 };
 
 const MON_MINS: V3 = [-16, -16, -24];
@@ -253,10 +253,11 @@ export class MonsterSystem {
     }
 
     /**
-     * Resolve a hitscan shot. Returns true if a live monster was hit.
+     * Resolve a hitscan shot. Returns the impact point on the hit monster
+     * (Quake space), or null if no live monster was hit.
      * origin/dir are in Quake space; dir must be normalized.
      */
-    hitscan(origin: V3, dir: V3, range: number, damage: number): boolean {
+    hitscan(origin: V3, dir: V3, range: number, damage: number): V3 | null {
         let best: Monster | null = null;
         let bestT = range;
         for (const m of this.monsters) {
@@ -271,9 +272,9 @@ export class MonsterSystem {
                 }
             }
         }
-        if (!best) return false;
+        if (!best) return null;
         this.damageMonster(best, damage);
-        return true;
+        return [origin[0] + dir[0] * bestT, origin[1] + dir[1] * bestT, origin[2] + dir[2] * bestT];
     }
 
     private damageMonster(m: Monster, amount: number): void {
