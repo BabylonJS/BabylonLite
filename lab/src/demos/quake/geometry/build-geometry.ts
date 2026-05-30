@@ -31,8 +31,12 @@ export function quakeToEngine(qx: number, qy: number, qz: number): [number, numb
     return [qx, qz, qy];
 }
 
-export function buildLevelGeometry(bsp: BspData): LevelGeometry {
-    const atlas = new LightmapAtlas();
+/**
+ * Build per-texture geometry batches for a contiguous face range (one BSP
+ * model) into the shared lightmap atlas. Call once per model so movers stay
+ * separate from the static world.
+ */
+export function buildModelGeometry(bsp: BspData, atlas: LightmapAtlas, firstFace: number, numFaces: number): Map<number, GeometryBatch> {
     const batches = new Map<number, GeometryBatch>();
     const [whiteU, whiteV] = atlas.whiteUV;
 
@@ -45,7 +49,9 @@ export function buildLevelGeometry(bsp: BspData): LevelGeometry {
         return b;
     };
 
-    for (const face of bsp.faces) {
+    for (let fi = firstFace; fi < firstFace + numFaces; fi++) {
+        const face = bsp.faces[fi];
+        if (!face) continue;
         const ti = bsp.texInfos[face.texInfo];
         if (!ti) continue;
         const mt = bsp.mipTextures[ti.miptex];
@@ -55,7 +61,6 @@ export function buildLevelGeometry(bsp: BspData): LevelGeometry {
         const texW = mt && mt.width > 0 ? mt.width : 64;
         const texH = mt && mt.height > 0 ? mt.height : 64;
 
-        // Gather face vertices (Quake space) and their texture (s,t) coords.
         const n = face.numEdges;
         if (n < 3) continue;
         const qx: number[] = [];
@@ -87,7 +92,6 @@ export function buildLevelGeometry(bsp: BspData): LevelGeometry {
             if (t > maxT) maxT = t;
         }
 
-        // Lightmap block (per Quake CalcSurfaceExtents: one luxel per 16 units).
         let lm = null as ReturnType<LightmapAtlas["alloc"]>;
         let bminS = 0;
         let bminT = 0;
@@ -96,9 +100,7 @@ export function buildLevelGeometry(bsp: BspData): LevelGeometry {
             bminT = Math.floor(minT / 16);
             const bmaxS = Math.ceil(maxS / 16);
             const bmaxT = Math.ceil(maxT / 16);
-            const lmW = bmaxS - bminS + 1;
-            const lmH = bmaxT - bminT + 1;
-            lm = atlas.alloc(bsp.lighting, face.lightOfs, lmW, lmH);
+            lm = atlas.alloc(bsp.lighting, face.lightOfs, bmaxS - bminS + 1, bmaxT - bminT + 1);
         }
 
         const batch = getBatch(ti.miptex);
@@ -115,12 +117,18 @@ export function buildLevelGeometry(bsp: BspData): LevelGeometry {
                 batch.uv2.push(whiteU, whiteV);
             }
         }
-        // Fan triangulation. Winding is flipped by the Y/Z swap; the material
-        // disables back-face culling so either orientation renders.
         for (let k = 1; k < n - 1; k++) {
             batch.idx.push(base, base + k, base + k + 1);
         }
     }
 
+    return batches;
+}
+
+/** Build the entire world (model 0) geometry. */
+export function buildLevelGeometry(bsp: BspData): LevelGeometry {
+    const atlas = new LightmapAtlas();
+    const world = bsp.models[0];
+    const batches = buildModelGeometry(bsp, atlas, world.firstFace, world.numFaces);
     return { batches, atlas };
 }

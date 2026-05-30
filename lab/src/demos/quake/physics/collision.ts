@@ -49,6 +49,12 @@ export class QuakePhysics {
     readonly velocity: V3 = [0, 0, 0];
     onGround = false;
 
+    /** Moving brush models (doors/plats) to also collide against. */
+    brushHulls: { headNode: number; offset: V3 }[] = [];
+    /** The brush hull index the player is currently standing on, or -1. */
+    groundBrush = -1;
+    private _root = 0;
+
     constructor(bsp: BspData, spawn: V3) {
         this.clip = bsp.clipNodes;
         this.planes = bsp.planes;
@@ -62,10 +68,6 @@ export class QuakePhysics {
     }
 
     // ─── Hull queries ──────────────────────────────────────────────────────
-    private pointContents(p: V3): number {
-        return this.hullContentsAt(this.headNode, p);
-    }
-
     /** pointContents starting from an arbitrary clip node. */
     private hullContentsAt(num: number, p: V3): number {
         while (num >= 0) {
@@ -77,8 +79,36 @@ export class QuakePhysics {
     }
 
     private trace(start: V3, end: V3): Trace {
+        // World hull.
+        let best = this.traceHull(this.headNode, start, end);
+        let bestBrush = -1;
+        // Moving brush hulls (offset into their local space, then map back).
+        for (let i = 0; i < this.brushHulls.length; i++) {
+            const bh = this.brushHulls[i];
+            const s: V3 = [start[0] - bh.offset[0], start[1] - bh.offset[1], start[2] - bh.offset[2]];
+            const e: V3 = [end[0] - bh.offset[0], end[1] - bh.offset[1], end[2] - bh.offset[2]];
+            const tr = this.traceHull(bh.headNode, s, e);
+            if (tr.fraction < best.fraction) {
+                best = {
+                    fraction: tr.fraction,
+                    endpos: [tr.endpos[0] + bh.offset[0], tr.endpos[1] + bh.offset[1], tr.endpos[2] + bh.offset[2]],
+                    planeNormal: tr.planeNormal,
+                    startSolid: tr.startSolid,
+                    allSolid: tr.allSolid,
+                };
+                bestBrush = i;
+            }
+        }
+        this._lastBrush = bestBrush;
+        return best;
+    }
+
+    private _lastBrush = -1;
+
+    private traceHull(root: number, start: V3, end: V3): Trace {
         const tr: Trace = { fraction: 1, endpos: [end[0], end[1], end[2]], planeNormal: null, startSolid: false, allSolid: true };
-        this.recurse(this.headNode, 0, 1, start, end, tr);
+        this._root = root;
+        this.recurse(root, 0, 1, start, end, tr);
         return tr;
     }
 
@@ -116,7 +146,7 @@ export class QuakePhysics {
 
         // Back up until just outside solid.
         let f = frac;
-        while (this.pointContents(mid) === CONTENTS_SOLID) {
+        while (this.hullContentsAt(this._root, mid) === CONTENTS_SOLID) {
             f -= 0.1;
             if (f < 0) {
                 tr.fraction = midf;
@@ -238,6 +268,7 @@ export class QuakePhysics {
         const end: V3 = [this.origin[0], this.origin[1], this.origin[2] - 2];
         const tr = this.trace(this.origin, end);
         this.onGround = tr.fraction < 1 && tr.planeNormal !== null && tr.planeNormal[2] > 0.7;
+        this.groundBrush = this.onGround ? this._lastBrush : -1;
         if (this.onGround) {
             this.origin[0] = tr.endpos[0];
             this.origin[1] = tr.endpos[1];

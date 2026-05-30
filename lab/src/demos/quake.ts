@@ -1,13 +1,14 @@
 /**
- * LibreQuake demo — Milestone 1: faithful E1M1 map rendering.
+ * LibreQuake demo — E1M1, playable.
  *
  * Fetches the LibreQuake first-level BSP (BSD-3-Clause free game data, lazy-loaded
  * as a static asset — never bundled into JS), parses it clean-room from the
  * publicly documented Quake BSP v29 format, rebuilds the level geometry with
- * embedded textures and grayscale BSP lightmaps, and renders it with a free-fly
- * first-person camera spawned at info_player_start.
+ * embedded textures and grayscale BSP lightmaps, simulates Quake player physics
+ * against the BSP collision hulls, and runs a clean-room reimplementation of the
+ * map entity logic (doors, buttons, lifts, triggers, teleporters, item pickups).
  *
- * Controls: WASD / arrows to move, mouse-drag to look, Space / Shift to fly up/down.
+ * Controls: WASD / arrows to move, mouse-drag to look, Space to jump.
  *
  * Asset license: LibreQuake (https://github.com/lavenderdotpet/LibreQuake), BSD-3-Clause.
  * Run `pnpm fetch:librequake` to download the data into lab/public/librequake/.
@@ -15,23 +16,27 @@
 
 import {
     addToScene,
+    createBox,
     createEngine,
     createFreeCamera,
     createMeshFromData,
     createSceneContext,
+    createStandardMaterial,
     createTexture2DFromPixels,
     onBeforeRender,
     registerScene,
     startEngine,
+    type Mesh,
 } from "babylon-lite";
 
 import { parseBsp } from "./quake/bsp/parse-bsp.js";
 import { parsePalette } from "./quake/palette.js";
 import { parseEntities, parseVec3 } from "./quake/entities/parse-entities.js";
-import { buildLevelGeometry, quakeToEngine } from "./quake/geometry/build-geometry.js";
+import { buildLevelGeometry, buildModelGeometry, quakeToEngine, type GeometryBatch } from "./quake/geometry/build-geometry.js";
 import { QuakeTextureCache } from "./quake/render/texture-cache.js";
 import { createQuakeMaterial } from "./quake/render/quake-material.js";
 import { QuakePhysics, type MoveInput } from "./quake/physics/collision.js";
+import { MoverSystem, type WorldEnt } from "./quake/entities/mover-system.js";
 
 const BSP_URL = "/librequake/lq_e1m1.bsp";
 const PALETTE_URL = "/librequake/palette.lmp";
@@ -39,10 +44,35 @@ const MOVE_SPEED = 320; // Quake units / second
 const LOOK_SENS = 0.0022;
 const MAX_FRAME = 0.05;
 
+const MOVER_KINDS = new Set(["door", "secret", "button", "plat"]);
+
+type Engine = Awaited<ReturnType<typeof createEngine>>;
+
+interface View {
+    yaw: number;
+    pitch: number;
+}
+
 async function fetchBytes(url: string, hint: string): Promise<ArrayBuffer> {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}. ${hint}`);
     return res.arrayBuffer();
+}
+
+/** Append one model's per-texture batches into a shared batch map, rebasing indices. */
+function mergeBatches(dest: Map<number, GeometryBatch>, src: Map<number, GeometryBatch>): void {
+    for (const [miptex, b] of src) {
+        let d = dest.get(miptex);
+        if (!d) {
+            d = { miptex, pos: [], uv: [], uv2: [], idx: [] };
+            dest.set(miptex, d);
+        }
+        const base = d.pos.length / 3;
+        for (const v of b.pos) d.pos.push(v);
+        for (const v of b.uv) d.uv.push(v);
+        for (const v of b.uv2) d.uv2.push(v);
+        for (const idx of b.idx) d.idx.push(idx + base);
+    }
 }
 
 async function main(): Promise<void> {
@@ -58,10 +88,42 @@ async function main(): Promise<void> {
     const palette = parsePalette(palBytes);
     const entities = parseEntities(bsp.entities);
 
-    // Decode textures and rebuild geometry batched per texture.
     const textures = new QuakeTextureCache(engine, bsp.mipTextures, palette);
-    const { batches, atlas } = buildLevelGeometry(bsp);
 
+    // World geometry (model 0) seeds the shared lightmap atlas.
+    const { batches: worldBatches, atlas } = buildLevelGeometry(bsp);
+
+    // Player physics + clean-room entity logic. Constructing the mover system
+    // registers solid brush hulls into the physics world.
+    const start = entities.find((e) => e.classname === "info_player_start") ?? entities.find((e) => e.classname?.startsWith("info_player"));
+    const origin = parseVec3(start?.origin);
+    const view: View = { yaw: ((start?.angle ? Number(start.angle) : 0) * Math.PI) / 180, pitch: 0 };
+    const physics = new QuakePhysics(bsp, [origin[0], origin[1], origin[2]]);
+
+    const hud = createHud();
+    const movers = new MoverSystem(bsp, entities, physics, {
+        message: (m) => hud.message(m),
+        complete: (map) => hud.complete(map),
+        teleport: (yaw) => {
+            view.yaw = yaw;
+        },
+    });
+
+    // Brush-entity geometry. Movers (doors/buttons/lifts) get their own meshes so
+    // we can translate them; every other brush model (func_wall, func_illusionary,
+    // func_detail …) is merged into the static world so it renders without cost.
+    const moverMeshes = new Map<WorldEnt, Mesh[]>();
+    const moverBatches: { ent: WorldEnt; batches: Map<number, GeometryBatch> }[] = [];
+    for (const ent of movers.ents) {
+        if (ent.modelIndex < 0) continue;
+        const model = bsp.models[ent.modelIndex];
+        if (!model) continue;
+        const batches = buildModelGeometry(bsp, atlas, model.firstFace, model.numFaces);
+        if (MOVER_KINDS.has(ent.kind)) moverBatches.push({ ent, batches });
+        else mergeBatches(worldBatches, batches);
+    }
+
+    // All atlas allocations are done — upload the lightmap once.
     const lightTex = createTexture2DFromPixels(engine, atlas.pixels, atlas.width, atlas.height, {
         addressModeU: "clamp-to-edge",
         addressModeV: "clamp-to-edge",
@@ -69,42 +131,50 @@ async function main(): Promise<void> {
         magFilter: "linear",
     });
 
-    let i = 0;
+    let matId = 0;
     let drawn = 0;
-    for (const [miptex, batch] of batches) {
-        if (batch.idx.length === 0) continue;
-        const diffuse = textures.get(miptex);
-        const positions = new Float32Array(batch.pos);
-        const normals = new Float32Array(batch.pos.length);
-        const indices = new Uint32Array(batch.idx);
-        const uvs = new Float32Array(batch.uv);
-        const uvs2 = new Float32Array(batch.uv2);
-        const mesh = createMeshFromData(engine, `quake_${i}_${diffuse.width}`, positions, normals, indices, uvs, uvs2);
-        mesh.material = createQuakeMaterial(`quakeMat_${i}`, diffuse.texture, lightTex);
-        addToScene(scene, mesh);
-        drawn++;
-        i++;
+    const makeMeshes = (batches: Map<number, GeometryBatch>, tag: string): Mesh[] => {
+        const meshes: Mesh[] = [];
+        for (const [miptex, batch] of batches) {
+            if (batch.idx.length === 0) continue;
+            const diffuse = textures.get(miptex);
+            const mesh = createMeshFromData(
+                engine,
+                `quake_${tag}_${matId}`,
+                new Float32Array(batch.pos),
+                new Float32Array(batch.pos.length),
+                new Uint32Array(batch.idx),
+                new Float32Array(batch.uv),
+                new Float32Array(batch.uv2)
+            );
+            mesh.material = createQuakeMaterial(`quakeMat_${matId}`, diffuse.texture, lightTex);
+            addToScene(scene, mesh);
+            meshes.push(mesh);
+            drawn++;
+            matId++;
+        }
+        return meshes;
+    };
+
+    makeMeshes(worldBatches, "world");
+    for (const { ent, batches } of moverBatches) {
+        const meshes = makeMeshes(batches, "mover");
+        const [ex, ey, ez] = quakeToEngine(ent.offset[0], ent.offset[1], ent.offset[2]);
+        for (const m of meshes) m.position.set(ex, ey, ez);
+        moverMeshes.set(ent, meshes);
     }
 
-    // Spawn the player at info_player_start and simulate Quake physics.
-    const start = entities.find((e) => e.classname === "info_player_start") ?? entities.find((e) => e.classname?.startsWith("info_player"));
-    const origin = parseVec3(start?.origin);
-    const angleDeg = start?.angle ? Number(start.angle) : 0;
-    let yaw = (angleDeg * Math.PI) / 180; // Quake yaw about +Z, 0 = +X
-    let pitch = 0;
+    // Item pickups as spinning emissive boxes.
+    const itemMeshes = createItemMeshes(engine, scene, movers.ents);
 
-    const physics = new QuakePhysics(bsp, [origin[0], origin[1], origin[2]]);
-
-    const [ex, ey, ez] = quakeToEngine(physics.eye[0], physics.eye[1], physics.eye[2]);
-    const cam = createFreeCamera({ x: ex, y: ey, z: ez }, { x: ex + Math.cos(yaw), y: ey, z: ez + Math.sin(yaw) });
+    // Camera spawned at the player eye.
+    const [cx, cy, cz] = quakeToEngine(physics.eye[0], physics.eye[1], physics.eye[2]);
+    const cam = createFreeCamera({ x: cx, y: cy, z: cz }, { x: cx + Math.cos(view.yaw), y: cy, z: cz + Math.sin(view.yaw) });
     cam.nearPlane = 1;
     cam.farPlane = 20000;
     scene.camera = cam;
 
-    installPlayerControls(scene, canvas, physics, cam, () => yaw, () => pitch, (y, p) => {
-        yaw = y;
-        pitch = p;
-    });
+    installPlayerControls(scene, canvas, physics, cam, view, movers, moverMeshes, itemMeshes);
 
     await registerScene(engine, scene);
     await startEngine(engine);
@@ -112,22 +182,21 @@ async function main(): Promise<void> {
     canvas.dataset.ready = "true";
 }
 
-/** First-person controls: mouse-drag look + WASD, driving the Quake physics. */
+/** First-person controls + the per-frame game loop (physics, movers, sync). */
 function installPlayerControls(
     scene: ReturnType<typeof createSceneContext>,
     canvas: HTMLCanvasElement,
     physics: QuakePhysics,
     cam: ReturnType<typeof createFreeCamera>,
-    getYaw: () => number,
-    getPitch: () => number,
-    setView: (yaw: number, pitch: number) => void
+    view: View,
+    movers: MoverSystem,
+    moverMeshes: Map<WorldEnt, Mesh[]>,
+    itemMeshes: { ent: WorldEnt; mesh: Mesh }[]
 ): void {
     const keys = new Set<string>();
     let dragging = false;
     let lastX = 0;
     let lastY = 0;
-    let yaw = getYaw();
-    let pitch = getPitch();
 
     if (!canvas.hasAttribute("tabindex")) canvas.tabIndex = 0;
     canvas.addEventListener("keydown", (e) => {
@@ -152,13 +221,22 @@ function installPlayerControls(
         const dy = e.clientY - lastY;
         lastX = e.clientX;
         lastY = e.clientY;
-        yaw -= dx * LOOK_SENS;
-        pitch -= dy * LOOK_SENS;
+        view.yaw -= dx * LOOK_SENS;
+        view.pitch -= dy * LOOK_SENS;
         const maxPitch = Math.PI / 2 - 0.01;
-        pitch = Math.max(-maxPitch, Math.min(maxPitch, pitch));
-        setView(yaw, pitch);
+        view.pitch = Math.max(-maxPitch, Math.min(maxPitch, view.pitch));
     });
 
+    // Previous mover offsets — used to carry the player when riding a lift.
+    const prevOffset = new Map<WorldEnt, [number, number, number]>();
+    for (const ent of moverMeshes.keys()) prevOffset.set(ent, [ent.offset[0], ent.offset[1], ent.offset[2]]);
+    const ridingEnt = (): WorldEnt | undefined => {
+        if (physics.groundBrush < 0) return undefined;
+        for (const ent of moverMeshes.keys()) if (ent.hullIndex === physics.groundBrush) return ent;
+        return undefined;
+    };
+
+    let spin = 0;
     onBeforeRender(scene, (deltaMs) => {
         const dt = Math.min(deltaMs / 1000, MAX_FRAME);
         let forward = 0;
@@ -168,14 +246,97 @@ function installPlayerControls(
         if (keys.has("KeyD") || keys.has("ArrowRight")) side += MOVE_SPEED;
         if (keys.has("KeyA") || keys.has("ArrowLeft")) side -= MOVE_SPEED;
         const input: MoveInput = { forward, side, jump: keys.has("Space") };
-        physics.update(dt, input, yaw);
+        physics.update(dt, input, view.yaw);
+
+        const riding = ridingEnt();
+        movers.update(dt);
+
+        // Sync mover meshes; carry the player along with whatever lift they ride.
+        for (const [ent, meshes] of moverMeshes) {
+            const [ex, ey, ez] = quakeToEngine(ent.offset[0], ent.offset[1], ent.offset[2]);
+            for (const m of meshes) m.position.set(ex, ey, ez);
+            const prev = prevOffset.get(ent)!;
+            if (ent === riding) {
+                physics.origin[0] += ent.offset[0] - prev[0];
+                physics.origin[1] += ent.offset[1] - prev[1];
+                physics.origin[2] += ent.offset[2] - prev[2];
+            }
+            prev[0] = ent.offset[0];
+            prev[1] = ent.offset[1];
+            prev[2] = ent.offset[2];
+        }
+
+        // Item pickups: spin, hide once collected.
+        spin += dt * 2;
+        for (const { ent, mesh } of itemMeshes) {
+            if (ent.picked) {
+                if (mesh.visible !== false) mesh.visible = false;
+            } else {
+                mesh.rotation.set(0, spin, 0);
+            }
+        }
 
         const [px, py, pz] = quakeToEngine(physics.eye[0], physics.eye[1], physics.eye[2]);
         cam.position.set(px, py, pz);
-        // Quake look dir (cosYaw*cosPitch, sinYaw*cosPitch, sinPitch) → engine (x, z, y).
-        const cp = Math.cos(pitch);
-        cam.target.set(px + Math.cos(yaw) * cp, py + Math.sin(pitch), pz + Math.sin(yaw) * cp);
+        const cp = Math.cos(view.pitch);
+        cam.target.set(px + Math.cos(view.yaw) * cp, py + Math.sin(view.pitch), pz + Math.sin(view.yaw) * cp);
     });
+}
+
+/** Spawn a colored emissive box for every item/weapon entity in the map. */
+function createItemMeshes(engine: Engine, scene: ReturnType<typeof createSceneContext>, ents: WorldEnt[]): { ent: WorldEnt; mesh: Mesh }[] {
+    const out: { ent: WorldEnt; mesh: Mesh }[] = [];
+    for (const ent of ents) {
+        if (!ent.isItem) continue;
+        const mesh = createBox(engine, 16);
+        const [ex, ey, ez] = quakeToEngine(ent.origin[0], ent.origin[1], ent.origin[2] + 16);
+        mesh.position.set(ex, ey, ez);
+        const mat = createStandardMaterial();
+        mat.emissiveColor = itemColor(ent.cls);
+        mat.diffuseColor = [0.1, 0.1, 0.1];
+        mesh.material = mat;
+        addToScene(scene, mesh);
+        out.push({ ent, mesh });
+    }
+    return out;
+}
+
+function itemColor(cls: string): [number, number, number] {
+    if (cls.startsWith("weapon_")) return [0.9, 0.7, 0.1];
+    if (cls.includes("health")) return [0.9, 0.15, 0.15];
+    if (cls.includes("armor")) return [0.2, 0.6, 0.9];
+    if (cls.includes("cells") || cls.includes("rockets") || cls.includes("shells") || cls.includes("spikes")) return [0.8, 0.6, 0.2];
+    if (cls.includes("key")) return [0.9, 0.85, 0.2];
+    if (cls.includes("artifact")) return [0.6, 0.2, 0.9];
+    return [0.7, 0.7, 0.7];
+}
+
+/** Minimal DOM HUD: transient messages + a level-complete banner. */
+function createHud(): { message: (text: string) => void; complete: (map: string) => void } {
+    const msg = document.createElement("div");
+    msg.style.cssText =
+        "position:fixed;left:0;right:0;top:16px;margin:auto;max-width:80%;text-align:center;color:#ffe;font:16px monospace;text-shadow:0 0 4px #000,0 2px 4px #000;pointer-events:none;z-index:9998;opacity:0;transition:opacity .3s;";
+    document.body.appendChild(msg);
+    let hideTimer = 0;
+
+    const banner = document.createElement("div");
+    banner.style.cssText =
+        "position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;color:#ffd86b;font:bold 40px monospace;text-shadow:0 0 12px #000;background:rgba(0,0,0,.6);z-index:9999;";
+    document.body.appendChild(banner);
+
+    return {
+        message(text: string) {
+            msg.textContent = text;
+            msg.style.opacity = "1";
+            window.clearTimeout(hideTimer);
+            hideTimer = window.setTimeout(() => (msg.style.opacity = "0"), 3000);
+        },
+        complete(map: string) {
+            if (banner.style.display === "flex") return;
+            banner.style.display = "flex";
+            banner.innerHTML = `<div>LEVEL COMPLETE</div><div style="font-size:18px;margin-top:12px;opacity:.8">Next: ${map || "?"}</div>`;
+        },
+    };
 }
 
 main().catch((err) => {
