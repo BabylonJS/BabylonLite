@@ -15,10 +15,11 @@ import type { WeaponId, WeaponDef } from "../combat/weapons.js";
 // Placement relative to the camera basis (engine units). The view models are
 // authored at the eye (barrel +X forward, body hanging below), so only small
 // nudges are needed: push forward slightly so the stock doesn't clip the near
-// plane, and a touch right.
+// plane, a touch right, and lift it up so the low-hanging models (the nailguns)
+// aren't hidden behind the status bar.
 const DEPTH = 3; // forward
 const SIDE = 2; // right
-const VERT = 0; // up
+const VERT = 1.2; // up
 const SCALE = 1;
 
 type V4 = [number, number, number, number];
