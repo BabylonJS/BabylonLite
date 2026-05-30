@@ -35,14 +35,22 @@ interface MonsterDef {
     attackRange: number;
     attackDamage: number;
     attackInterval: number;
-    alive: [number, number]; // looping animation frame range
-    death: [number, number]; // one-shot death frame range
-    animFps: number;
+    stand: [number, number]; // looping idle frames
+    run: [number, number]; // looping locomotion frames
+    attack: [number, number]; // one-shot attack frames (muzzle flash mid-sequence)
+    death: [number, number]; // one-shot death frames
+    standFps: number;
+    runFps: number;
+    attackFps: number;
+    deathFps: number;
 }
 
+// Frame ranges follow the id1 alias-model layout (LibreQuake keeps it intact):
+//   soldier: stand 0-7, deathc 18-28, run 73-80, shoot 81-89 (flash ~85)
+//   dog:     attack 0-7, death 8-16, run 48-59, stand 69-77
 const DEFS: Record<string, MonsterDef> = {
-    monster_army: { classname: "monster_army", url: "/librequake/progs/soldier.mdl", health: 30, speed: 70, sightRange: 1200, attackRange: 600, attackDamage: 5, attackInterval: 1.0, alive: [2, 9], death: [18, 28], animFps: 8 },
-    monster_dog: { classname: "monster_dog", url: "/librequake/progs/dog.mdl", health: 25, speed: 150, sightRange: 1000, attackRange: 64, attackDamage: 6, attackInterval: 0.6, alive: [0, 11], death: [32, 36], animFps: 12 },
+    monster_army: { classname: "monster_army", url: "/librequake/progs/soldier.mdl", health: 30, speed: 70, sightRange: 1200, attackRange: 600, attackDamage: 5, attackInterval: 1.0, stand: [0, 7], run: [73, 80], attack: [81, 89], death: [18, 28], standFps: 5, runFps: 10, attackFps: 10, deathFps: 8 },
+    monster_dog: { classname: "monster_dog", url: "/librequake/progs/dog.mdl", health: 25, speed: 150, sightRange: 1000, attackRange: 80, attackDamage: 6, attackInterval: 0.6, stand: [69, 77], run: [48, 59], attack: [0, 7], death: [8, 16], standFps: 6, runFps: 14, attackFps: 12, deathFps: 10 },
 };
 
 const MON_MINS: V3 = [-16, -16, -24];
@@ -57,8 +65,9 @@ interface Monster {
     yaw: number; // radians, quake yaw about +Z
     health: number;
     state: "idle" | "chase" | "dead";
+    anim: "stand" | "run" | "attack";
     frame: number;
-    frameTime: number;
+    animTime: number;
     attackTimer: number;
     deathDone: boolean;
 }
@@ -140,7 +149,7 @@ export class MonsterSystem {
     private createMonster(def: MonsterDef, model: MdlModel, origin: V3, yaw: number): Monster {
         const corners = model.indices.length;
         const scratch = new Float32Array(corners * 3);
-        expandFrame(model, def.alive[0], scratch);
+        expandFrame(model, def.stand[0], scratch);
         const uv2 = new Float32Array(corners * 2);
         for (let i = 0; i < corners; i++) {
             uv2[i * 2] = this.whiteUV[0];
@@ -156,7 +165,7 @@ export class MonsterSystem {
         mesh.material = createQuakeMaterial(`monMat_${def.classname}_${this.total}`, skinTex, this.lightTex);
         addToScene(this.scene, mesh);
 
-        const m: Monster = { def, model, mesh, scratch, origin: [origin[0], origin[1], origin[2]], yaw, health: def.health, state: "idle", frame: def.alive[0], frameTime: 0, attackTimer: 0, deathDone: false };
+        const m: Monster = { def, model, mesh, scratch, origin: [origin[0], origin[1], origin[2]], yaw, health: def.health, state: "idle", anim: "stand", frame: def.stand[0], animTime: Math.random() * 2, attackTimer: 0, deathDone: false };
         this.dropToFloor(m);
         this.placeMesh(m);
         return m;
@@ -191,16 +200,30 @@ export class MonsterSystem {
 
             if (m.state === "chase") {
                 m.yaw = Math.atan2(dy, dx);
-                if (dist > m.def.attackRange * 0.6) this.moveToward(m, dx, dy, dt);
                 m.attackTimer -= dt;
-                if (dist < m.def.attackRange && m.attackTimer <= 0 && this.canSee(m, playerOrigin)) {
+                if (m.anim === "attack") {
+                    // Mid-attack: stand and finish the shoot animation before moving again.
+                } else if (dist < m.def.attackRange && m.attackTimer <= 0 && this.canSee(m, playerOrigin)) {
                     m.attackTimer = m.def.attackInterval;
+                    m.anim = "attack";
+                    m.animTime = 0;
                     this.hooks.damage(m.def.attackDamage);
+                } else {
+                    const moving = dist > m.def.attackRange * 0.6;
+                    if (moving) this.moveToward(m, dx, dy, dt);
+                    m.anim = moving ? "run" : "stand";
                 }
             }
 
             this.placeMesh(m);
             this.animateAlive(m, dt);
+        }
+    }
+
+    private setFrame(m: Monster, idx: number): void {
+        if (idx !== m.frame) {
+            m.frame = idx;
+            this.writeFrame(m, idx);
         }
     }
 
@@ -223,25 +246,33 @@ export class MonsterSystem {
     }
 
     private animateAlive(m: Monster, dt: number): void {
-        m.frameTime += dt;
-        const span = m.def.alive[1] - m.def.alive[0] + 1;
-        const idx = m.def.alive[0] + (Math.floor(m.frameTime * m.def.animFps) % span);
-        if (idx !== m.frame) {
-            m.frame = idx;
-            this.writeFrame(m, idx);
+        m.animTime += dt;
+        if (m.anim === "attack") {
+            const [a, b] = m.def.attack;
+            const span = b - a + 1;
+            const step = Math.floor(m.animTime * m.def.attackFps);
+            if (step >= span) {
+                // Attack sequence finished — drop back to idle; chase() re-picks run/stand.
+                m.anim = "stand";
+                m.animTime = 0;
+                return;
+            }
+            this.setFrame(m, a + step);
+            return;
         }
+        const [a, b] = m.anim === "run" ? m.def.run : m.def.stand;
+        const fps = m.anim === "run" ? m.def.runFps : m.def.standFps;
+        const span = b - a + 1;
+        this.setFrame(m, a + (Math.floor(m.animTime * fps) % span));
     }
 
     private animateDeath(m: Monster, dt: number): void {
         if (m.deathDone) return;
-        m.frameTime += dt;
+        m.animTime += dt;
         const span = m.def.death[1] - m.def.death[0];
-        const step = Math.floor(m.frameTime * m.def.animFps);
+        const step = Math.floor(m.animTime * m.def.deathFps);
         const idx = Math.min(m.def.death[0] + step, m.def.death[1]);
-        if (idx !== m.frame) {
-            m.frame = idx;
-            this.writeFrame(m, idx);
-        }
+        this.setFrame(m, idx);
         if (step >= span) m.deathDone = true;
     }
 
@@ -280,7 +311,7 @@ export class MonsterSystem {
         m.health -= amount;
         if (m.health <= 0) {
             m.state = "dead";
-            m.frameTime = 0;
+            m.animTime = 0;
             m.frame = m.def.death[0];
             this.writeFrame(m, m.def.death[0]);
             this.kills++;
