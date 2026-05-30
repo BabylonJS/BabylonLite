@@ -20,7 +20,6 @@ const DOOR_TRIGGER_PAD = 60; // Quake expands touch-open doors by 60 units.
 
 // spawnflags
 const DOOR_START_OPEN = 1;
-const SECRET_OPEN_ONCE = 1;
 
 const SOLID_BRUSH = new Set(["func_wall", "func_door", "func_door_secret", "func_button", "func_plat"]);
 const TRIGGER_VOLUMES = new Set(["trigger_once", "trigger_multiple", "trigger_changelevel", "trigger_teleport", "trigger_push", "trigger_secret"]);
@@ -93,7 +92,7 @@ export class MoverSystem {
     secrets = 0;
 
     constructor(
-        private readonly bsp: BspData,
+        _bsp: BspData,
         rawEntities: QuakeEntity[],
         private readonly physics: QuakePhysics,
         private readonly hooks: WorldHooks = {}
@@ -103,7 +102,7 @@ export class MoverSystem {
             if (!cls || cls === "worldspawn") continue;
             const modelRef = kv.model;
             const modelIndex = modelRef && modelRef.startsWith("*") ? Number(modelRef.slice(1)) : -1;
-            const model = modelIndex >= 0 ? bsp.models[modelIndex] : undefined;
+            const model = modelIndex >= 0 ? _bsp.models[modelIndex] : undefined;
             const ent: WorldEnt = {
                 cls,
                 kv,
@@ -252,7 +251,7 @@ export class MoverSystem {
             // Remove the brush from collision so the player can pass through
             // (Quake removes the entity entirely). Retarget its clip hull to an
             // empty leaf so world + mover traces ignore it.
-            if (e.hullIndex >= 0) this.physics.brushHulls[e.hullIndex].headNode = CONTENTS_EMPTY;
+            if (e.hullIndex >= 0) this.physics.brushHulls[e.hullIndex]!.headNode = CONTENTS_EMPTY;
             this.hooks.kill?.(e);
         }
     }
@@ -307,8 +306,8 @@ export class MoverSystem {
 
         // Scheduled (delayed) activations.
         for (let i = this.scheduled.length - 1; i >= 0; i--) {
-            if (this.time >= this.scheduled[i].time) {
-                const s = this.scheduled[i];
+            const s = this.scheduled[i]!;
+            if (this.time >= s.time) {
                 this.scheduled.splice(i, 1);
                 this.use(s.ent);
             }

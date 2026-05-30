@@ -132,14 +132,14 @@ function buildBrushParts(bsp: BspData, model: BspModel, whiteUV: [number, number
         const base = batch.pos.length / 3;
         const v = ti.vecs;
         for (let k = 0; k < n; k++) {
-            const se = bsp.surfEdges[face.firstEdge + k];
-            const vIndex = se >= 0 ? bsp.edges[se * 2] : bsp.edges[-se * 2 + 1];
-            const px = bsp.vertices[vIndex * 3];
-            const py = bsp.vertices[vIndex * 3 + 1];
-            const pz = bsp.vertices[vIndex * 3 + 2];
+            const se = bsp.surfEdges[face.firstEdge + k]!;
+            const vIndex = se >= 0 ? bsp.edges[se * 2]! : bsp.edges[-se * 2 + 1]!;
+            const px = bsp.vertices[vIndex * 3]!;
+            const py = bsp.vertices[vIndex * 3 + 1]!;
+            const pz = bsp.vertices[vIndex * 3 + 2]!;
             const [ex, ey, ez] = quakeToEngine(px, py, pz);
             batch.pos.push(ex, ey, ez);
-            batch.uv.push((px * v[0] + py * v[1] + pz * v[2] + v[3]) / texW, (px * v[4] + py * v[5] + pz * v[6] + v[7]) / texH);
+            batch.uv.push((px * v[0]! + py * v[1]! + pz * v[2]! + v[3]!) / texW, (px * v[4]! + py * v[5]! + pz * v[6]! + v[7]!) / texH);
             batch.uv2.push(whiteU, whiteV);
         }
         for (let k = 1; k < n - 1; k++) batch.idx.push(base, base + k, base + k + 1);
@@ -217,10 +217,10 @@ function centerTemplate(parts: ItemPart[]): ItemTemplate {
     for (const part of parts) {
         const p = part.posLocal;
         for (let i = 0; i < p.length; i += 3) {
-            if (p[i] < minX) minX = p[i];
-            if (p[i] > maxX) maxX = p[i];
-            if (p[i + 2] < minZ) minZ = p[i + 2];
-            if (p[i + 2] > maxZ) maxZ = p[i + 2];
+            if (p[i]! < minX) minX = p[i]!;
+            if (p[i]! > maxX) maxX = p[i]!;
+            if (p[i + 2]! < minZ) minZ = p[i + 2]!;
+            if (p[i + 2]! > maxZ) maxZ = p[i + 2]!;
         }
     }
     const cx = Number.isFinite(minX) ? (minX + maxX) / 2 : 0;
@@ -228,8 +228,8 @@ function centerTemplate(parts: ItemPart[]): ItemTemplate {
     for (const part of parts) {
         const p = part.posLocal;
         for (let i = 0; i < p.length; i += 3) {
-            p[i] -= cx;
-            p[i + 2] -= cz;
+            p[i] = p[i]! - cx;
+            p[i + 2] = p[i + 2]! - cz;
         }
     }
     return { parts, cx, cz };
@@ -265,7 +265,7 @@ export async function spawnItemModels(deps: ItemModelDeps, ents: WorldEnt[]): Pr
             } else {
                 const bsp = parseBsp(buffer);
                 const textures = new QuakeTextureCache(deps.engine, bsp.mipTextures, deps.palette);
-                templates.set(descKey(desc), centerTemplate(buildBrushParts(bsp, bsp.models[0], deps.whiteUV, textures)));
+                templates.set(descKey(desc), centerTemplate(buildBrushParts(bsp, bsp.models[0]!, deps.whiteUV, textures)));
             }
         })
     );

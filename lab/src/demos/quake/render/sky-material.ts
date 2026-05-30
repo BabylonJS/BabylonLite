@@ -55,11 +55,11 @@ export function createSkyTexture(engine: EngineContext, mt: BspMipTex, palette: 
     const idx = mt.indices!;
     const rgba = new Uint8Array(w * h * 4);
     for (let i = 0; i < idx.length; i++) {
-        const v = idx[i];
+        const v = idx[i]!;
         const p = v * 3;
-        rgba[i * 4] = palette[p];
-        rgba[i * 4 + 1] = palette[p + 1];
-        rgba[i * 4 + 2] = palette[p + 2];
+        rgba[i * 4] = palette[p]!;
+        rgba[i * 4 + 1] = palette[p + 1]!;
+        rgba[i * 4 + 2] = palette[p + 2]!;
         // Right (cloud) half: index 0 is a hole; left (background) half is opaque.
         const x = i % w;
         rgba[i * 4 + 3] = x >= half && v === 0 ? 0 : 255;

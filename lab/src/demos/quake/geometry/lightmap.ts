@@ -82,7 +82,7 @@ export class LightmapAtlas {
         for (let ty = 0; ty < lmH; ty++) {
             for (let tx = 0; tx < lmW; tx++) {
                 const src = lightOfs + ty * lmW + tx;
-                const v = lightOfs >= 0 && src < lighting.length ? lighting[src] : 128;
+                const v = lightOfs >= 0 && src < lighting.length ? lighting[src]! : 128;
                 const di = ((y + ty) * ATLAS_W + (x + tx)) * 4;
                 this.pixels[di] = v;
                 this.pixels[di + 1] = v;

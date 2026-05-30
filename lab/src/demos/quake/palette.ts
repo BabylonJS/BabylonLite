@@ -19,11 +19,11 @@ export function parsePalette(bytes: ArrayBuffer | Uint8Array): Palette {
 export function indicesToRgba(indices: Uint8Array, palette: Palette, fenceMask = false): Uint8Array {
     const out = new Uint8Array(indices.length * 4);
     for (let i = 0; i < indices.length; i++) {
-        const idx = indices[i];
+        const idx = indices[i]!;
         const p = idx * 3;
-        out[i * 4] = palette[p];
-        out[i * 4 + 1] = palette[p + 1];
-        out[i * 4 + 2] = palette[p + 2];
+        out[i * 4] = palette[p]!;
+        out[i * 4 + 1] = palette[p + 1]!;
+        out[i * 4 + 2] = palette[p + 2]!;
         out[i * 4 + 3] = fenceMask && idx === 255 ? 0 : 255;
     }
     return out;

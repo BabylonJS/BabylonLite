@@ -86,7 +86,7 @@ export class Viewmodel {
             addToScene(this.scene, mesh);
             this.entries.set(def.id, { def, model, mesh, scratch, firing: 0, curFrame: 0 });
         }
-        if (defs.length > 0) this.select(defs[0].id);
+        if (defs.length > 0) this.select(defs[0]!.id);
     }
 
     /** Show the given weapon and hide all others. */

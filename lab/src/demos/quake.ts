@@ -33,7 +33,7 @@ import {
 } from "babylon-lite";
 
 import { parseBsp } from "./quake/bsp/parse-bsp.js";
-import { parsePalette } from "./quake/palette.js";
+import { parsePalette, type Palette } from "./quake/palette.js";
 import { parseEntities, parseVec3, filterEntitiesBySkill } from "./quake/entities/parse-entities.js";
 import { buildLevelGeometry, buildModelGeometry, quakeToEngine, type GeometryBatch } from "./quake/geometry/build-geometry.js";
 import { QuakeTextureCache } from "./quake/render/texture-cache.js";
@@ -174,9 +174,9 @@ async function main(): Promise<void> {
     if (spawnParam) {
         const p = spawnParam.split(",").map(Number);
         if (p.length === 3 && p.every((n) => Number.isFinite(n))) {
-            origin[0] = p[0];
-            origin[1] = p[1];
-            origin[2] = p[2];
+            origin[0] = p[0]!;
+            origin[1] = p[1]!;
+            origin[2] = p[2]!;
         }
     }
     const yawParam = params.get("yaw");
@@ -237,7 +237,7 @@ async function main(): Promise<void> {
     // of a flat-mapped texture; build its texture once and collect the materials so
     // their scroll time can be advanced each frame.
     const skyMipIndex = bsp.mipTextures.findIndex((m) => m && m.name.toLowerCase().startsWith("sky") && m.indices);
-    const skyTex = skyMipIndex >= 0 ? createSkyTexture(engine, bsp.mipTextures[skyMipIndex], palette) : null;
+    const skyTex = skyMipIndex >= 0 ? createSkyTexture(engine, bsp.mipTextures[skyMipIndex]!, palette) : null;
     const skyMaterials: ShaderMaterial[] = [];
 
     let matId = 0;
@@ -504,7 +504,7 @@ function installPlayerControls(
         const owned = WEAPON_ORDER.filter((id) => player.owned.has(id));
         if (owned.length < 2) return;
         const i = owned.indexOf(player.weapon);
-        switchWeapon(owned[(i + dir + owned.length) % owned.length]);
+        switchWeapon(owned[(i + dir + owned.length) % owned.length]!);
     };
 
     // Read/spend the ammo pool backing a weapon's ammo type.
@@ -968,29 +968,33 @@ class Particles {
             this.vy[i] = cosP * spd * 0.6 + this.upBias;
             this.vz[i] = Math.sin(theta) * sinP * spd;
             this.life[i] = this.maxLife * (0.7 + Math.random() * 0.6);
-            this.mesh[i].position.set(x, y, z);
-            this.mesh[i].scaling.set(1, 1, 1);
+            const mesh = this.mesh[i]!;
+            mesh.position.set(x, y, z);
+            mesh.scaling.set(1, 1, 1);
         }
     }
 
     tick(dt: number): void {
         for (let i = 0; i < this.mesh.length; i++) {
-            if (this.life[i] < 0) continue;
-            this.life[i] -= dt;
-            if (this.life[i] <= 0) {
-                this.mesh[i].scaling.set(0, 0, 0);
+            const mesh = this.mesh[i]!;
+            const life = this.life[i]!;
+            if (life < 0) continue;
+            const nextLife = life - dt;
+            this.life[i] = nextLife;
+            if (nextLife <= 0) {
+                mesh.scaling.set(0, 0, 0);
                 this.life[i] = -1;
                 continue;
             }
-            this.vy[i] -= Particles.GRAVITY * dt;
-            this.px[i] += this.vx[i] * dt;
-            this.py[i] += this.vy[i] * dt;
-            this.pz[i] += this.vz[i] * dt;
-            this.mesh[i].position.set(this.px[i], this.py[i], this.pz[i]);
+            this.vy[i] = this.vy[i]! - Particles.GRAVITY * dt;
+            this.px[i] = this.px[i]! + this.vx[i]! * dt;
+            this.py[i] = this.py[i]! + this.vy[i]! * dt;
+            this.pz[i] = this.pz[i]! + this.vz[i]! * dt;
+            mesh.position.set(this.px[i]!, this.py[i]!, this.pz[i]!);
             // Shrink to a point near end of life so it fades out rather than popping.
-            const f = this.life[i] / this.maxLife;
+            const f = nextLife / this.maxLife;
             const k = f < 0.5 ? f * 2 : 1;
-            this.mesh[i].scaling.set(k, k, k);
+            mesh.scaling.set(k, k, k);
         }
     }
 }

@@ -67,11 +67,11 @@ export function buildModelGeometry(bsp: BspData, atlas: LightmapAtlas, firstFace
         const texH = mt && mt.height > 0 ? mt.height : 64;
 
         // Outward push along the face's (side-corrected) normal, in Quake space.
-        const plane = bsp.planes[face.planeNum];
+        const plane = bsp.planes[face.planeNum]!;
         const nsign = face.side ? -1 : 1;
-        const nudgeX = nudge * nsign * plane.normal[0];
-        const nudgeY = nudge * nsign * plane.normal[1];
-        const nudgeZ = nudge * nsign * plane.normal[2];
+        const nudgeX = nudge * nsign * plane.normal[0]!;
+        const nudgeY = nudge * nsign * plane.normal[1]!;
+        const nudgeZ = nudge * nsign * plane.normal[2]!;
 
         const n = face.numEdges;
         if (n < 3) continue;
@@ -86,16 +86,16 @@ export function buildModelGeometry(bsp: BspData, atlas: LightmapAtlas, firstFace
         let maxT = -Infinity;
         const v = ti.vecs;
         for (let k = 0; k < n; k++) {
-            const se = bsp.surfEdges[face.firstEdge + k];
-            const vIndex = se >= 0 ? bsp.edges[se * 2] : bsp.edges[-se * 2 + 1];
-            const px = bsp.vertices[vIndex * 3];
-            const py = bsp.vertices[vIndex * 3 + 1];
-            const pz = bsp.vertices[vIndex * 3 + 2];
+            const se = bsp.surfEdges[face.firstEdge + k]!;
+            const vIndex = se >= 0 ? bsp.edges[se * 2]! : bsp.edges[-se * 2 + 1]!;
+            const px = bsp.vertices[vIndex * 3]!;
+            const py = bsp.vertices[vIndex * 3 + 1]!;
+            const pz = bsp.vertices[vIndex * 3 + 2]!;
             qx.push(px);
             qy.push(py);
             qz.push(pz);
-            const s = px * v[0] + py * v[1] + pz * v[2] + v[3];
-            const t = px * v[4] + py * v[5] + pz * v[6] + v[7];
+            const s = px * v[0]! + py * v[1]! + pz * v[2]! + v[3]!;
+            const t = px * v[4]! + py * v[5]! + pz * v[6]! + v[7]!;
             sArr.push(s);
             tArr.push(t);
             if (s < minS) minS = s;
@@ -122,12 +122,12 @@ export function buildModelGeometry(bsp: BspData, atlas: LightmapAtlas, firstFace
         // luxel so they don't glare at OVERBRIGHT.
         const [fbU, fbV] = special ? [whiteU, whiteV] : atlas.darkUV;
         for (let k = 0; k < n; k++) {
-            const [ex, ey, ez] = quakeToEngine(qx[k] + nudgeX, qy[k] + nudgeY, qz[k] + nudgeZ);
+            const [ex, ey, ez] = quakeToEngine(qx[k]! + nudgeX, qy[k]! + nudgeY, qz[k]! + nudgeZ);
             batch.pos.push(ex, ey, ez);
-            batch.uv.push(sArr[k] / texW, tArr[k] / texH);
+            batch.uv.push(sArr[k]! / texW, tArr[k]! / texH);
             if (lm) {
-                const luxS = (sArr[k] - bminS * 16) / 16;
-                const luxT = (tArr[k] - bminT * 16) / 16;
+                const luxS = (sArr[k]! - bminS * 16) / 16;
+                const luxT = (tArr[k]! - bminT * 16) / 16;
                 batch.uv2.push((lm.atlasX + luxS + 0.5) / atlas.width, (lm.atlasY + luxT + 0.5) / atlas.height);
             } else {
                 batch.uv2.push(fbU, fbV);
@@ -144,7 +144,7 @@ export function buildModelGeometry(bsp: BspData, atlas: LightmapAtlas, firstFace
 /** Build the entire world (model 0) geometry. */
 export function buildLevelGeometry(bsp: BspData): LevelGeometry {
     const atlas = new LightmapAtlas();
-    const world = bsp.models[0];
+    const world = bsp.models[0]!;
     const batches = buildModelGeometry(bsp, atlas, world.firstFace, world.numFaces);
     return { batches, atlas };
 }

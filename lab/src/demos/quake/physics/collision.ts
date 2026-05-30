@@ -130,17 +130,17 @@ export class QuakePhysics {
 
     /** Recurse hull 0: true if the segment p1→p2 never enters a solid leaf. */
     private point0Recurse(num: number, p1: V3, p2: V3): boolean {
-        if (num < 0) return this.nodes.leafContents[-num - 1] !== CONTENTS_SOLID;
-        const plane = this.planes[this.nodes.planeNum[num]];
+        if (num < 0) return this.nodes.leafContents[-num - 1]! !== CONTENTS_SOLID;
+        const plane = this.planes[this.nodes.planeNum[num]!]!;
         const t1 = dot(plane.normal, p1) - plane.planeDist;
         const t2 = dot(plane.normal, p2) - plane.planeDist;
-        if (t1 >= 0 && t2 >= 0) return this.point0Recurse(this.nodes.child0[num], p1, p2);
-        if (t1 < 0 && t2 < 0) return this.point0Recurse(this.nodes.child1[num], p1, p2);
+        if (t1 >= 0 && t2 >= 0) return this.point0Recurse(this.nodes.child0[num]!, p1, p2);
+        if (t1 < 0 && t2 < 0) return this.point0Recurse(this.nodes.child1[num]!, p1, p2);
         const frac = t1 / (t1 - t2);
         const mid: V3 = [p1[0] + frac * (p2[0] - p1[0]), p1[1] + frac * (p2[1] - p1[1]), p1[2] + frac * (p2[2] - p1[2])];
         const side = t1 < 0 ? 1 : 0;
-        const near = side === 0 ? this.nodes.child0[num] : this.nodes.child1[num];
-        const far = side === 0 ? this.nodes.child1[num] : this.nodes.child0[num];
+        const near = side === 0 ? this.nodes.child0[num]! : this.nodes.child1[num]!;
+        const far = side === 0 ? this.nodes.child1[num]! : this.nodes.child0[num]!;
         if (!this.point0Recurse(near, p1, mid)) return false;
         return this.point0Recurse(far, mid, p2);
     }
@@ -149,9 +149,9 @@ export class QuakePhysics {
     /** pointContents starting from an arbitrary clip node. */
     private hullContentsAt(num: number, p: V3): number {
         while (num >= 0) {
-            const plane = this.planes[this.clip.planeNum[num]];
+            const plane = this.planes[this.clip.planeNum[num]!]!;
             const d = dot(plane.normal, p) - plane.planeDist;
-            num = d < 0 ? this.clip.child1[num] : this.clip.child0[num];
+            num = d < 0 ? this.clip.child1[num]! : this.clip.child0[num]!;
         }
         return num;
     }
@@ -162,7 +162,7 @@ export class QuakePhysics {
         let bestBrush = -1;
         // Moving brush hulls (offset into their local space, then map back).
         for (let i = 0; i < this.brushHulls.length; i++) {
-            const bh = this.brushHulls[i];
+            const bh = this.brushHulls[i]!;
             const s: V3 = [start[0] - bh.offset[0], start[1] - bh.offset[1], start[2] - bh.offset[2]];
             const e: V3 = [end[0] - bh.offset[0], end[1] - bh.offset[1], end[2] - bh.offset[2]];
             const tr = this.traceHull(bh.headNode, s, e);
@@ -196,11 +196,11 @@ export class QuakePhysics {
             else tr.startSolid = true;
             return true; // empty
         }
-        const plane = this.planes[this.clip.planeNum[num]];
+        const plane = this.planes[this.clip.planeNum[num]!]!;
         const t1 = dot(plane.normal, p1) - plane.planeDist;
         const t2 = dot(plane.normal, p2) - plane.planeDist;
-        const child0 = this.clip.child0[num];
-        const child1 = this.clip.child1[num];
+        const child0 = this.clip.child0[num]!;
+        const child1 = this.clip.child1[num]!;
         if (t1 >= 0 && t2 >= 0) return this.recurse(child0, p1f, p2f, p1, p2, tr);
         if (t1 < 0 && t2 < 0) return this.recurse(child1, p1f, p2f, p1, p2, tr);
 
@@ -266,10 +266,10 @@ export class QuakePhysics {
             // Clip velocity to all accumulated planes.
             let i = 0;
             for (; i < planes.length; i++) {
-                this.clipVelocity(this.velocity, planes[i], 1.0);
+                this.clipVelocity(this.velocity, planes[i]!, 1.0);
                 let ok = true;
                 for (let j = 0; j < planes.length; j++) {
-                    if (j !== i && dot(this.velocity, planes[j]) < 0) {
+                    if (j !== i && dot(this.velocity, planes[j]!) < 0) {
                         ok = false;
                         break;
                     }
@@ -279,7 +279,7 @@ export class QuakePhysics {
             if (i === planes.length) {
                 // Wedged into a crease: slide along the crease direction.
                 if (planes.length >= 2) {
-                    const dir = this.cross(planes[0], planes[1]);
+                    const dir = this.cross(planes[0]!, planes[1]!);
                     const d = dot(dir, this.velocity);
                     this.velocity[0] = dir[0] * d;
                     this.velocity[1] = dir[1] * d;
@@ -342,11 +342,11 @@ export class QuakePhysics {
     private pointContents(p: V3): number {
         let num = this.worldRoot0;
         while (num >= 0) {
-            const plane = this.planes[this.nodes.planeNum[num]];
+            const plane = this.planes[this.nodes.planeNum[num]!]!;
             const d = dot(plane.normal, p) - plane.planeDist;
-            num = d < 0 ? this.nodes.child1[num] : this.nodes.child0[num];
+            num = d < 0 ? this.nodes.child1[num]! : this.nodes.child0[num]!;
         }
-        return this.nodes.leafContents[-num - 1];
+        return this.nodes.leafContents[-num - 1]!;
     }
 
     /** Sample feet/waist/eye to classify how deep the player is in a liquid. */

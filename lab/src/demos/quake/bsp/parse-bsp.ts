@@ -300,7 +300,7 @@ function parseEntities(buf: ArrayBuffer, lump: Lump): string {
     const bytes = new Uint8Array(buf, lump.ofs, lump.len);
     let s = "";
     for (let i = 0; i < bytes.length; i++) {
-        const c = bytes[i];
+        const c = bytes[i]!;
         if (c === 0) break;
         s += String.fromCharCode(c);
     }
@@ -315,19 +315,20 @@ export function parseBsp(buffer: ArrayBuffer): BspData {
         throw new Error(`Unsupported BSP version ${version} (expected ${BSP_VERSION})`);
     }
     const lumps = readLumps(view);
-    const lighting = new Uint8Array(buffer, lumps[LUMP_LIGHTING].ofs, lumps[LUMP_LIGHTING].len).slice();
+    const lightingLump = lumps[LUMP_LIGHTING]!;
+    const lighting = new Uint8Array(buffer, lightingLump.ofs, lightingLump.len).slice();
     return {
-        vertices: parseVertices(buffer, lumps[LUMP_VERTEXES]),
-        edges: parseEdges(buffer, lumps[LUMP_EDGES]),
-        surfEdges: parseSurfEdges(buffer, lumps[LUMP_SURFEDGES]),
-        faces: parseFaces(buffer, lumps[LUMP_FACES]),
-        texInfos: parseTexInfo(buffer, lumps[LUMP_TEXINFO]),
-        mipTextures: parseTextures(buffer, lumps[LUMP_TEXTURES]),
+        vertices: parseVertices(buffer, lumps[LUMP_VERTEXES]!),
+        edges: parseEdges(buffer, lumps[LUMP_EDGES]!),
+        surfEdges: parseSurfEdges(buffer, lumps[LUMP_SURFEDGES]!),
+        faces: parseFaces(buffer, lumps[LUMP_FACES]!),
+        texInfos: parseTexInfo(buffer, lumps[LUMP_TEXINFO]!),
+        mipTextures: parseTextures(buffer, lumps[LUMP_TEXTURES]!),
         lighting,
-        models: parseModels(buffer, lumps[LUMP_MODELS]),
-        planes: parsePlanes(buffer, lumps[LUMP_PLANES]),
-        clipNodes: parseClipNodes(buffer, lumps[LUMP_CLIPNODES]),
-        nodes: parseNodes(buffer, lumps[LUMP_NODES], lumps[LUMP_LEAFS]),
-        entities: parseEntities(buffer, lumps[LUMP_ENTITIES]),
+        models: parseModels(buffer, lumps[LUMP_MODELS]!),
+        planes: parsePlanes(buffer, lumps[LUMP_PLANES]!),
+        clipNodes: parseClipNodes(buffer, lumps[LUMP_CLIPNODES]!),
+        nodes: parseNodes(buffer, lumps[LUMP_NODES]!, lumps[LUMP_LEAFS]!),
+        entities: parseEntities(buffer, lumps[LUMP_ENTITIES]!),
     };
 }

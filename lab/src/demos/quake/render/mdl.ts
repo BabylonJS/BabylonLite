@@ -39,7 +39,7 @@ const stripDigits = (s: string): string => s.replace(/\d+$/, "");
 export function parseMdl(buffer: ArrayBuffer, palette: Uint8Array, skinIndex = 0): MdlModel {
     const dv = new DataView(buffer);
     const bytes = new Uint8Array(buffer);
-    if (String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) !== "IDPO") throw new Error("MDL: bad magic (expected IDPO)");
+    if (String.fromCharCode(bytes[0]!, bytes[1]!, bytes[2]!, bytes[3]!) !== "IDPO") throw new Error("MDL: bad magic (expected IDPO)");
 
     const scale: [number, number, number] = [dv.getFloat32(8, true), dv.getFloat32(12, true), dv.getFloat32(16, true)];
     const translate: [number, number, number] = [dv.getFloat32(20, true), dv.getFloat32(24, true), dv.getFloat32(28, true)];
@@ -102,11 +102,11 @@ export function parseMdl(buffer: ArrayBuffer, palette: Uint8Array, skinIndex = 0
     for (let t = 0; t < numTris; t++) {
         for (let k = 0; k < 3; k++) {
             const c = t * 3 + k;
-            const vi = triVerts[c];
-            let s = sCoord[vi];
+            const vi = triVerts[c]!;
+            let s = sCoord[vi]!;
             if (facesFront[t] === 0 && onseam[vi] !== 0) s += skinWidth / 2;
             uvs[c * 2] = (s + 0.5) / skinWidth;
-            uvs[c * 2 + 1] = (tCoord[vi] + 0.5) / skinHeight;
+            uvs[c * 2 + 1] = (tCoord[vi]! + 0.5) / skinHeight;
             indices[c] = c;
             expandMap[c] = vi;
         }
@@ -120,9 +120,9 @@ export function parseMdl(buffer: ArrayBuffer, palette: Uint8Array, skinIndex = 0
         off += 16;
         const verts = new Float32Array(numVerts * 3);
         for (let v = 0; v < numVerts; v++) {
-            verts[v * 3] = translate[0] + scale[0] * bytes[off];
-            verts[v * 3 + 1] = translate[1] + scale[1] * bytes[off + 1];
-            verts[v * 3 + 2] = translate[2] + scale[2] * bytes[off + 2];
+            verts[v * 3] = translate[0] + scale[0] * bytes[off]!;
+            verts[v * 3 + 1] = translate[1] + scale[1] * bytes[off + 1]!;
+            verts[v * 3 + 2] = translate[2] + scale[2] * bytes[off + 2]!;
             off += 4; // x,y,z,normalIndex
         }
         frames.push({ name, base: stripDigits(name), verts });
@@ -144,7 +144,7 @@ export function parseMdl(buffer: ArrayBuffer, palette: Uint8Array, skinIndex = 0
     // Build animation groups from frame names.
     const groups = new Map<string, [number, number]>();
     for (let i = 0; i < frames.length; i++) {
-        const base = frames[i].base;
+        const base = frames[i]!.base;
         const g = groups.get(base);
         if (g) g[1] = i;
         else groups.set(base, [i, i]);
@@ -156,7 +156,7 @@ export function parseMdl(buffer: ArrayBuffer, palette: Uint8Array, skinIndex = 0
 function readName(bytes: Uint8Array, off: number): string {
     let s = "";
     for (let i = 0; i < 16; i++) {
-        const c = bytes[off + i];
+        const c = bytes[off + i]!;
         if (c === 0) break;
         s += String.fromCharCode(c);
     }
@@ -165,15 +165,15 @@ function readName(bytes: Uint8Array, off: number): string {
 
 /** Expand a frame's compact vertex positions into the flat per-corner buffer. */
 export function expandFrame(model: MdlModel, frameIndex: number, out: Float32Array): void {
-    const verts = model.frames[frameIndex].verts;
+    const verts = model.frames[frameIndex]!.verts;
     const map = model.expandMap;
     // Quake MDL verts are Z-up (x fwd, y left, z up). Convert to engine space
     // (Y-up) with the same [x, z, y] swap used for world geometry so the model
     // stands upright; the mesh's Y rotation then applies the entity yaw.
     for (let c = 0; c < map.length; c++) {
-        const vi = map[c] * 3;
-        out[c * 3] = verts[vi];
-        out[c * 3 + 1] = verts[vi + 2];
-        out[c * 3 + 2] = verts[vi + 1];
+        const vi = map[c]! * 3;
+        out[c * 3] = verts[vi]!;
+        out[c * 3 + 1] = verts[vi + 2]!;
+        out[c * 3 + 2] = verts[vi + 1]!;
     }
 }

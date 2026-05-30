@@ -325,9 +325,10 @@ export class MonsterSystem {
     private aabbDistSq(m: Monster, p: V3): number {
         let d = 0;
         for (let i = 0; i < 3; i++) {
-            const lo = m.origin[i] + MON_MINS[i];
-            const hi = m.origin[i] + MON_MAXS[i];
-            const v = p[i] < lo ? lo - p[i] : p[i] > hi ? p[i] - hi : 0;
+            const pi = p[i]!;
+            const lo = m.origin[i]! + MON_MINS[i]!;
+            const hi = m.origin[i]! + MON_MAXS[i]!;
+            const v = pi < lo ? lo - pi : pi > hi ? pi - hi : 0;
             d += v * v;
         }
         return d;
@@ -403,13 +404,16 @@ function rayAabb(o: V3, d: V3, mn: V3, mx: V3): number | null {
     let tmin = 0;
     let tmax = Infinity;
     for (let a = 0; a < 3; a++) {
-        const da = d[a];
+        const da = d[a]!;
+        const oa = o[a]!;
+        const mna = mn[a]!;
+        const mxa = mx[a]!;
         if (Math.abs(da) < 1e-8) {
-            if (o[a] < mn[a] || o[a] > mx[a]) return null;
+            if (oa < mna || oa > mxa) return null;
         } else {
             const inv = 1 / da;
-            let t1 = (mn[a] - o[a]) * inv;
-            let t2 = (mx[a] - o[a]) * inv;
+            let t1 = (mna - oa) * inv;
+            let t2 = (mxa - oa) * inv;
             if (t1 > t2) [t1, t2] = [t2, t1];
             tmin = Math.max(tmin, t1);
             tmax = Math.min(tmax, t2);
