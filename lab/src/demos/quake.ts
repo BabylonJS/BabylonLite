@@ -888,6 +888,7 @@ interface Hud {
     complete: (map: string) => void;
     setStats: (player: Player, kills: number, total: number) => void;
     muzzle: () => void;
+    pain: (amount: number) => void;
     showDead: () => void;
 }
 
@@ -897,6 +898,7 @@ function hurtPlayer(player: Player, amount: number, hud: Hud, sound: QuakeSound)
     const soak = Math.min(player.armor, amount * 0.6);
     player.armor -= soak;
     player.health -= amount - soak;
+    hud.pain(amount);
     if (player.health <= 0) {
         player.health = 0;
         player.dead = true;
@@ -931,6 +933,12 @@ async function createHud(palette: Palette): Promise<Hud> {
     const flash = document.createElement("div");
     flash.style.cssText = "position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:9997;transition:opacity .08s;";
     document.body.appendChild(flash);
+
+    // Quake CSHIFT_DAMAGE blend: a red full-screen wash on taking damage that
+    // snaps in proportional to the hit and fades out over ~0.4s.
+    const damage = document.createElement("div");
+    damage.style.cssText = "position:fixed;inset:0;background:#b30000;opacity:0;pointer-events:none;z-index:9996;transition:opacity .4s ease-out;";
+    document.body.appendChild(damage);
 
     const banner = document.createElement("div");
     banner.style.cssText =
@@ -975,6 +983,17 @@ async function createHud(palette: Palette): Promise<Hud> {
         muzzle() {
             flash.style.opacity = "0.35";
             window.setTimeout(() => (flash.style.opacity = "0"), 60);
+        },
+        pain(amount: number) {
+            // Snap to an intensity scaled by the hit, then fade. Force a reflow
+            // between the two writes so the snap-in isn't smoothed by the
+            // transition and only the fade-out animates.
+            const intensity = Math.min(0.6, 0.22 + amount * 0.012);
+            damage.style.transition = "none";
+            damage.style.opacity = String(intensity);
+            void damage.offsetWidth;
+            damage.style.transition = "opacity .4s ease-out";
+            damage.style.opacity = "0";
         },
         showDead() {
             banner.style.display = "flex";
