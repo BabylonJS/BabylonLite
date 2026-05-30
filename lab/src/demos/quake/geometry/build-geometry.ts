@@ -35,8 +35,13 @@ export function quakeToEngine(qx: number, qy: number, qz: number): [number, numb
  * Build per-texture geometry batches for a contiguous face range (one BSP
  * model) into the shared lightmap atlas. Call once per model so movers stay
  * separate from the static world.
+ *
+ * `nudge` pushes every face a fraction of a unit out along its own normal.
+ * Brush-entity models (doors, func_walls, light fixtures) are frequently
+ * authored coplanar with the world face they sit against; without the offset
+ * the two surfaces z-fight. The world model (0) is built with nudge 0.
  */
-export function buildModelGeometry(bsp: BspData, atlas: LightmapAtlas, firstFace: number, numFaces: number): Map<number, GeometryBatch> {
+export function buildModelGeometry(bsp: BspData, atlas: LightmapAtlas, firstFace: number, numFaces: number, nudge = 0): Map<number, GeometryBatch> {
     const batches = new Map<number, GeometryBatch>();
     const [whiteU, whiteV] = atlas.whiteUV;
 
@@ -60,6 +65,13 @@ export function buildModelGeometry(bsp: BspData, atlas: LightmapAtlas, firstFace
         const special = (ti.flags & TEX_SPECIAL) !== 0;
         const texW = mt && mt.width > 0 ? mt.width : 64;
         const texH = mt && mt.height > 0 ? mt.height : 64;
+
+        // Outward push along the face's (side-corrected) normal, in Quake space.
+        const plane = bsp.planes[face.planeNum];
+        const nsign = face.side ? -1 : 1;
+        const nudgeX = nudge * nsign * plane.normal[0];
+        const nudgeY = nudge * nsign * plane.normal[1];
+        const nudgeZ = nudge * nsign * plane.normal[2];
 
         const n = face.numEdges;
         if (n < 3) continue;
@@ -106,7 +118,7 @@ export function buildModelGeometry(bsp: BspData, atlas: LightmapAtlas, firstFace
         const batch = getBatch(ti.miptex);
         const base = batch.pos.length / 3;
         for (let k = 0; k < n; k++) {
-            const [ex, ey, ez] = quakeToEngine(qx[k], qy[k], qz[k]);
+            const [ex, ey, ez] = quakeToEngine(qx[k] + nudgeX, qy[k] + nudgeY, qz[k] + nudgeZ);
             batch.pos.push(ex, ey, ez);
             batch.uv.push(sArr[k] / texW, tArr[k] / texH);
             if (lm) {

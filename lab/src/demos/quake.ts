@@ -57,6 +57,25 @@ const MAX_FRAME = 0.05;
 
 const MOVER_KINDS = new Set(["door", "secret", "button", "plat"]);
 
+// Quake doors are authored as a func_wall backing plus two sliding func_door
+// leaves, all roughly coplanar — and the two leaves themselves overlap in the
+// closed position. Coplanar faces at equal depth z-fight, so we push each brush
+// model out along its face normals by a per-model amount with two properties:
+//  1. Role tiers — movers (visible door leaves) sit proud of static brush
+//     (func_wall backing), which sits proud of the world. Order: mover>brush>world.
+//  2. A hashed per-model jitter inside each tier so coplanar siblings (the two
+//     leaves, or a leaf vs its backing) never share a depth. A door's models are
+//     authored with consecutive indices, and (idx*7)%16 maps consecutive indices
+//     ~0.28 units apart — maximal separation exactly where it's needed. The only
+//     collision (indices 16 apart) cannot occur for a door set, whose models are
+//     adjacent, so same-tier siblings are always separated.
+// All offsets are a couple of units at most — sub-pixel at gameplay distances and
+// well inside the door's own thickness, so collision (BSP hulls) is unaffected.
+const BRUSH_BASE_NUDGE = 0.4;
+const MOVER_BASE_NUDGE = 1.4;
+const brushNudge = (modelIndex: number, isMover: boolean): number =>
+    (isMover ? MOVER_BASE_NUDGE : BRUSH_BASE_NUDGE) + ((modelIndex * 7) % 16) * 0.04;
+
 const START_SHELLS = 25;
 const START_ROCKETS = 0;
 const START_HEALTH = 100;
@@ -169,8 +188,10 @@ async function main(): Promise<void> {
         if (ent.modelIndex < 0) continue;
         const model = bsp.models[ent.modelIndex];
         if (!model) continue;
-        const batches = buildModelGeometry(bsp, atlas, model.firstFace, model.numFaces);
-        if (MOVER_KINDS.has(ent.kind)) moverBatches.push({ ent, batches });
+        const isMover = MOVER_KINDS.has(ent.kind);
+        const nudge = brushNudge(ent.modelIndex, isMover);
+        const batches = buildModelGeometry(bsp, atlas, model.firstFace, model.numFaces, nudge);
+        if (isMover) moverBatches.push({ ent, batches });
         else mergeBatches(worldBatches, batches);
     }
 
