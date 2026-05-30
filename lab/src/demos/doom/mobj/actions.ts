@@ -122,7 +122,7 @@ function newChaseDir(world: DoomWorld, m: Mobj, t: Mobj): void {
         if (d === Dir.NONE) continue;
         if (tryWalk(world, m, d)) {
             m.moveDir = d;
-            m.moveCount = 8 + Math.floor(Math.random() * 8);
+            m.moveCount = Math.floor(Math.random() * 16);
             return;
         }
     }
