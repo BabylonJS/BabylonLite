@@ -4,7 +4,7 @@
 // streaming keyframe positions into the mesh GPU buffer, mirroring the monster
 // animation path. No GPL code copied.
 
-import { addToScene, createMeshFromData, createTexture2DFromPixels, type EngineContext, type Mesh, type SceneContext, type Texture2D } from "babylon-lite";
+import { addToScene, createMeshFromData, createTexture2DFromPixels, updateMeshPositions, type EngineContext, type Mesh, type SceneContext, type Texture2D } from "babylon-lite";
 
 import { parseMdl, expandFrame, type MdlModel } from "./mdl.js";
 import { createQuakeMaterial } from "./quake-material.js";
@@ -40,7 +40,6 @@ export class Viewmodel {
     private model: MdlModel | null = null;
     private mesh: Mesh | null = null;
     private scratch: Float32Array | null = null;
-    private device: GPUDevice;
     private firing = 0; // seconds remaining in the fire animation
     private curFrame = 0;
 
@@ -51,7 +50,6 @@ export class Viewmodel {
         private readonly palette: Palette,
         private readonly whiteUV: [number, number]
     ) {
-        this.device = (engine as unknown as { device: GPUDevice }).device;
     }
 
     async load(): Promise<void> {
@@ -130,8 +128,7 @@ export class Viewmodel {
         if (frame !== this.curFrame) {
             this.curFrame = frame;
             expandFrame(model, frame, scratch);
-            const gpu = (mesh as unknown as { _gpu: { positionBuffer: GPUBuffer } })._gpu;
-            this.device.queue.writeBuffer(gpu.positionBuffer, 0, scratch.buffer, scratch.byteOffset, scratch.byteLength);
+            updateMeshPositions(this.engine, mesh, scratch);
         }
     }
 }

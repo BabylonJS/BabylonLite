@@ -11,6 +11,7 @@ import {
     addToScene,
     createMeshFromData,
     createTexture2DFromPixels,
+    updateMeshPositions,
     type EngineContext,
     type Mesh,
     type SceneContext,
@@ -76,7 +77,6 @@ export interface MonsterHooks {
 export class MonsterSystem {
     private readonly monsters: Monster[] = [];
     private readonly models = new Map<string, MdlModel>();
-    private readonly device: GPUDevice;
     kills = 0;
     total = 0;
 
@@ -89,7 +89,6 @@ export class MonsterSystem {
         private readonly palette: Palette,
         private readonly hooks: MonsterHooks
     ) {
-        this.device = (engine as unknown as { device: GPUDevice }).device;
     }
 
     /** Fetch + parse the MDL models needed for the given entity classes. */
@@ -248,8 +247,7 @@ export class MonsterSystem {
 
     private writeFrame(m: Monster, frameIndex: number): void {
         expandFrame(m.model, frameIndex, m.scratch);
-        const gpu = (m.mesh as unknown as { _gpu: { positionBuffer: GPUBuffer } })._gpu;
-        this.device.queue.writeBuffer(gpu.positionBuffer, 0, m.scratch.buffer, m.scratch.byteOffset, m.scratch.byteLength);
+        updateMeshPositions(this.engine, m.mesh, m.scratch);
     }
 
     /**
