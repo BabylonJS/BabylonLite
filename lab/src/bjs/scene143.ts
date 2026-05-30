@@ -45,7 +45,7 @@ import "@babylonjs/loaders";
     engine.runRenderLoop(() => scene.render());
     window.addEventListener("resize", () => engine.resize());
     for (let i = 0; i < 10; i++) {
-        await new Promise<void>((resolve) => scene.onAfterRenderObservable.addOnce(resolve));
+        await new Promise<void>((resolve) => scene.onAfterRenderObservable.addOnce(() => resolve()));
     }
     canvas.dataset.initMs = String(performance.now() - initStart);
     canvas.dataset.ready = "true";

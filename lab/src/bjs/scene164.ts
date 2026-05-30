@@ -64,7 +64,7 @@ async function buildRuntime(canvas: HTMLCanvasElement, recovered: boolean, seekT
     await scene.whenReadyAsync();
     engine.runRenderLoop(() => scene.render());
     window.addEventListener("resize", () => engine.resize());
-    await new Promise<void>((resolve) => scene.onAfterRenderObservable.addOnce(resolve));
+    await new Promise<void>((resolve) => scene.onAfterRenderObservable.addOnce(() => resolve()));
     canvas.dataset.loaded = "true";
     canvas.dataset.ready = "true";
     if (recovered) {
