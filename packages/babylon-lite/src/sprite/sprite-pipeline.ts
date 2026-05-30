@@ -2,10 +2,13 @@
 import type { EngineContextInternal } from "../engine/engine.js";
 import type { Sprite2DLayer, SpriteBlendMode } from "./sprite-2d.js";
 import { DEPTH_INSTANCE_STRIDE_BYTES, PURE_2D_INSTANCE_STRIDE_BYTES } from "./sprite-2d.js";
+import type { Sprite2DCustomShader } from "./sprite-2d-custom-shader.js";
 
 export interface SpritePipelineDeviceCache {
     _shaderModule: GPUShaderModule | null;
     _sceneShaderModule: GPUShaderModule | null;
+    /** Custom-shader modules keyed by `${hasDepth}:${group}:${custom._key}`. */
+    _customShaderModules: Map<string, GPUShaderModule>;
     _pipelines: Map<string, GPURenderPipeline>;
 }
 
@@ -132,17 +135,18 @@ export function getOrCreateSpritePipeline(
     hasDepth: boolean,
     depthWrite = false,
     depthStencilFormat?: GPUTextureFormat,
-    sceneBindGroupLayout?: GPUBindGroupLayout
+    sceneBindGroupLayout?: GPUBindGroupLayout,
+    customShader?: Sprite2DCustomShader
 ): GPURenderPipeline {
     const deviceCache = getSpritePipelineDeviceCache(engine, cache);
     const resolvedDepthStencilFormat = normalizeDepthStencilFormat(hasDepth, depthStencilFormat);
-    const key = spritePipelineKey(format, sampleCount, blendMode, hasDepth, depthWrite, resolvedDepthStencilFormat);
+    const key = spritePipelineKey(format, sampleCount, blendMode, hasDepth, depthWrite, resolvedDepthStencilFormat, customShader);
     const cached = deviceCache._pipelines.get(key);
     if (cached) {
         return cached;
     }
 
-    const pipeline = buildSpritePipeline(engine, deviceCache, format, sampleCount, blendMode, hasDepth, depthWrite, resolvedDepthStencilFormat, sceneBindGroupLayout);
+    const pipeline = buildSpritePipeline(engine, deviceCache, format, sampleCount, blendMode, hasDepth, depthWrite, resolvedDepthStencilFormat, sceneBindGroupLayout, customShader);
     deviceCache._pipelines.set(key, pipeline);
     return pipeline;
 }
@@ -155,13 +159,22 @@ export function createSpriteLayerBindGroup(
     uniformBuffer: GPUBuffer
 ): GPUBindGroup {
     const tex = layer.atlas.texture;
+    const entries: GPUBindGroupEntry[] = [
+        { binding: 0, resource: { buffer: uniformBuffer } },
+        { binding: 1, resource: tex.view },
+        { binding: 2, resource: tex.sampler },
+    ];
+    const extras = layer._customShader?._extraTextures;
+    if (extras) {
+        for (let i = 0; i < extras.length; i++) {
+            const binding = 3 + i * 2;
+            const extraTex = extras[i]!.texture;
+            entries.push({ binding, resource: extraTex.view }, { binding: binding + 1, resource: extraTex.sampler });
+        }
+    }
     return engine.device.createBindGroup({
         layout: pipeline.getBindGroupLayout(spriteBindGroupIndex),
-        entries: [
-            { binding: 0, resource: { buffer: uniformBuffer } },
-            { binding: 1, resource: tex.view },
-            { binding: 2, resource: tex.sampler },
-        ],
+        entries,
     });
 }
 
@@ -171,6 +184,7 @@ function getSpritePipelineDeviceCache(engine: EngineContextInternal, cache: Spri
         deviceCache = {
             _shaderModule: null,
             _sceneShaderModule: null,
+            _customShaderModules: new Map(),
             _pipelines: new Map(),
         };
         cache._devices.set(engine.device, deviceCache);
@@ -194,12 +208,23 @@ function spritePipelineKey(
     blendMode: SpriteBlendMode,
     hasDepth: boolean,
     depthWrite: boolean,
-    depthStencilFormat: GPUTextureFormat | null
+    depthStencilFormat: GPUTextureFormat | null,
+    customShader?: Sprite2DCustomShader
 ): string {
-    return `${format}:${sampleCount}:${getBlendModeEntry(blendMode).index}:${hasDepth ? 1 : 0}:${depthWrite ? 1 : 0}:${depthStencilFormat ?? "-"}`;
+    return `${format}:${sampleCount}:${getBlendModeEntry(blendMode).index}:${hasDepth ? 1 : 0}:${depthWrite ? 1 : 0}:${depthStencilFormat ?? "-"}:${customShader?._key ?? "-"}`;
 }
 
-function getShaderModule(engine: EngineContextInternal, cache: SpritePipelineDeviceCache, hasDepth: boolean): GPUShaderModule {
+function getShaderModule(engine: EngineContextInternal, cache: SpritePipelineDeviceCache, hasDepth: boolean, customShader?: Sprite2DCustomShader): GPUShaderModule {
+    const group: 0 | 1 = hasDepth ? 1 : 0;
+    if (customShader) {
+        const key = `${hasDepth ? 1 : 0}:${group}:${customShader._key}`;
+        let module = cache._customShaderModules.get(key);
+        if (!module) {
+            module = engine.device.createShaderModule({ code: customShader._composeWgsl(hasDepth, group) });
+            cache._customShaderModules.set(key, module);
+        }
+        return module;
+    }
     if (hasDepth) {
         cache._sceneShaderModule ??= engine.device.createShaderModule({ code: makeSpriteWgsl(true, 1) });
         return cache._sceneShaderModule;
@@ -217,17 +242,27 @@ function buildSpritePipeline(
     hasDepth: boolean,
     depthWrite: boolean,
     depthStencilFormat: GPUTextureFormat | null,
-    sceneBindGroupLayout?: GPUBindGroupLayout
+    sceneBindGroupLayout?: GPUBindGroupLayout,
+    customShader?: Sprite2DCustomShader
 ): GPURenderPipeline {
     const device = engine.device;
-    const bindGroupLayout = device.createBindGroupLayout({
-        entries: [
-            { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
-            { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
-            { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
-        ],
-    });
-    const module = getShaderModule(engine, cache, hasDepth);
+    const bindGroupLayoutEntries: GPUBindGroupLayoutEntry[] = [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+    ];
+    const extras = customShader?._extraTextures;
+    if (extras) {
+        for (let i = 0; i < extras.length; i++) {
+            const binding = 3 + i * 2;
+            bindGroupLayoutEntries.push(
+                { binding, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+                { binding: binding + 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } }
+            );
+        }
+    }
+    const bindGroupLayout = device.createBindGroupLayout({ entries: bindGroupLayoutEntries });
+    const module = getShaderModule(engine, cache, hasDepth, customShader);
     if (hasDepth && !sceneBindGroupLayout) {
         throw new Error("Sprite pipeline: depth-enabled pipelines require a scene bind-group layout.");
     }

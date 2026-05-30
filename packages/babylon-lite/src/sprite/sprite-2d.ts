@@ -10,6 +10,7 @@
  */
 import type { SpriteAtlas } from "./shared/sprite-atlas.js";
 import { resolveSpriteFrame } from "./shared/sprite-atlas.js";
+import type { Sprite2DCustomShader } from "./sprite-2d-custom-shader.js";
 
 /** Output blend mode for a sprite layer. Currently supports `"alpha"` and `"premultiplied"`. */
 export type SpriteBlendMode = "alpha" | "premultiplied" | "additive" | "multiply" | "cutout";
@@ -55,6 +56,14 @@ export interface Sprite2DLayerOptions {
      * depth-hosted sprite, call `updateSprite2DIndex(layer, idx, { z: … })`.
      */
     layerZ?: number;
+    /**
+     * Optional, tree-shakable custom fragment shader for this layer. Build it with
+     * `createSprite2DCustomShader({ fragment, extraTextures })`. The layer keeps full
+     * ownership of geometry, instancing, sorting, and the pixel-space vertex transform; the
+     * custom shader replaces only the fragment body (and may bind extra textures). A layer
+     * without a `customShader` uses the stock `sample × tint × opacity` fragment.
+     */
+    customShader?: Sprite2DCustomShader;
 }
 
 /** A `Sprite2DLayer` — pure data, no methods. */
@@ -100,6 +109,8 @@ export interface Sprite2DLayer {
     _dirtyMax: number;
     /** @internal Optional hooks installed by the opt-in handle module. */
     _handleHooks?: Sprite2DIndexHandleHooks;
+    /** @internal Optional custom fragment shader; see `Sprite2DLayerOptions.customShader`. */
+    readonly _customShader?: Sprite2DCustomShader;
 }
 
 /** @internal Lazy hooks used by the opt-in Handle API to track swap-removes. */
@@ -202,6 +213,7 @@ export function createSprite2DLayer(atlas: SpriteAtlas, opts: Sprite2DLayerOptio
         _version: 0,
         _dirtyMin: 0,
         _dirtyMax: 0,
+        _customShader: opts.customShader,
     };
 }
 

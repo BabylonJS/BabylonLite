@@ -1,70 +1,47 @@
-// Faithful DOOM sprite rendering: view-space billboards drawn through the same
-// palette + COLORMAP path as the world, so monsters/items get correct banded
-// light diminishing and depth occlusion against walls.
+// Faithful DOOM sprite rendering, built on Babylon-Lite's facing billboards.
 //
-// All visible mobjs are packed into ONE dynamic mesh (rebuilt once per render
-// frame). Each mobj is a quad whose center vertex position is the mobj origin in
-// world space; the per-vertex `normal.xy` carries the corner offset, applied in
-// VIEW space so the quad always faces the camera (Doom has no pitch, so a
-// view-space offset is both camera-facing and axis-locked).
+// Every visible mobj is one facing billboard: a camera-facing world-space quad
+// whose anchor is the mobj origin. The shared SpriteStore atlas (one frame per
+// placed patch, R = palette index, A = coverage) is wrapped in a lite
+// `SpriteAtlas`, and a custom billboard fragment runs the same palette + COLORMAP
+// path as the world so monsters/items get correct banded light diminishing.
+//
+// DOOM places a sprite's origin at the patch pivot (leftOffset, topOffset). The
+// billboard `pivot` carries that anchor; horizontal mirroring is expressed with
+// per-sprite `flipX` plus a mirrored pivot override, so the same atlas pixels
+// serve both facings without duplicating rectangles.
+//
+// `cutout` blend mode writes depth, so sprites occlude (and are occluded by)
+// walls and each other through the shared reverse-Z depth buffer.
 
-import { addToScene, createMeshFromData, createShaderMaterial, removeFromScene, setShaderTexture, type EngineContext, type Mesh, type SceneContext, type ShaderMaterial, type Texture2D } from "babylon-lite";
+import {
+    addBillboardSpriteIndex,
+    addFacingBillboardSystem,
+    clearBillboardSprites,
+    createBillboardCustomShader,
+    createFacingBillboardSystem,
+    type FacingBillboardSpriteSystem,
+    type SceneContext,
+    type Texture2D,
+} from "babylon-lite";
 import type { SpriteImage, SpriteStore } from "./sprites.js";
 
 const DIST_PER_BAND = 224.0;
 
-const vertexSource = `struct VertexOutput {
-  @builtin(position) position: vec4<f32>,
-  @location(0) uv: vec2<f32>,
-  @location(1) dist: f32,
-  @location(2) light: vec2<f32>,
-};
-@vertex fn mainVertex(input: VertexInput) -> VertexOutput {
-  var out: VertexOutput;
-  let viewCenter = shaderSystem.worldView * vec4<f32>(input.position, 1.0);
-  let offset = vec4<f32>(input.normal.x, input.normal.y, 0.0, 0.0);
-  out.position = shaderSystem.projection * (viewCenter + offset);
-  out.dist = length(viewCenter.xyz);
-  out.uv = input.uv;
-  out.light = vec2<f32>(input.color.r, input.color.g);
-  return out;
-}`;
-
-const fragmentSource = `struct VertexOutput {
-  @builtin(position) position: vec4<f32>,
-  @location(0) uv: vec2<f32>,
-  @location(1) dist: f32,
-  @location(2) light: vec2<f32>,
-};
-const DIST_PER_BAND: f32 = ${DIST_PER_BAND.toFixed(1)};
-@fragment fn mainFragment(input: VertexOutput) -> @location(0) vec4<f32> {
-  let src = textureSample(atlasTex, atlasTexSampler, input.uv);
-  if (src.a < 0.5) { discard; }
-  let idx = floor(src.r * 255.0 + 0.5);
-  let sectorLight = input.light.x * 255.0;
-  let fullbright = input.light.y;
-  let baseRow = clamp(31.0 - floor(sectorLight / 8.0), 0.0, 31.0);
-  let distBand = floor(input.dist / DIST_PER_BAND);
-  var row = clamp(baseRow + distBand, 0.0, 31.0);
-  row = mix(row, 0.0, step(0.5, fullbright));
-  let lut = textureSample(colormapTex, colormapTexSampler, vec2<f32>((idx + 0.5) / 256.0, (row + 0.5) / 34.0));
-  return vec4<f32>(lut.rgb, 1.0);
-}`;
-
-export function createSpriteMaterial(name: string, atlasTex: Texture2D, colormapTex: Texture2D): ShaderMaterial {
-    const mat = createShaderMaterial({
-        name,
-        vertexSource,
-        fragmentSource,
-        attributes: ["position", "normal", "uv", "color"],
-        uniforms: ["worldView", "projection"],
-        samplers: ["atlasTex", "colormapTex"],
-        backFaceCulling: false,
-    });
-    setShaderTexture(mat, "atlasTex", atlasTex);
-    setShaderTexture(mat, "colormapTex", colormapTex);
-    return mat;
-}
+// Custom billboard fragment: palette-indexed sample → COLORMAP LUT with sector-light
+// + view-distance banding, fullbright override, and a hard cutout discard.
+const SPRITE_FRAGMENT = `let DIST_PER_BAND: f32 = ${DIST_PER_BAND.toFixed(1)};
+let src = textureSample(atlasTex, atlasSamp, in.uv);
+if (src.a < 0.5) { discard; }
+let idx = floor(src.r * 255.0 + 0.5);
+let sectorLight = in.tint.x * 255.0;
+let fullbright = in.tint.y;
+let baseRow = clamp(31.0 - floor(sectorLight / 8.0), 0.0, 31.0);
+let distBand = floor(in.viewDist / DIST_PER_BAND);
+var row = clamp(baseRow + distBand, 0.0, 31.0);
+row = mix(row, 0.0, step(0.5, fullbright));
+let lut = textureSample(colormapTex, colormapSamp, vec2<f32>((idx + 0.5) / 256.0, (row + 0.5) / 34.0));
+return vec4<f32>(lut.rgb, 1.0);`;
 
 /** A single mobj to draw this frame. */
 export interface RenderSprite {
@@ -81,122 +58,56 @@ export interface RenderSprite {
 }
 
 export class SpriteRenderer {
-    private material: ShaderMaterial | null = null;
-    private mesh: Mesh | null = null;
-    private counter = 0;
+    private system: FacingBillboardSpriteSystem | null = null;
 
     constructor(
-        private readonly engine: EngineContext,
         private readonly scene: SceneContext,
         private readonly store: SpriteStore,
         private readonly colormapTex: Texture2D
     ) {}
 
-    /** Rebuilds the single sprite mesh from the given visible sprites (call once/frame). */
+    private ensureSystem(): FacingBillboardSpriteSystem | null {
+        if (this.system) return this.system;
+        const atlas = this.store.spriteAtlas;
+        if (!atlas) return null;
+        const customShader = createBillboardCustomShader({
+            fragment: SPRITE_FRAGMENT,
+            extraTextures: [{ name: "colormap", texture: this.colormapTex }],
+        });
+        const system = createFacingBillboardSystem(atlas, { blendMode: "cutout", customShader, capacity: 256 });
+        addFacingBillboardSystem(this.scene, system);
+        this.system = system;
+        return system;
+    }
+
+    /** Rebuilds the billboard set from the given visible sprites (call once/frame). */
     rebuild(sprites: RenderSprite[]): void {
-        if (this.mesh) {
-            removeFromScene(this.scene, this.mesh);
-            this.mesh = null;
-        }
-        const atlas = this.store.atlas;
-        if (!atlas || sprites.length === 0) return;
-
-        const n = sprites.length;
-        const positions = new Float32Array(n * 12);
-        const normals = new Float32Array(n * 12);
-        const uvs = new Float32Array(n * 8);
-        const colors = new Float32Array(n * 16);
-        const indices = new Uint32Array(n * 6);
-
-        const aw = this.store.atlasWidth;
-        const ah = this.store.atlasHeight;
-
-        for (let i = 0; i < n; i++) {
-            const s = sprites[i];
+        const system = this.ensureSystem();
+        if (!system) return;
+        clearBillboardSprites(system);
+        for (const s of sprites) {
             const img = s.image;
-            let left: number;
-            let right: number;
-            let uL: number;
-            let uR: number;
-            const u0 = img.ax / aw;
-            const u1 = (img.ax + img.aw) / aw;
-            if (img.mirror) {
-                left = -(img.aw - img.leftOffset);
-                right = img.leftOffset;
-                uL = u1;
-                uR = u0;
-            } else {
-                left = -img.leftOffset;
-                right = img.aw - img.leftOffset;
-                uL = u0;
-                uR = u1;
-            }
-            const top = img.topOffset;
-            const bottom = img.topOffset - img.ah;
-            const v0 = img.ay / ah;
-            const v1 = (img.ay + img.ah) / ah;
-
-            const vb = i * 12;
-            const ub = i * 8;
-            const cb = i * 16;
-            const ib = i * 6;
-            const base = i * 4;
-
-            // Four corners share the same world-space center; the offset lives in normal.xy.
-            for (let c = 0; c < 4; c++) {
-                positions[vb + c * 3] = s.x;
-                positions[vb + c * 3 + 1] = s.z;
-                positions[vb + c * 3 + 2] = s.y;
-            }
-            // 0 = left/bottom, 1 = right/bottom, 2 = right/top, 3 = left/top
-            normals[vb] = left;
-            normals[vb + 1] = bottom;
-            normals[vb + 3] = right;
-            normals[vb + 4] = bottom;
-            normals[vb + 6] = right;
-            normals[vb + 7] = top;
-            normals[vb + 9] = left;
-            normals[vb + 10] = top;
-
-            uvs[ub] = uL;
-            uvs[ub + 1] = v1;
-            uvs[ub + 2] = uR;
-            uvs[ub + 3] = v1;
-            uvs[ub + 4] = uR;
-            uvs[ub + 5] = v0;
-            uvs[ub + 6] = uL;
-            uvs[ub + 7] = v0;
-
-            const lr = s.light / 255;
-            const fb = s.fullbright ? 1 : 0;
-            for (let c = 0; c < 4; c++) {
-                colors[cb + c * 4] = lr;
-                colors[cb + c * 4 + 1] = fb;
-                colors[cb + c * 4 + 2] = 0;
-                colors[cb + c * 4 + 3] = 1;
-            }
-
-            indices[ib] = base;
-            indices[ib + 1] = base + 1;
-            indices[ib + 2] = base + 2;
-            indices[ib + 3] = base;
-            indices[ib + 4] = base + 2;
-            indices[ib + 5] = base + 3;
+            const aw = img.aw;
+            const ah = img.ah;
+            // DOOM origin sits at the patch pivot. Mirroring reflects the horizontal
+            // pivot about the sprite centre so the flipped image still anchors correctly.
+            const pivotX = img.mirror ? (aw - img.leftOffset) / aw : img.leftOffset / aw;
+            const pivotY = img.topOffset / ah;
+            addBillboardSpriteIndex(system, {
+                position: [s.x, s.z, s.y],
+                sizeWorld: [aw, ah],
+                frame: img.frameIndex,
+                pivot: [pivotX, pivotY],
+                flipX: img.mirror,
+                color: [s.light / 255, s.fullbright ? 1 : 0, 0, 1],
+            });
         }
-
-        const mesh = createMeshFromData(this.engine, `doom_sprites_${this.counter++}`, positions, normals, indices, uvs, undefined, undefined, colors);
-        if (!this.material) {
-            this.material = createSpriteMaterial("doomSpriteMat", atlas, this.colormapTex);
-        }
-        mesh.material = this.material;
-        addToScene(this.scene, mesh);
-        this.mesh = mesh;
     }
 
     dispose(): void {
-        if (this.mesh) {
-            removeFromScene(this.scene, this.mesh);
-            this.mesh = null;
+        if (this.system) {
+            clearBillboardSprites(this.system);
+            this.system = null;
         }
     }
 }

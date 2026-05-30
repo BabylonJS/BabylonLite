@@ -275,13 +275,15 @@ export type { Renderable, PrePassRenderable, SceneUniformUpdater, DrawBinding, D
 export type { RenderTargetSignature } from "./engine/render-target.js";
 
 // ─── Sprites (2D) ────────────────────────────────────────────────────
-export type { SpriteAtlas, SpriteFrame, SpriteSampling, GridAtlasOptions, LoadAtlasOptions } from "./sprite/shared/sprite-atlas.js";
-export { createGridSpriteAtlas, loadSpriteAtlas } from "./sprite/shared/sprite-atlas.js";
+export type { SpriteAtlas, SpriteFrame, SpriteSampling, GridAtlasOptions, LoadAtlasOptions, AtlasFrameSpec, FramesAtlasOptions } from "./sprite/shared/sprite-atlas.js";
+export { createGridSpriteAtlas, createSpriteAtlasFromFrames, loadSpriteAtlas } from "./sprite/shared/sprite-atlas.js";
 export type { Sprite2DLayer, Sprite2DLayerOptions, Sprite2DProps, Sprite2DView, Sprite2DDepthMode, SpriteBlendMode } from "./sprite/sprite-2d.js";
 export { createSprite2DLayer, addSprite2DIndex, updateSprite2DIndex, removeSprite2DIndex, clearSprite2DLayer, setSprite2DFrameIndex } from "./sprite/sprite-2d.js";
 export type { Sprite2DHandle } from "./sprite/sprite-2d-handle.js";
 export { addSprite2D, updateSprite2D, removeSprite2D, setSprite2DFrame, getSprite2DHandleIndex, isSprite2DHandleAlive } from "./sprite/sprite-2d-handle.js";
 export { addDepthHostedSpriteLayer } from "./sprite/sprite-scene.js";
+export type { Sprite2DCustomShader, Sprite2DCustomShaderOptions, Sprite2DCustomTexture } from "./sprite/sprite-2d-custom-shader.js";
+export { createSprite2DCustomShader } from "./sprite/sprite-2d-custom-shader.js";
 // ─── World-space billboards ────────────────────────────────────────
 export type {
     FacingBillboardSpriteSystem,
@@ -311,6 +313,8 @@ export {
     isBillboardSpriteHandleAlive,
 } from "./sprite/billboard-sprite-handle.js";
 export { addFacingBillboardSystem, addAxisLockedBillboardSystem } from "./sprite/billboard-scene.js";
+export type { BillboardCustomShader, BillboardCustomShaderOptions, BillboardCustomTexture } from "./sprite/billboard-custom-shader.js";
+export { createBillboardCustomShader } from "./sprite/billboard-custom-shader.js";
 export type { SpriteRenderer, SpriteRendererOptions } from "./sprite/sprite-renderer.js";
 export {
     createSpriteRenderer,

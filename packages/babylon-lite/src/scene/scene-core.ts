@@ -273,13 +273,26 @@ export function addDeferredSceneRenderables(
     build: (engine: EngineContextInternal, scene: SceneContextInternal) => DeferredSceneRenderables | Promise<DeferredSceneRenderables>
 ): void {
     const ctx = scene as SceneContextInternal;
-    ctx._deferredBuilders.push(async () => {
+    const builder = async (): Promise<void> => {
         const built = await build(ctx.engine as EngineContextInternal, ctx);
         ctx._renderables.push(...built.renderables);
         if (built.dispose) {
             ctx._disposables.push(built.dispose);
         }
-    });
+    };
+    if (ctx._built) {
+        // Scene already booted: deferred builders only run once at boot, so a system
+        // registered after the first frame (e.g. a billboard system created lazily in
+        // the render loop) would otherwise never materialize. Build it now and let the
+        // per-frame scene-mirror pick the new renderable up, mirroring the post-boot
+        // mesh path.
+        void builder().then(() => {
+            ctx._renderables.sort(byOrder);
+            ctx._renderableVersion++;
+        });
+        return;
+    }
+    ctx._deferredBuilders.push(builder);
 }
 
 export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camera | ShadowGenerator | TransformNode | AssetContainer): void {

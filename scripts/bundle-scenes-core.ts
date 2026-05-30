@@ -414,6 +414,12 @@ function mangleWgslIdentifiers(code: string): string {
         ["getBillboardBasis", "gbb"],
         ["billboards", "bb"],
         ["opacityMul", "om"],
+        // `atlasTex`/`atlasSamp`/`worldPos` are part of the PUBLIC custom-shader contract
+        // (see billboard-custom-shader.ts and sprite-2d-custom-shader.ts) AND are shared with the
+        // stock billboard / sprite / PBR shaders, so they stay mangled here for size. Each custom-shader
+        // composer re-applies the relevant subset of this mangle map to the user fragment at runtime
+        // (mirrors applyGsFragments), keeping both sides consistent. KEEP IN SYNC with
+        // billboard-custom-shader.ts:BILLBOARD_CONTRACT_MANGLE and sprite-2d-custom-shader.ts:SPRITE_CONTRACT_MANGLE.
         ["atlasTex", "atx"],
         ["atlasSamp", "asp"],
         ["cameraRight", "cr"],

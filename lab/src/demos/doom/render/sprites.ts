@@ -15,7 +15,7 @@
 //
 // Implemented from public Doom format documentation; no GPL Doom source is used.
 
-import { createTexture2DFromPixels, type EngineContext, type Texture2D } from "babylon-lite";
+import { createTexture2DFromPixels, createSpriteAtlasFromFrames, type AtlasFrameSpec, type SpriteAtlas, type EngineContext, type Texture2D } from "babylon-lite";
 import type { Wad } from "../wad/wad-file.js";
 import { getLump } from "../wad/wad-file.js";
 import { decodePatch } from "../wad/graphics.js";
@@ -32,6 +32,8 @@ export interface SpriteImage {
     topOffset: number;
     /** When true the image must be sampled horizontally flipped. */
     mirror: boolean;
+    /** Index of this image's frame in the shared lite SpriteAtlas. */
+    frameIndex: number;
 }
 
 /** All rotations for one animation frame of one sprite. */
@@ -57,6 +59,7 @@ export class SpriteStore {
     /** Raw rotation records discovered in the S namespace, keyed by sprite name. */
     private readonly raw = new Map<string, RawRot[]>();
     private _atlas: Texture2D | null = null;
+    private _spriteAtlas: SpriteAtlas | null = null;
     private _atlasW = 0;
     private _atlasH = 0;
 
@@ -69,6 +72,10 @@ export class SpriteStore {
 
     get atlas(): Texture2D | null {
         return this._atlas;
+    }
+    /** Shared lite SpriteAtlas (one frame per placed image); use with billboards. */
+    get spriteAtlas(): SpriteAtlas | null {
+        return this._spriteAtlas;
     }
     get atlasWidth(): number {
         return this._atlasW;
@@ -166,7 +173,7 @@ export class SpriteStore {
                     frame.rots = [null, null, null, null, null, null, null, null];
                 }
                 const slot = rec.rot === 0 ? 0 : rec.rot - 1;
-                const image: SpriteImage = { ax: 0, ay: 0, aw: d.w, ah: d.h, leftOffset: d.left, topOffset: d.top, mirror: rec.mirror };
+                const image: SpriteImage = { ax: 0, ay: 0, aw: d.w, ah: d.h, leftOffset: d.left, topOffset: d.top, mirror: rec.mirror, frameIndex: -1 };
                 frame.rots[slot] = image;
                 pending.push({ sprite, frame: rec.frame, rotSlot: slot, rotated: frame.rotated, img: image, pixels: d });
             }
@@ -225,6 +232,21 @@ export class SpriteStore {
         });
         this._atlasW = atlasW;
         this._atlasH = atlasH;
+
+        // Build the shared lite SpriteAtlas: one frame per placed image, with the
+        // patch pivot baked in (the non-mirror convention; mirror is applied per
+        // sprite at draw time via flipX + a mirrored pivot override).
+        const frameSpecs: AtlasFrameSpec[] = items.map((it) => {
+            it.img.frameIndex = -1; // assigned below
+            return {
+                rectPx: [it.img.ax, it.img.ay, it.pixels.w, it.pixels.h] as [number, number, number, number],
+                pivotPx: [it.img.leftOffset, it.img.topOffset] as [number, number],
+            };
+        });
+        items.forEach((it, i) => {
+            it.img.frameIndex = i;
+        });
+        this._spriteAtlas = createSpriteAtlasFromFrames(this._atlas, frameSpecs);
     }
 
     /**

@@ -53,6 +53,20 @@ export interface GridAtlasOptions {
     premultipliedAlpha?: boolean;
 }
 
+/** A single frame spec in atlas pixel space for `createSpriteAtlasFromFrames`. */
+export interface AtlasFrameSpec {
+    /** Frame rect in atlas texture pixels: `[x, y, w, h]`, top-left origin. */
+    readonly rectPx: readonly [number, number, number, number];
+    /** Pivot in pixels measured from the frame's top-left. Defaults to the frame centre. */
+    readonly pivotPx?: readonly [number, number];
+    readonly name?: string;
+}
+
+/** Options for `createSpriteAtlasFromFrames`. */
+export interface FramesAtlasOptions {
+    premultipliedAlpha?: boolean;
+}
+
 /** Options for `loadSpriteAtlas`. PR 1 supports the `gridSize` path only. */
 export interface LoadAtlasOptions {
     /** Grid cell size `[w, h]` in pixels. Required in PR 1. */
@@ -151,6 +165,37 @@ export async function loadSpriteAtlas(engine: EngineContext, textureUrl: string,
         // *and* `premultipliedAlpha: true` together so storage and blend factors agree.
         premultipliedAlpha: options.premultipliedAlpha ?? false,
     });
+}
+
+/**
+ * Build a `SpriteAtlas` from an explicit list of pixel-space frames over an
+ * existing texture. Unlike `createGridSpriteAtlas`, frames may have arbitrary
+ * sizes, positions, and per-frame pivots — the shape required for directional
+ * sprite sheets (e.g. 8-rotation actor sprites with per-patch pivot offsets).
+ * Frame indices match the input order.
+ */
+export function createSpriteAtlasFromFrames(texture: Texture2D, frameSpecs: readonly AtlasFrameSpec[], options: FramesAtlasOptions = {}): SpriteAtlas {
+    const tw = texture.width;
+    const th = texture.height;
+    const frames: SpriteFrame[] = [];
+    for (const spec of frameSpecs) {
+        const [x, y, w, h] = spec.rectPx;
+        const pivotPx = spec.pivotPx ?? [w * 0.5, h * 0.5];
+        frames.push({
+            name: spec.name,
+            uvMin: [x / tw, y / th],
+            uvMax: [(x + w) / tw, (y + h) / th],
+            sourceSizePx: [w, h],
+            pivot: [w === 0 ? 0 : pivotPx[0] / w, h === 0 ? 0 : pivotPx[1] / h],
+        });
+    }
+
+    return {
+        texture,
+        textureSizePx: [tw, th],
+        frames,
+        premultipliedAlpha: options.premultipliedAlpha ?? false,
+    };
 }
 
 /** @internal Resolve a frame index (just bounds-checks). Throws if out of range. */

@@ -7,6 +7,7 @@
 import type { SpriteAtlas } from "./shared/sprite-atlas.js";
 import { resolveSpriteFrame } from "./shared/sprite-atlas.js";
 import type { SpriteBlendMode } from "./sprite-2d.js";
+import type { BillboardCustomShader } from "./billboard-custom-shader.js";
 
 export type BillboardBlendMode = Extract<SpriteBlendMode, "alpha" | "premultiplied" | "cutout">;
 
@@ -17,6 +18,13 @@ export interface BillboardSpriteSystemOptions {
     opacity?: number;
     visible?: boolean;
     order?: number;
+    /**
+     * Opt-in custom fragment + extra textures, built via `createBillboardCustomShader`.
+     * When set, the system replaces the baked fragment with the supplied body and binds
+     * the extra textures after the atlas. Geometry, instancing, sorting, and depth are
+     * unchanged. Importing this is the only thing that pulls in the custom-shader code.
+     */
+    customShader?: BillboardCustomShader;
 }
 
 export type BillboardOrientation = "facing" | "axis-locked";
@@ -56,6 +64,8 @@ export interface BillboardSpriteSystem<TOrientation extends BillboardOrientation
     _dirtyMax: number;
     /** @internal Optional hooks installed by the opt-in handle module. */
     _handleHooks?: BillboardIndexHandleHooks;
+    /** @internal Optional custom fragment + extra textures (opt-in). */
+    readonly _customShader?: BillboardCustomShader;
 }
 
 /** @internal Lazy hooks used by the opt-in Handle API to track swap-removes. */
@@ -160,6 +170,7 @@ function createBillboardSystem<TOrientation extends BillboardOrientation>(
         _version: 0,
         _dirtyMin: 0,
         _dirtyMax: 0,
+        _customShader: opts.customShader,
     };
 }
 
