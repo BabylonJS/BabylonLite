@@ -655,8 +655,22 @@ function installPlayerControls(
     let smoothEyeZ = physics.eye[2];
     let itemSpin = 0;
     let liquidDmgTimer = 0;
+
+    // FPS counter (top-left), averaged over a short window using the raw frame delta.
+    const fpsEl = document.createElement("div");
+    fpsEl.style.cssText = "position:fixed;left:8px;top:6px;color:#ff0;font:bold 14px monospace;text-shadow:0 0 3px #000,0 1px 2px #000;pointer-events:none;z-index:9999;";
+    document.body.appendChild(fpsEl);
+    let fpsAccum = 0;
+    let fpsFrames = 0;
     onBeforeRender(scene, (deltaMs) => {
         const dt = Math.min(deltaMs / 1000, MAX_FRAME);
+        fpsAccum += deltaMs;
+        fpsFrames++;
+        if (fpsAccum >= 250) {
+            fpsEl.textContent = `${Math.round(1000 / (fpsAccum / fpsFrames))} FPS`;
+            fpsAccum = 0;
+            fpsFrames = 0;
+        }
         let forward = 0;
         let side = 0;
         if (!player.dead) {
