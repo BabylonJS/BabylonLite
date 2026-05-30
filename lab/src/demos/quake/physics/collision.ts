@@ -6,7 +6,7 @@
 // All math is in Quake space (X fwd, Y left, Z up). The demo maps the resulting
 // origin into engine space for the camera.
 
-import type { BspData, BspClipNodes, BspPlane } from "../bsp/parse-bsp.js";
+import type { BspData, BspClipNodes, BspNodes, BspPlane } from "../bsp/parse-bsp.js";
 
 const CONTENTS_SOLID = -2;
 const DIST_EPSILON = 0.03125;
@@ -45,6 +45,10 @@ export class QuakePhysics {
     private readonly planes: BspPlane[];
     private readonly headNode: number;
 
+    // Hull 0 (point hull) — the rendering BSP tree, used for exact line-of-sight.
+    private readonly nodes: BspNodes;
+    private readonly worldRoot0: number;
+
     readonly origin: V3;
     readonly velocity: V3 = [0, 0, 0];
     onGround = false;
@@ -60,6 +64,9 @@ export class QuakePhysics {
         this.planes = bsp.planes;
         // hull 1 (player box) root of the world model.
         this.headNode = bsp.models[0]?.headNode[1] ?? 0;
+        this.nodes = bsp.nodes;
+        // hull 0 (point hull) root of the world model.
+        this.worldRoot0 = bsp.models[0]?.headNode[0] ?? 0;
         this.origin = [spawn[0], spawn[1], spawn[2]];
     }
 
@@ -71,6 +78,44 @@ export class QuakePhysics {
     castMove(start: V3, end: V3): { fraction: number; endpos: V3; normal: V3 | null } {
         const tr = this.trace(start, end);
         return { fraction: tr.fraction, endpos: [tr.endpos[0], tr.endpos[1], tr.endpos[2]], normal: tr.planeNormal };
+    }
+
+    /**
+     * Exact point line-of-sight test (eye → target) against hull 0 plus any
+     * closed mover (door/plat). Returns true when nothing solid lies between.
+     *
+     * Visibility must use the point hull, not the player clip hull: the expanded
+     * clip hull pushes floors/walls ~24 units outward, so a monster's eye point
+     * lands *inside* solid and the box trace reports a clear path — which made
+     * monsters shoot through walls. The point hull has no such expansion.
+     */
+    visible(start: V3, end: V3): boolean {
+        if (!this.point0Recurse(this.worldRoot0, start, end)) return false;
+        // Movers are thin brush models (doors/plats); use their clip hull so a
+        // closed door still blocks sight. Start is virtually never inside a mover.
+        for (const bh of this.brushHulls) {
+            const s: V3 = [start[0] - bh.offset[0], start[1] - bh.offset[1], start[2] - bh.offset[2]];
+            const e: V3 = [end[0] - bh.offset[0], end[1] - bh.offset[1], end[2] - bh.offset[2]];
+            if (this.traceHull(bh.headNode, s, e).fraction < 0.99) return false;
+        }
+        return true;
+    }
+
+    /** Recurse hull 0: true if the segment p1→p2 never enters a solid leaf. */
+    private point0Recurse(num: number, p1: V3, p2: V3): boolean {
+        if (num < 0) return this.nodes.leafContents[-num - 1] !== CONTENTS_SOLID;
+        const plane = this.planes[this.nodes.planeNum[num]];
+        const t1 = dot(plane.normal, p1) - plane.planeDist;
+        const t2 = dot(plane.normal, p2) - plane.planeDist;
+        if (t1 >= 0 && t2 >= 0) return this.point0Recurse(this.nodes.child0[num], p1, p2);
+        if (t1 < 0 && t2 < 0) return this.point0Recurse(this.nodes.child1[num], p1, p2);
+        const frac = t1 / (t1 - t2);
+        const mid: V3 = [p1[0] + frac * (p2[0] - p1[0]), p1[1] + frac * (p2[1] - p1[1]), p1[2] + frac * (p2[2] - p1[2])];
+        const side = t1 < 0 ? 1 : 0;
+        const near = side === 0 ? this.nodes.child0[num] : this.nodes.child1[num];
+        const far = side === 0 ? this.nodes.child1[num] : this.nodes.child0[num];
+        if (!this.point0Recurse(near, p1, mid)) return false;
+        return this.point0Recurse(far, mid, p2);
     }
 
     // ─── Hull queries ──────────────────────────────────────────────────────

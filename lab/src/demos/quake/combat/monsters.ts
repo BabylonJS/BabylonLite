@@ -251,8 +251,7 @@ export class MonsterSystem {
     private canSee(m: Monster, playerOrigin: V3): boolean {
         const eye: V3 = [m.origin[0], m.origin[1], m.origin[2] + 24];
         const target: V3 = [playerOrigin[0], playerOrigin[1], playerOrigin[2] + 16];
-        const tr = this.physics.castMove(eye, target);
-        return tr.fraction > 0.95;
+        return this.physics.visible(eye, target);
     }
 
     private animateAlive(m: Monster, dt: number): void {
@@ -304,8 +303,7 @@ export class MonsterSystem {
             const t = rayAabb(origin, dir, [m.origin[0] + MON_MINS[0], m.origin[1] + MON_MINS[1], m.origin[2] + MON_MINS[2]], [m.origin[0] + MON_MAXS[0], m.origin[1] + MON_MAXS[1], m.origin[2] + MON_MAXS[2]]);
             if (t !== null && t < bestT) {
                 const hit: V3 = [origin[0] + dir[0] * t, origin[1] + dir[1] * t, origin[2] + dir[2] * t];
-                const wall = this.physics.castMove(origin, hit);
-                if (wall.fraction >= 0.99) {
+                if (this.physics.visible(origin, hit)) {
                     best = m;
                     bestT = t;
                 }
@@ -361,7 +359,7 @@ export class MonsterSystem {
             // Nudge the LOS trace start a touch toward the target so a grenade
             // resting against a wall doesn't immediately self-occlude.
             const start: V3 = [center[0] + (dir[0] / len) * 4, center[1] + (dir[1] / len) * 4, center[2] + (dir[2] / len) * 4];
-            if (this.physics.castMove(start, body).fraction < 0.99) continue;
+            if (!this.physics.visible(start, body)) continue;
             const points = maxDamage * (1 - Math.sqrt(d2) / radius);
             if (points > 0) this.damageMonster(m, points);
         }

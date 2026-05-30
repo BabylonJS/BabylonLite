@@ -79,6 +79,19 @@ export interface BspClipNodes {
     child1: Int16Array;
 }
 
+/**
+ * Rendering BSP tree (hull 0, point hull). Used for exact point/line traces such
+ * as monster line-of-sight, where the expanded player clip hulls would be wrong.
+ * A child >= 0 indexes another node; a child < 0 references leaf `-(child) - 1`,
+ * whose CONTENTS_* value lives in `leafContents`.
+ */
+export interface BspNodes {
+    planeNum: Int32Array;
+    child0: Int32Array;
+    child1: Int32Array;
+    leafContents: Int32Array;
+}
+
 export interface BspData {
     vertices: Float32Array; // n*3 (Quake coords: x fwd, y left, z up)
     edges: Int32Array; // n*2 vertex indices
@@ -90,6 +103,7 @@ export interface BspData {
     models: BspModel[];
     planes: BspPlane[];
     clipNodes: BspClipNodes;
+    nodes: BspNodes;
     entities: string;
 }
 
@@ -220,6 +234,33 @@ function parseClipNodes(buf: ArrayBuffer, lump: Lump): BspClipNodes {
     return { planeNum, child0, child1 };
 }
 
+/**
+ * Parse the rendering BSP nodes (hull 0) plus leaf CONTENTS. Node children are
+ * 16-bit: >= 0 index another node; < 0 reference leaf `-(child) - 1`. We widen
+ * them to leaf-encoded Int32 children (>= 0 node, < 0 leaf-encoded) so the
+ * point-trace recursion can branch uniformly.
+ */
+function parseNodes(buf: ArrayBuffer, nodeLump: Lump, leafLump: Lump): BspNodes {
+    const NODE_SIZE = 24;
+    const LEAF_SIZE = 28;
+    const nodeCount = (nodeLump.len / NODE_SIZE) | 0;
+    const ndv = new DataView(buf, nodeLump.ofs, nodeCount * NODE_SIZE);
+    const planeNum = new Int32Array(nodeCount);
+    const child0 = new Int32Array(nodeCount);
+    const child1 = new Int32Array(nodeCount);
+    for (let i = 0; i < nodeCount; i++) {
+        const o = i * NODE_SIZE;
+        planeNum[i] = ndv.getInt32(o, true);
+        child0[i] = ndv.getInt16(o + 4, true);
+        child1[i] = ndv.getInt16(o + 6, true);
+    }
+    const leafCount = (leafLump.len / LEAF_SIZE) | 0;
+    const ldv = new DataView(buf, leafLump.ofs, leafCount * LEAF_SIZE);
+    const leafContents = new Int32Array(leafCount);
+    for (let i = 0; i < leafCount; i++) leafContents[i] = ldv.getInt32(i * LEAF_SIZE, true);
+    return { planeNum, child0, child1, leafContents };
+}
+
 function parseTextures(buf: ArrayBuffer, lump: Lump): BspMipTex[] {
     if (lump.len < 4) return [];
     const base = lump.ofs;
@@ -286,6 +327,7 @@ export function parseBsp(buffer: ArrayBuffer): BspData {
         models: parseModels(buffer, lumps[LUMP_MODELS]),
         planes: parsePlanes(buffer, lumps[LUMP_PLANES]),
         clipNodes: parseClipNodes(buffer, lumps[LUMP_CLIPNODES]),
+        nodes: parseNodes(buffer, lumps[LUMP_NODES], lumps[LUMP_LEAFS]),
         entities: parseEntities(buffer, lumps[LUMP_ENTITIES]),
     };
 }
