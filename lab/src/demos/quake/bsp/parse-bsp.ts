@@ -20,6 +20,7 @@ export const LUMP_MARKSURFACES = 11;
 export const LUMP_EDGES = 12;
 export const LUMP_SURFEDGES = 13;
 export const LUMP_MODELS = 14;
+export const LUMP_CLIPNODES = 9;
 
 /** TEX_SPECIAL flag (sky / liquid surfaces — no lightmap). */
 export const TEX_SPECIAL = 1;
@@ -53,8 +54,27 @@ export interface BspModel {
     mins: [number, number, number];
     maxs: [number, number, number];
     origin: [number, number, number];
+    /** Clipnode hull roots: [0]=BSP node root, [1..3]=collision hull roots. */
+    headNode: [number, number, number, number];
     firstFace: number;
     numFaces: number;
+}
+
+/** Quake plane: normal·p = dist. */
+export interface BspPlane {
+    normal: [number, number, number];
+    dist: number;
+    type: number;
+}
+
+/**
+ * Collision clipnodes (pre-expanded BSP hulls). children >= 0 index another
+ * clipnode; children < 0 are CONTENTS_* leaf values (CONTENTS_SOLID = -2).
+ */
+export interface BspClipNodes {
+    planeNum: Int32Array;
+    child0: Int16Array;
+    child1: Int16Array;
 }
 
 export interface BspData {
@@ -66,6 +86,8 @@ export interface BspData {
     mipTextures: BspMipTex[];
     lighting: Uint8Array; // grayscale lightmap samples
     models: BspModel[];
+    planes: BspPlane[];
+    clipNodes: BspClipNodes;
     entities: string;
 }
 
@@ -156,11 +178,44 @@ function parseModels(buf: ArrayBuffer, lump: Lump): BspModel[] {
             maxs: [dv.getFloat32(o + 12, true), dv.getFloat32(o + 16, true), dv.getFloat32(o + 20, true)],
             origin: [dv.getFloat32(o + 24, true), dv.getFloat32(o + 28, true), dv.getFloat32(o + 32, true)],
             // headnode[4] at o+36..o+51, visleafs at o+52
+            headNode: [dv.getInt32(o + 36, true), dv.getInt32(o + 40, true), dv.getInt32(o + 44, true), dv.getInt32(o + 48, true)],
             firstFace: dv.getInt32(o + 56, true),
             numFaces: dv.getInt32(o + 60, true),
         });
     }
     return out;
+}
+
+function parsePlanes(buf: ArrayBuffer, lump: Lump): BspPlane[] {
+    const SIZE = 20;
+    const count = (lump.len / SIZE) | 0;
+    const dv = new DataView(buf, lump.ofs, count * SIZE);
+    const out: BspPlane[] = [];
+    for (let i = 0; i < count; i++) {
+        const o = i * SIZE;
+        out.push({
+            normal: [dv.getFloat32(o, true), dv.getFloat32(o + 4, true), dv.getFloat32(o + 8, true)],
+            dist: dv.getFloat32(o + 12, true),
+            type: dv.getInt32(o + 16, true),
+        });
+    }
+    return out;
+}
+
+function parseClipNodes(buf: ArrayBuffer, lump: Lump): BspClipNodes {
+    const SIZE = 8;
+    const count = (lump.len / SIZE) | 0;
+    const dv = new DataView(buf, lump.ofs, count * SIZE);
+    const planeNum = new Int32Array(count);
+    const child0 = new Int16Array(count);
+    const child1 = new Int16Array(count);
+    for (let i = 0; i < count; i++) {
+        const o = i * SIZE;
+        planeNum[i] = dv.getInt32(o, true);
+        child0[i] = dv.getInt16(o + 4, true);
+        child1[i] = dv.getInt16(o + 6, true);
+    }
+    return { planeNum, child0, child1 };
 }
 
 function parseTextures(buf: ArrayBuffer, lump: Lump): BspMipTex[] {
@@ -227,6 +282,8 @@ export function parseBsp(buffer: ArrayBuffer): BspData {
         mipTextures: parseTextures(buffer, lumps[LUMP_TEXTURES]),
         lighting,
         models: parseModels(buffer, lumps[LUMP_MODELS]),
+        planes: parsePlanes(buffer, lumps[LUMP_PLANES]),
+        clipNodes: parseClipNodes(buffer, lumps[LUMP_CLIPNODES]),
         entities: parseEntities(buffer, lumps[LUMP_ENTITIES]),
     };
 }

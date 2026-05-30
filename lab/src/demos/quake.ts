@@ -15,12 +15,12 @@
 
 import {
     addToScene,
-    attachFreeControl,
     createEngine,
     createFreeCamera,
     createMeshFromData,
     createSceneContext,
     createTexture2DFromPixels,
+    onBeforeRender,
     registerScene,
     startEngine,
 } from "babylon-lite";
@@ -31,10 +31,13 @@ import { parseEntities, parseVec3 } from "./quake/entities/parse-entities.js";
 import { buildLevelGeometry, quakeToEngine } from "./quake/geometry/build-geometry.js";
 import { QuakeTextureCache } from "./quake/render/texture-cache.js";
 import { createQuakeMaterial } from "./quake/render/quake-material.js";
+import { QuakePhysics, type MoveInput } from "./quake/physics/collision.js";
 
 const BSP_URL = "/librequake/lq_e1m1.bsp";
 const PALETTE_URL = "/librequake/palette.lmp";
-const PLAYER_EYE_OFFSET = 22; // Quake view height above the entity origin.
+const MOVE_SPEED = 320; // Quake units / second
+const LOOK_SENS = 0.0022;
+const MAX_FRAME = 0.05;
 
 async function fetchBytes(url: string, hint: string): Promise<ArrayBuffer> {
     const res = await fetch(url);
@@ -83,24 +86,96 @@ async function main(): Promise<void> {
         i++;
     }
 
-    // Spawn camera at info_player_start.
+    // Spawn the player at info_player_start and simulate Quake physics.
     const start = entities.find((e) => e.classname === "info_player_start") ?? entities.find((e) => e.classname?.startsWith("info_player"));
     const origin = parseVec3(start?.origin);
-    const [ex, ey, ez] = quakeToEngine(origin[0], origin[1], origin[2]);
     const angleDeg = start?.angle ? Number(start.angle) : 0;
-    const yaw = (angleDeg * Math.PI) / 180;
-    const eye = { x: ex, y: ey + PLAYER_EYE_OFFSET, z: ez };
-    const cam = createFreeCamera(eye, { x: eye.x + Math.cos(yaw), y: eye.y, z: eye.z + Math.sin(yaw) });
-    cam.speed = 350;
+    let yaw = (angleDeg * Math.PI) / 180; // Quake yaw about +Z, 0 = +X
+    let pitch = 0;
+
+    const physics = new QuakePhysics(bsp, [origin[0], origin[1], origin[2]]);
+
+    const [ex, ey, ez] = quakeToEngine(physics.eye[0], physics.eye[1], physics.eye[2]);
+    const cam = createFreeCamera({ x: ex, y: ey, z: ez }, { x: ex + Math.cos(yaw), y: ey, z: ez + Math.sin(yaw) });
     cam.nearPlane = 1;
     cam.farPlane = 20000;
     scene.camera = cam;
-    attachFreeControl(cam, canvas, scene);
+
+    installPlayerControls(scene, canvas, physics, cam, () => yaw, () => pitch, (y, p) => {
+        yaw = y;
+        pitch = p;
+    });
 
     await registerScene(engine, scene);
     await startEngine(engine);
     canvas.dataset.drawCalls = String(drawn);
     canvas.dataset.ready = "true";
+}
+
+/** First-person controls: mouse-drag look + WASD, driving the Quake physics. */
+function installPlayerControls(
+    scene: ReturnType<typeof createSceneContext>,
+    canvas: HTMLCanvasElement,
+    physics: QuakePhysics,
+    cam: ReturnType<typeof createFreeCamera>,
+    getYaw: () => number,
+    getPitch: () => number,
+    setView: (yaw: number, pitch: number) => void
+): void {
+    const keys = new Set<string>();
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+    let yaw = getYaw();
+    let pitch = getPitch();
+
+    if (!canvas.hasAttribute("tabindex")) canvas.tabIndex = 0;
+    canvas.addEventListener("keydown", (e) => {
+        keys.add(e.code);
+        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
+    });
+    canvas.addEventListener("keyup", (e) => keys.delete(e.code));
+    canvas.addEventListener("pointerdown", (e) => {
+        canvas.setPointerCapture(e.pointerId);
+        dragging = true;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        canvas.focus();
+    });
+    canvas.addEventListener("pointerup", (e) => {
+        canvas.releasePointerCapture(e.pointerId);
+        dragging = false;
+    });
+    canvas.addEventListener("pointermove", (e) => {
+        if (!dragging) return;
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        yaw -= dx * LOOK_SENS;
+        pitch -= dy * LOOK_SENS;
+        const maxPitch = Math.PI / 2 - 0.01;
+        pitch = Math.max(-maxPitch, Math.min(maxPitch, pitch));
+        setView(yaw, pitch);
+    });
+
+    onBeforeRender(scene, (deltaMs) => {
+        const dt = Math.min(deltaMs / 1000, MAX_FRAME);
+        let forward = 0;
+        let side = 0;
+        if (keys.has("KeyW") || keys.has("ArrowUp")) forward += MOVE_SPEED;
+        if (keys.has("KeyS") || keys.has("ArrowDown")) forward -= MOVE_SPEED;
+        if (keys.has("KeyD") || keys.has("ArrowRight")) side += MOVE_SPEED;
+        if (keys.has("KeyA") || keys.has("ArrowLeft")) side -= MOVE_SPEED;
+        const input: MoveInput = { forward, side, jump: keys.has("Space") };
+        physics.update(dt, input, yaw);
+
+        const [px, py, pz] = quakeToEngine(physics.eye[0], physics.eye[1], physics.eye[2]);
+        cam.position.set(px, py, pz);
+        // Quake look dir (cosYaw*cosPitch, sinYaw*cosPitch, sinPitch) → engine (x, z, y).
+        const cp = Math.cos(pitch);
+        cam.target.set(px + Math.cos(yaw) * cp, py + Math.sin(pitch), pz + Math.sin(yaw) * cp);
+    });
 }
 
 main().catch((err) => {
