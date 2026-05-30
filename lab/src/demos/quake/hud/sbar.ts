@@ -147,18 +147,12 @@ export class SbarHud {
 
         const ox = Math.floor((canvas.width - BAR_W * s) / 2);
         const sbarY = canvas.height - BAR_H * s;
-        const ibarY = sbarY - BAR_H * s;
-
-        // --- Inventory bar (weapons) ---
-        this.blit("IBAR", 0, 0, ox, ibarY, false);
-        // Weapon icons are 24x16 and sit in the lower part of the 24px ibar.
-        // INV2_ = selected weapon, INV_ = owned-but-inactive.
-        const slots = this.stats.weapons && this.stats.weapons.length > 0 ? this.stats.weapons : [{ invIcon: "SHOTGUN", ibarSlotX: 0, selected: true }];
-        for (const w of slots) {
-            this.blit((w.selected ? "INV2_" : "INV_") + w.invIcon, w.ibarSlotX, 8, ox, ibarY);
-        }
 
         // --- Status bar ---
+        // The inventory bar (IBAR) is intentionally not drawn: it stacked a second
+        // 24px row above the sbar and hid the low-hanging weapon viewmodels (the
+        // nailguns especially). The active weapon is already obvious from the held
+        // viewmodel, so the weapon icons add little here.
         this.blit("SBAR", 0, 0, ox, sbarY, false);
 
         // Armor icon + count.
@@ -188,7 +182,7 @@ export class SbarHud {
         ctx.fillStyle = "rgba(255,255,238,0.85)";
         ctx.shadowColor = "#000";
         ctx.shadowBlur = 4 * s;
-        ctx.fillText(`KILLS ${this.stats.kills}/${this.stats.total}`, ox, ibarY - 12 * s);
+        ctx.fillText(`KILLS ${this.stats.kills}/${this.stats.total}`, ox, sbarY - 12 * s);
         ctx.shadowBlur = 0;
     }
 }
