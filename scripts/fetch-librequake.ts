@@ -1,0 +1,171 @@
+/**
+ * fetch-librequake.ts — download the BSD-licensed LibreQuake assets for the
+ * Quake demo (first level, lq_e1m1).
+ *
+ * LibreQuake (https://github.com/lavenderdotpet/LibreQuake) is free/libre game
+ * data released under a BSD 3-Clause license. We do NOT commit the binaries to
+ * git (see .gitignore); this script fetches a pinned release at dev/build time
+ * into `lab/public/librequake/`.
+ *
+ * The release ships a single `full.zip` whose `id1/pak0.pak` (a classic Quake
+ * PAK archive) contains the compiled maps + palette. We only need the first
+ * level's BSP and the palette, so we extract just those two lumps plus the
+ * COPYING / CREDITS files for attribution.
+ *
+ * Usage:  pnpm tsx scripts/fetch-librequake.ts
+ * No third-party deps: the release ZIP is parsed with Node's built-in zlib.
+ */
+
+import { inflateRawSync } from "node:zlib";
+import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const LQ_VERSION = "v0.09-beta";
+const ZIP_URL = `https://github.com/lavenderdotpet/LibreQuake/releases/download/${LQ_VERSION}/full.zip`;
+
+/** PAK path inside the zip that holds the compiled maps + palette. */
+const PAK_IN_ZIP = "full/id1/pak0.pak";
+/** Files we pull out of the PAK, mapped to their output names. */
+const PAK_WANTED: Record<string, string> = {
+    "maps/lq_e1m1.bsp": "lq_e1m1.bsp",
+    "gfx/palette.lmp": "palette.lmp",
+};
+/** License / attribution docs pulled straight from the zip (BSD-3 compliance). */
+const ZIP_LICENSE_FILES: Record<string, string> = {
+    "full/id1/docs/COPYING": "COPYING.txt",
+    "full/id1/docs/CREDITS": "CREDITS.txt",
+};
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const OUT_DIR = join(ROOT, "lab", "public", "librequake");
+const CACHE_DIR = join(ROOT, ".librequake-cache");
+
+interface ZipEntry {
+    name: string;
+    method: number;
+    compressedSize: number;
+    localHeaderOffset: number;
+}
+
+/** Parse the ZIP central directory (zip64-aware enough for a standard release zip). */
+function parseCentralDirectory(buf: Buffer): ZipEntry[] {
+    let eocd = -1;
+    for (let i = buf.length - 22; i >= 0; i--) {
+        if (buf.readUInt32LE(i) === 0x06054b50) {
+            eocd = i;
+            break;
+        }
+    }
+    if (eocd < 0) throw new Error("librequake zip: End Of Central Directory not found");
+    const count = buf.readUInt16LE(eocd + 10);
+    let off = buf.readUInt32LE(eocd + 16);
+
+    const entries: ZipEntry[] = [];
+    for (let i = 0; i < count; i++) {
+        if (buf.readUInt32LE(off) !== 0x02014b50) throw new Error("librequake zip: bad central directory signature");
+        const method = buf.readUInt16LE(off + 10);
+        const compressedSize = buf.readUInt32LE(off + 20);
+        const nameLen = buf.readUInt16LE(off + 28);
+        const extraLen = buf.readUInt16LE(off + 30);
+        const commentLen = buf.readUInt16LE(off + 32);
+        const localHeaderOffset = buf.readUInt32LE(off + 42);
+        const name = buf.toString("utf8", off + 46, off + 46 + nameLen);
+        entries.push({ name, method, compressedSize, localHeaderOffset });
+        off += 46 + nameLen + extraLen + commentLen;
+    }
+    return entries;
+}
+
+/** Extract a single entry's bytes from the zip buffer. */
+function extractZipEntry(buf: Buffer, entry: ZipEntry): Buffer {
+    const lho = entry.localHeaderOffset;
+    if (buf.readUInt32LE(lho) !== 0x04034b50) throw new Error(`librequake zip: bad local header for ${entry.name}`);
+    const nameLen = buf.readUInt16LE(lho + 26);
+    const extraLen = buf.readUInt16LE(lho + 28);
+    const dataStart = lho + 30 + nameLen + extraLen;
+    const raw = buf.subarray(dataStart, dataStart + entry.compressedSize);
+    if (entry.method === 0) return Buffer.from(raw); // stored
+    if (entry.method === 8) return inflateRawSync(raw); // deflate
+    throw new Error(`librequake zip: unsupported compression method ${entry.method} for ${entry.name}`);
+}
+
+/** Read a classic Quake PAK directory and return the named lumps. */
+function extractFromPak(pak: Buffer, wanted: Record<string, string>): Map<string, Buffer> {
+    if (pak.toString("ascii", 0, 4) !== "PACK") throw new Error("librequake pak: bad magic (expected PACK)");
+    const dirOfs = pak.readInt32LE(4);
+    const dirLen = pak.readInt32LE(8);
+    const count = dirLen / 64;
+    const out = new Map<string, Buffer>();
+    const targets = new Set(Object.keys(wanted).map((k) => k.toLowerCase()));
+    for (let i = 0; i < count; i++) {
+        const o = dirOfs + i * 64;
+        const name = pak.toString("ascii", o, o + 56).replace(/\0.*$/, "");
+        if (!targets.has(name.toLowerCase())) continue;
+        const filePos = pak.readInt32LE(o + 56);
+        const fileLen = pak.readInt32LE(o + 60);
+        out.set(name.toLowerCase(), Buffer.from(pak.subarray(filePos, filePos + fileLen)));
+    }
+    return out;
+}
+
+async function main(): Promise<void> {
+    mkdirSync(OUT_DIR, { recursive: true });
+
+    const allPresent = [...Object.values(PAK_WANTED), ...Object.values(ZIP_LICENSE_FILES)].every((w) => existsSync(join(OUT_DIR, w)));
+    if (allPresent) {
+        console.log(`LibreQuake ${LQ_VERSION} already present in lab/public/librequake/ — nothing to do.`);
+        return;
+    }
+
+    mkdirSync(CACHE_DIR, { recursive: true });
+    const cachedZip = join(CACHE_DIR, `librequake-${LQ_VERSION}.zip`);
+
+    let zipBuf: Buffer;
+    if (existsSync(cachedZip)) {
+        console.log(`Using cached ${cachedZip}`);
+        zipBuf = readFileSync(cachedZip);
+    } else {
+        console.log(`Downloading ${ZIP_URL} … (~115 MB)`);
+        const res = await fetch(ZIP_URL);
+        if (!res.ok) throw new Error(`Download failed: HTTP ${res.status} ${res.statusText}`);
+        zipBuf = Buffer.from(await res.arrayBuffer());
+        writeFileSync(cachedZip, zipBuf);
+        console.log(`Downloaded ${(zipBuf.length / 1048576).toFixed(1)} MB`);
+    }
+
+    const entries = parseCentralDirectory(zipBuf);
+
+    // License/attribution docs straight from the zip.
+    for (const [zipName, outName] of Object.entries(ZIP_LICENSE_FILES)) {
+        const entry = entries.find((e) => e.name === zipName);
+        if (!entry) {
+            console.warn(`WARNING: ${zipName} not found in archive — skipping license file ${outName}.`);
+            continue;
+        }
+        writeFileSync(join(OUT_DIR, outName), extractZipEntry(zipBuf, entry));
+        console.log(`Extracted ${outName}`);
+    }
+
+    // Maps + palette from the PAK inside the zip.
+    const pakEntry = entries.find((e) => e.name === PAK_IN_ZIP);
+    if (!pakEntry) throw new Error(`librequake zip: ${PAK_IN_ZIP} not found in archive`);
+    console.log(`Extracting ${PAK_IN_ZIP} from zip …`);
+    const pak = extractZipEntry(zipBuf, pakEntry);
+    const lumps = extractFromPak(pak, PAK_WANTED);
+    for (const [pakName, outName] of Object.entries(PAK_WANTED)) {
+        const bytes = lumps.get(pakName.toLowerCase());
+        if (!bytes) throw new Error(`librequake pak: ${pakName} not found`);
+        const dest = join(OUT_DIR, outName);
+        writeFileSync(dest, bytes);
+        const mb = bytes.length / 1048576;
+        console.log(`Extracted ${outName} → ${dest} (${mb >= 0.1 ? mb.toFixed(1) + " MB" : (bytes.length / 1024).toFixed(0) + " KB"})`);
+    }
+
+    console.log("Done. LibreQuake assets are gitignored; re-run this script to restore them.");
+}
+
+main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+});
