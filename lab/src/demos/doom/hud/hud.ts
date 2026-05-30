@@ -8,7 +8,6 @@ import { Weapon } from "../player/player.js";
 import { Pickup } from "../mobj/info.js";
 
 const RED = "#d21d12";
-const STEEL = "#4f4f4f";
 const STEEL_DARK = "#2c2c2c";
 
 /** One ARMS panel entry: the on-screen slot number and the weapon it selects. */
