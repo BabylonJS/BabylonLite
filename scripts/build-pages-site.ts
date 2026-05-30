@@ -53,10 +53,11 @@ function escapeHtml(value: string): string {
 }
 
 function renderCard(demo: DemoConfigEntry, size: DemoSize | undefined): string {
-    const tags = (demo.tags ?? []).map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("");
-    const sizeRow = size ? `<div class="size"><strong>${size.rawKB} KB</strong> min · ${size.gzipKB} KB gzip</div>` : "";
+    const tagList = demo.tags ?? [];
+    const tags = tagList.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("");
+    const sizeRow = size ? `<div class="size" title="Engine + demo code only — excludes external assets (textures, game data, etc.)"><strong>${size.rawKB} KB</strong> · ${size.gzipKB} KB gzip</div>` : "";
     return [
-        `<a class="card" href="./demo-${demo.slug}.html">`,
+        `<a class="card" href="./demo-${demo.slug}.html" data-tags="${escapeHtml(tagList.join(" "))}">`,
         `<div class="card-image">`,
         `<img src="thumbnails/demo-${demo.slug}.png" alt="${escapeHtml(demo.name)} thumbnail" loading="lazy" decoding="async" onerror="this.remove()" />`,
         `</div>`,
@@ -65,8 +66,22 @@ function renderCard(demo: DemoConfigEntry, size: DemoSize | undefined): string {
         `<p>${escapeHtml(demo.description)}</p>`,
         tags ? `<div class="tags">${tags}</div>` : "",
         sizeRow,
+        `<span class="card-disabled-badge">Requires WebGPU</span>`,
         `</div></a>`,
     ].join("");
+}
+
+/** Build the row of filter pills from the union of all demo tags ("All" first). */
+function renderFilters(demos: DemoConfigEntry[]): string {
+    const tags = Array.from(new Set(demos.flatMap((d) => d.tags ?? []))).sort();
+    if (tags.length === 0) {
+        return "";
+    }
+    const pills = [
+        `<button type="button" class="filter-pill is-active" data-filter="all" aria-pressed="true">All</button>`,
+        ...tags.map((t) => `<button type="button" class="filter-pill" data-filter="${escapeHtml(t)}" aria-pressed="false">${escapeHtml(t)}</button>`),
+    ].join("");
+    return `<nav class="filters" aria-label="Filter demos by tag">${pills}</nav>`;
 }
 
 /** Make a demo HTML page deployable under any base path (root-relative -> relative). */
@@ -116,6 +131,11 @@ async function main(): Promise<void> {
         console.log(`Building demo bundle: ${demo.slug}`);
         await buildDemo(demo.slug);
     }
+
+    // 1b. Build the landing-page background effect (a pure Lite WGSL effect).
+    //     It is NOT a card — built separately so it never appears in demos-config.
+    console.log("Building landing background effect: landing-bg");
+    await buildDemo("landing-bg");
 
     // 2. Fresh output dir.
     rmSync(SITE, { recursive: true, force: true });
@@ -169,7 +189,8 @@ async function main(): Promise<void> {
     // 8. Landing page from template + generated cards.
     const template = readFileSync(resolve(PAGES_SRC, "index.template.html"), "utf-8");
     const cards = demos.map((d) => renderCard(d, sizes[d.slug])).join("\n                ");
-    writeFileSync(resolve(SITE, "index.html"), template.replace("<!--CARDS-->", cards));
+    const filters = renderFilters(demos);
+    writeFileSync(resolve(SITE, "index.html"), template.replace("<!--FILTERS-->", filters).replace("<!--CARDS-->", cards));
 
     // 9. Guardrail: nothing root-relative slipped through.
     assertNoRootRelativeUrls();
