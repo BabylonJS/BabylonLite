@@ -2,19 +2,25 @@
  *
  *  Each entity provides only getLocalMatrix(). This module handles:
  *  - version tracking (_worldVersion bumped by own TRS changes and ancestor motion)
- *  - parent chain validation (version-only walk via detectParentChange)
  *  - caching and staleness detection (_cachedWorld nulled on any change)
+ *  - PUSH dirty propagation: a transform write invalidates the node AND all of its
+ *    descendants up front, so per-frame consumers can read worldMatrixVersion in
+ *    O(1) (a plain field read) instead of walking the parent chain.
  *
  *  Ancestor-only motion (e.g. animating a parent transform node) must bump a
  *  descendant's worldMatrixVersion so per-frame consumers re-upload its UBO.
- *  Because this module holds no child references, that detection is a PULL walk
- *  up the parent chain. To keep it cheap in deep hierarchies it is gated by a
- *  global "transform write epoch": every local TRS change (markLocalDirty) and
- *  reparent bumps the epoch, so a node need re-walk its ancestors only when
- *  something, somewhere, has changed since it last validated. Within a stable
- *  period (e.g. the render phase, after all animation writes) repeated reads of
- *  the same node are O(1). The walk also calls the parent's accessor closure
- *  directly (via the attached _parentState) to skip the host's property getter.
+ *  Rather than have each node PULL up its parent chain on every read, this module
+ *  keeps its own child registry (driven by the reliably-called `parent` setter, NOT
+ *  the host's `children` array which loaders/setParent maintain inconsistently) and
+ *  PUSHES invalidation down on every local change or reparent. Reads are O(1) (a
+ *  plain field read); writers pay an O(subtree) push. This is a clear win for the
+ *  common case (few movers, many readers) and never worse than the old pull walk.
+ *
+ *  Foreign parents — an IWorldMatrixProvider that is not tagged with our state
+ *  symbol (e.g. a user-supplied object) — cannot be pushed to because we never see
+ *  their writes. For those we keep a cheap PULL fallback that polls the parent's
+ *  public version on read. All in-engine hosts (mesh, scene node, camera, light,
+ *  Gaussian-splatting mesh) ARE tagged, so engine hierarchies are pure push.
  *
  *  Zero entity imports — depends only on Mat4 and mat4Multiply. */
 
@@ -27,32 +33,39 @@ export interface WorldMatrixAccessors {
     getWorldMatrix(): Mat4;
     /** Getter — returns current version. */
     getWorldMatrixVersion(): number;
-    /** Call when own TRS changes. Invalidates cache, forces recompute on next read. */
+    /** Call when own TRS changes. Invalidates cache + subtree, forces recompute. */
     markLocalDirty(): void;
     /** Reference to parent — set directly. */
     parent: IWorldMatrixProvider | null;
 }
 
-/** Monotonic counter bumped whenever ANY node's local transform changes or a
- *  reparent happens. Lets descendants skip re-walking their parent chain when
- *  nothing has changed globally since they last validated. */
-let _globalTransformEpoch = 1;
+/** Internal contract exposed via the state symbol so a parent can push invalidation
+ *  into a child's closure and a child can (de)register itself in its parent's list,
+ *  all without going through the host's public property getters. */
+interface WorldMatrixStateInternal extends WorldMatrixAccessors {
+    /** Push: mark this node and its whole subtree dirty (clean-guarded). */
+    _invalidate(): void;
+    /** Register a same-module child so future invalidations reach it. */
+    _addChild(child: WorldMatrixStateInternal): void;
+    /** Deregister a child (reparent away). */
+    _removeChild(child: WorldMatrixStateInternal): void;
+}
 
 const WM_STATE = Symbol("wmState");
 
-/** Tag a host object (mesh, scene node, light, …) with its world-matrix state so
- *  children can call the parent's accessor closure directly, bypassing the host's
- *  property getter on the hot parent-chain walk. */
+/** Tag a host object (mesh, scene node, camera, light, …) with its world-matrix
+ *  state so children can register for push invalidation and call its accessor
+ *  closures directly, bypassing the host's property getters. */
 export function attachWorldMatrixState(host: object, state: WorldMatrixAccessors): void {
-    (host as Record<symbol, unknown>)[WM_STATE] = state;
+    (host as unknown as Record<symbol, unknown>)[WM_STATE] = state;
 }
 
-function peekWorldMatrixState(p: IWorldMatrixProvider | null): WorldMatrixAccessors | null {
+function peekWorldMatrixState(p: IWorldMatrixProvider | null): WorldMatrixStateInternal | null {
     if (p === null) {
         return null;
     }
     const s = (p as unknown as Record<symbol, unknown>)[WM_STATE];
-    return (s as WorldMatrixAccessors | undefined) ?? null;
+    return (s as WorldMatrixStateInternal | undefined) ?? null;
 }
 
 /**
@@ -67,68 +80,63 @@ export function createWorldMatrixState(getLocalMatrix: () => Mat4): WorldMatrixA
     let _cachedWorld: Mat4 | null = null;
     const _ownedWorld = new Float32Array(16) as Mat4;
     let _parent: IWorldMatrixProvider | null = null;
-    let _parentState: WorldMatrixAccessors | null = null;
-    let _validatedEpoch = 0;
+    let _parentState: WorldMatrixStateInternal | null = null;
+    const _children: WorldMatrixStateInternal[] = [];
 
-    // Detect whether an ancestor moved since we last looked. This bumps our own
-    // version and invalidates our cached matrix when a parent's version changed.
-    // Both getWorldMatrix and getWorldMatrixVersion run it so that ancestor-only
-    // changes (e.g. animating a parent transform node) are observed even when
-    // nothing reads this node's world matrix directly.
-    //
-    // For same-module parents (_parentState !== null) the walk is gated by the
-    // global transform epoch: any local change anywhere bumps the epoch, so when
-    // our _validatedEpoch is current nothing in the chain can have moved and we
-    // skip the walk. Reading the parent's version via its accessor closure
-    // synchronously validates the parent first, so the chain stays consistent
-    // regardless of read order. Foreign parents (e.g. a camera with its own
-    // accessor implementation) may change without bumping our epoch, so for them
-    // we always poll the public version.
-    function detectParentChange(): void {
-        if (_parent === null) {
-            return;
-        }
-        let pv: number;
-        if (_parentState !== null) {
-            if (_validatedEpoch === _globalTransformEpoch) {
-                return;
-            }
-            _validatedEpoch = _globalTransformEpoch;
-            pv = _parentState.getWorldMatrixVersion();
-        } else {
-            pv = _parent.worldMatrixVersion;
-        }
-        if (pv !== _lastSeenParentVersion) {
-            _lastSeenParentVersion = pv;
-            _worldVersion++;
-            _cachedWorld = null;
+    // Mark this node — and, transitively, its whole subtree — dirty, bumping the
+    // version so per-frame consumers (which gate UBO uploads on worldMatrixVersion)
+    // re-upload. Propagation is eager and unconditional: consumers may never read a
+    // pure transform node's world matrix, so a "skip if already dirty" guard would
+    // strand its descendants on a stale version when an ancestor moves every frame.
+    // Caching is still lazy — getWorldMatrix recomputes only when _cachedWorld is
+    // null — so reads stay cheap; only writers pay the O(subtree) push.
+    function invalidate(): void {
+        _cachedWorld = null;
+        _worldVersion++;
+        for (const child of _children) {
+            child._invalidate();
         }
     }
 
-    return {
+    // Foreign parent (not tagged with our symbol): we never observe its writes, so
+    // poll its public version on read and push a subtree invalidation when it moved.
+    function pollForeignParent(): void {
+        const pv = (_parent as IWorldMatrixProvider).worldMatrixVersion;
+        if (pv !== _lastSeenParentVersion) {
+            _lastSeenParentVersion = pv;
+            invalidate();
+        }
+    }
+
+    const state: WorldMatrixStateInternal = {
         get parent(): IWorldMatrixProvider | null {
             return _parent;
         },
         set parent(p: IWorldMatrixProvider | null) {
-            if (p !== _parent) {
-                _parent = p;
-                _parentState = peekWorldMatrixState(p);
-                _lastSeenParentVersion = -1;
-                _validatedEpoch = 0;
-                _worldVersion++;
-                _cachedWorld = null;
-                _globalTransformEpoch++;
+            if (p === _parent) {
+                return;
             }
+            if (_parentState !== null) {
+                _parentState._removeChild(state);
+            }
+            _parent = p;
+            _parentState = peekWorldMatrixState(p);
+            if (_parentState !== null) {
+                _parentState._addChild(state);
+            }
+            _lastSeenParentVersion = -1;
+            // Reparenting changes our world transform → dirty us and the subtree.
+            invalidate();
         },
 
         markLocalDirty(): void {
-            _worldVersion++;
-            _cachedWorld = null;
-            _globalTransformEpoch++;
+            invalidate();
         },
 
         getWorldMatrix(): Mat4 {
-            detectParentChange();
+            if (_parentState === null && _parent !== null) {
+                pollForeignParent();
+            }
             if (_cachedWorld !== null) {
                 return _cachedWorld;
             }
@@ -144,8 +152,27 @@ export function createWorldMatrixState(getLocalMatrix: () => Mat4): WorldMatrixA
         },
 
         getWorldMatrixVersion(): number {
-            detectParentChange();
+            if (_parentState === null && _parent !== null) {
+                pollForeignParent();
+            }
             return _worldVersion;
         },
+
+        _invalidate(): void {
+            invalidate();
+        },
+
+        _addChild(child: WorldMatrixStateInternal): void {
+            _children.push(child);
+        },
+
+        _removeChild(child: WorldMatrixStateInternal): void {
+            const i = _children.indexOf(child);
+            if (i >= 0) {
+                _children.splice(i, 1);
+            }
+        },
     };
+
+    return state;
 }

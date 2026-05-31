@@ -57,6 +57,11 @@ export function removeFromScene(scene: SceneContext, mesh: Mesh): void {
         sc._materialSwapQueue.splice(qi, 1);
     }
     (mesh as MeshInternal)._materialDirty = false;
+    // Deregister from the world-matrix push registry so a long-lived parent stops
+    // retaining/traversing this disposed child on every invalidation. (The parent→
+    // child reference is new with the push model; reparent already deregisters, but
+    // removal does not go through the parent setter otherwise.)
+    mesh.parent = null;
     // Frame-graph eviction: the scene always has a frame graph (created in
     // createSceneContext). Walk its render-pass tasks and drop any binding whose
     // source mesh matches. Tasks identified by having a `_config` field
