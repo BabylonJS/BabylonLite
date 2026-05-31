@@ -32,6 +32,7 @@ const DEMOS_BUNDLE_SRC = resolve(LAB, "public/bundle/demos");
 const DEMOS_MANIFEST = resolve(LAB, "public/bundle/demos-manifest.json");
 const DOOM_SRC = resolve(LAB, "public/doom");
 const LIBREQUAKE_SRC = resolve(LAB, "public/librequake");
+const MINECRAFT_SRC = resolve(LAB, "public/minecraft");
 const THUMBS_SRC = resolve(LAB, "public/thumbnails");
 
 interface DemoConfigEntry {
@@ -39,6 +40,8 @@ interface DemoConfigEntry {
     name: string;
     description: string;
     tags?: string[];
+    /** When false, the demo is hidden on mobile devices (see index.template.html). */
+    mobile?: boolean;
 }
 interface DemoSize {
     rawKB: number;
@@ -58,7 +61,7 @@ function renderCard(demo: DemoConfigEntry, size: DemoSize | undefined): string {
     const tags = tagList.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("");
     const sizeRow = size ? `<div class="size" title="Engine + demo code only — excludes external assets (textures, game data, etc.)"><strong>${size.rawKB} KB</strong> · ${size.gzipKB} KB gzip</div>` : "";
     return [
-        `<a class="card" href="./demo-${demo.slug}.html" data-tags="${escapeHtml(tagList.join(" "))}">`,
+        `<a class="card" href="./demo-${demo.slug}.html" data-tags="${escapeHtml(tagList.join(" "))}" data-mobile="${demo.mobile === false ? "false" : "true"}">`,
         `<div class="card-image">`,
         `<img src="thumbnails/demo-${demo.slug}.png" alt="${escapeHtml(demo.name)} thumbnail" loading="lazy" decoding="async" onerror="this.remove()" />`,
         `</div>`,
@@ -94,7 +97,10 @@ function rewriteDemoHtml(html: string): string {
  *  data use root-relative URLs (DOOM `/doom/...`, Quake `/librequake/...`); make
  *  them relative so the site works under any Pages base path. */
 function rewriteBundle(code: string): string {
-    return code.replace(/(["'])\/doom\//g, "$1doom/").replace(/(["'])\/librequake\//g, "$1librequake/");
+    return code
+        .replace(/(["'])\/doom\//g, "$1doom/")
+        .replace(/(["'])\/librequake\//g, "$1librequake/")
+        .replace(/(["'])\/minecraft\//g, "$1minecraft/");
 }
 
 /** Fail loudly if any root-relative URL survives in the assembled site. */
@@ -172,6 +178,14 @@ async function main(): Promise<void> {
     //     whole tree is copied since the demo fetches many nested assets at runtime.
     if (demos.some((d) => d.slug === "quake") && existsSync(LIBREQUAKE_SRC)) {
         cpSync(LIBREQUAKE_SRC, resolve(SITE, "librequake"), { recursive: true });
+    }
+
+    // 4c. Minecraft demo data (BSD-licensed voxel texture pack + attribution).
+    //     Fetched at dev/build time by `pnpm fetch:voxelpack` into
+    //     lab/public/minecraft/ (not committed). The demo fetches the pack's PNGs
+    //     at runtime from /minecraft/voxelpack/, so copy the whole tree.
+    if (demos.some((d) => d.slug === "minecraft") && existsSync(MINECRAFT_SRC)) {
+        cpSync(MINECRAFT_SRC, resolve(SITE, "minecraft"), { recursive: true });
     }
 
     // 5. Thumbnails for the demo cards.

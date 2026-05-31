@@ -194,6 +194,31 @@
                 border-color: var(--bjs-coral);
                 box-shadow: 0 12px 30px -12px rgba(224, 104, 75, 0.55);
             }
+            /* Mobile: hide demos flagged not mobile-compatible (data-mobile="false"). */
+            body.is-mobile a.card[data-mobile="false"] {
+                display: none;
+            }
+            /* Shown when, on mobile, no mobile-compatible demo remains. */
+            .no-demos-msg {
+                display: none;
+                grid-column: 1 / -1;
+                margin: 1rem auto;
+                max-width: 34rem;
+                padding: 1.1rem 1.3rem;
+                text-align: center;
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                background: var(--card-bg);
+                color: var(--muted);
+                font-size: 0.95rem;
+                line-height: 1.5;
+            }
+            body.no-compatible-demos .no-demos-msg {
+                display: block;
+            }
+            body.no-compatible-demos .filters {
+                display: none;
+            }
             .card-image {
                 aspect-ratio: 16 / 9;
                 background: #0f0c0d;
@@ -399,6 +424,7 @@
             <!--FILTERS-->
             <main class="grid">
                 <!--CARDS-->
+                <p class="no-demos-msg" id="noDemosMsg">No compatible demo was found. Please try on a desktop device.</p>
             </main>
             <footer>
                 Built with <a href="https://github.com/BabylonJS/Babylon-Lite">Babylon&nbsp;Lite</a> · WebGPU only
@@ -459,6 +485,31 @@
                         apply();
                     });
                 });
+            })();
+        </script>
+        <script>
+            // Mobile gate: demos flagged "mobile": false in demos-config.json carry
+            // data-mobile="false" and are WebGPU/desktop-oriented (pointer lock,
+            // heavy input). On a mobile device we hide them; if none remain, show a
+            // "no compatible demo" message. This is independent of the tag filters.
+            (function () {
+                function isMobile() {
+                    var uad = navigator.userAgentData;
+                    if (uad && typeof uad.mobile === "boolean") return uad.mobile;
+                    var ua = navigator.userAgent || "";
+                    if (/Mobi|Android|iPhone|iPod|IEMobile|BlackBerry|Opera Mini/i.test(ua)) return true;
+                    // iPadOS reports as desktop Safari but exposes touch points.
+                    if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return true;
+                    var coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+                    return !!coarse && navigator.maxTouchPoints > 0;
+                }
+                if (!isMobile()) return;
+                document.body.classList.add("is-mobile");
+                var cards = Array.prototype.slice.call(document.querySelectorAll("a.card"));
+                var compatible = cards.filter(function (c) { return c.getAttribute("data-mobile") !== "false"; });
+                if (compatible.length === 0) {
+                    document.body.classList.add("no-compatible-demos");
+                }
             })();
         </script>
     </body>
