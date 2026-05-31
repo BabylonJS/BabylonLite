@@ -1,22 +1,26 @@
 {
   "torus-states": {
-    "rawKB": 11.9,
+    "rawKB": 12.1,
     "gzipKB": 5
   },
   "doom": {
-    "rawKB": 106.1,
-    "gzipKB": 36.1
+    "rawKB": 106.3,
+    "gzipKB": 36.2
   },
   "quake": {
-    "rawKB": 96.9,
-    "gzipKB": 33.5
+    "rawKB": 122.5,
+    "gzipKB": 44
   },
   "minecraft": {
-    "rawKB": 101,
-    "gzipKB": 36
+    "rawKB": 101.1,
+    "gzipKB": 36.1
+  },
+  "offscreen": {
+    "rawKB": 168.3,
+    "gzipKB": 68.6
   },
   "freeciv": {
-    "rawKB": 42,
-    "gzipKB": 16.4
+    "rawKB": 42.2,
+    "gzipKB": 16.5
   }
 }

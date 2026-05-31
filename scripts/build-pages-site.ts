@@ -21,6 +21,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, write
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { buildDemo } from "./bundle-demos-core";
+import { fetchDemoAssets } from "./demo-fetchers";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LAB = resolve(ROOT, "lab");
@@ -35,6 +36,9 @@ const LIBREQUAKE_SRC = resolve(LAB, "public/librequake");
 const MINECRAFT_SRC = resolve(LAB, "public/minecraft");
 const FREECIV_SRC = resolve(LAB, "public/freeciv");
 const THUMBS_SRC = resolve(LAB, "public/thumbnails");
+/** Draco decoder JS+WASM, loaded relative to the page by glTF demos that hit a
+ *  KHR_draco_mesh_compression asset (see loader-gltf/draco-decode.ts). */
+const DRACO_FILES = ["draco_decoder.js", "draco_decoder.wasm"];
 
 interface DemoConfigEntry {
     slug: string;
@@ -43,6 +47,8 @@ interface DemoConfigEntry {
     tags?: string[];
     /** When false, the demo is hidden on mobile devices (see index.template.html). */
     mobile?: boolean;
+    /** Optional id of the asset fetcher for this demo (see scripts/demo-fetchers.ts). */
+    fetch?: string;
 }
 interface DemoSize {
     rawKB: number;
@@ -102,7 +108,9 @@ function rewriteBundle(code: string): string {
         .replace(/(["'])\/doom\//g, "$1doom/")
         .replace(/(["'])\/librequake\//g, "$1librequake/")
         .replace(/(["'])\/minecraft\//g, "$1minecraft/")
-        .replace(/(["'])\/freeciv\//g, "$1freeciv/");
+        .replace(/(["'])\/freeciv\//g, "$1freeciv/")
+        .replace(/(["'])\/(draco_decoder\.(?:js|wasm))/g, "$1$2")
+        .replace(/(["'])\/(brdf-lut\.png)/g, "$1$2");
 }
 
 /** Fail loudly if any root-relative URL survives in the assembled site. */
@@ -135,6 +143,10 @@ async function main(): Promise<void> {
         throw new Error(`No demos found in ${DEMOS_CONFIG}`);
     }
     const sizes = readJson<Record<string, DemoSize>>(DEMOS_MANIFEST, {});
+
+    // 0. Make sure every demo's runtime assets are present locally before we
+    //    build bundles and copy asset trees below. Each fetcher is idempotent.
+    await fetchDemoAssets(demos);
 
     // 1. Build each demo's production bundle into lab/public/bundle/demos/.
     for (const demo of demos) {
@@ -196,6 +208,15 @@ async function main(): Promise<void> {
     //     .spec files at runtime from /freeciv/amplio2/, so copy the whole tree.
     if (demos.some((d) => d.slug === "freeciv") && existsSync(FREECIV_SRC)) {
         cpSync(FREECIV_SRC, resolve(SITE, "freeciv"), { recursive: true });
+    }
+
+    // 4e. Draco decoder (JS glue + WASM) and the PBR BRDF LUT. glTF/PBR demos load
+    //     these relative to the page (Draco only on KHR_draco_mesh_compression
+    //     assets); the bundle ships rewritten relative references, so place the
+    //     files at the site root.
+    for (const file of [...DRACO_FILES, "brdf-lut.png"]) {
+        const src = resolve(LAB, "public", file);
+        if (existsSync(src)) cpSync(src, resolve(SITE, file));
     }
 
     // 5. Thumbnails for the demo cards.
