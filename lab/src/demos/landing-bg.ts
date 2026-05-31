@@ -22,12 +22,15 @@ const CORAL = vec3f(0.878, 0.408, 0.294); // #e0684b
 const LIGHT = vec3f(0.878, 0.871, 0.847); // #e0ded8
 const DARK  = vec3f(0.040, 0.026, 0.032);
 
-// Palette ramp across the ribbons: red -> coral -> light -> coral.
+// Cyclic palette ramp across the ribbons: red -> coral -> light -> red.
+// Must close the loop (x=1 maps back to RED) so the fract() wrap is seamless;
+// otherwise the wrap creates a hard colour jump that appears as a vertical bar
+// drifting horizontally with p.x / time.
 fn palette(h: f32) -> vec3f {
 let x = fract(h);
 if (x < 0.4) { return mix(RED, CORAL, x / 0.4); }
 if (x < 0.7) { return mix(CORAL, LIGHT, (x - 0.4) / 0.3); }
-return mix(LIGHT, CORAL, (x - 0.7) / 0.3);
+return mix(LIGHT, RED, (x - 0.7) / 0.3);
 }
 
 @fragment fn effectFragment(@location(0) uv: vec2f) -> @location(0) vec4f {
