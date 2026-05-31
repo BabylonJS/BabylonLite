@@ -54,6 +54,20 @@ interface Walker {
 export interface LiveSim {
     /** Advance the simulation by `dtMs` and push sprite updates. */
     step: (dtMs: number) => void;
+    /**
+     * Queue a tile-by-tile path for the scout (each entry must be adjacent to the
+     * previous one). Switches the scout from autonomous wandering to player
+     * control: once ordered, it waits for orders instead of roaming.
+     */
+    commandScout: (path: ReadonlyArray<readonly [number, number]>) => void;
+    /** The scout's current tile (or the tile it's about to reach, if mid-hop). */
+    scoutTile: () => [number, number];
+    /**
+     * Mark the scout as selected/deselected. While selected the pulsing selection
+     * ring holds a steady frame instead of cycling, so the player can tell it's the
+     * unit currently under their command.
+     */
+    setScoutSelected: (selected: boolean) => void;
 }
 
 /** Mulberry32 — tiny deterministic RNG. */
@@ -124,6 +138,7 @@ export function createLiveSim(world: GameMap, sheets: TileSheets, layers: TileLa
     });
     let ringFrame = 0;
     let ringAccumMs = 0;
+    let scoutSelected = false;
 
     // --- Wildlife --------------------------------------------------------
     const animalGrid = sheets.animals.grid("grid_main");
@@ -201,23 +216,18 @@ export function createLiveSim(world: GameMap, sheets: TileSheets, layers: TileLa
     };
     rebuildFog();
 
-    // Pick the scout's next hop, biasing toward unexplored land so it "explores".
+    // Player-issued orders: a queue of adjacent tiles for the scout to walk. The
+    // scout is fully player-controlled — it idles until the player clicks a
+    // destination, then follows the commanded path.
+    let scoutPath: Array<[number, number]> = [];
+
+    // Pick the scout's next hop from the commanded path; idle when none is queued.
     const pickScoutTarget = (w: Walker): void => {
-        const r = makeRng(w.rng++ >>> 0);
-        const opts: { x: number; y: number; dark: boolean }[] = [];
-        for (const d of DIR8) {
-            const [dx, dy] = DIR_DELTA[d];
-            const x = w.x + dx;
-            const y = w.y + dy;
-            if (!world.isLand(x, y)) continue;
-            opts.push({ x, y, dark: explored[y * width + x] === 0 });
+        if (scoutPath.length > 0) {
+            const next = scoutPath.shift()!;
+            w.toX = next[0];
+            w.toY = next[1];
         }
-        if (opts.length === 0) return;
-        const dark = opts.filter((o) => o.dark);
-        const pool = dark.length > 0 && r() < 0.85 ? dark : opts;
-        const pick = pool[Math.floor(r() * pool.length)]!;
-        w.toX = pick.x;
-        w.toY = pick.y;
     };
 
     // Pick a wandering animal's next hop (any adjacent land tile).
@@ -274,17 +284,25 @@ export function createLiveSim(world: GameMap, sheets: TileSheets, layers: TileLa
         step(dtMs: number): void {
             // Scout movement + fog reveal on tile change.
             const scoutArrived = advanceWalker(scout, dtMs, pickScoutTarget);
+            // While following a commanded path, step crisply between tiles instead of
+            // taking the lazy wander pause.
+            if (scoutArrived && scoutPath.length > 0) scout.dwellMs = 40;
             const [scx, scy] = walkerPx(scout);
             updateSprite2DIndex(layers.unit, scout.index, { positionPx: [scx, scy + scout.yOffset] });
             updateSprite2DIndex(layers.selection, ringIndex, { positionPx: [scx, scy] });
             if (scoutArrived) rebuildFog();
 
-            // Pulsing selection ring.
-            ringAccumMs += dtMs;
-            while (ringAccumMs >= SELECT_FRAME_MS) {
-                ringAccumMs -= SELECT_FRAME_MS;
-                ringFrame = (ringFrame + 1) & 3;
-                setSprite2DFrameIndex(layers.selection, ringIndex, ringFrame);
+            // Pulsing selection ring — frozen on a steady frame while the scout is
+            // selected so the player can see it's the unit under their command.
+            if (scoutSelected) {
+                ringAccumMs = 0;
+            } else {
+                ringAccumMs += dtMs;
+                while (ringAccumMs >= SELECT_FRAME_MS) {
+                    ringAccumMs -= SELECT_FRAME_MS;
+                    ringFrame = (ringFrame + 1) & 3;
+                    setSprite2DFrameIndex(layers.selection, ringIndex, ringFrame);
+                }
             }
 
             // Wildlife wander.
@@ -292,6 +310,25 @@ export function createLiveSim(world: GameMap, sheets: TileSheets, layers: TileLa
                 advanceWalker(a, dtMs, pickAnimalTarget);
                 const [ax, ay] = walkerPx(a);
                 updateSprite2DIndex(layers.animals, a.index, { positionPx: [ax, ay + a.yOffset] });
+            }
+        },
+        commandScout(path: ReadonlyArray<readonly [number, number]>): void {
+            scoutPath = path.map(([x, y]) => [x, y] as [number, number]);
+            // If the scout is idling, clear its dwell so the next tick picks up the
+            // first waypoint immediately rather than after the idle pause.
+            if (scout.t >= 1) scout.dwellMs = 0;
+        },
+        scoutTile(): [number, number] {
+            // Mid-hop the logical tile is still the origin, but new orders should
+            // chain off the tile it's about to reach.
+            return scout.t < 1 ? [scout.toX, scout.toY] : [scout.x, scout.y];
+        },
+        setScoutSelected(selected: boolean): void {
+            scoutSelected = selected;
+            if (selected) {
+                // Snap to the first (full) bracket frame and hold it steady.
+                ringFrame = 0;
+                setSprite2DFrameIndex(layers.selection, ringIndex, 0);
             }
         },
     };

@@ -23,10 +23,12 @@ import {
     type Sprite2DLayer,
 } from "babylon-lite";
 import { loadFreecivSheet } from "./freeciv/atlas.js";
-import { generateWorld } from "./freeciv/worldgen.js";
+import { generateWorld, type GameMap } from "./freeciv/worldgen.js";
 import { buildTilemap, type Bounds, type TileLayers, type TileSheets } from "./freeciv/tilemap.js";
 import { createLiveSim } from "./freeciv/live.js";
-import { TILE_H, TILE_W, isoCentre } from "./freeciv/iso.js";
+import { createPicker } from "./freeciv/pick.js";
+import { createMinimap } from "./freeciv/minimap.js";
+import { DIR8, DIR_DELTA, TILE_H, TILE_W, isoCentre, worldToTile } from "./freeciv/iso.js";
 
 const BASE_URL = "/freeciv";
 
@@ -72,6 +74,11 @@ async function main(): Promise<void> {
         fog: createSprite2DLayer(terrain.grid("grid_main").atlas, { capacity: cap, order: 13 }),
         selection: createSprite2DLayer(select.grid("grid_main").atlas, { capacity: 4, order: 14 }),
     };
+    // Tile-hover highlight: a cyan-tinted selection bracket on its own top layer.
+    // We use the `select` sheet's corner-bracket frame (white-filled, so a colour
+    // tint actually shows) — the terrain diamonds (`t.unknown1` / `mask.tile`) are
+    // black-filled masks, so tinting them only darkens the tile.
+    const highlightLayer = createSprite2DLayer(select.grid("grid_main").atlas, { capacity: 1, order: 15 });
     const layers = [
         tileLayers.ocean,
         tileLayers.coast,
@@ -88,15 +95,65 @@ async function main(): Promise<void> {
         tileLayers.animals,
         tileLayers.fog,
         tileLayers.selection,
+        highlightLayer,
     ];
 
     const bounds = buildTilemap(world, sheets, tileLayers);
     const sim = createLiveSim(world, sheets, tileLayers);
+    // The `select` sheet's first bracket frame — a white corner-bracket overlay
+    // that tints cleanly (unlike the black-filled terrain diamond masks).
+    const diamondFrame = select.grid("grid_main").frameOf("unit.select0") ?? 0;
+    const picker = createPicker(world, highlightLayer, diamondFrame);
+
+    // Unit orders: click the scout to select it, then click a tile to send it there
+    // along the cheapest road-aware path (movement itself is run by the live sim).
+    const hint = document.createElement("div");
+    hint.id = "unitHint";
+    hint.textContent = "Scout selected — click a tile to move it";
+    hint.style.cssText =
+        "position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:50;padding:5px 12px;" +
+        "border-radius:12px;background:rgba(14,33,56,0.85);color:#eaf2fb;" +
+        "font:600 12px system-ui,-apple-system,'Segoe UI',sans-serif;pointer-events:none;display:none;";
+    document.body.appendChild(hint);
+    let unitSelected = false;
+    const setArmed = (on: boolean): void => {
+        unitSelected = on;
+        hint.style.display = on ? "block" : "none";
+        canvas.style.cursor = on ? "crosshair" : "";
+        sim.setScoutSelected(on);
+    };
+    const onMapClick = (tx: number, ty: number): void => {
+        const [stx, sty] = sim.scoutTile();
+        if (!unitSelected) {
+            if (tx === stx && ty === sty) setArmed(true); // selected the scout
+            return;
+        }
+        if (tx === stx && ty === sty) {
+            setArmed(false); // clicked the scout again → deselect
+            return;
+        }
+        const path = findPath(world, stx, sty, tx, ty);
+        if (path && path.length > 0) {
+            sim.commandScout(path);
+            setArmed(false);
+        }
+        // Unreachable target (ocean / off-map): stay armed so the player can retry.
+    };
 
     const view: View = { x: 0, y: 0, zoom: 1, userMoved: false };
+    // Start pointed at Babylon (the player's capital) rather than the geometric
+    // centre of the map bounds, which sits further south.
+    const capital = world.cities.find((c) => c.name === "Babylon") ?? world.cities[0];
     const recenter = (): void => {
         if (view.userMoved) return;
         fitView(view, engine, bounds);
+        if (capital) {
+            const [wx, wy] = isoCentre(capital.x, capital.y);
+            const w = engine.canvas.width || 1;
+            const h = engine.canvas.height || 1;
+            view.x = wx - w / 2 / view.zoom;
+            view.y = wy - h / 2 / view.zoom;
+        }
         applyView(view, layers);
     };
 
@@ -106,11 +163,21 @@ async function main(): Promise<void> {
     });
     registerSpriteRenderer(sr);
 
-    installControls(engine, view, layers);
+    installControls(engine, view, layers, picker.hover, onMapClick);
     recenter();
     window.addEventListener("resize", recenter);
 
     const labels = createCityLabels(world.cities);
+
+    // Overview minimap (corner). Its viewport box inverts the SAME snapped view the
+    // tiles render with; clicking/dragging recentres the main view on that tile.
+    const minimap = createMinimap(world, {
+        viewportCorners: () => viewportTileCorners(view, engine),
+        panToTile: (tx, ty) => {
+            centreViewOnTile(view, engine, tx, ty);
+            applyView(view, layers);
+        },
+    });
 
     await startEngine(engine);
     recenter();
@@ -122,6 +189,7 @@ async function main(): Promise<void> {
         last = now;
         sim.step(dt);
         labels.update(view, engine);
+        minimap.update();
         requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -236,44 +304,195 @@ function applyView(view: View, layers: readonly Sprite2DLayer[]): void {
 
 /**
  * Snap a zoom factor so nearest-filtered diamond tiles tessellate without seams.
- * Zoom ≥ 1 snaps to the nearest integer (one texel → an integer number of device
- * pixels, perfectly crisp). Zoom < 1 (whole-map overview) snaps to `1/n`, where
- * inter-tile cracks are sub-pixel and effectively invisible. Clamped to the same
- * range the wheel handler uses.
+ *
+ * Above 1 (zoomed in, tiles large) we MUST snap to an integer so one texel maps to
+ * a whole number of device pixels — otherwise every shared diamond edge resamples
+ * at a fractional offset and a 1px crack appears between tiles. Integer levels
+ * (1, 2, 3, …) are far apart in zoom-value, so crossing one is rare and zoom feels
+ * stable.
+ *
+ * Below 1 (whole-map overview, tiles minified) we DON'T snap: the reciprocal levels
+ * 1/n are bunched into the tiny 0.15–1 range, so snapping there means almost every
+ * wheel notch jumps a level — that's the "choppy when far" feel. Minified tiles are
+ * small enough that a sub-pixel crack is effectively invisible, so we trade the
+ * (imperceptible) seam for genuinely smooth overview zoom. A true both-worlds fix
+ * (smooth AND seamless at all zooms) needs an integer-scale render-to-texture pass.
+ * Clamped to the same range the wheel handler uses.
  */
 function snapZoom(zoom: number): number {
-    const z = zoom >= 1 ? Math.round(zoom) : 1 / Math.round(1 / zoom);
+    const z = zoom >= 1 ? Math.round(zoom) : zoom;
     return Math.min(6, Math.max(0.15, z));
 }
 
-function installControls(engine: EngineContext, view: View, layers: readonly Sprite2DLayer[]): void {
+/**
+ * Device-pixel cursor position → tile `(x, y)`. Inverts the SNAPPED view that is
+ * actually rendered (same `snapZoom` + rounded origin as {@link applyView}), so the
+ * tile under the highlight matches the tile under the pointer exactly.
+ */
+function screenToTile(view: View, sxDevice: number, syDevice: number): [number, number] {
+    const z = snapZoom(view.zoom);
+    const vx = Math.round(view.x * z) / z;
+    const vy = Math.round(view.y * z) / z;
+    return worldToTile(vx + sxDevice / z, vy + syDevice / z);
+}
+
+/**
+ * The four screen corners (TL, TR, BR, BL) of the main canvas expressed in
+ * fractional tile coordinates — the slice of the world currently on screen. Used
+ * to draw the viewport box on the minimap. Inverts the SAME snapped view as
+ * {@link screenToTile} but WITHOUT rounding (we want the exact sub-tile quad).
+ */
+function viewportTileCorners(view: View, engine: EngineContext): Array<[number, number]> {
+    const z = snapZoom(view.zoom);
+    const vx = Math.round(view.x * z) / z;
+    const vy = Math.round(view.y * z) / z;
+    const w = engine.canvas.width || 1;
+    const h = engine.canvas.height || 1;
+    const screen: ReadonlyArray<readonly [number, number]> = [
+        [0, 0],
+        [w, 0],
+        [w, h],
+        [0, h],
+    ];
+    return screen.map(([px, py]) => {
+        const worldX = vx + px / z;
+        const worldY = vy + py / z;
+        const xMinusY = (2 * worldX) / TILE_W;
+        const xPlusY = (2 * worldY) / TILE_H;
+        return [(xPlusY + xMinusY) / 2, (xPlusY - xMinusY) / 2];
+    });
+}
+
+/** Recentre the logical view so tile `(tx, ty)` sits at the canvas centre. */
+function centreViewOnTile(view: View, engine: EngineContext, tx: number, ty: number): void {
+    const [wx, wy] = isoCentre(tx, ty);
+    const w = engine.canvas.width || 1;
+    const h = engine.canvas.height || 1;
+    view.x = wx - w / 2 / view.zoom;
+    view.y = wy - h / 2 / view.zoom;
+    view.userMoved = true;
+}
+
+/** Roads are this much cheaper to traverse than open terrain. */
+const ROAD_DISCOUNT = 1 / 3;
+
+/**
+ * Dijkstra shortest path over land tiles from `(sx, sy)` to `(gx, gy)` using the
+ * eight isometric neighbours. Every step costs the same, so the route minimises
+ * the number of tiles walked — which favours diagonal grid moves (they cover more
+ * ground per step) and keeps journeys short. Stepping between two road tiles is
+ * much cheaper than crossing open terrain, so the scout also follows roads where
+ * they help. Returns the tiles to walk (excluding the start, including the goal),
+ * or `null` if the goal is off-map, ocean, or unreachable.
+ */
+function findPath(world: GameMap, sx: number, sy: number, gx: number, gy: number): Array<[number, number]> | null {
+    const W = world.width;
+    const H = world.height;
+    if (gx < 0 || gy < 0 || gx >= W || gy >= H || !world.isLand(gx, gy)) return null;
+    if (sx === gx && sy === gy) return null;
+    const N = W * H;
+    const dist = new Float64Array(N).fill(Infinity);
+    const prev = new Int32Array(N).fill(-1);
+    const done = new Uint8Array(N);
+    const start = sy * W + sx;
+    const goal = gy * W + gx;
+    dist[start] = 0;
+    for (;;) {
+        // Closest unfinished node (linear scan — the 48×48 map is tiny).
+        let u = -1;
+        let best = Infinity;
+        for (let i = 0; i < N; i++) {
+            if (!done[i] && dist[i] < best) {
+                best = dist[i];
+                u = i;
+            }
+        }
+        if (u === -1 || u === goal) break;
+        done[u] = 1;
+        const ux = u % W;
+        const uy = (u - ux) / W;
+        const onRoad = world.hasRoad(ux, uy);
+        for (const d of DIR8) {
+            const [dx, dy] = DIR_DELTA[d];
+            const nx = ux + dx;
+            const ny = uy + dy;
+            if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+            if (!world.isLand(nx, ny)) continue;
+            const v = ny * W + nx;
+            if (done[v]) continue;
+            const onRoadStep = onRoad && world.hasRoad(nx, ny);
+            const cost = onRoadStep ? ROAD_DISCOUNT : 1;
+            const nd = dist[u] + cost;
+            if (nd < dist[v]) {
+                dist[v] = nd;
+                prev[v] = u;
+            }
+        }
+    }
+    if (dist[goal] === Infinity) return null;
+    const path: Array<[number, number]> = [];
+    for (let cur = goal; cur !== start && cur !== -1; cur = prev[cur]) {
+        const cx = cur % W;
+        path.push([cx, (cur - cx) / W]);
+    }
+    path.reverse();
+    return path;
+}
+
+/** Callback fired as the cursor moves over the map; `tileX = null` clears hover. */
+type HoverFn = (tileX: number | null, tileY: number | null, cssX: number, cssY: number) => void;
+
+function installControls(
+    engine: EngineContext,
+    view: View,
+    layers: readonly Sprite2DLayer[],
+    onHover?: HoverFn,
+    onClick?: (tileX: number, tileY: number) => void,
+): void {
     const canvas = engine.canvas;
     const dpr = (): number => (canvas.width || 1) / (canvas.clientWidth || 1);
     let dragging = false;
     let lastX = 0;
     let lastY = 0;
+    let downX = 0;
+    let downY = 0;
 
     canvas.addEventListener("pointerdown", (e) => {
         dragging = true;
-        lastX = e.clientX;
-        lastY = e.clientY;
+        lastX = downX = e.clientX;
+        lastY = downY = e.clientY;
         canvas.setPointerCapture(e.pointerId);
     });
     canvas.addEventListener("pointermove", (e) => {
-        if (!dragging) return;
-        const k = dpr() / view.zoom;
-        view.x -= (e.clientX - lastX) * k;
-        view.y -= (e.clientY - lastY) * k;
-        lastX = e.clientX;
-        lastY = e.clientY;
-        view.userMoved = true;
-        applyView(view, layers);
+        if (dragging) {
+            const k = dpr() / view.zoom;
+            view.x -= (e.clientX - lastX) * k;
+            view.y -= (e.clientY - lastY) * k;
+            lastX = e.clientX;
+            lastY = e.clientY;
+            view.userMoved = true;
+            applyView(view, layers);
+        } else if (onHover) {
+            const rect = canvas.getBoundingClientRect();
+            const [tx, ty] = screenToTile(view, (e.clientX - rect.left) * dpr(), (e.clientY - rect.top) * dpr());
+            onHover(tx, ty, e.clientX, e.clientY);
+        }
     });
+    canvas.addEventListener("pointerleave", () => onHover?.(null, null, 0, 0));
     const endDrag = (e: PointerEvent): void => {
         dragging = false;
         if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
     };
-    canvas.addEventListener("pointerup", endDrag);
+    canvas.addEventListener("pointerup", (e) => {
+        const moved = Math.hypot(e.clientX - downX, e.clientY - downY);
+        endDrag(e);
+        // A press that didn't pan is a click → resolve the tile and dispatch it.
+        if (moved < 5 && onClick) {
+            const rect = canvas.getBoundingClientRect();
+            const [tx, ty] = screenToTile(view, (e.clientX - rect.left) * dpr(), (e.clientY - rect.top) * dpr());
+            onClick(tx, ty);
+        }
+    });
     canvas.addEventListener("pointercancel", endDrag);
 
     canvas.addEventListener(

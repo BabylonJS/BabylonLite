@@ -61,3 +61,19 @@ export const SPRITE_DIR: Readonly<Record<Dir8, Dir8>> = {
 export function isoCentre(x: number, y: number): [number, number] {
     return [(x - y) * (TILE_W / 2), (x + y) * (TILE_H / 2)];
 }
+
+/**
+ * Inverse of {@link isoCentre}: world pixel → the tile whose diamond contains it.
+ *
+ * Solving the isoCentre system for `(x, y)`:
+ *   `wx = (x - y) * TILE_W/2`  ⇒  `x - y = 2·wx / TILE_W`
+ *   `wy = (x + y) * TILE_H/2`  ⇒  `x + y = 2·wy / TILE_H`
+ * gives `x = ((x−y)+(x+y))/2`, `y = ((x+y)−(x−y))/2`. Rounding the fractional
+ * result snaps to the nearest tile centre, which — because the diamonds tessellate
+ * as the Voronoi cells of those centres — is exactly the diamond under the point.
+ */
+export function worldToTile(wx: number, wy: number): [number, number] {
+    const xMinusY = (2 * wx) / TILE_W;
+    const xPlusY = (2 * wy) / TILE_H;
+    return [Math.round((xPlusY + xMinusY) / 2), Math.round((xPlusY - xMinusY) / 2)];
+}
