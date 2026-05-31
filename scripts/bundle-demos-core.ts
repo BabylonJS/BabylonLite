@@ -85,7 +85,7 @@ export async function buildDemo(slug: string): Promise<void> {
         base: "./",
         publicDir: false,
         logLevel: "warn",
-        plugins: [wgslMinifyPlugin(), terserPropertyManglePlugin(), minimalVitePreloadPlugin()],
+        plugins: [wgslMinifyPlugin({ mangle: false }), terserPropertyManglePlugin(), minimalVitePreloadPlugin()],
         resolve: {
             alias: { "babylon-lite": srcDir },
             dedupe: ["@babylonjs/core"],
@@ -104,6 +104,24 @@ export async function buildDemo(slug: string): Promise<void> {
                     format: "es",
                     entryFileNames: "[name].js",
                     chunkFileNames: `${slug}-[name]-[hash].js`,
+                    banner: NAME_POLYFILL,
+                },
+            },
+        },
+        // Demos may spawn a module Web Worker via `new Worker(new URL("./x.ts", import.meta.url), { type: "module" })`
+        // (see the offscreen demo). Build the worker with the same WGSL/property-mangle
+        // pipeline and emit its chunks prefixed with the slug so the copy + stale-cleanup
+        // logic below picks them up alongside the main entry. WGSL identifier mangling is
+        // disabled (mangle: false) because the worker's aggressive code-splitting can place
+        // a shader struct declaration and its usages in different chunks, which per-chunk
+        // mangling would rename inconsistently (e.g. "struct member wp not found").
+        worker: {
+            format: "es",
+            plugins: () => [wgslMinifyPlugin({ mangle: false }), terserPropertyManglePlugin()],
+            rollupOptions: {
+                output: {
+                    entryFileNames: `${slug}-worker-[hash].js`,
+                    chunkFileNames: `${slug}-worker-[name]-[hash].js`,
                     banner: NAME_POLYFILL,
                 },
             },

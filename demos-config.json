@@ -1,5 +1,12 @@
 [
     {
+        "slug": "offscreen",
+        "name": "Offscreen (Worker)",
+        "description": "Side-by-side proof that Lite renders identically on the main thread (left, regular canvas) and inside a Web Worker via OffscreenCanvas (right). A button runs heavy synchronous work on the main thread: the left canvas freezes while the worker-driven right canvas keeps spinning at full speed. Reproduction of the Babylon.js Offscreen demo.",
+        "tags": ["worker", "offscreen", "showcase"],
+        "mobile": false
+    },
+    {
         "slug": "torus-states",
         "name": "Torus States",
         "description": "Fullscreen WGSL raymarched twisted-torus SDF that auto-morphs through 7 states. Pure Lite effect pipeline — no scene, camera, or mesh. Reproduction of Robert Penner's demo.",

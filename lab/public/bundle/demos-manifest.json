@@ -1,18 +1,22 @@
 {
   "torus-states": {
-    "rawKB": 11.9,
+    "rawKB": 12,
     "gzipKB": 5
   },
   "doom": {
-    "rawKB": 96.5,
-    "gzipKB": 32.2
+    "rawKB": 106.2,
+    "gzipKB": 36.2
   },
   "quake": {
-    "rawKB": 121.2,
-    "gzipKB": 43.7
+    "rawKB": 122.4,
+    "gzipKB": 43.9
   },
   "minecraft": {
-    "rawKB": 101,
-    "gzipKB": 36
+    "rawKB": 101.1,
+    "gzipKB": 36.1
+  },
+  "offscreen": {
+    "rawKB": 168.2,
+    "gzipKB": 68.6
   }
 }
