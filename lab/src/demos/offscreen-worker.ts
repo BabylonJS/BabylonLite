@@ -7,7 +7,7 @@
  * even while the page's main thread is blocked by heavy synchronous work.
  *
  * Protocol (main → worker):
- *   { type: "init", canvas: OffscreenCanvas, width, height }  — start rendering
+ *   { type: "init", canvas: OffscreenCanvas, width, height, brdfUrl }  — start rendering
  *   { type: "resize", width, height }                         — backing-store size (device px)
  * Protocol (worker → main):
  *   { type: "ready" }            — first frame rendered
@@ -27,6 +27,7 @@ interface InitMessage {
     canvas: OffscreenCanvas;
     width: number;
     height: number;
+    brdfUrl: string;
 }
 interface ResizeMessage {
     type: "resize";
@@ -41,7 +42,7 @@ ctx.addEventListener("message", (ev: MessageEvent<IncomingMessage>) => {
         const canvas = msg.canvas;
         canvas.width = msg.width;
         canvas.height = msg.height;
-        void startOffscreenScene(canvas)
+        void startOffscreenScene(canvas, msg.brdfUrl)
             .then((eng) => {
                 engine = eng;
                 // Apply any resize that arrived while we were still initializing.

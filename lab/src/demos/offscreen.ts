@@ -14,9 +14,14 @@
  * thread: the left canvas stutters/freezes while the worker-driven right canvas
  * keeps spinning at full speed — the whole reason offscreen rendering exists.
  */
-import { startOffscreenScene } from "./offscreen-scene";
+import { BRDF_ASSET, startOffscreenScene } from "./offscreen-scene";
 
 const DPR = (): number => globalThis.devicePixelRatio || 1;
+
+// Resolve the local BRDF LUT to an absolute URL against the document base so it
+// loads identically on the main thread and inside the worker (a worker would
+// otherwise resolve a relative path against its own /bundle/demos/ script URL).
+const BRDF_URL = new URL(BRDF_ASSET, document.baseURI).href;
 
 function deviceSize(canvas: HTMLCanvasElement): { w: number; h: number } {
     const dpr = DPR();
@@ -41,7 +46,7 @@ async function main(): Promise<void> {
     };
 
     // ── LEFT: main-thread engine, rendered directly on the DOM canvas. ──
-    void startOffscreenScene(leftCanvas)
+    void startOffscreenScene(leftCanvas, BRDF_URL)
         .then(() => {
             leftReady = true;
             markReadyIfDone();
@@ -78,7 +83,7 @@ async function main(): Promise<void> {
             markReadyIfDone();
         });
 
-        worker.postMessage({ type: "init", canvas: offscreen, width: initSize.w, height: initSize.h }, [offscreen]);
+        worker.postMessage({ type: "init", canvas: offscreen, width: initSize.w, height: initSize.h, brdfUrl: BRDF_URL }, [offscreen]);
 
         // Keep the worker's backing store in sync with the canvas layout (device px).
         let lastW = initSize.w;
@@ -109,7 +114,7 @@ async function main(): Promise<void> {
         if (workerStatus) {
             workerStatus.textContent = "OffscreenCanvas unsupported — main thread fallback";
         }
-        void startOffscreenScene(rightCanvas)
+        void startOffscreenScene(rightCanvas, BRDF_URL)
             .then(() => {
                 rightReady = true;
                 markReadyIfDone();

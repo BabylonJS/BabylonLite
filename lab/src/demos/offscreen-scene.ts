@@ -37,16 +37,22 @@ const MODEL_URL = "https://assets.babylonjs.com/meshes/flightHelmet.glb";
 const ENV_URL = "https://assets.babylonjs.com/core/environments/environmentSpecular.env";
 const SKYBOX_URL = "https://assets.babylonjs.com/core/environments/backgroundSkybox.dds";
 const GROUND_URL = "https://assets.babylonjs.com/core/environments/backgroundGround.png";
-// Served locally by the lab from lab/public/brdf-lut.png (origin-absolute path
-// resolves the same on the main thread and inside the worker).
-const BRDF_URL = "/brdf-lut.png";
+// Served locally by the lab from lab/public/brdf-lut.png. The bundled Pages build
+// rewrites this to a page-relative path, which a Web Worker would otherwise
+// resolve against its own script URL (…/bundle/demos/) instead of the page. The
+// caller therefore resolves it to an absolute URL (against document.baseURI) on
+// the main thread and passes it in via `brdfUrl` so it loads identically in both.
+export const BRDF_ASSET = "/brdf-lut.png";
 
 /**
  * Build, register and start the Offscreen demo scene on the given canvas/offscreen.
  * Resolves once the first frame has rendered. The returned engine is the live
  * `EngineContext` (used by the worker to push resize events via `setEngineSize`).
+ *
+ * @param brdfUrl Absolute URL for the PBR BRDF LUT. Must be passed by the caller
+ *   (resolved against the document) so it loads correctly inside a worker.
  */
-export async function startOffscreenScene(canvas: RenderCanvas): Promise<EngineContext> {
+export async function startOffscreenScene(canvas: RenderCanvas, brdfUrl: string = BRDF_ASSET): Promise<EngineContext> {
     const engine = await createEngine(canvas);
     const scene = createSceneContext(engine);
 
@@ -59,7 +65,7 @@ export async function startOffscreenScene(canvas: RenderCanvas): Promise<EngineC
         skyboxUrl: SKYBOX_URL,
         skyboxSize: 1000,
         groundTextureUrl: GROUND_URL,
-        brdfUrl: BRDF_URL,
+        brdfUrl: brdfUrl,
     });
 
     // Soft fill on top of the IBL so the shadowed side isn't pure black.
