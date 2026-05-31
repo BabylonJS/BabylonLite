@@ -171,7 +171,7 @@ async function main(): Promise<void> {
 
     // Overview minimap (corner). Its viewport box inverts the SAME snapped view the
     // tiles render with; clicking/dragging recentres the main view on that tile.
-    const minimap = createMinimap(world, {
+    const minimap = createMinimap(engine, sr, world, {
         viewportCorners: () => viewportTileCorners(view, engine),
         panToTile: (tx, ty) => {
             centreViewOnTile(view, engine, tx, ty);
