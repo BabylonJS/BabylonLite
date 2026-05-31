@@ -36,6 +36,9 @@ const LIBREQUAKE_SRC = resolve(LAB, "public/librequake");
 const MINECRAFT_SRC = resolve(LAB, "public/minecraft");
 const FREECIV_SRC = resolve(LAB, "public/freeciv");
 const THUMBS_SRC = resolve(LAB, "public/thumbnails");
+/** Draco decoder JS+WASM, loaded relative to the page by glTF demos that hit a
+ *  KHR_draco_mesh_compression asset (see loader-gltf/draco-decode.ts). */
+const DRACO_FILES = ["draco_decoder.js", "draco_decoder.wasm"];
 
 interface DemoConfigEntry {
     slug: string;
@@ -105,7 +108,8 @@ function rewriteBundle(code: string): string {
         .replace(/(["'])\/doom\//g, "$1doom/")
         .replace(/(["'])\/librequake\//g, "$1librequake/")
         .replace(/(["'])\/minecraft\//g, "$1minecraft/")
-        .replace(/(["'])\/freeciv\//g, "$1freeciv/");
+        .replace(/(["'])\/freeciv\//g, "$1freeciv/")
+        .replace(/(["'])\/(draco_decoder\.(?:js|wasm))/g, "$1$2");
 }
 
 /** Fail loudly if any root-relative URL survives in the assembled site. */
@@ -203,6 +207,14 @@ async function main(): Promise<void> {
     //     .spec files at runtime from /freeciv/amplio2/, so copy the whole tree.
     if (demos.some((d) => d.slug === "freeciv") && existsSync(FREECIV_SRC)) {
         cpSync(FREECIV_SRC, resolve(SITE, "freeciv"), { recursive: true });
+    }
+
+    // 4e. Draco decoder (JS glue + WASM). glTF demos load it relative to the page
+    //     only when an asset uses KHR_draco_mesh_compression; the bundle ships a
+    //     (rewritten) relative reference, so place the files at the site root.
+    for (const file of DRACO_FILES) {
+        const src = resolve(LAB, "public", file);
+        if (existsSync(src)) cpSync(src, resolve(SITE, file));
     }
 
     // 5. Thumbnails for the demo cards.
