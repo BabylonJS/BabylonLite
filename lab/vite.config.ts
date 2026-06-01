@@ -231,6 +231,7 @@ function tabContentPlugin(): Plugin {
     const TARGETS: Record<string, TargetDef> = {
         parity: { command: "pnpm test:parity", detect: detectParity },
         bundle: { command: "pnpm build:bundle-scenes", detect: fileTarget(resolve(publicDir, "bundle/manifest.json")) },
+        demos: { command: "pnpm build:bundle-demos", detect: fileTarget(resolve(publicDir, "bundle/demos-manifest.json")) },
         perf: { command: "pnpm test:perf", detect: fileTarget(resolve(publicDir, "perf-manifest.json")) },
         perfreg: {
             // The regression test needs current + baseline bundles; build them first

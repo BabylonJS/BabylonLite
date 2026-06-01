@@ -3700,13 +3700,25 @@
         </div>
 
         <div id="panel-demos" class="tab-panel">
-            <div class="tab-hint">
-                💡 Standalone showcase demos built on Babylon Lite — pure Lite, no Babylon.js comparison. Each is production-bundled so its
-                real shipped size is advertised. Regenerate sizes with <code>pnpm build:bundle-demos</code>.
+            <div class="tab-hint has-regen">
+                <span class="tab-hint-text">
+                    💡 Standalone showcase demos built on Babylon Lite — pure Lite, no Babylon.js comparison. Each is production-bundled so its
+                    real shipped size is advertised. Regenerate sizes with <code>pnpm build:bundle-demos</code>.
+                </span>
+                <button class="tab-hint-regen" id="demos-regen-btn" onclick="generateTabContent('demos')" title="Regenerate demo bundle sizes (pnpm build:bundle-demos)">⚙ Regenerate</button>
             </div>
             <div class="perf-toolbar">
                 <div class="perf-filter-pills" id="demos-filter-pills"></div>
                 <input id="demos-search" class="scene-search" type="search" placeholder="Filter demos…" aria-label="Filter demos" oninput="setSceneSearch('demos', this.value)" />
+            </div>
+            <div class="gen-block" id="gen-demos">
+                <div class="gen-block-msg" id="gen-demos-msg"></div>
+                <span class="perf-status" id="gen-demos-spinner"></span>
+                <div class="gen-log-bar" id="gen-demos-logbar">
+                    <span style="font-size: 12px; color: #8b949e">Output</span>
+                    <button class="btn" id="gen-demos-logclose" onclick="closeTabGenLog('demos')">✕ Close logs</button>
+                </div>
+                <pre class="gen-log" id="gen-demos-log"></pre>
             </div>
             <div class="grid" id="demos-grid"></div>
         </div>
@@ -5938,6 +5950,7 @@
             var TAB_GEN_CONFIG = {
                 parity: { label: "Parity diffs", command: "pnpm test:parity", reload: reloadParityContent },
                 bundle: { label: "Bundle sizes", command: "pnpm build:bundle-scenes", reload: loadBundleManifest },
+                demos: { label: "Demo bundle sizes", command: "pnpm build:bundle-demos", reload: loadDemosManifest },
                 perf: { label: "Perf benchmarks", command: "pnpm test:perf", reload: loadPerfManifest },
                 perfreg: { label: "Perf regression data", command: "pnpm test:perf-regression", reload: loadPerfRegManifest },
             };
