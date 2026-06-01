@@ -23,6 +23,15 @@ export interface SpotLight extends LightBase {
     range: number;
 }
 
+/**
+ * Creates a spot light: a cone of light from `position` aimed along `direction`.
+ * @param position - World-space position of the light.
+ * @param direction - World-space direction the cone points along.
+ * @param angle - Full cone angle in radians.
+ * @param exponent - Falloff exponent; higher values produce a sharper edge.
+ * @param intensity - Scalar multiplier applied to the light's diffuse and specular contribution.
+ * @returns Plain `SpotLight` data to be added to a scene via `addToScene`.
+ */
 export function createSpotLight(position: [number, number, number], direction: [number, number, number], angle: number, exponent: number, intensity = 1.0): SpotLight {
     const _localMatrix: Mat4 = allocateMat4();
     const { wm, onDirty, lvs } = createLightBase(() => {

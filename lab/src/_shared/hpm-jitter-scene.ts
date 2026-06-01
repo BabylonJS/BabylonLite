@@ -73,8 +73,9 @@ export async function runHpmJitterScene(opts: HpmJitterOptions): Promise<void> {
     addToScene(scene, dir);
 
     const ground = createGround(engine, { width: 40, height: 40, subdivisions: 1 });
-    ground.material = createStandardMaterial();
-    ground.material.diffuseColor = [0.25, 0.25, 0.3];
+    const groundMat = createStandardMaterial();
+    groundMat.diffuseColor = [0.25, 0.25, 0.3];
+    ground.material = groundMat;
     ground.position.set(OFFSET, 0, OFFSET);
     addToScene(scene, ground);
 
@@ -84,12 +85,13 @@ export async function runHpmJitterScene(opts: HpmJitterOptions): Promise<void> {
     for (let i = 0; i < 5; i++) {
         for (let j = 0; j < 5; j++) {
             const box = createBox(engine, 1);
-            box.material = createStandardMaterial();
+            const boxMat = createStandardMaterial();
             const r = 0.3 + (i / 4) * 0.6;
             const g = 0.4;
             const b = 0.3 + (j / 4) * 0.6;
-            box.material.diffuseColor = [r, g, b];
-            box.material.specularColor = [0.4, 0.4, 0.4];
+            boxMat.diffuseColor = [r, g, b];
+            boxMat.specularColor = [0.4, 0.4, 0.4];
+            box.material = boxMat;
             box.position.set(OFFSET + (i - 2) * 4, 1, OFFSET + (j - 2) * 4);
             addToScene(scene, box);
         }
@@ -99,10 +101,11 @@ export async function runHpmJitterScene(opts: HpmJitterOptions): Promise<void> {
     // unambiguous. F32 rounding shifts the rasterised silhouette by a full
     // pixel or more at OFFSET=5e6.
     const pillar = createBox(engine, 1);
-    pillar.material = createStandardMaterial();
-    pillar.material.diffuseColor = [0.9, 0.5, 0.2];
-    pillar.material.emissiveColor = [0.1, 0.05, 0.02];
-    pillar.material.specularColor = [0.6, 0.6, 0.6];
+    const pillarMat = createStandardMaterial();
+    pillarMat.diffuseColor = [0.9, 0.5, 0.2];
+    pillarMat.emissiveColor = [0.1, 0.05, 0.02];
+    pillarMat.specularColor = [0.6, 0.6, 0.6];
+    pillar.material = pillarMat;
     pillar.position.set(OFFSET, 2, OFFSET);
     pillar.scaling.set(0.8, 4, 0.8);
     addToScene(scene, pillar);

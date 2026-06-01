@@ -47,6 +47,7 @@ import { SCENE_UBO_BYTES } from "../shader/scene-uniforms-size.js";
 import { ensureSceneLightState, refreshSceneLightsUBO } from "../render/lights-ubo.js";
 import type { Task } from "./task.js";
 
+/** Configuration for `createRenderTask`: render target, clear state, optional camera override, and transmission settings. */
 export interface RenderTaskConfig {
     name: string;
     /** TODO: rt should not live in this config long-term. Until texture
@@ -67,6 +68,7 @@ export interface RenderTaskConfig {
     transmission?: { copyCount?: number; generateMipmaps?: boolean };
 }
 
+/** A frame-graph task that records a single `RenderPass`, binds the scene's `RenderTarget`, and draws renderables into it. */
 export interface RenderTask extends Task {
     readonly name: string;
     /** Live task configuration. Mutating `clr` or `clrColor` affects subsequent frames. */
@@ -96,6 +98,8 @@ export interface RenderTask extends Task {
     _lightsUBO: GPUBuffer;
     _suData: Float32Array;
     _su: unknown[];
+    /** Optional transmission-enabled execute path: copies the scene texture for refraction and draws transmissive
+     *  renderables. Present only when the task was configured with `transmission`. Returns the number of draw calls issued. */
     _executeWithTransmission?(sampleCount: number): number;
     _targetSignature: RenderTargetSignature;
 

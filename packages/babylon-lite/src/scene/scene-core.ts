@@ -30,6 +30,7 @@ export interface ImageProcessingConfig {
     toneMappingType?: "standard" | "aces";
 }
 
+/** A clipping plane expressed as the coefficients `[a, b, c, d]` of `a·x + b·y + c·z + d`. */
 export type ClipPlane = readonly [number, number, number, number];
 
 /** Top-level scene context — pure state, no attached methods. */
@@ -49,7 +50,7 @@ export interface SceneContext {
     /** Fog configuration. Null = no fog. */
     fog: FogConfig | null;
 
-    /** Scene clip plane as (normal.x, normal.y, normal.z, d). Matches Babylon.js Plane dot(worldPosition, plane) > 0 discard semantics. */
+    /** Scene clip plane as (normal.x, normal.y, normal.z, d). Matches Babylon.js Plane `dot(worldPosition, plane) > 0` discard semantics. */
     clipPlane: ClipPlane | null;
 
     /** Shadow generators registered on this scene. */
@@ -65,6 +66,7 @@ export interface SceneContext {
     fixedDeltaMs: number;
 }
 
+/** Options passed to the scene-context factory. */
 export interface SceneContextOptions {
     defaultRenderTask?: boolean;
 }
@@ -294,9 +296,13 @@ export function addDeferredSceneRenderables(
 }
 
 /**
- * Add an entity (mesh, light, camera, transform node, shadow generator, or asset container)
- * to the scene. Optional scene-hosted systems such as depth-hosted sprites expose their own
- * opt-in add functions so mesh-only scenes do not pay feature-specific routing bytes here.
+ * Adds an entity (mesh, light, camera, transform node, shadow generator, or asset container)
+ * to the scene, dispatching on its type. Asset containers are unpacked and each contained
+ * entity added recursively. Optional scene-hosted systems such as depth-hosted sprites
+ * expose their own opt-in add functions so mesh-only scenes do not pay feature-specific
+ * routing bytes here.
+ * @param scene - The owning scene (pillar 4b: entities never reference the scene themselves).
+ * @param entity - The entity (or asset container) to add.
  */
 export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camera | ShadowGenerator | TransformNode | AssetContainer): void {
     const ctx = scene as SceneContextInternal;

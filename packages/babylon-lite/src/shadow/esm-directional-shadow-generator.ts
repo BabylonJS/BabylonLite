@@ -46,6 +46,7 @@ export interface EsmShadowTaskResources {
     _shadowUboData: Float32Array;
 }
 
+/** Configuration for a directional-light ESM shadow generator: map size, depth scale, blur kernel, darkness, and ortho projection bounds. */
 export interface EsmDirectionalShadowGeneratorConfig {
     mapSize?: number;
     depthScale?: number;
@@ -394,6 +395,14 @@ function shadowMatrixChanged(a: Float32Array, b: Float32Array): boolean {
     return false;
 }
 
+/**
+ * Creates an exponential shadow map (ESM) shadow generator for a directional light,
+ * including the depth, blur, and final ESM textures plus the per-frame render task hooks.
+ * @param engine - The engine providing the GPU device.
+ * @param _light - The directional light that casts the shadows.
+ * @param cfg - Optional shadow-map, blur, and projection configuration.
+ * @returns A `ShadowGenerator` wired to the directional ESM render path.
+ */
 export function createEsmDirectionalShadowGenerator(engine: EngineContext, _light: DirectionalLight, cfg: EsmDirectionalShadowGeneratorConfig = {}): ShadowGenerator {
     const eng = engine as EngineContextInternal;
     const device = eng.device;
