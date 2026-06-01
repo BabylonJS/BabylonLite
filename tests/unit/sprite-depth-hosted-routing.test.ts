@@ -66,6 +66,7 @@ function makeMockEngine(): EngineContext {
         drawCallCount: 0,
         useHighPrecisionMatrix: false,
         useFloatingOrigin: false,
+        maxDevicePixelRatio: Infinity,
         device,
         context: {} as GPUCanvasContext,
         format: "bgra8unorm",
