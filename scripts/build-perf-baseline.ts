@@ -15,7 +15,7 @@ import { resolve } from "path";
 const ROOT = resolve(__dirname, "..");
 const WORKTREE_DIR = resolve(ROOT, ".perf-baseline-worktree");
 const BASELINE_OUT = resolve(ROOT, "lab/public/bundle-baseline");
-const BASELINE_HTML_DIR = resolve(ROOT, "lab");
+const BASELINE_HTML_DIR = resolve(ROOT, "lab/lite");
 
 function run(cmd: string, opts?: { cwd?: string; env?: Record<string, string> }): string {
     return execSync(cmd, {
@@ -183,4 +183,4 @@ try {
 }
 
 console.log(`\n✓ Baseline bundles from ${baselineRef} (${baselineSha.slice(0, 8)}) ready at ${BASELINE_OUT}`);
-console.log(`✓ HTML pages: lab/bundle-baseline-scene{1..${scenes.length}}.html`);
+console.log(`✓ HTML pages: lab/lite/bundle-baseline-scene{1..${scenes.length}}.html`);

@@ -17,7 +17,7 @@ export default tseslint.config(
             "pages-dist/**",
             "node_modules/**",
             "**/node_modules/**",
-            "reference/**",
+            "reference/lite/**",
             "test-results/**",
             "scripts/**",
             "**/public/**",
@@ -145,7 +145,7 @@ export default tseslint.config(
     // Test files (lighter rules)
     // ===========================================
     {
-        files: ["tests/**/*.ts", "**/*.test.ts", "**/*.spec.ts"],
+        files: ["tests/lite/**/*.ts", "**/*.test.ts", "**/*.spec.ts"],
         extends: [...tseslint.configs.recommended],
         languageOptions: {
             parser: tseslint.parser,

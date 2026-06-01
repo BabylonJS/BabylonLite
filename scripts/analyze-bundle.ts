@@ -94,7 +94,7 @@ async function main(): Promise<void> {
             sourcemap: false,
             modulePreload: false,
             rollupOptions: {
-                input: { [scene]: resolve(labDir, `src/lite/${scene}.ts`) },
+                input: { [scene]: resolve(labDir, `lite/lite/src/lite/${scene}.ts`) },
                 output: {
                     format: 'es',
                     entryFileNames: '[name].js',

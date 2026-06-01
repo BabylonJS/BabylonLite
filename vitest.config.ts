@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
     test: {
-        include: ["tests/**/*.test.ts"],
+        include: ["tests/lite/**/*.test.ts"],
         environment: "node",
         reporters: process.env.CI ? ["default", "junit"] : ["default"],
         outputFile: {

@@ -22,7 +22,7 @@ const swiftShaderArgs = isCI
     : [];
 
 export default defineConfig({
-    testDir: "./tests/perf",
+    testDir: "./tests/lite/perf",
     timeout: 600_000,
     retries: 4,
     use: {

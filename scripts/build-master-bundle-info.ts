@@ -33,7 +33,7 @@ function resolveMasterRef(): string {
 
 function sceneExists(ref: string, scene: string): boolean {
     try {
-        execFileSync("git", ["cat-file", "-e", `${ref}:lab/src/lite/${scene}.ts`], { cwd: ROOT, stdio: "ignore" });
+        execFileSync("git", ["cat-file", "-e", `${ref}:lab/lite/src/lite/${scene}.ts`], { cwd: ROOT, stdio: "ignore" });
         return true;
     } catch {
         return false;

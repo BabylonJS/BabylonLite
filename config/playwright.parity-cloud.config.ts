@@ -27,7 +27,7 @@ const swiftShaderArgs =
         : [];
 
 export default defineConfig({
-    testDir: "../tests/parity/scenes",
+    testDir: "../tests/lite/parity/scenes",
     timeout: 120_000,
     retries: 1,
     workers: 1,
