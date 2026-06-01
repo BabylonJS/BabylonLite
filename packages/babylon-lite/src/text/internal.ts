@@ -2,7 +2,7 @@
  *  Not re-exported from `src/index.ts`. */
 
 import type { Font as TextShaperFont } from "text-shaper";
-import type { CurveSetId, GlyphCurves, GlyphRun, TextLayoutOptions } from "./public-types.js";
+import type { CurveSetId, GlyphCurves, GlyphRun, TextDescriptor, TextLayoutOptions } from "./public-types.js";
 import type { GlyphBands } from "./slug-bands.js";
 
 // ─── Brand symbols (nominal-typing only — never instantiated at runtime) ───
@@ -15,9 +15,7 @@ export type Font = { readonly [FONT_BRAND]: never };
 export type TextData = {
     readonly [TEXT_DATA_BRAND]: never;
 };
-export type DefaultTextDescriptor = {
-    readonly curves: ReadonlyMap<CurveSetId, ReadonlyMap<number, GlyphCurves>>;
-    readonly runs: readonly GlyphRun[];
+export type DefaultTextDescriptor = TextDescriptor & {
     /** Pixel-space width of the laid-out run (max line width). */
     readonly width: number;
     /** Pixel-space height of the laid-out run (lines × line-height). */
@@ -57,6 +55,9 @@ export type SharedAtlas = {
     glyphSlots: Map<number, AtlasSlot>;
     /** Monotonic version bumped whenever a new glyph is appended. */
     version: number;
+    /** Number of live `TextData`s currently referencing this atlas. When it drops to zero the
+     *  GPU textures are destroyed (CPU staging stays warm in the WeakMap for lazy rebuild). */
+    refCount: number;
     /** Lazy GPU resources (one set per SharedAtlas; recreated only on capacity grow). */
     _gpu: SharedAtlasGpu | null;
 };
@@ -98,6 +99,8 @@ export type TextDataInternals = {
     lastRunsRef: readonly GlyphRun[] | null;
     /** Last seen sizes of each per-curveSet inner map (parallel to `groups`) for grow detection. */
     lastCurvesSizes: Map<CurveSetId, number>;
+    /** Atlases this `TextData` currently holds a reference on (for refcount reconcile/release). */
+    refdAtlases: Set<SharedAtlas>;
     /** Monotonic version bumped on any structural change. */
     version: number;
     /** Lazy per-text-block GPU resources (single instance buffer covering all groups). */

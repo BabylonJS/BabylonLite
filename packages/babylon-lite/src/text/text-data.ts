@@ -6,6 +6,7 @@ import type { CurveSetId, GlyphCurves, GlyphRun, TextDescriptor } from "./public
 import type { SharedAtlas, TextData, TextDataDrawGroup, TextDataInternals } from "./internal.js";
 import { getSharedAtlasForCurves, setSharedAtlasForCurves, getTextDataInternals, setTextDataInternals } from "./internal.js";
 import { createSharedAtlas, packAppendGlyph } from "./slug-pack.js";
+import { disposeSharedAtlasGpu } from "./_gpu/slug-textures.js";
 
 /** Bytes per instance: 4 vec4 attributes (slugBounds, slugAnchor, slugAtlas, slugBand). */
 export const TEXT_INSTANCE_FLOATS = 16;
@@ -162,6 +163,33 @@ function buildGroupsAndInstances(internals: TextDataInternals, descriptor: TextD
 
     internals.groups = newGroups;
     internals.instanceCount = totalInstances;
+
+    // Reconcile atlas refcounts: acquire newly-referenced atlases, release ones no longer used.
+    const newAtlases = new Set<SharedAtlas>();
+    for (const g of newGroups) {
+        newAtlases.add(g.atlas);
+    }
+    for (const atlas of newAtlases) {
+        if (!internals.refdAtlases.has(atlas)) {
+            atlas.refCount++;
+        }
+    }
+    for (const atlas of internals.refdAtlases) {
+        if (!newAtlases.has(atlas)) {
+            releaseAtlasRef(atlas);
+        }
+    }
+    internals.refdAtlases = newAtlases;
+}
+
+/** Drop one reference to `atlas`; destroy its GPU textures once no `TextData` references it. */
+function releaseAtlasRef(atlas: SharedAtlas): void {
+    if (atlas.refCount > 0) {
+        atlas.refCount--;
+    }
+    if (atlas.refCount === 0) {
+        disposeSharedAtlasGpu(atlas);
+    }
 }
 
 export function createTextData(descriptor: TextDescriptor): TextData {
@@ -172,6 +200,7 @@ export function createTextData(descriptor: TextDescriptor): TextData {
         instanceCount: 0,
         lastRunsRef: descriptor.runs,
         lastCurvesSizes: new Map(),
+        refdAtlases: new Set(),
         version: 1,
         _gpu: null,
     };
@@ -204,8 +233,13 @@ export function disposeTextData(data: TextData): void {
     }
     internals.groups = [];
     internals.instanceCount = 0;
-    // SharedAtlases are kept — they may still be in use by other TextData blocks,
-    // and the curves WeakMap reclaims them naturally when the caller drops the curves map.
+    // Release atlas references; an atlas whose last reference drops here has its GPU textures
+    // destroyed. CPU staging stays warm in the curves WeakMap and is reclaimed naturally when
+    // the caller drops the curves map.
+    for (const atlas of internals.refdAtlases) {
+        releaseAtlasRef(atlas);
+    }
+    internals.refdAtlases.clear();
 }
 
 /** @internal Read TextData internals from a renderable. */
