@@ -25,6 +25,7 @@ import type { RenderTarget } from "../engine/render-target.js";
 import { addPassDependencies, type Pass } from "./pass.js";
 import type { Task } from "./task.js";
 
+/** A frame-graph pass that begins a render pass into its bound `RenderTarget`, runs an execute callback, then ends the pass. */
 export interface RenderPass extends Pass {
     /** Color render target. `null` until set via `setRenderPassRenderTarget`. */
     _renderTarget: RenderTarget | null;
@@ -102,7 +103,7 @@ export function createRenderPass(name: string, task: Task): RenderPass {
             if (depthView) {
                 depthAttachment = {
                     view: depthView,
-                    depthClearValue: 1.0,
+                    depthClearValue: depthRt._descriptor._depthClearValue ?? 0,
                     depthLoadOp: "clear",
                     depthStoreOp: "store",
                     ...(hasStencil ? { stencilClearValue: 0, stencilLoadOp: "clear" as const, stencilStoreOp: "store" as const } : {}),

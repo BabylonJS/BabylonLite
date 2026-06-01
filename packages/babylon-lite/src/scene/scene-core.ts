@@ -19,6 +19,7 @@ import { createRenderTask } from "../frame-graph/render-task.js";
 import { createRenderTarget } from "../engine/render-target.js";
 import type { AssetContainer } from "../asset-container.js";
 import type { SceneLightGpuState } from "../render/lights-ubo.js";
+import type { GaussianSplattingMesh } from "../mesh/GaussianSplatting/gaussian-splatting-mesh.js";
 
 /** Image processing configuration. */
 export interface ImageProcessingConfig {
@@ -29,6 +30,7 @@ export interface ImageProcessingConfig {
     toneMappingType?: "standard" | "aces";
 }
 
+/** A clipping plane expressed as the coefficients `[a, b, c, d]` of `a·x + b·y + c·z + d`. */
 export type ClipPlane = readonly [number, number, number, number];
 
 /** Top-level scene context — pure state, no attached methods. */
@@ -48,7 +50,7 @@ export interface SceneContext {
     /** Fog configuration. Null = no fog. */
     fog: FogConfig | null;
 
-    /** Scene clip plane as (normal.x, normal.y, normal.z, d). Matches Babylon.js Plane dot(worldPosition, plane) > 0 discard semantics. */
+    /** Scene clip plane as (normal.x, normal.y, normal.z, d). Matches Babylon.js Plane `dot(worldPosition, plane) > 0` discard semantics. */
     clipPlane: ClipPlane | null;
 
     /** Shadow generators registered on this scene. */
@@ -64,6 +66,11 @@ export interface SceneContext {
     fixedDeltaMs: number;
 }
 
+/** Options passed to the scene-context factory. */
+export interface SceneContextOptions {
+    defaultRenderTask?: boolean;
+}
+
 /** @internal SceneContext with internal rendering state — for renderable/loader code only. Not re-exported from index.ts. */
 export interface SceneContextInternal extends SceneContext, RenderingContext {
     /** All renderables in this scene. The active frame-graph tasks bucket them
@@ -71,6 +78,11 @@ export interface SceneContextInternal extends SceneContext, RenderingContext {
     _renderables: Renderable[];
     /** Pre-pass work (shadow maps, compute, etc.). */
     _prePasses: PrePassRenderable[];
+    /** GaussianSplatting meshes attached to this scene.  Populated by
+     *  `attachGaussianSplattingMesh`.  Scene-core stays GS-agnostic apart from
+     *  this opaque registry (used by `gpu-picker` to iterate GS meshes without
+     *  scanning `_renderables`). */
+    _gsMeshes: GaussianSplattingMesh[];
     /** Scene uniform updaters (one per shared UBO). */
     _uniformUpdaters: SceneUniformUpdater[];
     /** Per-frame callbacks run before rendering (animation, physics, etc.). */
@@ -91,6 +103,10 @@ export interface SceneContextInternal extends SceneContext, RenderingContext {
     _renderableVersion: number;
     /** Lazily-loaded processor; populated on first material reassignment. */
     _processSwaps?: (scene: SceneContext) => void;
+    /** True once the initial deferred build (buildScene) has run. Meshes added after
+     *  this point are materialized via the per-frame swap drain rather than the
+     *  boot-only deferred-builder path. */
+    _built: boolean;
 
     // ─── Stashed internal state (typed to avoid `as any` casts) ────
     _envTextures?: EnvironmentTextures;
@@ -104,10 +120,27 @@ export interface SceneContextInternal extends SceneContext, RenderingContext {
     _frameGraph: FrameGraph;
 }
 
+/** Queue a mesh for renderable (re)build on the next frame's material-swap drain.
+ *  Shared by the material setter (runtime material change) and addToScene (runtime
+ *  mesh add). Lazily loads the swap processor so scenes that never mutate at runtime
+ *  don't pull it into their bundle. */
+function enqueueMaterialSwap(scene: SceneContextInternal, mesh: Mesh): void {
+    const mi = mesh as MeshInternal;
+    if (mi._materialDirty) {
+        return;
+    }
+    mi._materialDirty = true;
+    scene._materialSwapQueue.push(mesh);
+    if (!scene._processSwaps) {
+        void import("./scene-material-swap.js").then((m) => {
+            scene._processSwaps = m.processMaterialSwaps;
+        });
+    }
+}
+
 /** Install a property setter on mesh.material that sets _materialDirty
  *  and pushes the mesh into the scene's swap queue for processing. */
 function installMaterialSetter(scene: SceneContextInternal, mesh: Mesh): void {
-    const mi = mesh as MeshInternal;
     let _mat = mesh.material;
     Object.defineProperty(mesh, "material", {
         get() {
@@ -116,15 +149,7 @@ function installMaterialSetter(scene: SceneContextInternal, mesh: Mesh): void {
         set(v) {
             if (v !== _mat) {
                 _mat = v;
-                if (!mi._materialDirty) {
-                    mi._materialDirty = true;
-                    scene._materialSwapQueue.push(mesh);
-                    if (!scene._processSwaps) {
-                        void import("./scene-material-swap.js").then((m) => {
-                            scene._processSwaps = m.processMaterialSwaps;
-                        });
-                    }
-                }
+                enqueueMaterialSwap(scene, mesh);
             }
         },
         configurable: true,
@@ -133,7 +158,7 @@ function installMaterialSetter(scene: SceneContextInternal, mesh: Mesh): void {
 }
 
 /** Create an empty scene context bound to the given engine. */
-export function createSceneContext(engine: EngineContext): SceneContext {
+export function createSceneContext(engine: EngineContext, options?: SceneContextOptions): SceneContext {
     const eng = engine as EngineContextInternal;
 
     // Closures below capture `ctx` by-reference via this object.
@@ -150,6 +175,7 @@ export function createSceneContext(engine: EngineContext): SceneContext {
         imageProcessing: { exposure: 1.0, contrast: 1.0, toneMappingEnabled: false },
         _renderables: [],
         _prePasses: [],
+        _gsMeshes: [],
         _uniformUpdaters: [],
         fixedDeltaMs: 0,
         _beforeRender: [],
@@ -159,6 +185,7 @@ export function createSceneContext(engine: EngineContext): SceneContext {
         _meshDisposables: new Map(),
         _materialSwapQueue: [],
         _renderableVersion: 0,
+        _built: false,
         _drawCallsPre: 0,
 
         _update(): void {
@@ -195,26 +222,28 @@ export function createSceneContext(engine: EngineContext): SceneContext {
     // (offscreen RTTs, post-FX, UI overlays) before/after.
     const fg = createFrameGraph(eng, ctx);
     ctx._frameGraph = fg;
-    const swapRT = createRenderTarget({
-        label: "scene-swapchain",
-        colorFormat: eng.format,
-        depthStencilFormat: "depth24plus-stencil8",
-        sampleCount: eng.msaaSamples,
-        size: "canvas",
-        resolveToSwapchain: true,
-    });
-    _appendTask(
-        fg,
-        createRenderTask(
-            {
-                name: "scene",
-                rt: swapRT,
-                clrColor: ctx.clearColor,
-            },
-            eng,
-            ctx
-        )
-    );
+    if (options?.defaultRenderTask !== false) {
+        const swapRT = createRenderTarget({
+            label: "scene-swapchain",
+            colorFormat: eng.format,
+            depthStencilFormat: "depth24plus-stencil8",
+            sampleCount: eng.msaaSamples,
+            size: "canvas",
+            resolveToSwapchain: true,
+        });
+        _appendTask(
+            fg,
+            createRenderTask(
+                {
+                    name: "scene",
+                    rt: swapRT,
+                    clrColor: ctx.clearColor,
+                },
+                eng,
+                ctx
+            )
+        );
+    }
     ctx._disposables.push(() => fg.dispose());
     return ctx;
 }
@@ -255,6 +284,13 @@ export function addDeferredSceneRenderables(
     });
 }
 
+/**
+ * Adds an entity to the scene, dispatching on its type. Asset containers are unpacked and
+ * each contained entity added recursively; meshes, lights, cameras, transform nodes, and
+ * shadow generators are registered in their respective scene collections.
+ * @param scene - The owning scene (pillar 4b: entities never reference the scene themselves).
+ * @param entity - The entity (or asset container) to add.
+ */
 export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camera | ShadowGenerator | TransformNode | AssetContainer): void {
     const ctx = scene as SceneContextInternal;
     // AssetContainer from loadGltf / loadBabylon — process each field present
@@ -302,6 +338,12 @@ export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camer
                 });
             }
             group.push(mesh);
+            // Added after the initial build: the deferred builder for this group has
+            // already run (and only runs at boot), so materialize this mesh's renderable
+            // through the per-frame material-swap drain instead.
+            if (ctx._built) {
+                enqueueMaterialSwap(ctx, mesh);
+            }
         }
     } else if ("lightType" in entity) {
         ctx.lights.push(entity as LightBase);
@@ -335,6 +377,7 @@ export function disposeScene(scene: SceneContext): void {
     ctx.meshes.length = 0;
     ctx._renderables.length = 0;
     ctx._prePasses.length = 0;
+    ctx._gsMeshes.length = 0;
     ctx._uniformUpdaters.length = 0;
     ctx._beforeRender.length = 0;
     ctx._deferredBuilders.length = 0;
@@ -359,6 +402,7 @@ export async function buildScene(scene: SceneContext): Promise<void> {
     }
     ctx._materialSwapQueue.length = 0;
     ctx._renderableVersion++;
+    ctx._built = true;
 }
 
 /**

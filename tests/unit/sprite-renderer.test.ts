@@ -35,6 +35,7 @@ import {
     disposeSpriteRenderer,
     _spriteRendererPipelineCacheSize,
 } from "../../packages/babylon-lite/src/sprite/sprite-renderer";
+import { createSpritePipelineCache, getOrCreateSpritePipeline } from "../../packages/babylon-lite/src/sprite/sprite-pipeline";
 import type { SpriteAtlas } from "../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
 import type { Texture2D } from "../../packages/babylon-lite/src/texture/texture-2d";
 import type { EngineContext, EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
@@ -180,6 +181,20 @@ describe("createSpriteRenderer", () => {
         expect(shaderDescriptor.code).not.toContain("iZ");
         expect(shaderDescriptor.code).toContain("vec4<f32>(ndc, 0.0, 1.0)");
     });
+
+    it("converts depth-hosted sprite NDC Z to reverse-Z clip depth", () => {
+        const { engine } = makeMockEngine();
+        const cache = createSpritePipelineCache();
+        const sceneBGL = {} as GPUBindGroupLayout;
+
+        getOrCreateSpritePipeline(engine as EngineContextInternal, cache, "bgra8unorm", 4, "alpha", true, false, "depth24plus-stencil8", sceneBGL);
+
+        const device = engine.device as unknown as { createRenderPipeline: ReturnType<typeof vi.fn>; createShaderModule: ReturnType<typeof vi.fn> };
+        const shaderDescriptor = device.createShaderModule.mock.calls[0]![0] as GPUShaderModuleDescriptor;
+        const descriptor = device.createRenderPipeline.mock.calls[0]![0] as GPURenderPipelineDescriptor;
+        expect(shaderDescriptor.code).toContain("vec4<f32>(ndc, 1.0 - in.iZ, 1.0)");
+        expect(descriptor.depthStencil?.depthCompare).toBe("greater-equal");
+    });
 });
 
 describe("addSpriteRendererLayer / removeSpriteRendererLayer", () => {
@@ -284,6 +299,20 @@ describe("disposeSpriteRenderer", () => {
         disposeSpriteRenderer(sr);
 
         expect(list).not.toContain(sr);
+    });
+
+    it("runs internal disposal callbacks once", () => {
+        const { engine } = makeMockEngine();
+        const sr = createSpriteRenderer(engine, { layers: [createSprite2DLayer(makeMockAtlas())] });
+        const internal = sr as unknown as { _disposeCallbacks: Array<() => void> };
+        const callback = vi.fn();
+
+        internal._disposeCallbacks.push(callback);
+        disposeSpriteRenderer(sr);
+        disposeSpriteRenderer(sr);
+
+        expect(callback).toHaveBeenCalledTimes(1);
+        expect(internal._disposeCallbacks).toEqual([]);
     });
 
     it("clears layers and destroys internal GPU buffers", () => {

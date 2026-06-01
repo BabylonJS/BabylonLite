@@ -135,15 +135,19 @@ export interface Sprite2DProps {
 
 /**
  * Pure-2D per-instance vertex layout (13 floats = 52 bytes, `depth: "none"`):
+ * ```
  *   [0..1]  positionPx.xy   (float32x2 @ offset  0)
  *   [2..3]  sizePx.xy       (float32x2 @ offset  8)
  *   [4..5]  uvMin.xy        (float32x2 @ offset 16)
  *   [6..7]  uvMax.xy        (float32x2 @ offset 24)
  *   [8]     rotation        (float32   @ offset 32)
  *   [9..12] colorRGBA       (float32x4 @ offset 36)
+ * ```
  *
  * Depth-hosted layers (`depth: "test" | "test-write"`) extend this to 14 floats = 56 bytes:
+ * ```
  *   [13]    z (NDC depth)   (float32   @ offset 52, consumed only by depth-hosted pipelines)
+ * ```
  *
  * Visibility (`visible: false`) is implemented by zeroing slots [2..3]; the sprite's true
  * size lives in `layer._savedSize` so a later `visible: true` (without re-supplying
@@ -434,7 +438,13 @@ export function clearSprite2DLayer(layer: Sprite2DLayer): void {
     layer._version = (layer._version + 1) | 0;
 }
 
-/** Update only the frame UVs for one sprite. */
+/**
+ * Update only the frame UVs for one sprite.
+ *
+ * The sprite keeps its explicit `sizePx`/saved size. For atlas-driven size
+ * changes, call `updateSprite2DIndex(layer, index, { frame, sizePx })`.
+ * Existing flip state is preserved for non-degenerate UV ranges.
+ */
 export function setSprite2DFrameIndex(layer: Sprite2DLayer, index: number, frame: number): void {
     if (index < 0 || index >= layer.count) {
         throw new Error(`setSprite2DFrameIndex: index ${index} out of range [0, ${layer.count})`);
@@ -442,9 +452,11 @@ export function setSprite2DFrameIndex(layer: Sprite2DLayer, index: number, frame
     const frameIdx = resolveSpriteFrame(layer.atlas, frame);
     const f = layer.atlas.frames[frameIdx]!;
     const base = index * layer._instanceFloatsPerSprite;
-    layer._instanceData[base + 4] = f.uvMin[0];
-    layer._instanceData[base + 5] = f.uvMin[1];
-    layer._instanceData[base + 6] = f.uvMax[0];
-    layer._instanceData[base + 7] = f.uvMax[1];
+    const flipX = layer._instanceData[base + 4]! > layer._instanceData[base + 6]!;
+    const flipY = layer._instanceData[base + 5]! > layer._instanceData[base + 7]!;
+    layer._instanceData[base + 4] = flipX ? f.uvMax[0] : f.uvMin[0];
+    layer._instanceData[base + 5] = flipY ? f.uvMax[1] : f.uvMin[1];
+    layer._instanceData[base + 6] = flipX ? f.uvMin[0] : f.uvMax[0];
+    layer._instanceData[base + 7] = flipY ? f.uvMin[1] : f.uvMax[1];
     markDirty(layer, index, index + 1);
 }

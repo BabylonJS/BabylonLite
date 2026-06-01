@@ -86,7 +86,7 @@ function makeMockAtlas(): SpriteAtlas {
         textureSizePx: [128, 128],
         frames: [
             { uvMin: [0, 0], uvMax: [0.25, 0.25], sourceSizePx: [32, 32], pivot: [0.5, 0.5] },
-            { uvMin: [0.25, 0], uvMax: [0.5, 0.25], sourceSizePx: [32, 32], pivot: [0.25, 0.75] },
+            { uvMin: [0.25, 0], uvMax: [0.5, 0.25], sourceSizePx: [64, 16], pivot: [0.25, 0.75] },
         ],
         premultipliedAlpha: false,
     };
@@ -166,7 +166,7 @@ describe("FacingBillboardSpriteSystem index API", () => {
         expect(system._instanceData[4]).toBe(3);
     });
 
-    it("setBillboardSpriteFrameIndex updates UVs while preserving the current pivot", () => {
+    it("setBillboardSpriteFrameIndex updates UVs while preserving size and current pivot", () => {
         const system = createFacingBillboardSystem(makeMockAtlas(), { capacity: 1 });
         addBillboardSpriteIndex(system, { position: [0, 0, 0], sizeWorld: [2, 3], pivot: [0.1, 0.2], frame: 0 });
 
@@ -175,6 +175,8 @@ describe("FacingBillboardSpriteSystem index API", () => {
         expect(Array.from(system._instanceData.slice(5, 9))).toEqual([0.25, 0, 0.5, 0.25]);
         expect(system._instanceData[3]).toBe(2);
         expect(system._instanceData[4]).toBe(3);
+        expect(system._savedSize[0]).toBe(2);
+        expect(system._savedSize[1]).toBe(3);
         expect(system._instanceData[10]).toBeCloseTo(0.1);
         expect(system._instanceData[11]).toBeCloseTo(0.2);
 
@@ -196,6 +198,26 @@ describe("FacingBillboardSpriteSystem index API", () => {
 
         updateBillboardSpriteIndex(system, 0, { flipY: false });
         expect(Array.from(system._instanceData.slice(5, 9))).toEqual([0, 0, 0.25, 0.25]);
+    });
+
+    it("preserves billboard flip state for narrow non-degenerate frames", () => {
+        const atlas = makeMockAtlas();
+        const narrowAtlas: SpriteAtlas = {
+            ...atlas,
+            textureSizePx: [256, 32],
+            frames: [
+                { uvMin: [0, 0], uvMax: [1 / 256, 1], sourceSizePx: [1, 32], pivot: [0.5, 0.5] },
+                { uvMin: [1 / 256, 0], uvMax: [2 / 256, 1], sourceSizePx: [1, 32], pivot: [0.5, 0.5] },
+            ],
+        };
+        const system = createFacingBillboardSystem(narrowAtlas, { capacity: 1 });
+        addBillboardSpriteIndex(system, { position: [0, 0, 0], sizeWorld: [2, 3], frame: 0, flipX: true });
+
+        setBillboardSpriteFrameIndex(system, 0, 1);
+
+        expect(system._instanceData[5]).toBeGreaterThan(system._instanceData[7]!);
+        expect(system._instanceData[5]).toBeCloseTo(2 / 256);
+        expect(system._instanceData[7]).toBeCloseTo(1 / 256);
     });
 
     it("swap-removes sprites and carries saved size with the moved instance", () => {
@@ -313,12 +335,12 @@ describe("addFacingBillboardSystem", () => {
             queue: { writeBuffer: ReturnType<typeof vi.fn> };
         };
         device.createRenderPipeline.mockClear();
-        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+        const binding = scene._renderables[0]!.bind(engine, { _colorFormat: "bgra8unorm", _depthStencilFormat: "depth32float", _sampleCount: 1 });
 
         expect(device.createRenderPipeline).toHaveBeenCalledTimes(1);
         const descriptor = device.createRenderPipeline.mock.calls[0]![0] as GPURenderPipelineDescriptor;
         expect(descriptor.depthStencil?.format).toBe("depth32float");
-        expect(descriptor.depthStencil?.depthCompare).toBe("less-equal");
+        expect(descriptor.depthStencil?.depthCompare).toBe("greater-equal");
         expect(descriptor.depthStencil?.depthWriteEnabled).toBe(false);
         expect(descriptor.label).toBe("facing-billboard-sprite-pipeline");
         const vertexBuffer = (descriptor.vertex.buffers as GPUVertexBufferLayout[])[0]!;
@@ -352,11 +374,11 @@ describe("addFacingBillboardSystem", () => {
             queue: { writeBuffer: ReturnType<typeof vi.fn> };
         };
         device.createRenderPipeline.mockClear();
-        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+        const binding = scene._renderables[0]!.bind(engine, { _colorFormat: "bgra8unorm", _depthStencilFormat: "depth32float", _sampleCount: 1 });
 
         expect(device.createRenderPipeline).toHaveBeenCalledTimes(1);
         const descriptor = device.createRenderPipeline.mock.calls[0]![0] as GPURenderPipelineDescriptor;
-        expect(descriptor.depthStencil?.depthCompare).toBe("less-equal");
+        expect(descriptor.depthStencil?.depthCompare).toBe("greater-equal");
         expect(descriptor.depthStencil?.depthWriteEnabled).toBe(true);
         const vertexBuffer = descriptor.vertex.buffers![0]!;
         expect(vertexBuffer.arrayStride).toBe(BILLBOARD_INSTANCE_STRIDE_BYTES);
@@ -389,7 +411,7 @@ describe("addFacingBillboardSystem", () => {
         await registerScene(engine, scene);
 
         const device = engine.device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } };
-        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+        const binding = scene._renderables[0]!.bind(engine, { _colorFormat: "bgra8unorm", _depthStencilFormat: "depth32float", _sampleCount: 1 });
         device.queue.writeBuffer.mockClear();
 
         const camera = makeIdentityCamera();
@@ -422,7 +444,7 @@ describe("addFacingBillboardSystem", () => {
         addFacingBillboardSystem(scene, system);
         await registerScene(engine, scene);
 
-        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+        const binding = scene._renderables[0]!.bind(engine, { _colorFormat: "bgra8unorm", _depthStencilFormat: "depth32float", _sampleCount: 1 });
         const camera = makeIdentityCamera();
         binding.update?.({ targetWidth: 512, targetHeight: 256, _camera: camera });
         expect(scene._renderables[0]!._worldCenter).toEqual([1, 2, 3]);
@@ -451,7 +473,7 @@ describe("addFacingBillboardSystem", () => {
         await registerScene(engine, scene);
 
         const device = engine.device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } };
-        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+        const binding = scene._renderables[0]!.bind(engine, { _colorFormat: "bgra8unorm", _depthStencilFormat: "depth32float", _sampleCount: 1 });
         device.queue.writeBuffer.mockClear();
 
         binding.update?.({ targetWidth: 512, targetHeight: 256 });
@@ -471,7 +493,7 @@ describe("addFacingBillboardSystem", () => {
         await registerScene(engine, scene);
 
         const device = engine.device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } };
-        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+        const binding = scene._renderables[0]!.bind(engine, { _colorFormat: "bgra8unorm", _depthStencilFormat: "depth32float", _sampleCount: 1 });
         device.queue.writeBuffer.mockClear();
 
         const camera = makeIdentityCamera();
@@ -489,7 +511,7 @@ describe("addFacingBillboardSystem", () => {
         addFacingBillboardSystem(scene, system);
         await registerScene(engine, scene);
 
-        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth24plus-stencil8", sampleCount: 1 });
+        const binding = scene._renderables[0]!.bind(engine, { _colorFormat: "bgra8unorm", _depthStencilFormat: "depth24plus-stencil8", _sampleCount: 1 });
         const pass = makeDrawPassMock();
         expect(binding.draw(pass, engine)).toBe(1);
         expect(pass.setBindGroup).toHaveBeenCalledWith(1, expect.anything());
@@ -553,7 +575,7 @@ describe("AxisLockedBillboardSpriteSystem", () => {
             createShaderModule: ReturnType<typeof vi.fn>;
         };
         device.createRenderPipeline.mockClear();
-        scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+        scene._renderables[0]!.bind(engine, { _colorFormat: "bgra8unorm", _depthStencilFormat: "depth32float", _sampleCount: 1 });
 
         expect(device.createRenderPipeline).toHaveBeenCalledTimes(1);
         const descriptor = device.createRenderPipeline.mock.calls[0]![0] as GPURenderPipelineDescriptor;
@@ -577,7 +599,7 @@ describe("AxisLockedBillboardSpriteSystem", () => {
         await registerScene(engine, scene);
 
         const device = engine.device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } };
-        const binding = scene._renderables[0]!.bind(engine, { colorFormat: "bgra8unorm", depthStencilFormat: "depth32float", sampleCount: 1 });
+        const binding = scene._renderables[0]!.bind(engine, { _colorFormat: "bgra8unorm", _depthStencilFormat: "depth32float", _sampleCount: 1 });
         device.queue.writeBuffer.mockClear();
 
         binding.update?.({ targetWidth: 512, targetHeight: 256 });

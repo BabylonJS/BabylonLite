@@ -78,7 +78,11 @@ export function unregisterScene(engine: Engine, scene: SceneContext): void;
 export function disposeScene(scene: SceneContext): void;
 
 /** Create an empty scene context bound to the given engine. */
-export function createSceneContext(engine: Engine): SceneContext;
+export interface SceneContextOptions {
+    defaultRenderTask?: boolean;
+}
+
+export function createSceneContext(engine: Engine, options?: SceneContextOptions): SceneContext;
 
 /** Create an ArcRotateCamera framed to fit all loaded meshes, assign it to scene. */
 export function createDefaultCamera(scene: SceneContext): ArcRotateCamera;
@@ -88,7 +92,7 @@ export function createDefaultCamera(scene: SceneContext): ArcRotateCamera;
 
 ### SceneContext — Flat Data Struct
 
-`createSceneContext(engine)` returns a plain object with these defaults:
+`createSceneContext(engine, options?)` returns a plain object with these defaults. By default it also appends the swapchain render task named `"scene"`; pass `{ defaultRenderTask: false }` when the caller will provide the final swapchain task explicitly, such as a post-process chain.
 
 | Field                     | Default                                                       | Description                                                               |
 | ------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------- |
@@ -138,11 +142,11 @@ function addToScene(scene: SceneContext, entity: Mesh | LightBase | ShadowGenera
         for (const e of result.entities) addToScene(scene, e); // recurse into individual entities
         if (result.clearColor) ctx.clearColor = result.clearColor;
         if (result.animationGroups?.length) {
-            const device = (ctx.engine as EngineContextInternal).device;
+            const engine = ctx.engine as EngineContextInternal;
             const groups = result.animationGroups;
             ctx.animationGroups.push(...groups);
             ctx._beforeRender.push((dt) => {
-                for (const g of groups) g._tick(dt, device);
+                for (const g of groups) tickAnimation(g, dt, engine);
             });
         }
         return;
@@ -239,7 +243,7 @@ Algorithm:
 
 ## Dependencies
 
-- **Imports**: `Engine` from `../engine/engine.js`, `ArcRotateCamera` + `createArcRotateCamera` from `../camera/arc-rotate.js`, `vec3` from `../math/vec3.js`, `Renderable`/`PrePassRenderable`/`SceneUniformUpdater`/`MeshGroupBuilder` from `../render/renderable.js`, `Mesh` from `../mesh/mesh.js` (type-only), `AnimationGroup` from `../animation/animation-group.js` (type-only).
+- **Imports**: `Engine` from `../engine/engine.js`, `ArcRotateCamera` + `createArcRotateCamera` from `../camera/arc-rotate.js`, `vec3` from `../math/vec3.js`, `Renderable`/`PrePassRenderable`/`SceneUniformUpdater`/`MeshGroupBuilder` from `../render/renderable.js`, `Mesh` from `../mesh/mesh.js` (type-only), `AnimationGroup` and `tickAnimation` from `../animation/animation-group.js`.
 - **Depended on by**: `engine.ts`, all material renderables, all loaders.
 
 ## Test Specification

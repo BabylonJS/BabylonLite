@@ -15,6 +15,7 @@ export interface ShadowTaskInternalState {
     _casterMeshes: readonly import("../mesh/mesh.js").Mesh[];
 }
 
+/** Runtime state for a light's shadow generator: shadow technique, map textures, light matrix, and per-frame task hooks. */
 export interface ShadowGenerator {
     /** @internal Shadow technique: 'esm' (exponential, default) or 'pcf' (percentage closer filtering). */
     _shadowType: "esm" | "pcf";
@@ -42,14 +43,14 @@ export interface ShadowGenerator {
     _version: number;
     /** @internal */
     _shadowTaskState?: ShadowTaskInternalState;
-    /** @internal */
+    /** @internal Dynamically imports and prepares the shadow-map render task for the given caster meshes. */
     _preloadShadowTask?(casterMeshes: readonly import("../mesh/mesh.js").Mesh[]): Promise<void>;
-    /** @internal */
+    /** @internal Lazily creates (or returns the cached) shadow-task state for rendering the shadow map this frame. */
     _ensureShadowTaskState?(
         engine: import("../engine/engine.js").EngineContextInternal,
         scene: import("../scene/scene-core.js").SceneContextInternal,
         casterMeshes: readonly import("../mesh/mesh.js").Mesh[]
     ): ShadowTaskInternalState;
-    /** @internal */
+    /** @internal Records the shadow-map render pass for the given task state and returns the number of draw calls issued. */
     _renderShadowMap?(engine: import("../engine/engine.js").EngineContextInternal, state: ShadowTaskInternalState): number;
 }

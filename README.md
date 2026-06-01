@@ -9,7 +9,7 @@ A WebGPU-exclusive, tree-shakable 3D engine that produces pixel-identical output
 
 - **Node.js** ≥ 18
 - **pnpm** ≥ 9 (`corepack enable` to activate the version pinned in `package.json`)
-- A browser with **WebGPU** support (Chrome 113+, Edge 113+, or Firefox Nightly)
+- A browser with **WebGPU** support (Chrome 113+, Edge 113+, or recent Firefox and Safari)
 
 ## Getting Started
 
@@ -33,11 +33,11 @@ Open **http://localhost:5174** to browse the scene gallery.
 | `pnpm dev:lab`             | Build bundle scenes + start the lab dev server                |
 | `pnpm build`               | Build the `babylon-lite` library                              |
 | `pnpm build:bundle-scenes` | Generate production bundles + `manifest.json` for the gallery |
-| `pnpm test`                | Run perf tests, build bundles, then run parity tests          |
+| `pnpm test`                | Build bundle scenes, then run parity and bundle-size tests    |
 | `pnpm test:parity`         | Run Playwright visual parity tests against golden references  |
 | `pnpm test:perf`           | Run Playwright performance benchmarks                         |
 | `pnpm test:bundle-size`    | Run bundle-size ceiling tests                                 |
-| `pnpm lint`                | Type-check with `tsc --noEmit`                                |
+| `pnpm lint`                | Run ESLint, then type-check with `tsc --noEmit`               |
 
 ## Project Structure
 

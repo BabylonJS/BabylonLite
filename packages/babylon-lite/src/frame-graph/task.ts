@@ -25,6 +25,7 @@ import type { EngineContext } from "../engine/engine.js";
 import type { SceneContext } from "../scene/scene-core.js";
 import type { Pass } from "./pass.js";
 
+/** Polymorphic interface that all frame-graph tasks implement: records `Pass` objects during `record()` and is executed once per frame. */
 export interface Task {
     readonly name: string;
 

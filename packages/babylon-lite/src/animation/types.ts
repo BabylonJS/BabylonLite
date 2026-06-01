@@ -45,11 +45,9 @@ export interface AnimationChannel {
     readonly pointerArity?: number;
     /** PATH_POINTER only: true when LINEAR interpolation should use quaternion slerp. */
     readonly pointerQuaternion?: boolean;
-    /** @internal PATH_POINTER stable identity used by optional weighted manual-property mixing. */
-    readonly _mk?: object;
 }
 
-/** One glTF animation clip (may animate many nodes). */
+/** One animation clip (may animate many nodes). */
 export interface AnimationClip {
     readonly name: string;
     readonly channels: readonly AnimationChannel[];
@@ -63,6 +61,7 @@ export interface AnimationClip {
 /** Per-node rest pose TRS + parent link for hierarchy traversal. */
 export interface NodeRest {
     readonly parentIdx: number; // -1 for root nodes
+    readonly _matrix?: Mat4;
     tx: number;
     ty: number;
     tz: number;
