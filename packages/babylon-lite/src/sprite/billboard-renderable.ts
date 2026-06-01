@@ -172,7 +172,7 @@ function uploadSystem(renderable: BillboardRenderableInternal, context: DrawUpda
     // Passed to both upload paths so per-sprite anchor positions are offset
     // before reaching the eye-relative vertex shader. BJS parity:
     // spriteRenderer.ts subtracts scene.floatingOriginOffset per sprite.
-    const foOffset = renderable._engine.useFloatingOrigin && camera ? (camera.worldMatrix as Float32Array | Float64Array) : null;
+    const foOffset = renderable._engine.useFloatingOrigin && camera ? (camera.worldMatrix as unknown as Float32Array | Float64Array) : null;
     const foVersion = foOffset && camera ? camera.worldMatrixVersion : 0;
     if (renderable._system._depthMode === "transparent" && camera) {
         const cameraViewMatrix = getViewMatrix(camera);
