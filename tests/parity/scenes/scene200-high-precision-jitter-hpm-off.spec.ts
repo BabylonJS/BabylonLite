@@ -8,9 +8,9 @@
  * floating-origin without the engine flag) will trip this test, surfacing
  * the regression of the explicit substrate boundary.
  *
- * MAD ceiling is intentionally permissive (5.0) because edge anti-aliasing
- * at this magnitude rounds differently across runs / GPUs while the
- * silhouette stays stable.
+ * MAD ceiling is 0.1 — the golden is a Lite self-capture (no BJS reference,
+ * since HPM is a Lite-specific substrate), so re-runs against the committed
+ * golden are essentially bit-identical modulo edge AA rounding.
  *
  * Note: this scene has no Babylon.js reference page (HPM is a
  * Lite-specific substrate). `captureGolden` is intentionally not called —
