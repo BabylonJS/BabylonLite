@@ -68,6 +68,7 @@ export interface RenderingContext {
     _resize?(): void;
 }
 
+/** @internal */
 interface DeviceLostRecoveryCapture {
     u(tex: Texture2D, url: string, opts: Texture2DOptions): void;
     s(tex: Texture2D, r: number, g: number, b: number, a: number): void;
@@ -144,7 +145,7 @@ export interface EngineOptions {
     msaaSamples?: 1 | 4;
     /**
      * WebGPU canvas alpha mode. Use "premultiplied" to enable canvas transparency (clear color
-     * with alpha < 1 will let HTML content underneath show through). Defaults to "opaque".
+     * with `alpha < 1` will let HTML content underneath show through). Defaults to "opaque".
      */
     alphaMode?: GPUCanvasAlphaMode;
     /**

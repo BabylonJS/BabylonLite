@@ -437,7 +437,16 @@ function mangleWgslIdentifiers(code: string): string {
         ["cosRot", "cr2"],
         ["sinRot", "sr2"],
         ["rotated", "rot"],
-        ["worldPos", "wp"],
+        // NOTE: Do NOT add WGSL struct-varying member names (e.g. "worldPos",
+        // "worldNormal", "worldTangent", ...) to this list. Their struct is
+        // assembled at runtime from JS string literals (e.g. {Z:"worldPos"})
+        // which this mangler deliberately never touches (it only rewrites bare
+        // identifiers inside backtick WGSL template literals). Mangling the
+        // hardcoded `out.worldPos`/`input.worldPos` usages while leaving the
+        // string-built struct member as `worldPos` produces invalid WGSL
+        // ("struct member wp not found"), especially when usages and the struct
+        // declaration land in different code-split chunks. Only chunk-local
+        // temporaries like `worldPos4` (mangled to `wp4` above) are safe here.
         ["iUvMin", "ium"],
         ["iUvMax", "iux"],
         ["iPivot", "ip"],
