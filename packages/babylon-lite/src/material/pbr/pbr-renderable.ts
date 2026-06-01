@@ -302,8 +302,8 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
 
         // Mesh UBO (world matrix at offset 0; spec.totalBytes covers any extra fields).
         const meshUboData = new Float32Array(composed._meshUboSpec._totalBytes / 4);
-        const _foOffset = (s as SceneContextInternal)._floatingOriginOffset;
-        packMat4IntoF32(meshUboData, mesh.worldMatrix, 0, 0, _foOffset);
+        const _packMeshWorld = engine._makePackMeshWorld?.(s as SceneContextInternal) ?? packMat4IntoF32;
+        _packMeshWorld(meshUboData, mesh.worldMatrix, 0, 0);
         writeMeshLightSelection(mesh, s.lights, meshUboData);
         const meshUBO = createUniformBuffer(engine, meshUboData);
 
@@ -371,7 +371,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
                     sortCenter[1] = mesh.worldMatrix[13]!;
                     sortCenter[2] = mesh.worldMatrix[14]!;
                 }
-                packMat4IntoF32(meshUboData, mesh.worldMatrix, 0, 0, _foOffset);
+                _packMeshWorld(meshUboData, mesh.worldMatrix, 0, 0);
                 writeMeshLightSelection(mesh, s.lights, meshUboData);
                 device.queue.writeBuffer(meshUBO, 0, meshUboData as Float32Array<ArrayBuffer>);
                 _lastWorldVersion = mesh.worldMatrixVersion;

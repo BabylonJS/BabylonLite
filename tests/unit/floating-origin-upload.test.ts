@@ -28,6 +28,7 @@ import { allocateF64Mat4 } from "../../packages/babylon-lite/src/math/_mat4-stor
 import { createArcRotateCamera } from "../../packages/babylon-lite/src/camera/arc-rotate";
 import { getViewMatrix } from "../../packages/babylon-lite/src/camera/camera";
 import { packMat4IntoF32 } from "../../packages/babylon-lite/src/math/pack-mat4-into-f32";
+import { packMat4IntoF32WithOffset } from "../../packages/babylon-lite/src/large-world/pack-mat4-with-offset";
 
 describe("LWR M1 floating-origin upload integration", () => {
     // Install F64 allocator process-globally for these precision-sensitive tests.
@@ -35,18 +36,10 @@ describe("LWR M1 floating-origin upload integration", () => {
     afterAll(() => _resetMatrixAllocatorForTests());
 
     const FAR = 1_000_000;
-    const offset: [number, number, number] = [FAR, 0, FAR];
 
-    it("getViewMatrix subtracts the offset from cameraPos — translation column lands at zero", () => {
-        // Arc-rotate camera looking at the far point with the camera positioned
-        // exactly at the floating-origin offset (cameraPos == offset).
+    it("getViewMatrix zeros translation when camera._useFloatingOrigin is set", () => {
         const cam = createArcRotateCamera(0, Math.PI / 2, 0.0001, { x: FAR, y: 0, z: FAR });
-        cam._floatingOriginOffset = offset;
-        // Camera world position equals offset (within float precision).
-        const w = cam.worldMatrix;
-        expect(w[12]).toBeCloseTo(FAR, 0);
-        expect(w[14]).toBeCloseTo(FAR, 0);
-
+        cam._useFloatingOrigin = true;
         const v = getViewMatrix(cam);
         // Translation column must be mathematically zero (small floating noise
         // from radius=0.0001 dot products is fine — well under 1m).
@@ -55,12 +48,12 @@ describe("LWR M1 floating-origin upload integration", () => {
         expect(Math.abs(v[14]!)).toBeLessThan(1e-3);
     });
 
-    it("getViewMatrix without offset (null _floatingOriginOffset) produces large-magnitude translation — control case", () => {
+    it("getViewMatrix without _useFloatingOrigin produces large-magnitude translation — control case", () => {
         const cam = createArcRotateCamera(0, Math.PI / 2, 0.0001, { x: FAR, y: 0, z: FAR });
-        // No offset wired (cam._floatingOriginOffset stays undefined).
+        // No LWR flag set.
         const v = getViewMatrix(cam);
-        // Without the offset the view translation is -R_inv * cameraPos, whose
-        // magnitude is order 1e6. Confirms the offset path is what makes it small.
+        // Without the flag the view translation is -R_inv * cameraPos, whose
+        // magnitude is order 1e6. Confirms the LWR path is what makes it small.
         const mag = Math.hypot(v[12]!, v[13]!, v[14]!);
         expect(mag).toBeGreaterThan(1e5);
     });
@@ -70,7 +63,7 @@ describe("LWR M1 floating-origin upload integration", () => {
         expect(m).toBeInstanceOf(Float64Array);
     });
 
-    it("packMat4IntoF32 with offsetXYZ on a mesh at world (1e6 + delta) lands delta into the F32 view", () => {
+    it("packMat4IntoF32WithOffset on a mesh at world (1e6 + delta) lands delta into the F32 view", () => {
         // At 1e6 the F32 ULP is ~0.0625 (2^(19-23)). Pick a delta well below
         // half-ULP so the precision-only invocation (no offset) demonstrably
         // loses it; the offset-aware invocation recovers it via the F64 subtraction.
@@ -85,33 +78,31 @@ describe("LWR M1 floating-origin upload integration", () => {
         w[14] = 0;
         w[15] = 1;
 
+        // LWR-only with-offset packer takes offsetX/Y/Z as three scalars.
         const view = new Float32Array(16);
-        packMat4IntoF32(view, meshWorld, 0, 0, [FAR, 0, 0]);
+        packMat4IntoF32WithOffset(view, meshWorld, 0, 0, FAR, 0, 0);
         // F64 large-minus-large yields `delta` exactly in F64, then F32 stores
-        // a value within F32 precision of delta (delta itself is 1.5e-3 in F64
-        // which rounds to Math.fround(delta) in F32 — no further loss).
+        // a value within F32 precision of delta.
         expect(view[12]).toBe(Math.fround(delta));
 
-        // Contrast: the precision-only invocation (no offset arg) downcasts
-        // `FAR + delta` directly, which is ULP-quantized at this magnitude —
-        // delta is lost entirely.
+        // Contrast: the precision-only invocation (no offset) downcasts
+        // `FAR + delta` directly, which is ULP-quantized at this magnitude.
         const refView = new Float32Array(16);
         packMat4IntoF32(refView, meshWorld);
         expect(refView[12]).toBe(Math.fround(FAR + delta));
-        // Recovered remainder after subtraction is NOT delta (it is the zero-
-        // ULP-bin centre, which differs from the original delta).
         expect(refView[12] - FAR).not.toBe(Math.fround(delta));
     });
 
-    it("vEyePosition-style write subtracts the offset, yielding eye-relative zero", () => {
+    it("vEyePosition-style write at LWR-on yields eye-relative zero", () => {
         const cam = createArcRotateCamera(0, Math.PI / 2, 0.0001, { x: FAR, y: 0, z: FAR });
-        cam._floatingOriginOffset = offset;
-        const w = cam.worldMatrix;
-        const eyeX = w[12]! - offset[0];
-        const eyeY = w[13]! - offset[1];
-        const eyeZ = w[14]! - offset[2];
-        expect(Math.abs(eyeX)).toBeLessThan(1e-3);
-        expect(Math.abs(eyeY)).toBeLessThan(1e-3);
-        expect(Math.abs(eyeZ)).toBeLessThan(1e-3);
+        // When LWR is on, vEyePosition is mathematically zero (camera at the
+        // origin in the eye-relative frame). The new render-task.ts writes
+        // [0, 0, 0] directly when engine.useFloatingOrigin is true — no
+        // subtraction needed at upload time.
+        cam._useFloatingOrigin = true;
+        const v = getViewMatrix(cam);
+        expect(Math.abs(v[12]!)).toBeLessThan(1e-3);
+        expect(Math.abs(v[13]!)).toBeLessThan(1e-3);
+        expect(Math.abs(v[14]!)).toBeLessThan(1e-3);
     });
 });

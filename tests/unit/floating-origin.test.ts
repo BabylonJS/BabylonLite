@@ -4,7 +4,7 @@ import { createFreeCamera } from "../../packages/babylon-lite/src/camera/free-ca
 import type { EngineContext, EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
 import { _setHpmAllocator, _resetMatrixAllocatorForTests } from "../../packages/babylon-lite/src/math/_matrix-allocator";
 import { allocateF64Mat4 } from "../../packages/babylon-lite/src/math/_mat4-storage-f64";
-import { getFloatingOriginOffset, updateFloatingOriginOffset } from "../../packages/babylon-lite/src/large-world/floating-origin";
+import { getFloatingOriginOffset } from "../../packages/babylon-lite/src/large-world/floating-origin";
 import { createSceneContext } from "../../packages/babylon-lite/src/scene/scene";
 import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
 
@@ -55,7 +55,6 @@ function makeMockEngine(hpm = false, useFO = false): EngineContext {
         _swapchainView: {} as GPUTextureView,
         _currentDelta: 16.67,
         _cbs: [],
-        _updateFOOffset: useFO ? updateFloatingOriginOffset : undefined,
     } as EngineContextInternal;
 }
 
@@ -65,12 +64,10 @@ describe("floating origin", () => {
     beforeAll(() => _setHpmAllocator(allocateF64Mat4));
     afterAll(() => _resetMatrixAllocatorForTests());
 
-    it("tracks camera eye position as floating origin offset when engine has FO on", () => {
+    it("getFloatingOriginOffset returns the active camera's world position", () => {
         const engine = makeMockEngine(true, true);
         const scene = createSceneContext(engine) as SceneContextInternal;
         scene.camera = createFreeCamera({ x: 1_000_000.25, y: -2_000_000.5, z: 3_000_000.75 }, { x: 0, y: 0, z: 0 });
-
-        scene._update();
 
         const offset = getFloatingOriginOffset(scene);
         expect(offset.x).toBeCloseTo(1_000_000.25, 6);
@@ -78,12 +75,10 @@ describe("floating origin", () => {
         expect(offset.z).toBeCloseTo(3_000_000.75, 6);
     });
 
-    it("keeps floating origin offset at zero when engine has FO off", () => {
-        const engine = makeMockEngine(false, false);
+    it("getFloatingOriginOffset returns zero when no camera is set", () => {
+        const engine = makeMockEngine(true, true);
         const scene = createSceneContext(engine) as SceneContextInternal;
-        scene.camera = createFreeCamera({ x: 1234, y: 5678, z: 9012 }, { x: 0, y: 0, z: 0 });
-
-        scene._update();
+        // scene.camera intentionally left null.
 
         const offset = getFloatingOriginOffset(scene);
         expect(offset.x).toBe(0);
@@ -91,18 +86,30 @@ describe("floating origin", () => {
         expect(offset.z).toBe(0);
     });
 
-    it("scene._update wires the camera's _floatingOriginOffset to the scene's offset array", () => {
+    it("scene._update sets the camera's _useFloatingOrigin flag when engine has FO on", () => {
         const engine = makeMockEngine(true, true);
         const scene = createSceneContext(engine) as SceneContextInternal;
         const cam = createFreeCamera({ x: 100, y: 0, z: 0 }, { x: 0, y: 0, z: 0 });
         scene.camera = cam;
 
-        // Pre-wire: camera has no offset reference yet.
-        expect(cam._floatingOriginOffset).toBeUndefined();
+        // Pre-update: camera has no LWR flag.
+        expect(cam._useFloatingOrigin).toBeUndefined();
 
         scene._update();
 
-        // Post-wire: camera holds a reference to the scene's offset array (same object identity).
-        expect(cam._floatingOriginOffset).toBe(scene._floatingOriginOffset);
+        // Post-update: scene marks the camera as LWR-aware so `getViewMatrix`
+        // zeros the translation column.
+        expect(cam._useFloatingOrigin).toBe(true);
+    });
+
+    it("scene._update does NOT set the camera's _useFloatingOrigin flag when engine has FO off", () => {
+        const engine = makeMockEngine(false, false);
+        const scene = createSceneContext(engine) as SceneContextInternal;
+        const cam = createFreeCamera({ x: 100, y: 0, z: 0 }, { x: 0, y: 0, z: 0 });
+        scene.camera = cam;
+
+        scene._update();
+
+        expect(cam._useFloatingOrigin).toBeUndefined();
     });
 });

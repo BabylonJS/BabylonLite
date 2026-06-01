@@ -106,8 +106,8 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
         const meshShadowGens = receiveShadows ? shadowLights.map((sl) => sl.gen) : [];
 
         const meshUboData = new Float32Array(bindings._composed._meshUboSpec._totalBytes / 4);
-        const _foOffset = (s as SceneContextInternal)._floatingOriginOffset;
-        packMat4IntoF32(meshUboData, mesh.worldMatrix, 0, 0, _foOffset);
+        const _packMeshWorld = engine._makePackMeshWorld?.(s as SceneContextInternal) ?? packMat4IntoF32;
+        _packMeshWorld(meshUboData, mesh.worldMatrix, 0, 0);
         writeMeshLightSelection(mesh, s.lights, meshUboData);
         const meshUBO = createUniformBuffer(engine, meshUboData);
         const textureLevel = (features & NEEDS_UV) !== 0 ? 1.0 : 0;
@@ -160,7 +160,7 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
                 sortCenter[0] = mesh.worldMatrix[12]!;
                 sortCenter[1] = mesh.worldMatrix[13]!;
                 sortCenter[2] = mesh.worldMatrix[14]!;
-                packMat4IntoF32(meshUboData, mesh.worldMatrix, 0, 0, _foOffset);
+                _packMeshWorld(meshUboData, mesh.worldMatrix, 0, 0);
                 writeMeshLightSelection(mesh, s.lights, meshUboData);
                 device.queue.writeBuffer(meshUBO, 0, meshUboData as Float32Array<ArrayBuffer>);
                 _lastWorldVersion = mesh.worldMatrixVersion;

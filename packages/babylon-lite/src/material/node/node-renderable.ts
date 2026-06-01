@@ -112,14 +112,14 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[], ma
             material._nodeUBO = nodeUBO;
         }
 
-        const _foOffset = (scene as SceneContextInternal)._floatingOriginOffset;
+        const _packMeshWorld = engine._makePackMeshWorld?.(scene as SceneContextInternal) ?? packMat4IntoF32;
         const packets: NodePacket[] = [];
         for (const _mesh of matMeshes) {
             // Mesh UBO layout: world (64B) + receivesShadow (vec4, 16B) + lightCount/indices.
             const meshUboBytes = 96 + 16 * Math.ceil(MAX_LIGHTS / 4);
             const _meshUBO = device.createBuffer({ label: "node-mesh-ubo", size: (meshUboBytes + 15) & ~15, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             const _meshScratch = new Float32Array(((meshUboBytes + 15) & ~15) / 4);
-            packMat4IntoF32(_meshScratch, _mesh.worldMatrix, 0, 0, _foOffset);
+            _packMeshWorld(_meshScratch, _mesh.worldMatrix, 0, 0);
             const recv = _mesh.receiveShadows ? 1 : 0;
             _meshScratch[16] = recv;
             if (compile._usesMeshAttributeFlags) {
@@ -189,7 +189,7 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[], ma
             const recvChanged = recv !== pkt._lastReceivesShadow;
             const lightsChanged = scene.lights.length !== pkt._lastLightsCount;
             if (worldChanged || recvChanged || lightsChanged) {
-                packMat4IntoF32(pkt._meshScratch, pkt._mesh.worldMatrix, 0, 0, _foOffset);
+                _packMeshWorld(pkt._meshScratch, pkt._mesh.worldMatrix, 0, 0);
                 pkt._meshScratch[16] = recv;
                 if (compile._usesMeshAttributeFlags) {
                     writeAttributeFlags(pkt._mesh, pkt._meshScratch);

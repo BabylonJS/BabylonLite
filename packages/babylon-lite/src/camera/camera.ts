@@ -33,11 +33,14 @@ export interface Camera {
     _vpCache: Mat4Storage;
     _vpVer?: number;
     _vpAspect?: number;
-    /** @internal Floating-origin offset reference, wired by the scene's `_update`
-     *  when the camera is the active `scene.camera`. When non-null, `getViewMatrix`
-     *  bakes the offset into the view matrix translation so the GPU sees
-     *  eye-relative coordinates. Null = no LWR / standard view matrix. */
-    _floatingOriginOffset?: readonly [number, number, number] | null;
+    /** @internal Marker: when set by an LWR-enabled scene, `getViewMatrix`
+     *  zeros the view matrix translation column (the GPU sees the camera at
+     *  the origin in the eye-relative frame, matching the mesh-world UBO
+     *  pack that subtracted the camera position). Set by scene `_update` when
+     *  the engine has `useFloatingOrigin: true`; never unset. Non-LWR cameras
+     *  leave the field undefined and `getViewMatrix` produces a standard view
+     *  matrix. */
+    _useFloatingOrigin?: boolean;
 }
 
 /** Babylon-compatible normalized camera viewport. x/y/width/height are fractions of the render target. */
@@ -50,19 +53,17 @@ export interface NormalizedViewport {
 
 /** Compute the view matrix for a camera. Cached per worldMatrixVersion.
  *
- *  Floating-origin awareness: when `camera._floatingOriginOffset` is set
- *  (LWR M1 — wired by the scene's `_update` when the camera is the active
- *  scene camera and the scene is FO-enabled), the offset is subtracted from
- *  the camera world position BEFORE the translation column is computed via
- *  the (R_inv * -cameraPos) form. The effect is that the view matrix
- *  translation becomes `-R_inv * (cameraPos - offset)`, which is small when
- *  offset == cameraPos (the standard floating-origin bookkeeping). Mesh
- *  world matrices are also offset-subtracted at upload via
- *  packMat4IntoF32(..., foOffset), so vertex-shader `view * world` math is
- *  preserved end-to-end.
+ *  Floating-origin awareness: when `camera._useFloatingOrigin` is set
+ *  (LWR — wired by the scene's `_update` when the active scene camera is
+ *  bound to an LWR engine), the view matrix translation column is forced
+ *  to zero. The GPU vertex shader then sees the camera at the origin in
+ *  the eye-relative frame, matching the mesh-world UBO pack which
+ *  subtracted the camera position from world translations. View × world
+ *  in the shader produces eye-relative vertex coordinates at full
+ *  precision regardless of how far from world-origin the scene is.
  *
- *  When the offset is null (FO disabled, or camera not currently scene.camera),
- *  this path is bit-identical to a standard view matrix construction. */
+ *  When the flag is unset (standard non-LWR rendering), this path is
+ *  bit-identical to a normal `R_inv * -cameraPos` view matrix. */
 export function getViewMatrix(camera: Camera): Mat4 {
     const ver = camera.worldMatrixVersion;
     if (camera._viewVer === ver) {
@@ -70,10 +71,10 @@ export function getViewMatrix(camera: Camera): Mat4 {
     }
     const v = camera._viewCache;
     const w = camera.worldMatrix;
-    const off = camera._floatingOriginOffset;
-    const cx = off ? w[12]! - off[0]! : w[12]!;
-    const cy = off ? w[13]! - off[1]! : w[13]!;
-    const cz = off ? w[14]! - off[2]! : w[14]!;
+    const useFO = camera._useFloatingOrigin;
+    const cx = useFO ? 0 : w[12]!;
+    const cy = useFO ? 0 : w[13]!;
+    const cz = useFO ? 0 : w[14]!;
     v[0] = w[0]!;
     v[1] = w[4]!;
     v[2] = w[8]!;

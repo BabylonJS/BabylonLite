@@ -121,6 +121,20 @@ export interface EngineContextInternal extends EngineContext {
      *  and stay in the slim shared closure (~80-150 bytes lighter per bundle
      *  for FO-off scenes). */
     _wrapRenderableForFO?: (inner: () => void, scene: import("../scene/scene-core.js").SceneContextInternal, invalidate: () => void) => () => void;
+
+    /** @internal Factory that produces a mesh-world UBO packer with the
+     *  scene's floating-origin offset captured. Set when the engine was
+     *  created with `useFloatingOrigin: true`. Renderables resolve their
+     *  packer once at construction with
+     *  `engine._makePackMeshWorld?.(scene) ?? packMat4IntoF32`; non-LWR
+     *  engines leave it undefined and renderables fall through to the bare
+     *  precision-only packer. Splitting the offset-subtracting variant out
+     *  of the always-bundled packer (BJS-style "method override when LWR is
+     *  on") keeps the 3 subtraction lines + the `_foOffset` captures out of
+     *  non-LWR bundles (~140 bytes saved per FO-off bundle). */
+    _makePackMeshWorld?: (
+        scene: import("../scene/scene-core.js").SceneContextInternal
+    ) => (view: Float32Array, mat: import("../math/types.js").Mat4 | Float32Array | Float64Array, offsetFloats: number, srcOffsetFloats: number) => void;
 }
 
 /** @internal Return true if `context` is already registered with `engine`. */
@@ -245,12 +259,15 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
     // statically anywhere in the package — scene `_update` does
     // `eng._updateFOOffset?.(scene)` which is a no-op when the field is
     // undefined. Tree-shakers drop the module from non-LWR bundles.
-    let _updateFOOffset: ((scene: import("../scene/scene-core.js").SceneContextInternal) => void) | undefined;
     let _wrapRenderableForFO: EngineContextInternal["_wrapRenderableForFO"];
+    let _makePackMeshWorld: EngineContextInternal["_makePackMeshWorld"];
     if (useFO) {
-        const { updateFloatingOriginOffset, wrapRenderableForFO } = await import("../large-world/floating-origin.js");
-        _updateFOOffset = updateFloatingOriginOffset;
+        const [{ wrapRenderableForFO }, { makePackMeshWorld }] = await Promise.all([
+            import("../large-world/floating-origin.js"),
+            import("../large-world/pack-mat4-with-offset.js"),
+        ]);
         _wrapRenderableForFO = wrapRenderableForFO;
+        _makePackMeshWorld = makePackMeshWorld;
     }
 
     const engine: EngineContextInternal = {
@@ -270,8 +287,8 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
         _swapchainView: undefined!,
         _currentDelta: 0,
         _cbs: [],
-        _updateFOOffset,
         _wrapRenderableForFO,
+        _makePackMeshWorld,
     };
 
     resizeEngine(engine);

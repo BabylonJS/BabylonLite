@@ -63,9 +63,6 @@ export interface SceneContext {
 
     /** Fixed delta time in ms for deterministic animation. 0 = use real rAF delta. */
     fixedDeltaMs: number;
-
-    /** Read-only floating origin offset. Zero when floating origin is disabled. */
-    readonly floatingOriginOffset: readonly [number, number, number];
 }
 
 export interface SceneContextOptions {
@@ -110,23 +107,6 @@ export interface SceneContextInternal extends SceneContext, RenderingContext {
     /** Scene-owned shared LightsUniforms UBO state (group 0 binding 1). */
     _lightGpuState?: SceneLightGpuState;
 
-    /** Camera world-space eye position cached each frame. */
-    _eyePosition: [number, number, number];
-    /** Mutable backing store for public floatingOriginOffset. */
-    _floatingOriginOffset: [number, number, number];
-    /** Monotonic version of `_floatingOriginOffset` — bumped by
-     *  `updateFloatingOriginOffset` whenever the offset numerically changes.
-     *  Renderable per-mesh UBO updaters compare against this to re-pack the
-     *  mesh world matrix (which has the offset subtracted at pack time) when
-     *  the offset drifts but the mesh itself hasn't moved. Without this gate,
-     *  stale offsets leave mesh world matrices in raw world-coord space while
-     *  the view matrix has the offset baked in — producing view×world products
-     *  that project the mesh out of the frustum (the scene 201 blank-render
-     *  bug). Initialised to 0; renderables init their `_lastFoVersion` to -1
-     *  so the first frame always re-packs even when the offset stayed at
-     *  [0,0,0]. */
-    _floatingOriginVersion: number;
-
     /** Frame graph driving this scene's rendering. Created eagerly by
      *  `createSceneContext` with a default `RenderTask` that mirrors
      *  `_renderables` into the swapchain. User code may add additional tasks
@@ -165,8 +145,6 @@ function installMaterialSetter(scene: SceneContextInternal, mesh: Mesh): void {
 /** Create an empty scene context bound to the given engine. */
 export function createSceneContext(engine: EngineContext, options?: SceneContextOptions): SceneContext {
     const eng = engine as EngineContextInternal;
-    const eyePosition: [number, number, number] = [0, 0, 0];
-    const floatingOriginOffset: [number, number, number] = [0, 0, 0];
 
     // Closures below capture `ctx` by-reference via this object.
     const ctxLocal: Omit<SceneContextInternal, "_frameGraph"> = {
@@ -180,7 +158,6 @@ export function createSceneContext(engine: EngineContext, options?: SceneContext
         clipPlane: null,
         shadowGenerators: [],
         imageProcessing: { exposure: 1.0, contrast: 1.0, toneMappingEnabled: false },
-        floatingOriginOffset,
         _renderables: [],
         _prePasses: [],
         _gsMeshes: [],
@@ -194,28 +171,19 @@ export function createSceneContext(engine: EngineContext, options?: SceneContext
         _materialSwapQueue: [],
         _renderableVersion: 0,
         _drawCallsPre: 0,
-        _eyePosition: eyePosition,
-        _floatingOriginOffset: floatingOriginOffset,
-        _floatingOriginVersion: 0,
 
         _update(): void {
-            // Wire the active camera's floating-origin offset to this scene's
-            // offset array on every frame. The wire is a single reference
-            // assignment, idempotent for stationary `scene.camera` (the JS
-            // reference identity check skips the assignment). If the camera
-            // is reassigned to a different scene later, this re-wires it
-            // automatically — no staleness risk.
-            //
-            // When the engine was created without `useFloatingOrigin: true`,
-            // `eng._updateFOOffset` is undefined and the LWR runtime module
-            // is never statically referenced (tree-shaken out of non-LWR
-            // bundles). `_floatingOriginOffset` stays `[0, 0, 0]` and
-            // `getViewMatrix`'s offset subtraction is a no-op — view matrix
-            // is bit-identical to a standard non-FO matrix.
-            if (ctx.camera && ctx.camera._floatingOriginOffset !== ctx._floatingOriginOffset) {
-                ctx.camera._floatingOriginOffset = ctx._floatingOriginOffset;
+            // When the engine was created with `useFloatingOrigin: true`, mark
+            // the active camera so `getViewMatrix` knows to zero its
+            // translation column (the GPU view × world product is then the
+            // eye-relative result the LWR offset trick produces). For non-LWR
+            // engines `eng.useFloatingOrigin` is false and this is a single
+            // boolean check per frame — the inner branch is dead.
+            if (eng.useFloatingOrigin && ctx.camera && !ctx.camera._useFloatingOrigin) {
+                ctx.camera._useFloatingOrigin = true;
+                ctx.camera._viewVer = -1;
+                ctx.camera._vpVer = -1;
             }
-            eng._updateFOOffset?.(ctx);
             const d = ctx.fixedDeltaMs > 0 ? ctx.fixedDeltaMs : eng._currentDelta;
             const encoder = eng._currentEncoder;
             let draws = 0;
