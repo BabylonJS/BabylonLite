@@ -5990,9 +5990,18 @@
             function _setGenLog(target, text) {
                 var log = _genEl(target, "log");
                 if (!log || !text) return;
-                log.style.display = "block";
+                if (log.style.display !== "block") log.style.display = "block";
+                // Nothing new to render — don't touch scroll at all.
+                if (log.textContent === text) return;
+                // Preserve the reader's position: only tail-follow when already at the
+                // bottom of the log, and never move the page scroll out from under them.
+                var atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+                var prevTop = log.scrollTop;
+                var pageX = window.scrollX;
+                var pageY = window.scrollY;
                 log.textContent = text;
-                log.scrollTop = log.scrollHeight;
+                log.scrollTop = atBottom ? log.scrollHeight : prevTop;
+                if (window.scrollX !== pageX || window.scrollY !== pageY) window.scrollTo(pageX, pageY);
             }
 
             function _applyGenStatus(target, s) {
