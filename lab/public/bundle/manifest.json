@@ -287,20 +287,10 @@
     "bjsGzipKB": 341.7
   },
   "scene17": {
-    "rawKB": 79.3,
-    "gzipKB": 32.7,
+    "rawKB": 37.5,
+    "gzipKB": 14.3,
     "ignoredRawKB": 0,
     "runtimeChunks": [
-      "scene17-generate-mipmaps-BZDsdBiu.js",
-      "scene17-ibl-fragment-BfgmykuX.js",
-      "scene17-mesh-features-CmiDU-Vn.js",
-      "scene17-pbr-renderable-CXJmlFlU.js",
-      "scene17-rgbd-decode-Do-JwHYK.js",
-      "scene17-singlelight-hemispheric-wgsl-Ck1RXlCo.js",
-      "scene17-standard-renderable-BGZgRsYa.js",
-      "scene17-thin-instance-fragment-C6G2xA6T.js",
-      "scene17-thin-instance-gpu-BFOKnF2w.js",
-      "scene17-wgsl-helpers-WTsokIfK.js",
       "scene17.js"
     ],
     "bjsRawKB": 1719.3,
