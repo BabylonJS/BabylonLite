@@ -286,8 +286,17 @@ export type { RenderTargetSignature } from "./engine/render-target.js";
 export type { SpriteAtlas, SpriteFrame, SpriteSampling, GridAtlasOptions, LoadAtlasOptions } from "./sprite/shared/sprite-atlas.js";
 export { createGridSpriteAtlas, loadSpriteAtlas } from "./sprite/shared/sprite-atlas.js";
 export type { Sprite2DLayer, Sprite2DLayerOptions, Sprite2DProps, Sprite2DView, Sprite2DDepthMode, SpriteBlendMode } from "./sprite/sprite-2d.js";
-export { createSprite2DLayer, addSprite2DIndex, updateSprite2DIndex, removeSprite2DIndex, clearSprite2DLayer, setSprite2DFrameIndex, setSprite2DShaderParams } from "./sprite/sprite-2d.js";
-export type { Sprite2DCustomShader, Sprite2DCustomShaderOptions } from "./sprite/sprite-custom-shader.js";
+export {
+    createSprite2DLayer,
+    addSprite2DIndex,
+    updateSprite2DIndex,
+    removeSprite2DIndex,
+    clearSprite2DLayer,
+    setSprite2DFrameIndex,
+    setSprite2DShaderParams,
+} from "./sprite/sprite-2d.js";
+export type { CustomShaderTexture } from "./sprite/custom-shader-core.js";
+export type { Sprite2DCustomShader, Sprite2DCustomShaderOptions, Sprite2DCustomTexture } from "./sprite/sprite-custom-shader.js";
 export { createSprite2DCustomShader } from "./sprite/sprite-custom-shader.js";
 export type { Sprite2DHandle } from "./sprite/sprite-2d-handle.js";
 export { addSprite2D, updateSprite2D, removeSprite2D, setSprite2DFrame, getSprite2DHandleIndex, isSprite2DHandleAlive } from "./sprite/sprite-2d-handle.js";
@@ -310,7 +319,10 @@ export {
     removeBillboardSpriteIndex,
     clearBillboardSprites,
     setBillboardSpriteFrameIndex,
+    setBillboardShaderParams,
 } from "./sprite/billboard-sprite.js";
+export type { BillboardCustomShader, BillboardCustomShaderOptions, BillboardCustomTexture } from "./sprite/billboard-custom-shader.js";
+export { createBillboardCustomShader } from "./sprite/billboard-custom-shader.js";
 export type { BillboardSpriteHandle } from "./sprite/billboard-sprite-handle.js";
 export {
     addBillboardSprite,

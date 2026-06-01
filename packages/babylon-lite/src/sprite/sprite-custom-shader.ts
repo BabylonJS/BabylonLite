@@ -1,93 +1,79 @@
 /**
- * Opt-in per-layer custom fragment shader for pure-2D sprite layers.
+ * Optional, tree-shakable custom-shader hook for `Sprite2DLayer` (the engine owns the layer
+ * transform, instancing, sorting, and depth; the caller supplies only a WGSL **fragment body**
+ * plus optional extra textures).
  *
- * `createSprite2DCustomShader({ fragment })` returns a small descriptor you pass as
- * `customShader` to `createSprite2DLayer`. The engine wraps your WGSL: it samples the atlas
- * for you, hands you the result, and multiplies your return value by the layer opacity. This
- * is the route for animated skies, drifting clouds, water / heat shimmer, twinkling stars,
- * vignettes, and other procedural sprite effects — all driven by a built-in `fx.time` clock
- * and an optional user `fx.params` vec4.
+ * Works on both pure-2D HUD layers (`depth: "none"`, drawn by a `SpriteRenderer`) and
+ * depth-hosted 2.5D layers (`depth: "test"` / `"test-write"`, drawn as scene `Renderable`s).
+ * The 2D and billboard composers share their *mechanics* via `custom-shader-core.ts`
+ * (extra-texture bindings, name validation, the `SpriteFx` UBO, key allocation) but keep their
+ * own vertex stage and varying contract, which genuinely differ: billboards transform in world
+ * space and expose `viewDist`/`worldPos`; a 2D layer transforms in pixel space and exposes only
+ * `uv`/`tint`.
  *
- * **Contract.** Your `fragment` string must define exactly:
+ * Tree-shaking contract: the default sprite path never imports this module. `sprite-pipeline.ts`
+ * only reaches the custom composer through the opaque object a caller builds here via
+ * `createSprite2DCustomShader`, so a layer that uses the stock shader pays zero bytes for it.
  *
- * ```wgsl
- * fn spriteFx(uv: vec2<f32>, tint: vec4<f32>, base: vec4<f32>) -> vec4<f32> {
- *     // `base` is textureSample(atlasTex, atlasSamp, uv) — the atlas already sampled for you.
- *     // `tint` is the per-sprite color. Return the final (pre-opacity) RGBA.
- *     return base * tint;
- * }
- * ```
- *
- * Available to your code:
- *   - `fx.time`   — seconds since the renderer's first frame (`f32`).
- *   - `fx.params` — a `vec4<f32>` you set per frame via `setSprite2DShaderParams(layer, …)`.
- *   - `atlasTex` / `atlasSamp` — the layer's atlas texture + sampler, e.g. to re-sample at a
- *     distorted UV for shimmer.
- *
- * This module is fully tree-shaken from bundles that never call `createSprite2DCustomShader`;
- * the default (non-shader) sprite path is untouched. Custom shaders are supported on pure-2D
- * (`depth: "none"`) layers drawn by a `SpriteRenderer`.
+ * WGSL contract for the supplied `fragment` body:
+ *   - Receives `in: VOut` with `uv: vec2<f32>` and `tint: vec4<f32>` (the per-sprite `color`).
+ *   - Has access to `atlasTex` / `atlasSamp` (the layer atlas at bindings 1/2), each extra
+ *     texture as `<name>Tex` / `<name>Samp`, the `fx` UBO (`fx.time`, `fx.params`), and the
+ *     `L` layer UBO (e.g. `L.opacityMul`).
+ *   - Must `return vec4<f32>(...)` (and may `discard`). The body owns all alpha handling; no
+ *     per-layer opacity is applied automatically.
  */
+import type { CustomShaderTexture } from "./custom-shader-core.js";
+import { makeExtraBindingsWgsl, makeFxStructWgsl, nextCustomShaderKey, validateExtraTextureNames } from "./custom-shader-core.js";
 import { makeSpritePrologueWgsl } from "./sprite-pipeline.js";
+
+/** One extra texture bound after the atlas. In WGSL it becomes `<name>Tex` + `<name>Samp`. */
+export type Sprite2DCustomTexture = CustomShaderTexture;
 
 /** Options for {@link createSprite2DCustomShader}. */
 export interface Sprite2DCustomShaderOptions {
-    /**
-     * WGSL source that defines `fn spriteFx(uv: vec2<f32>, tint: vec4<f32>, base: vec4<f32>) -> vec4<f32>`.
-     * May read `fx.time` / `fx.params` and re-sample `atlasTex` / `atlasSamp`. See the module docs.
-     */
+    /** WGSL fragment body. See the module docs for the in-scope identifiers. */
     readonly fragment: string;
+    /** Extra textures, in binding order. Each contributes a `texture_2d` + `sampler`. */
+    readonly extraTextures?: readonly Sprite2DCustomTexture[];
 }
 
 /** A compiled-on-demand custom sprite shader. Pure data; pass as `customShader` to `createSprite2DLayer`. */
 export interface Sprite2DCustomShader {
     readonly _entityType: "sprite-2d-custom-shader";
+    /** @internal Extra textures bound after the atlas. */
+    readonly _extraTextures: readonly Sprite2DCustomTexture[];
     /** @internal Stable identity used to key pipeline + shader-module caches. */
-    readonly _id: number;
-    /** The user-provided WGSL fragment source. */
-    readonly fragment: string;
+    readonly _key: string;
     /** @internal Compose the full WGSL module for a given layout (`hasDepth` → group index). */
-    _makeWgsl(hasDepth: boolean, group: 0 | 1): string;
+    readonly _composeWgsl: (hasDepth: boolean, spriteGroupIndex: 0 | 1) => string;
 }
 
-let _nextCustomShaderId = 1;
-
-function fxStructWgsl(group: 0 | 1): string {
-    return `struct SpriteFx {
-time: f32,
-_p0: f32,
-_p1: f32,
-_p2: f32,
-params: vec4<f32>,
-};
-@group(${group}) @binding(3) var<uniform> fx: SpriteFx;`;
-}
-
-const WRAPPER_FS_WGSL = `@fragment
+function makeCustomSpriteWgsl(hasDepth: boolean, spriteGroupIndex: 0 | 1, extraTextures: readonly Sprite2DCustomTexture[], fragment: string): string {
+    const fxBinding = 3 + extraTextures.length * 2;
+    return `${makeSpritePrologueWgsl(hasDepth, spriteGroupIndex)}
+${makeExtraBindingsWgsl(spriteGroupIndex, 3, extraTextures)}${makeFxStructWgsl(spriteGroupIndex, fxBinding)}
+@fragment
 fn fs(in: VOut) -> @location(0) vec4<f32> {
-let base = textureSample(atlasTex, atlasSamp, in.uv);
-let c = spriteFx(in.uv, in.tint, base);
-return c * L.opacityMul;
+${fragment}
 }`;
+}
 
 /**
- * Create a custom fragment shader for a pure-2D sprite layer. Pass the result as the
- * `customShader` option of `createSprite2DLayer`. See the module-level docs for the WGSL contract.
+ * Create a custom fragment shader for a sprite layer. Pass the result as the `customShader`
+ * option of `createSprite2DLayer`. See the module-level docs for the WGSL contract.
  */
-export function createSprite2DCustomShader(opts: Sprite2DCustomShaderOptions): Sprite2DCustomShader {
-    const fragment = opts.fragment;
+export function createSprite2DCustomShader(options: Sprite2DCustomShaderOptions): Sprite2DCustomShader {
+    const fragment = options.fragment;
     if (typeof fragment !== "string" || fragment.trim().length === 0) {
         throw new Error("createSprite2DCustomShader: `fragment` must be a non-empty WGSL string.");
     }
+    const extraTextures = options.extraTextures ?? [];
+    validateExtraTextureNames("createSprite2DCustomShader", extraTextures);
     return {
         _entityType: "sprite-2d-custom-shader",
-        _id: _nextCustomShaderId++,
-        fragment,
-        _makeWgsl(hasDepth: boolean, group: 0 | 1): string {
-            return `${makeSpritePrologueWgsl(hasDepth, group)}
-${fxStructWgsl(group)}
-${fragment}
-${WRAPPER_FS_WGSL}`;
-        },
+        _extraTextures: extraTextures,
+        _key: nextCustomShaderKey("s"),
+        _composeWgsl: (hasDepth, spriteGroupIndex) => makeCustomSpriteWgsl(hasDepth, spriteGroupIndex, extraTextures, fragment),
     };
 }

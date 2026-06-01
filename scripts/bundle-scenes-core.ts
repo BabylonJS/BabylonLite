@@ -424,8 +424,6 @@ function mangleWgslIdentifiers(code: string): string {
         ["getBillboardBasis", "gbb"],
         ["billboards", "bb"],
         ["opacityMul", "om"],
-        ["atlasTex", "atx"],
-        ["atlasSamp", "asp"],
         ["cameraRight", "cr"],
         ["cameraUp", "cu"],
         ["lockAxis", "la"],

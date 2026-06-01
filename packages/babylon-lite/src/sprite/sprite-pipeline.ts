@@ -7,7 +7,7 @@ import { DEPTH_INSTANCE_STRIDE_BYTES, PURE_2D_INSTANCE_STRIDE_BYTES } from "./sp
 export interface SpritePipelineDeviceCache {
     _shaderModule: GPUShaderModule | null;
     _sceneShaderModule: GPUShaderModule | null;
-    /** Custom-shader modules keyed by `Sprite2DCustomShader._id` + layout (`id:hasDepth`). */
+    /** Custom-shader modules keyed by `Sprite2DCustomShader._key` + layout (`key:hasDepth`). */
     _customShaderModules: Map<string, GPUShaderModule>;
     _pipelines: Map<string, GPURenderPipeline>;
 }
@@ -37,8 +37,9 @@ return s * in.tint * L.opacityMul;
  * Shared WGSL prologue for the sprite shader: the `Layer` UBO, atlas texture + sampler
  * bindings, instance-attribute `VIn` / interpolant `VOut` structs, and the `vs` vertex stage.
  * The default sprite shader appends a trivial textured fragment; the opt-in custom-shader
- * module (`createSprite2DCustomShader`) appends a `SpriteFx` UBO at `@binding(3)`, the user's
- * fragment, and a wrapper `fs` that calls it. Exposed so both paths share one source of truth.
+ * module (`createSprite2DCustomShader`) appends any extra-texture bindings, a `SpriteFx` UBO at
+ * `@binding(3 + 2 * extraTextures.length)`, and the user's raw fragment body. Exposed so both
+ * paths share one source of truth.
  */
 export function makeSpritePrologueWgsl(hasDepth: boolean, spriteGroupIndex: 0 | 1): string {
     const group = `@group(${spriteGroupIndex})`;
@@ -186,8 +187,18 @@ export function createSpriteLayerBindGroup(
         { binding: 1, resource: tex.view },
         { binding: 2, resource: tex.sampler },
     ];
+    const extraTextures = layer.customShader?._extraTextures;
+    let nextBinding = 3;
+    if (extraTextures) {
+        for (let i = 0; i < extraTextures.length; i++) {
+            const extraTexture = extraTextures[i]!.texture;
+            entries.push({ binding: nextBinding, resource: extraTexture.view });
+            entries.push({ binding: nextBinding + 1, resource: extraTexture.sampler });
+            nextBinding += 2;
+        }
+    }
     if (fxBuffer) {
-        entries.push({ binding: 3, resource: { buffer: fxBuffer } });
+        entries.push({ binding: nextBinding, resource: { buffer: fxBuffer } });
     }
     return engine.device.createBindGroup({
         layout: pipeline.getBindGroupLayout(spriteBindGroupIndex),
@@ -228,15 +239,15 @@ function spritePipelineKey(
     depthStencilFormat: GPUTextureFormat | null,
     customShader?: Sprite2DCustomShader
 ): string {
-    return `${format}:${sampleCount}:${getBlendModeEntry(blendMode).index}:${hasDepth ? 1 : 0}:${depthWrite ? 1 : 0}:${depthStencilFormat ?? "-"}:cs${customShader?._id ?? 0}`;
+    return `${format}:${sampleCount}:${getBlendModeEntry(blendMode).index}:${hasDepth ? 1 : 0}:${depthWrite ? 1 : 0}:${depthStencilFormat ?? "-"}:cs${customShader?._key ?? ""}`;
 }
 
 function getShaderModule(engine: EngineContextInternal, cache: SpritePipelineDeviceCache, hasDepth: boolean, customShader?: Sprite2DCustomShader): GPUShaderModule {
     if (customShader) {
-        const key = `${customShader._id}:${hasDepth ? 1 : 0}`;
+        const key = `${customShader._key}:${hasDepth ? 1 : 0}`;
         let mod = cache._customShaderModules.get(key);
         if (!mod) {
-            mod = engine.device.createShaderModule({ code: customShader._makeWgsl(hasDepth, hasDepth ? 1 : 0) });
+            mod = engine.device.createShaderModule({ code: customShader._composeWgsl(hasDepth, hasDepth ? 1 : 0) });
             cache._customShaderModules.set(key, mod);
         }
         return mod;
@@ -268,7 +279,14 @@ function buildSpritePipeline(
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
     ];
     if (customShader) {
-        layoutEntries.push({ binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } });
+        const extraTextures = customShader._extraTextures;
+        let nextBinding = 3;
+        for (let i = 0; i < extraTextures.length; i++) {
+            layoutEntries.push({ binding: nextBinding, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } });
+            layoutEntries.push({ binding: nextBinding + 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } });
+            nextBinding += 2;
+        }
+        layoutEntries.push({ binding: nextBinding, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } });
     }
     const bindGroupLayout = device.createBindGroupLayout({ entries: layoutEntries });
     const module = getShaderModule(engine, cache, hasDepth, customShader);
@@ -332,8 +350,9 @@ export const LAYER_UBO_BYTES = 48;
 export const LAYER_UBO_FLOATS = LAYER_UBO_BYTES / 4;
 
 /**
- * Per-layer custom-shader `SpriteFx` UBO size in bytes (`@binding(3)`, present only on layers
- * created with `customShader`). Layout matches the WGSL `SpriteFx` struct:
+ * Per-layer custom-shader `SpriteFx` UBO size in bytes (present only on layers created with
+ * `customShader`; bound at `@binding(3 + 2 * extraTextures.length)`). Layout matches the WGSL
+ * `SpriteFx` struct:
  *   [0]    time (seconds since first frame)
  *   [1..3] padding (vec4 alignment)
  *   [4..7] params.xyzw (user-set via `setSprite2DShaderParams`)

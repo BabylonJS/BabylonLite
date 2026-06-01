@@ -185,9 +185,6 @@ export function createSprite2DLayer(atlas: SpriteAtlas, opts: Sprite2DLayerOptio
     const blendMode = opts.blendMode ?? "alpha";
     assertBlendSupported(blendMode);
     const customShader = opts.customShader ?? null;
-    if (customShader && depth !== "none") {
-        throw new Error('Sprite2DLayer: customShader is supported on pure-2D (depth: "none") layers only.');
-    }
 
     const capacity = Math.max(1, opts.capacity ?? DEFAULT_CAPACITY);
     const view: Sprite2DView = {

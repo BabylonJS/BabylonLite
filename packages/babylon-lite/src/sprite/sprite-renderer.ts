@@ -354,7 +354,18 @@ function spriteRendererRecord(rr: SpriteRendererInternal): number {
             continue;
         }
         const sampleCount = 1;
-        const pipeline = getOrCreateSpritePipeline(rr._engine, rr._pipelineCache, rr._engine.format, sampleCount, layer.blendMode, false, false, undefined, undefined, layer.customShader ?? undefined);
+        const pipeline = getOrCreateSpritePipeline(
+            rr._engine,
+            rr._pipelineCache,
+            rr._engine.format,
+            sampleCount,
+            layer.blendMode,
+            false,
+            false,
+            undefined,
+            undefined,
+            layer.customShader ?? undefined
+        );
         if (lg.pipeline !== pipeline) {
             lg.pipeline = pipeline;
             lg.bindGroup = null;

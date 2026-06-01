@@ -17,9 +17,12 @@ import {
     ensureBillboardInstanceBuffer,
     getOrCreateBillboardPipeline,
     resetBillboardPipelineCache,
+    SPRITE_FX_UBO_BYTES,
+    SPRITE_FX_UBO_FLOATS,
     uploadBillboardInstances,
     uploadSortedBillboardInstances,
     writeBillboardSystemUboIfDirty,
+    writeSpriteFxUbo,
 } from "./billboard-pipeline.js";
 import type { BillboardInstanceSortScratch, BillboardPipelineCache } from "./billboard-pipeline.js";
 
@@ -62,6 +65,9 @@ interface BillboardRenderableInternal extends Renderable {
     _uboUploaded: boolean;
     _lastUbo: Float32Array;
     _scratchUbo: Float32Array;
+    _fxBuffer: GPUBuffer | null;
+    _scratchFx: Float32Array | null;
+    _elapsedMs: number;
     _disposed: boolean;
 }
 
@@ -69,6 +75,7 @@ export function buildBillboardRenderable(engine: EngineContextInternal, system: 
     const indexBuffer = createMappedBuffer(engine, BILLBOARD_INDEX_DATA, GPUBufferUsage.INDEX);
     const uniformBuffer = createEmptyUniformBuffer(engine, BILLBOARD_SYSTEM_UBO_BYTES, `${system._orientation}-billboard-system-ubo`);
     const instanceBuffer = createBillboardInstanceBuffer(engine.device, system, `${system._orientation}-billboard-instances`);
+    const fxBuffer = system._customShader ? createEmptyUniformBuffer(engine, SPRITE_FX_UBO_BYTES, `${system._orientation}-billboard-fx-ubo`) : null;
     const isTransparent = system._depthMode === "transparent";
     const renderable: BillboardRenderableInternal = {
         order: system.order,
@@ -92,6 +99,9 @@ export function buildBillboardRenderable(engine: EngineContextInternal, system: 
         _uboUploaded: false,
         _lastUbo: new Float32Array(BILLBOARD_SYSTEM_UBO_BYTES / 4),
         _scratchUbo: new Float32Array(BILLBOARD_SYSTEM_UBO_BYTES / 4),
+        _fxBuffer: fxBuffer,
+        _scratchFx: system._customShader ? new Float32Array(SPRITE_FX_UBO_FLOATS) : null,
+        _elapsedMs: 0,
         _disposed: false,
         _worldCenter: [0, 0, 0],
         bind(engine, target) {
@@ -123,7 +133,7 @@ function bindSystem(renderable: BillboardRenderableInternal, engine: EngineConte
     );
     let bindGroup = renderable._bindGroups.get(pipeline);
     if (!bindGroup) {
-        bindGroup = createBillboardSystemBindGroup(engine, pipeline, renderable._system, renderable._uniformBuffer);
+        bindGroup = createBillboardSystemBindGroup(engine, pipeline, renderable._system, renderable._uniformBuffer, renderable._fxBuffer);
         renderable._bindGroups.set(pipeline, bindGroup);
     }
     return {
@@ -141,6 +151,10 @@ function bindSystem(renderable: BillboardRenderableInternal, engine: EngineConte
 function uploadSystem(renderable: BillboardRenderableInternal, context: DrawUpdateContext): void {
     if (renderable._disposed) {
         return;
+    }
+    if (renderable._fxBuffer && renderable._scratchFx) {
+        renderable._elapsedMs += renderable._engine._currentDelta;
+        writeSpriteFxUbo(renderable._engine.device, renderable._fxBuffer, renderable._elapsedMs / 1000, renderable._system.shaderParams, renderable._scratchFx);
     }
     refreshBillboardWorldCenter(renderable);
     if (!renderable._system.visible || renderable._system.count === 0) {
@@ -283,6 +297,7 @@ function disposeRenderable(renderable: BillboardRenderableInternal): void {
     renderable._instanceBuffer.destroy();
     renderable._uniformBuffer.destroy();
     renderable._indexBuffer.destroy();
+    renderable._fxBuffer?.destroy();
     renderable._bindGroups.clear();
     releaseSharedPipelineCache();
 }

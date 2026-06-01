@@ -389,41 +389,56 @@ describe("pure-2D instance layout", () => {
 });
 
 describe("Sprite2D custom shader", () => {
-    const FX_FRAGMENT = `fn spriteFx(uv: vec2<f32>, tint: vec4<f32>, base: vec4<f32>) -> vec4<f32> {
-  return base * tint * (0.5 + 0.5 * sin(fx.time + fx.params.x));
-}`;
+    const FX_FRAGMENT = `return textureSample(atlasTex, atlasSamp, in.uv) * in.tint * (0.5 + 0.5 * sin(fx.time + fx.params.x));`;
 
     it("createSprite2DCustomShader returns a descriptor and rejects empty source", () => {
         const cs = createSprite2DCustomShader({ fragment: FX_FRAGMENT });
         expect(cs._entityType).toBe("sprite-2d-custom-shader");
-        expect(cs.fragment).toBe(FX_FRAGMENT);
-        expect(typeof cs._id).toBe("number");
+        expect(typeof cs._key).toBe("string");
         expect(() => createSprite2DCustomShader({ fragment: "   " })).toThrow();
     });
 
-    it("assigns distinct ids to distinct shaders", () => {
+    it("assigns distinct keys to distinct shaders", () => {
         const a = createSprite2DCustomShader({ fragment: FX_FRAGMENT });
         const b = createSprite2DCustomShader({ fragment: FX_FRAGMENT });
-        expect(a._id).not.toBe(b._id);
+        expect(a._key).not.toBe(b._key);
     });
 
-    it("composes WGSL that wraps the user fragment with the SpriteFx UBO and fs entry point", () => {
+    it("composes WGSL that wraps the user fragment body with the SpriteFx UBO and fs entry point", () => {
         const cs = createSprite2DCustomShader({ fragment: FX_FRAGMENT });
-        const wgsl = cs._makeWgsl(false, 0);
-        expect(wgsl).toContain("fn spriteFx(");
+        const wgsl = cs._composeWgsl(false, 0);
         expect(wgsl).toContain("@binding(3) var<uniform> fx: SpriteFx");
-        expect(wgsl).toContain("fn fs(in: VOut)");
+        expect(wgsl).toContain("fn fs(in: VOut) -> @location(0) vec4<f32>");
+        expect(wgsl).toContain(FX_FRAGMENT);
         // The vertex prologue must still be present.
         expect(wgsl).toContain("fn vs(in: VIn)");
         expect(wgsl).toContain("var atlasTex");
     });
 
-    it("createSprite2DLayer stores the custom shader and guards depth-hosted layers", () => {
+    it("places the fx UBO after extra textures and binds them", () => {
+        const makeTex = () => ({ view: {}, sampler: {} }) as unknown as import("../../packages/babylon-lite/src/texture/texture-2d").Texture2D;
+        const cs = createSprite2DCustomShader({
+            fragment: FX_FRAGMENT,
+            extraTextures: [
+                { name: "palette", texture: makeTex() },
+                { name: "noise", texture: makeTex() },
+            ],
+        });
+        const wgsl = cs._composeWgsl(false, 0);
+        expect(wgsl).toContain("@binding(3) var paletteTex: texture_2d<f32>");
+        expect(wgsl).toContain("@binding(4) var paletteSamp: sampler");
+        expect(wgsl).toContain("@binding(5) var noiseTex: texture_2d<f32>");
+        expect(wgsl).toContain("@binding(6) var noiseSamp: sampler");
+        expect(wgsl).toContain("@binding(7) var<uniform> fx: SpriteFx");
+    });
+
+    it("createSprite2DLayer stores the custom shader on pure-2D and depth-hosted layers", () => {
         const cs = createSprite2DCustomShader({ fragment: FX_FRAGMENT });
         const layer = createSprite2DLayer(makeMockAtlas(), { customShader: cs });
         expect(layer.customShader).toBe(cs);
         expect(layer.shaderParams).toEqual([0, 0, 0, 0]);
-        expect(() => createSprite2DLayer(makeMockAtlas(), { customShader: cs, depth: "test" })).toThrow();
+        const depthLayer = createSprite2DLayer(makeMockAtlas(), { customShader: cs, depth: "test" });
+        expect(depthLayer.customShader).toBe(cs);
     });
 
     it("setSprite2DShaderParams mutates the params vec4 in place", () => {

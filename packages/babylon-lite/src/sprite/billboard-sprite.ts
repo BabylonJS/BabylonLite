@@ -6,6 +6,7 @@
  */
 import type { SpriteAtlas } from "./shared/sprite-atlas.js";
 import { resolveSpriteFrame } from "./shared/sprite-atlas.js";
+import type { BillboardCustomShader } from "./billboard-custom-shader.js";
 import type { SpriteBlendMode } from "./sprite-2d.js";
 
 export type BillboardBlendMode = Extract<SpriteBlendMode, "alpha" | "premultiplied" | "cutout">;
@@ -17,6 +18,8 @@ export interface BillboardSpriteSystemOptions {
     opacity?: number;
     visible?: boolean;
     order?: number;
+    /** Optional opt-in custom fragment shader (from `createBillboardCustomShader`). */
+    customShader?: BillboardCustomShader;
 }
 
 export type BillboardOrientation = "facing" | "axis-locked";
@@ -56,6 +59,10 @@ export interface BillboardSpriteSystem<TOrientation extends BillboardOrientation
     _dirtyMax: number;
     /** @internal Optional hooks installed by the opt-in handle module. */
     _handleHooks?: BillboardIndexHandleHooks;
+    /** @internal Optional custom fragment shader for this system. */
+    readonly _customShader?: BillboardCustomShader;
+    /** Per-system custom-shader params (`fx.params`); set via `setBillboardShaderParams`. */
+    shaderParams: [number, number, number, number];
 }
 
 /** @internal Lazy hooks used by the opt-in Handle API to track swap-removes. */
@@ -160,7 +167,20 @@ function createBillboardSystem<TOrientation extends BillboardOrientation>(
         _version: 0,
         _dirtyMin: 0,
         _dirtyMax: 0,
+        _customShader: opts.customShader,
+        shaderParams: [0, 0, 0, 0],
     };
+}
+
+/**
+ * Set the custom-shader `fx.params` vec4 for a billboard system created with a `customShader`.
+ * No-op effect on systems without one (the value is simply stored). Read in WGSL as `fx.params`.
+ */
+export function setBillboardShaderParams(system: BillboardSpriteSystem, params: readonly [number, number, number, number]): void {
+    system.shaderParams[0] = params[0];
+    system.shaderParams[1] = params[1];
+    system.shaderParams[2] = params[2];
+    system.shaderParams[3] = params[3];
 }
 
 function growCapacity(system: BillboardSpriteSystem, minCapacity: number): void {

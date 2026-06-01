@@ -14,11 +14,18 @@ import {
     createFacingBillboardSystem,
     createAxisLockedBillboardSystem,
     removeBillboardSpriteIndex,
+    setBillboardShaderParams,
     setBillboardSpriteFrameIndex,
     updateBillboardSpriteIndex,
 } from "../../packages/babylon-lite/src/sprite/billboard-sprite";
 import { addFacingBillboardSystem, addAxisLockedBillboardSystem } from "../../packages/babylon-lite/src/sprite/billboard-scene";
-import { BILLBOARD_SYSTEM_UBO_BYTES } from "../../packages/babylon-lite/src/sprite/billboard-pipeline";
+import {
+    BILLBOARD_SYSTEM_UBO_BYTES,
+    SPRITE_FX_UBO_BYTES,
+    createBillboardPipelineCache,
+    getOrCreateBillboardPipeline,
+} from "../../packages/babylon-lite/src/sprite/billboard-pipeline";
+import { createBillboardCustomShader } from "../../packages/babylon-lite/src/sprite/billboard-custom-shader";
 import { createSceneContext, disposeScene } from "../../packages/babylon-lite/src/scene/scene";
 import { registerScene } from "../../packages/babylon-lite/src/scene/scene-core";
 import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
@@ -616,5 +623,113 @@ describe("AxisLockedBillboardSpriteSystem", () => {
         expect(uboData[5]).toBeCloseTo(1 / axisLen);
         expect(uboData[6]).toBeCloseTo(0.2 / axisLen);
         expect(uboData[7]).toBe(0);
+    });
+});
+
+describe("Billboard custom shader", () => {
+    const FX_FRAGMENT = `let base = textureSample(atlasTex, atlasSamp, in.uv) * in.tint * billboards.opacityMul;
+return vec4<f32>(base.rgb * (0.5 + 0.5 * sin(fx.time + fx.params.x)), base.a);`;
+
+    const makeTex = () => ({ view: {}, sampler: {} }) as unknown as Texture2D;
+
+    it("createBillboardCustomShader returns a descriptor and rejects empty source", () => {
+        const cs = createBillboardCustomShader({ fragment: FX_FRAGMENT });
+        expect(cs._entityType).toBe("billboard-custom-shader");
+        expect(typeof cs._key).toBe("string");
+        expect(() => createBillboardCustomShader({ fragment: "   " })).toThrow();
+    });
+
+    it("assigns distinct keys to distinct shaders and rejects invalid extra-texture names", () => {
+        const a = createBillboardCustomShader({ fragment: FX_FRAGMENT });
+        const b = createBillboardCustomShader({ fragment: FX_FRAGMENT });
+        expect(a._key).not.toBe(b._key);
+        expect(() => createBillboardCustomShader({ fragment: FX_FRAGMENT, extraTextures: [{ name: "1bad", texture: makeTex() }] })).toThrow();
+    });
+
+    it("composes WGSL that wraps the user fragment body with the SpriteFx UBO, vWorldPos varying, and fs entry point", () => {
+        const cs = createBillboardCustomShader({ fragment: FX_FRAGMENT });
+
+        const facing = cs._composeWgsl("facing", "transparent");
+        expect(facing).toContain("@group(1) @binding(3) var<uniform> fx: SpriteFx");
+        expect(facing).toContain("fn fs(in: VOut) -> @location(0) vec4<f32>");
+        expect(facing).toContain(FX_FRAGMENT);
+        expect(facing).toContain("@location(3) vWorldPos: vec3<f32>");
+        expect(facing).toContain("out.vWorldPos = worldPos;");
+        expect(facing).toContain("getBillboardBasis");
+        expect(facing).toContain("cameraRight");
+
+        // Axis-locked uses a different basis but the same fragment contract.
+        const axisLocked = cs._composeWgsl("axis-locked", "transparent");
+        expect(axisLocked).toContain("projectedRight");
+        expect(axisLocked).toContain("lockAxis");
+        expect(axisLocked).toContain("@location(3) vWorldPos: vec3<f32>");
+    });
+
+    it("places the fx UBO after extra textures and binds them at group 1", () => {
+        const cs = createBillboardCustomShader({
+            fragment: FX_FRAGMENT,
+            extraTextures: [
+                { name: "palette", texture: makeTex() },
+                { name: "noise", texture: makeTex() },
+            ],
+        });
+        const wgsl = cs._composeWgsl("facing", "transparent");
+        expect(wgsl).toContain("@group(1) @binding(3) var paletteTex: texture_2d<f32>");
+        expect(wgsl).toContain("@group(1) @binding(4) var paletteSamp: sampler");
+        expect(wgsl).toContain("@group(1) @binding(5) var noiseTex: texture_2d<f32>");
+        expect(wgsl).toContain("@group(1) @binding(6) var noiseSamp: sampler");
+        expect(wgsl).toContain("@group(1) @binding(7) var<uniform> fx: SpriteFx");
+    });
+
+    it("getOrCreateBillboardPipeline builds a distinct pipeline + module for a custom shader and caches it", () => {
+        const engine = makeMockEngine();
+        const cache = createBillboardPipelineCache();
+        const sceneBGL = {} as GPUBindGroupLayout;
+        const device = engine.device as unknown as { createShaderModule: ReturnType<typeof vi.fn> };
+
+        const plain = getOrCreateBillboardPipeline(engine, cache, engine.format, 1, createFacingBillboardSystem(makeMockAtlas()), "depth32float", sceneBGL);
+        const modulesAfterPlain = device.createShaderModule.mock.calls.length;
+
+        const cs = createBillboardCustomShader({ fragment: FX_FRAGMENT });
+        const customSystem = createFacingBillboardSystem(makeMockAtlas(), { customShader: cs });
+        const custom = getOrCreateBillboardPipeline(engine, cache, engine.format, 1, customSystem, "depth32float", sceneBGL);
+
+        expect(custom).not.toBe(plain);
+        expect(device.createShaderModule.mock.calls.length).toBeGreaterThan(modulesAfterPlain);
+
+        // Re-requesting the same custom shader hits the cache (no new pipeline).
+        const again = getOrCreateBillboardPipeline(engine, cache, engine.format, 1, customSystem, "depth32float", sceneBGL);
+        expect(again).toBe(custom);
+    });
+
+    it("buildBillboardPipeline appends the FX UBO binding to the bind-group layout for a custom shader", () => {
+        const engine = makeMockEngine();
+        const cache = createBillboardPipelineCache();
+        const sceneBGL = {} as GPUBindGroupLayout;
+        const device = engine.device as unknown as { createBindGroupLayout: ReturnType<typeof vi.fn> };
+
+        const cs = createBillboardCustomShader({ fragment: FX_FRAGMENT, extraTextures: [{ name: "palette", texture: makeTex() }] });
+        const system = createFacingBillboardSystem(makeMockAtlas(), { customShader: cs });
+        getOrCreateBillboardPipeline(engine, cache, engine.format, 1, system, "depth32float", sceneBGL);
+
+        const layoutCall = device.createBindGroupLayout.mock.calls.at(-1)![0] as GPUBindGroupLayoutDescriptor;
+        const bindings = (layoutCall.entries as GPUBindGroupLayoutEntry[]).map((entry) => entry.binding);
+        // atlas UBO 0, atlasTex 1, atlasSamp 2, paletteTex 3, paletteSamp 4, fx UBO 5.
+        expect(bindings).toEqual([0, 1, 2, 3, 4, 5]);
+        const fxEntry = (layoutCall.entries as GPUBindGroupLayoutEntry[]).find((entry) => entry.binding === 5)!;
+        expect(fxEntry.buffer?.type).toBe("uniform");
+    });
+
+    it("createFacingBillboardSystem stores the custom shader and setBillboardShaderParams mutates the params vec4", () => {
+        const cs = createBillboardCustomShader({ fragment: FX_FRAGMENT });
+        const system = createFacingBillboardSystem(makeMockAtlas(), { customShader: cs });
+        expect(system._customShader).toBe(cs);
+        expect(system.shaderParams).toEqual([0, 0, 0, 0]);
+
+        setBillboardShaderParams(system, [1, 2, 3, 4]);
+        expect(system.shaderParams).toEqual([1, 2, 3, 4]);
+
+        // The shared FX UBO byte size is the same 32-byte contract as the 2D sprite path.
+        expect(SPRITE_FX_UBO_BYTES).toBe(32);
     });
 });
