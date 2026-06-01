@@ -90,7 +90,7 @@ describe("LWR M1 floating-origin upload integration", () => {
         const refView = new Float32Array(16);
         packMat4IntoF32(refView, meshWorld);
         expect(refView[12]).toBe(Math.fround(FAR + delta));
-        expect(refView[12] - FAR).not.toBe(Math.fround(delta));
+        expect(refView[12]! - FAR).not.toBe(Math.fround(delta));
     });
 
     it("vEyePosition-style write at LWR-on yields eye-relative zero", () => {

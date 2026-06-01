@@ -11,14 +11,14 @@ import { createRenderTask } from "../../packages/babylon-lite/src/frame-graph/re
 import { enableRenderTaskTransmission, enableSceneTransmission } from "../../packages/babylon-lite/src/frame-graph/transmission";
 
 const gpuGlobals = globalThis as typeof globalThis & {
-    GPUBufferUsage?: { UNIFORM: number; COPY_DST: number };
-    GPUShaderStage?: { VERTEX: number; FRAGMENT: number };
-    GPUTextureUsage?: { RENDER_ATTACHMENT: number; TEXTURE_BINDING: number; COPY_SRC: number; COPY_DST: number };
+    GPUBufferUsage?: unknown;
+    GPUShaderStage?: unknown;
+    GPUTextureUsage?: unknown;
 };
 
-gpuGlobals.GPUBufferUsage ??= { UNIFORM: 0x40, COPY_DST: 0x8 };
-gpuGlobals.GPUShaderStage ??= { VERTEX: 0x1, FRAGMENT: 0x2 };
-gpuGlobals.GPUTextureUsage ??= { RENDER_ATTACHMENT: 0x10, TEXTURE_BINDING: 0x4, COPY_SRC: 0x1, COPY_DST: 0x2 };
+gpuGlobals.GPUBufferUsage ??= { UNIFORM: 0x40, COPY_DST: 0x8 } as unknown as GPUBufferUsage;
+gpuGlobals.GPUShaderStage ??= { VERTEX: 0x1, FRAGMENT: 0x2 } as unknown as GPUShaderStage;
+gpuGlobals.GPUTextureUsage ??= { RENDER_ATTACHMENT: 0x10, TEXTURE_BINDING: 0x4, COPY_SRC: 0x1, COPY_DST: 0x2 } as unknown as GPUTextureUsage;
 
 function makeIdentityMatrix(z = 0): Mat4 {
     const matrix = new Float32Array(16);

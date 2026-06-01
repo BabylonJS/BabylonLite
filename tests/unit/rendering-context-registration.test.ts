@@ -14,14 +14,14 @@ import { createSceneContext, disposeScene, registerScene, unregisterScene } from
 import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
 
 const gpuGlobals = globalThis as typeof globalThis & {
-    GPUShaderStage?: { VERTEX: number; FRAGMENT: number };
-    GPUBufferUsage?: { UNIFORM: number; COPY_DST: number };
-    GPUTextureUsage?: { RENDER_ATTACHMENT: number; TEXTURE_BINDING: number };
+    GPUShaderStage?: unknown;
+    GPUBufferUsage?: unknown;
+    GPUTextureUsage?: unknown;
 };
 
-gpuGlobals.GPUShaderStage ??= { VERTEX: 0x1, FRAGMENT: 0x2 };
-gpuGlobals.GPUBufferUsage ??= { UNIFORM: 0x40, COPY_DST: 0x8 };
-gpuGlobals.GPUTextureUsage ??= { RENDER_ATTACHMENT: 0x10, TEXTURE_BINDING: 0x4 };
+gpuGlobals.GPUShaderStage ??= { VERTEX: 0x1, FRAGMENT: 0x2 } as unknown as GPUShaderStage;
+gpuGlobals.GPUBufferUsage ??= { UNIFORM: 0x40, COPY_DST: 0x8 } as unknown as GPUBufferUsage;
+gpuGlobals.GPUTextureUsage ??= { RENDER_ATTACHMENT: 0x10, TEXTURE_BINDING: 0x4 } as unknown as GPUTextureUsage;
 
 function makeMockEngine(): EngineContext {
     const device = {
@@ -44,6 +44,7 @@ function makeMockEngine(): EngineContext {
         msaaSamples: 4,
         drawCallCount: 0,
         useHighPrecisionMatrix: false,
+        useFloatingOrigin: false,
         device,
         context: {} as GPUCanvasContext,
         format: "bgra8unorm",
