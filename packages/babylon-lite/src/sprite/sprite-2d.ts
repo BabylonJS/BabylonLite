@@ -10,8 +10,9 @@
  */
 import type { SpriteAtlas } from "./shared/sprite-atlas.js";
 import { resolveSpriteFrame } from "./shared/sprite-atlas.js";
+import type { Sprite2DCustomShader } from "./sprite-custom-shader.js";
 
-/** Output blend mode for a sprite layer. Currently supports `"alpha"` and `"premultiplied"`. */
+/** Output blend mode for a sprite layer. Implemented: `"alpha"`, `"premultiplied"`, `"additive"`. */
 export type SpriteBlendMode = "alpha" | "premultiplied" | "additive" | "multiply" | "cutout";
 
 /** Depth participation. `"none"` uses `SpriteRenderer`; depth-enabled modes use `addToScene`. */
@@ -43,6 +44,14 @@ export interface Sprite2DLayerOptions {
      */
     pivot?: [number, number];
     /**
+     * Opt-in per-layer custom fragment shader (see `createSprite2DCustomShader`). Supported on
+     * pure-2D (`depth: "none"`) layers drawn by a `SpriteRenderer`; passing one together with
+     * `depth: "test" | "test-write"` throws. Drives procedural effects (animated sky, clouds,
+     * water / heat shimmer, twinkle, vignette) from a built-in `fx.time` clock plus an optional
+     * `fx.params` vec4 set via `setSprite2DShaderParams`.
+     */
+    customShader?: Sprite2DCustomShader;
+    /**
      * Default NDC depth (`0` = near, `1` = far) for sprites added to this layer when their
      * `Sprite2DProps.z` is omitted. Only meaningful for `depth: "test" | "test-write"` layers
      * (depth-hosted sprites added to a `SceneContext` via `addDepthHostedSpriteLayer`).
@@ -69,6 +78,10 @@ export interface Sprite2DLayer {
     view: Sprite2DView;
     /** Layer-wide pivot in normalised sprite-local space; see `Sprite2DLayerOptions.pivot`. */
     pivot: [number, number];
+    /** Opt-in custom fragment shader for this layer, or `null`; see `Sprite2DLayerOptions.customShader`. */
+    readonly customShader: Sprite2DCustomShader | null;
+    /** User `fx.params` vec4 fed to a custom shader each frame; mutate via `setSprite2DShaderParams`. */
+    shaderParams: [number, number, number, number];
     /** Default NDC depth for newly added sprites; see `Sprite2DLayerOptions.layerZ`. */
     layerZ: number;
     readonly count: number;
@@ -161,8 +174,8 @@ export const SAVED_SIZE_FLOATS_PER_SPRITE = 2;
 const DEFAULT_CAPACITY = 16;
 
 function assertBlendSupported(blendMode: SpriteBlendMode): void {
-    if (blendMode === "additive" || blendMode === "multiply" || blendMode === "cutout") {
-        throw new Error(`Sprite2DLayer: blendMode: "${blendMode}" lands in a later PR. Use "alpha" or "premultiplied".`);
+    if (blendMode === "multiply" || blendMode === "cutout") {
+        throw new Error(`Sprite2DLayer: blendMode: "${blendMode}" lands in a later PR. Use "alpha", "premultiplied", or "additive".`);
     }
 }
 
@@ -171,6 +184,10 @@ export function createSprite2DLayer(atlas: SpriteAtlas, opts: Sprite2DLayerOptio
     const depth = opts.depth ?? "none";
     const blendMode = opts.blendMode ?? "alpha";
     assertBlendSupported(blendMode);
+    const customShader = opts.customShader ?? null;
+    if (customShader && depth !== "none") {
+        throw new Error('Sprite2DLayer: customShader is supported on pure-2D (depth: "none") layers only.');
+    }
 
     const capacity = Math.max(1, opts.capacity ?? DEFAULT_CAPACITY);
     const view: Sprite2DView = {
@@ -192,6 +209,8 @@ export function createSprite2DLayer(atlas: SpriteAtlas, opts: Sprite2DLayerOptio
         order: opts.order ?? 0,
         view,
         pivot: [opts.pivot?.[0] ?? 0.5, opts.pivot?.[1] ?? 0.5],
+        customShader,
+        shaderParams: [0, 0, 0, 0],
         layerZ: opts.layerZ ?? 0.5,
         count: 0,
         _capacity: capacity,
@@ -203,6 +222,18 @@ export function createSprite2DLayer(atlas: SpriteAtlas, opts: Sprite2DLayerOptio
         _dirtyMin: 0,
         _dirtyMax: 0,
     };
+}
+
+/**
+ * Set the user `fx.params` vec4 fed to this layer's custom shader (`createSprite2DCustomShader`)
+ * each frame. No visual effect unless the layer was created with a `customShader`. Read in WGSL
+ * as `fx.params`. Mutates in place; the renderer re-uploads the small FX UBO next frame.
+ */
+export function setSprite2DShaderParams(layer: Sprite2DLayer, params: readonly [number, number, number, number]): void {
+    layer.shaderParams[0] = params[0];
+    layer.shaderParams[1] = params[1];
+    layer.shaderParams[2] = params[2];
+    layer.shaderParams[3] = params[3];
 }
 
 function growCapacity(layer: Sprite2DLayer, minCapacity: number): void {

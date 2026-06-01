@@ -25,6 +25,7 @@ import {
     addSprite2DIndex,
     clearSprite2DLayer,
     createSprite2DLayer,
+    setSprite2DShaderParams,
 } from "../../packages/babylon-lite/src/sprite/sprite-2d";
 import {
     createSpriteRenderer,
@@ -36,6 +37,7 @@ import {
     _spriteRendererPipelineCacheSize,
 } from "../../packages/babylon-lite/src/sprite/sprite-renderer";
 import { createSpritePipelineCache, getOrCreateSpritePipeline } from "../../packages/babylon-lite/src/sprite/sprite-pipeline";
+import { createSprite2DCustomShader } from "../../packages/babylon-lite/src/sprite/sprite-custom-shader";
 import type { SpriteAtlas } from "../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
 import type { Texture2D } from "../../packages/babylon-lite/src/texture/texture-2d";
 import type { EngineContext, EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
@@ -386,6 +388,82 @@ describe("pure-2D instance layout", () => {
     });
 });
 
+describe("Sprite2D custom shader", () => {
+    const FX_FRAGMENT = `fn spriteFx(uv: vec2<f32>, tint: vec4<f32>, base: vec4<f32>) -> vec4<f32> {
+  return base * tint * (0.5 + 0.5 * sin(fx.time + fx.params.x));
+}`;
+
+    it("createSprite2DCustomShader returns a descriptor and rejects empty source", () => {
+        const cs = createSprite2DCustomShader({ fragment: FX_FRAGMENT });
+        expect(cs._entityType).toBe("sprite-2d-custom-shader");
+        expect(cs.fragment).toBe(FX_FRAGMENT);
+        expect(typeof cs._id).toBe("number");
+        expect(() => createSprite2DCustomShader({ fragment: "   " })).toThrow();
+    });
+
+    it("assigns distinct ids to distinct shaders", () => {
+        const a = createSprite2DCustomShader({ fragment: FX_FRAGMENT });
+        const b = createSprite2DCustomShader({ fragment: FX_FRAGMENT });
+        expect(a._id).not.toBe(b._id);
+    });
+
+    it("composes WGSL that wraps the user fragment with the SpriteFx UBO and fs entry point", () => {
+        const cs = createSprite2DCustomShader({ fragment: FX_FRAGMENT });
+        const wgsl = cs._makeWgsl(false, 0);
+        expect(wgsl).toContain("fn spriteFx(");
+        expect(wgsl).toContain("@binding(3) var<uniform> fx: SpriteFx");
+        expect(wgsl).toContain("fn fs(in: VOut)");
+        // The vertex prologue must still be present.
+        expect(wgsl).toContain("fn vs(in: VIn)");
+        expect(wgsl).toContain("var atlasTex");
+    });
+
+    it("createSprite2DLayer stores the custom shader and guards depth-hosted layers", () => {
+        const cs = createSprite2DCustomShader({ fragment: FX_FRAGMENT });
+        const layer = createSprite2DLayer(makeMockAtlas(), { customShader: cs });
+        expect(layer.customShader).toBe(cs);
+        expect(layer.shaderParams).toEqual([0, 0, 0, 0]);
+        expect(() => createSprite2DLayer(makeMockAtlas(), { customShader: cs, depth: "test" })).toThrow();
+    });
+
+    it("setSprite2DShaderParams mutates the params vec4 in place", () => {
+        const layer = createSprite2DLayer(makeMockAtlas());
+        setSprite2DShaderParams(layer, [1, 2, 3, 4]);
+        expect(layer.shaderParams).toEqual([1, 2, 3, 4]);
+    });
+
+    it("getOrCreateSpritePipeline builds a distinct pipeline + module for a custom shader", () => {
+        const { engine, counters } = makeMockEngine();
+        const eng = engine as EngineContextInternal;
+        const cache = createSpritePipelineCache();
+        const plain = getOrCreateSpritePipeline(eng, cache, eng.format, 1, "alpha", false);
+        const modulesAfterPlain = counters.shaderModules;
+        const cs = createSprite2DCustomShader({ fragment: FX_FRAGMENT });
+        const custom = getOrCreateSpritePipeline(eng, cache, eng.format, 1, "alpha", false, false, undefined, undefined, cs);
+        expect(custom).not.toBe(plain);
+        expect(counters.shaderModules).toBeGreaterThan(modulesAfterPlain);
+        // Re-requesting the same custom shader hits the cache (no new pipeline).
+        const again = getOrCreateSpritePipeline(eng, cache, eng.format, 1, "alpha", false, false, undefined, undefined, cs);
+        expect(again).toBe(custom);
+    });
+
+    it("renderer allocates a 32-byte FX UBO and uploads time/params for a custom-shader layer", () => {
+        const { engine } = makeMockEngine();
+        const cs = createSprite2DCustomShader({ fragment: FX_FRAGMENT });
+        const layer = createSprite2DLayer(makeMockAtlas(), { capacity: 1, customShader: cs });
+        addSprite2DIndex(layer, { positionPx: [10, 10], sizePx: [32, 32] });
+        const sr = createSpriteRenderer(engine, { layers: [layer] });
+        const device = engine.device as unknown as { createBuffer: ReturnType<typeof vi.fn>; queue: { writeBuffer: ReturnType<typeof vi.fn> } };
+
+        sr._update();
+
+        const fxCreate = device.createBuffer.mock.calls.find((call) => (call[0] as GPUBufferDescriptor).label === "sprite-layer-fx-ubo");
+        expect(fxCreate).toBeDefined();
+        expect((fxCreate![0] as GPUBufferDescriptor).size).toBe(32);
+        expect(device.queue.writeBuffer.mock.calls.some((call) => call[4] === 32)).toBe(true);
+    });
+});
+
 describe("createSprite2DLayer guards", () => {
     it("accepts depth: 'test' (PR 3 depth-hosted)", () => {
         const layer = createSprite2DLayer(makeMockAtlas(), { depth: "test" });
@@ -404,8 +482,12 @@ describe("createSprite2DLayer guards", () => {
         expect(custom.layerZ).toBe(0.25);
     });
 
-    it("throws on additive / multiply / cutout blend modes (later PR)", () => {
-        expect(() => createSprite2DLayer(makeMockAtlas(), { blendMode: "additive" })).toThrow();
+    it("accepts additive blend mode and stores it", () => {
+        const layer = createSprite2DLayer(makeMockAtlas(), { blendMode: "additive" });
+        expect(layer.blendMode).toBe("additive");
+    });
+
+    it("throws on multiply / cutout blend modes (later PR)", () => {
         expect(() => createSprite2DLayer(makeMockAtlas(), { blendMode: "multiply" })).toThrow();
         expect(() => createSprite2DLayer(makeMockAtlas(), { blendMode: "cutout" })).toThrow();
     });
