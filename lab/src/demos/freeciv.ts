@@ -26,6 +26,7 @@ import { loadFreecivSheet } from "./freeciv/atlas.js";
 import { createAtmosphere } from "./freeciv/atmosphere.js";
 import { createBackdrop } from "./freeciv/backdrop.js";
 import { createWater } from "./freeciv/water.js";
+import { createVignette } from "./freeciv/vignette.js";
 import { generateWorld, type GameMap } from "./freeciv/worldgen.js";
 import { buildTilemap, type Bounds, type TileLayers, type TileSheets } from "./freeciv/tilemap.js";
 import { createLiveSim } from "./freeciv/live.js";
@@ -54,7 +55,7 @@ async function main(): Promise<void> {
     ]);
     const sheets: TileSheets = { terrain, terrain2, hills, mountains, ocean, water, cities, units, animals, select };
 
-    const world = generateWorld({ width: 48, height: 48, seed: 7 });
+    const world = generateWorld({ width: 96, height: 96, seed: 7 });
     const cap = world.width * world.height;
 
     // Back-to-front: ocean → coast → terrain base → raised forest/hills/mountains
@@ -178,6 +179,10 @@ async function main(): Promise<void> {
     // Drifting clouds over the parchment backdrop, behind the map (subtle).
     const atmosphere = createAtmosphere(engine, sr);
 
+    // Screen-space vignette: darkens the corners so the void around the island
+    // fades to shadow instead of exposing the Mercator backdrop at the edges.
+    const vignette = createVignette(engine, sr);
+
     installControls(engine, view, layers, picker.hover, onMapClick);
     recenter();
     window.addEventListener("resize", recenter);
@@ -204,6 +209,7 @@ async function main(): Promise<void> {
         last = now;
         sim.step(dt);
         atmosphere.update(view);
+        vignette.update();
         waterFx.update();
         labels.update(view, engine);
         minimap.update();

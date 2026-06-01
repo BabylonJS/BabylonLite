@@ -1,18 +1,24 @@
 /**
  * Atmospheric clouds for the Freeciv demo — two layers of slowly drifting
- * procedural clouds that float over the parchment backdrop, behind the map. All
- * on Lite's own sprite path (no engine changes, no shader passes, no assets).
+ * procedural clouds that float *over* the map (but under the minimap), giving the
+ * scene a sense of weather and depth. All on Lite's own sprite path (no engine
+ * changes, no shader passes, no assets).
  *
- * The clouds are procedural: at load we synthesise a seamless fBm cloud texture
- * in plain JS, upload it with `createTexture2DFromPixels`, and draw it as pure-2D
- * HUD sprites *behind* the tilemap (negative `order`). They drift on their own and
- * parallax against the map pan (slower than the terrain → reads as depth); two
- * layers at different scales/speeds hide the texture's tiling and add a second
- * parallax cue. Kept subtle so the map and backdrop stay legible.
+ * The clouds are procedural: at load we synthesise a small sheet of distinct soft
+ * cloud "puffs" in plain JS, upload it with `createTexture2DFromPixels`, and
+ * scatter a handful of those puffs at random positions/sizes as pure-2D HUD
+ * sprites. They drift on their own and parallax against the map pan (slower than
+ * the terrain → reads as depth). Because each puff is an individually placed blob
+ * (random variant, position and size) rather than a repeated grid cell, there is
+ * no visible tiling. Two layers at different scales/speeds add a second parallax
+ * cue. Kept subtle so the map stays legible.
  *
- * Texture scrolling on the sprite path has no per-sprite UV offset, so each cloud
- * "layer" is a wrapped grid of full-texture sprites repositioned every frame —
- * cheap (≈100 sprites total) and seamless because the fBm texture tiles.
+ * Render order sits above the tilemap but below the minimap HUD, so the clouds
+ * pass over the world yet never obscure the minimap. The clouds live at a notional
+ * altitude: they only show on the two zoomed-out rungs (½ and 1, looking down from
+ * high up) and fade out as you zoom past 1, so close-up the camera has dropped
+ * below them. Their size tracks zoom so they read as pinned over the world, not
+ * stuck to the screen.
  */
 
 import {
@@ -32,23 +38,33 @@ import {
 export interface AtmosphereView {
     x: number;
     y: number;
+    zoom: number;
 }
 
 export interface Atmosphere {
-    /** Advance the drift and reposition the background for the current view/size. */
+    /** Advance the drift and reposition the clouds for the current view/size. */
     update: (view: AtmosphereView) => void;
-    /** Remove the background layers from the renderer. */
+    /** Remove the cloud layers from the renderer. */
     dispose: () => void;
 }
 
-/** One drifting cloud sheet: a wrapped grid of full-texture sprites. */
+/** One scattered, drifting cloud puff. */
+interface Puff {
+    index: number; // sprite index in the layer
+    u: number; // home position, fraction of the wrap span [0,1)
+    v: number;
+    size: number; // on-screen size in device px
+    alpha: number; // per-puff opacity multiplier
+}
+
+/** One drifting cloud sheet: a set of randomly scattered puffs. */
 interface CloudField {
     layer: Sprite2DLayer;
-    sprites: number[];
-    tilePx: number; // on-screen tile size in device px
+    puffs: Puff[];
+    maxSize: number; // largest puff (sets the wrap margin)
     speed: [number, number]; // drift, device px per ms
     parallax: number; // fraction of map pan applied
-    offset: [number, number]; // accumulated drift+parallax phase
+    offset: [number, number]; // accumulated drift phase
 }
 
 // ── Procedural texture synthesis ─────────────────────────────────────────────
@@ -57,43 +73,37 @@ function smooth(t: number): number {
     return t * t * (3 - 2 * t);
 }
 
-/** Hash a lattice point to [0,1), wrapping coords by `period` so the field tiles. */
-function latticeHash(ix: number, iy: number, period: number): number {
-    const x = ((ix % period) + period) % period;
-    const y = ((iy % period) + period) % period;
-    let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
+/** Hash a lattice point to [0,1) (non-periodic — puffs fade at their own edges). */
+function latticeHash(ix: number, iy: number): number {
+    let h = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263)) | 0;
     h = Math.imul(h ^ (h >>> 13), 1274126177);
     h ^= h >>> 16;
     return (h >>> 0) / 4294967295;
 }
 
-/** Periodic value noise at `(x, y)` with integer lattice period `period`. */
-function valueNoise(x: number, y: number, period: number): number {
+/** Value noise at `(x, y)` over an open (non-tiling) integer lattice. */
+function valueNoise(x: number, y: number): number {
     const x0 = Math.floor(x);
     const y0 = Math.floor(y);
     const fx = smooth(x - x0);
     const fy = smooth(y - y0);
-    const v00 = latticeHash(x0, y0, period);
-    const v10 = latticeHash(x0 + 1, y0, period);
-    const v01 = latticeHash(x0, y0 + 1, period);
-    const v11 = latticeHash(x0 + 1, y0 + 1, period);
+    const v00 = latticeHash(x0, y0);
+    const v10 = latticeHash(x0 + 1, y0);
+    const v01 = latticeHash(x0, y0 + 1);
+    const v11 = latticeHash(x0 + 1, y0 + 1);
     const a = v00 + (v10 - v00) * fx;
     const b = v01 + (v11 - v01) * fx;
     return a + (b - a) * fy;
 }
 
-/**
- * Seamless fBm in `[0,1)` over a `size`-px texture. Octave frequencies are integer
- * cell counts that divide `size`, and each octave's lattice period equals its
- * frequency, so the field wraps cleanly at the texture border (tileable).
- */
-function fbm(px: number, py: number, size: number, baseFreq: number, octaves: number): number {
+/** Fractal Brownian motion in `[0,1)` (open lattice; `seed` shifts the field). */
+function fbm(x: number, y: number, baseFreq: number, seedX: number, seedY: number): number {
     let amp = 0.5;
     let freq = baseFreq;
     let sum = 0;
     let norm = 0;
-    for (let o = 0; o < octaves; o++) {
-        sum += amp * valueNoise((px / size) * freq, (py / size) * freq, freq);
+    for (let o = 0; o < 5; o++) {
+        sum += amp * valueNoise(x * freq + seedX, y * freq + seedY);
         norm += amp;
         amp *= 0.5;
         freq *= 2;
@@ -102,23 +112,41 @@ function fbm(px: number, py: number, size: number, baseFreq: number, octaves: nu
 }
 
 /**
- * A `size×size` seamless RGBA cloud sheet: cool-white puffs with a soft alpha
- * curve (a low threshold leaves open gaps so the backdrop shows between clouds).
+ * A `cols×rows` grid of distinct, soft cloud puffs in one RGBA sheet. Each cell is
+ * fBm clouds (a different region of noise per cell) multiplied by a radial falloff
+ * so the blob fades to nothing at the cell edge — that way scattered puffs read as
+ * isolated clouds with no rectangular seams.
  */
-function makeClouds(size: number, baseFreq: number, maxAlpha: number): Uint8Array {
-    const px = new Uint8Array(size * size * 4);
-    for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-            const d = fbm(x, y, size, baseFreq, 5);
-            // Puffy: nothing below `lo`, ramping to full by `hi`.
-            const lo = 0.45;
-            const hi = 0.82;
-            const a = Math.max(0, Math.min(1, (d - lo) / (hi - lo)));
-            const o = (y * size + x) * 4;
-            px[o] = 206;
-            px[o + 1] = 220;
-            px[o + 2] = 240;
-            px[o + 3] = Math.round(smooth(a) * maxAlpha * 255);
+function makePuffSheet(cols: number, rows: number, cell: number, baseFreq: number, maxAlpha: number): Uint8Array {
+    const W = cols * cell;
+    const H = rows * cell;
+    const px = new Uint8Array(W * H * 4);
+    for (let cy = 0; cy < rows; cy++) {
+        for (let cx = 0; cx < cols; cx++) {
+            const seedX = (cx + cy * cols) * 13.37;
+            const seedY = (cx * 7 + cy * 131 + 5) * 2.71;
+            for (let y = 0; y < cell; y++) {
+                for (let x = 0; x < cell; x++) {
+                    const nx = x / cell;
+                    const ny = y / cell;
+                    const d = fbm(nx, ny, baseFreq, seedX, seedY);
+                    // Radial fade from the cell centre → isolated, seamless blob.
+                    const rx = nx * 2 - 1;
+                    const ry = ny * 2 - 1;
+                    const r = Math.sqrt(rx * rx + ry * ry);
+                    const fall = smooth(Math.max(0, Math.min(1, (1 - r) / 0.55)));
+                    // Puffy: nothing below `lo`, ramping to full by `hi`.
+                    const lo = 0.42;
+                    const hi = 0.8;
+                    const a = Math.max(0, Math.min(1, (d - lo) / (hi - lo)));
+                    const alpha = smooth(a) * fall * maxAlpha;
+                    const o = ((cy * cell + y) * W + (cx * cell + x)) * 4;
+                    px[o] = 206;
+                    px[o + 1] = 220;
+                    px[o + 2] = 240;
+                    px[o + 3] = Math.round(alpha * 255);
+                }
+            }
         }
     }
     return px;
@@ -126,65 +154,119 @@ function makeClouds(size: number, baseFreq: number, maxAlpha: number): Uint8Arra
 
 // ── Build ─────────────────────────────────────────────────────────────────────
 
-/** Generous per-cloud-layer sprite budget (covers a 4K screen at the smaller tile). */
-const CLOUD_CAPACITY = 160;
+/** Puff-sheet layout: a small grid of distinct cloud blobs to draw variety from. */
+const PUFF_COLS = 4;
+const PUFF_ROWS = 4;
+const PUFF_CELL = 192;
+const PUFF_VARIANTS = PUFF_COLS * PUFF_ROWS;
+
+/** Zoom at which clouds are drawn at their authored size (the wider overview rung). */
+const CLOUD_REF_ZOOM = 1;
+/** Clouds are fully visible at/below this zoom (the two zoomed-out rungs: ½ and 1). */
+const CLOUD_FADE_LO = 1;
+/** …and fully gone at/above this zoom — past 1 the camera drops below them. */
+const CLOUD_FADE_HI = 2;
+
+/** Tiny deterministic RNG (mulberry32) so the cloud scatter replays identically. */
+function makeRng(seed: number): () => number {
+    let a = seed >>> 0;
+    return () => {
+        a |= 0;
+        a = (a + 0x6d2b79f5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
 
 function buildCloudField(
     engine: EngineContext,
     sr: SpriteRenderer,
     order: number,
-    sizePx: number,
+    count: number,
+    sizeMin: number,
+    sizeMax: number,
     baseFreq: number,
     maxAlpha: number,
-    tilePx: number,
     speed: [number, number],
     parallax: number,
+    seed: number,
 ): CloudField {
-    const tex = createTexture2DFromPixels(engine, makeClouds(sizePx, baseFreq, maxAlpha), sizePx, sizePx);
-    const atlas = createGridSpriteAtlas(tex, { cellWidthPx: sizePx, cellHeightPx: sizePx, pivot: [0, 0] });
-    const layer = createSprite2DLayer(atlas, { capacity: CLOUD_CAPACITY, order, pivot: [0, 0] });
+    const sheet = makePuffSheet(PUFF_COLS, PUFF_ROWS, PUFF_CELL, baseFreq, maxAlpha);
+    const tex = createTexture2DFromPixels(engine, sheet, PUFF_COLS * PUFF_CELL, PUFF_ROWS * PUFF_CELL);
+    const atlas = createGridSpriteAtlas(tex, { cellWidthPx: PUFF_CELL, cellHeightPx: PUFF_CELL, pivot: [0.5, 0.5] });
+    const layer = createSprite2DLayer(atlas, { capacity: count, order, pivot: [0.5, 0.5] });
     addSpriteRendererLayer(sr, layer);
-    const sprites: number[] = [];
-    for (let i = 0; i < CLOUD_CAPACITY; i++) {
-        sprites.push(addSprite2DIndex(layer, { positionPx: [0, 0], sizePx: [tilePx, tilePx], visible: false }));
+
+    const rng = makeRng(seed);
+    const puffs: Puff[] = [];
+    for (let i = 0; i < count; i++) {
+        const size = sizeMin + (sizeMax - sizeMin) * rng();
+        const frame = Math.floor(rng() * PUFF_VARIANTS) % PUFF_VARIANTS;
+        const alpha = 0.7 + 0.3 * rng();
+        const index = addSprite2DIndex(layer, {
+            positionPx: [0, 0],
+            sizePx: [size, size],
+            frame,
+            color: [1, 1, 1, alpha],
+            visible: false,
+        });
+        puffs.push({ index, u: rng(), v: rng(), size, alpha });
     }
-    return { layer, sprites, tilePx, speed, parallax, offset: [0, 0] };
+    return { layer, puffs, maxSize: sizeMax, speed, parallax, offset: [0, 0] };
 }
 
 /** Build the {@link Atmosphere}: two layers of subtly drifting clouds. */
 export function createAtmosphere(engine: EngineContext, sr: SpriteRenderer): Atmosphere {
-    // Two cloud sheets drifting over the parchment backdrop: a big, faint, slow far
-    // layer and a smaller, slightly stronger, faster near layer. Different scales +
-    // speeds hide the tiling and add depth. Kept subtle so the map reads clearly.
-    const far = buildCloudField(engine, sr, -22, 256, 3, 0.16, 560, [0.0045, 0.0022], 0.05);
-    const near = buildCloudField(engine, sr, -20, 256, 5, 0.22, 340, [0.011, 0.006], 0.13);
+    // Two cloud sheets drifting over the map: a big, faint, slow far layer and a
+    // smaller, slightly stronger, faster near layer. Different scales + speeds add
+    // depth; the scattered placement keeps them from ever looking tiled. Orders sit
+    // above the tilemap (<16) but below the minimap HUD (100) so clouds pass over
+    // the world yet never cover the minimap. Kept subtle so the map reads clearly.
+    // Parallax is -1: the clouds track the world 1:1 (terrain draws at world − view,
+    // so the phase subtracts the pan to move with the ground rather than against it).
+    const far = buildCloudField(engine, sr, 40, 16, 320, 520, 3, 0.14, [0.0045, 0.0022], -1, 0x9e3779b1);
+    const near = buildCloudField(engine, sr, 41, 14, 200, 340, 5, 0.18, [0.011, 0.006], -1, 0x85ebca77);
 
     let last = performance.now();
 
-    function placeField(f: CloudField, view: AtmosphereView, w: number, h: number, dt: number): void {
-        // Advance drift; fold the map pan in at a fraction (parallax). Wrap the phase
-        // into [0, tile) so the grid can cover the screen with a fixed sprite budget.
+    function placeField(
+        f: CloudField,
+        view: AtmosphereView,
+        w: number,
+        h: number,
+        dt: number,
+        sizeScale: number,
+        vis: number,
+    ): void {
+        // Drift always advances (so re-entering a cloudy zoom looks continuous) even
+        // when the layer is currently hidden.
         f.offset[0] += f.speed[0] * dt;
         f.offset[1] += f.speed[1] * dt;
-        const ox = f.offset[0] + view.x * f.parallax;
-        const oy = f.offset[1] + view.y * f.parallax;
-        const t = f.tilePx;
-        const wrapX = ((ox % t) + t) % t;
-        const wrapY = ((oy % t) + t) % t;
-        const cols = Math.ceil(w / t) + 1;
-        const rows = Math.ceil(h / t) + 1;
-        let idx = 0;
-        for (let j = 0; j < rows; j++) {
-            for (let i = 0; i < cols && idx < f.sprites.length; i++) {
-                updateSprite2DIndex(f.layer, f.sprites[idx]!, {
-                    positionPx: [i * t - wrapX, j * t - wrapY],
-                    visible: true,
-                });
-                idx++;
-            }
+        if (vis <= 0) {
+            for (const p of f.puffs) updateSprite2DIndex(f.layer, p.index, { visible: false });
+            return;
         }
-        for (; idx < f.sprites.length; idx++) {
-            updateSprite2DIndex(f.layer, f.sprites[idx]!, { visible: false });
+        // Advance drift; fold the map pan in at a fraction (parallax). Each puff wraps
+        // independently across a span a little larger than the screen so it slides off
+        // one edge and reappears on the other without any grid pattern. Puff size (and
+        // therefore the wrap margin) scales with zoom so the clouds feel pinned at a
+        // fixed altitude over the world rather than to the screen.
+        const m = f.maxSize * sizeScale;
+        const spanX = w + 2 * m;
+        const spanY = h + 2 * m;
+        const phaseX = f.offset[0] + view.x * f.parallax;
+        const phaseY = f.offset[1] + view.y * f.parallax;
+        for (const p of f.puffs) {
+            const x = ((((p.u * spanX + phaseX) % spanX) + spanX) % spanX) - m;
+            const y = ((((p.v * spanY + phaseY) % spanY) + spanY) % spanY) - m;
+            const s = p.size * sizeScale;
+            updateSprite2DIndex(f.layer, p.index, {
+                positionPx: [x, y],
+                sizePx: [s, s],
+                color: [1, 1, 1, p.alpha * vis],
+                visible: true,
+            });
         }
     }
 
@@ -195,8 +277,14 @@ export function createAtmosphere(engine: EngineContext, sr: SpriteRenderer): Atm
             last = now;
             const w = engine.canvas.width || 1;
             const h = engine.canvas.height || 1;
-            placeField(far, view, w, h, dt);
-            placeField(near, view, w, h, dt);
+            // Clouds live at "altitude": visible only on the two zoomed-out rungs
+            // (½ and 1, looking down from high up), fading out as you zoom in past 1
+            // so the camera drops below them. Their size tracks zoom, anchored so
+            // they're full-size at zoom 1 and half that at ½.
+            const vis = Math.max(0, Math.min(1, (CLOUD_FADE_HI - view.zoom) / (CLOUD_FADE_HI - CLOUD_FADE_LO)));
+            const sizeScale = view.zoom / CLOUD_REF_ZOOM;
+            placeField(far, view, w, h, dt, sizeScale, vis);
+            placeField(near, view, w, h, dt, sizeScale, vis);
         },
         dispose(): void {
             removeSpriteRendererLayer(sr, far.layer);

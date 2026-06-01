@@ -5,9 +5,11 @@
  *
  * The shimmer is a procedural caustic *flipbook*: at load we synthesise N frames
  * of a diamond-masked caustic pattern (interfering sine waves whose phase loops
- * cleanly over the N frames) into a single atlas row, then drop one sprite on
- * each ocean tile. Each tile is given its own phase offset — part travelling wave
- * (so ripples sweep across the map), part hash (so neighbours never pulse in
+ * cleanly over the N frames) in several distinct spatial *variants*, baked into a
+ * single atlas grid, then drop one sprite on each ocean tile. Each tile is given
+ * its own spatial variant (by hash, so neighbours never share the same diamond
+ * shimmer → no tiled look) plus its own phase offset — part travelling wave (so
+ * ripples sweep across the map), part hash (so neighbours never pulse in
  * lock-step) — and we only nudge a tile's frame when the global flipbook index
  * actually advances (~12 fps), keeping the per-frame cost to a cheap throttle.
  *
@@ -36,14 +38,16 @@ export interface Water {
 
 /** Caustic flipbook frame count; phase loops cleanly across these. */
 const FRAMES = 24;
-/** Milliseconds each flipbook frame is held (~12 fps shimmer). */
-const FRAME_MS = 80;
+/** Distinct spatial caustic patterns; each ocean tile is assigned one by hash so
+ * neighbours never share the same diamond shimmer (kills the tiled look). */
+const VARIANTS = 6;
+/** Milliseconds each flipbook frame is held (~6 fps — a slow, calm shimmer). */
+const FRAME_MS = 160;
 /** Peak overlay opacity in a caustic crest. */
 const MAX_ALPHA = 0.32;
-
-function smooth(t: number): number {
-    return t * t * (3 - 2 * t);
-}
+/** Size of a "pixel" block (device px). The caustic is sampled once per block and
+ * filled flat, so the shimmer reads as chunky pixel-art sparkle, not smooth blobs. */
+const BLOCK = 3;
 
 /** Cheap deterministic hash of a tile coord → [0,1). */
 function hash2(x: number, y: number): number {
@@ -54,38 +58,65 @@ function hash2(x: number, y: number): number {
 }
 
 /**
- * Render the caustic flipbook into one wide RGBA atlas (`FRAMES` cells of
- * `TILE_W×TILE_H`). Each cell is masked to the iso diamond and fades at its edge
- * so it never bleeds onto neighbouring land.
+ * Render the caustic flipbook into one RGBA atlas grid: `FRAMES` columns (the
+ * animation) × `VARIANTS` rows (distinct spatial patterns). Each cell is masked to
+ * the iso diamond and fades at its edge so it never bleeds onto neighbouring land.
+ * Frame index for (variant, frame) is `variant * FRAMES + frame` (row-major).
+ *
+ * The field is sampled once per `BLOCK×BLOCK` block and the brightness quantised to
+ * a few hard levels, so the shimmer looks like lit pixels twinkling on the water
+ * rather than smooth rounded shapes — matching the chunky tileset's pixel-art feel.
  */
 function makeCausticAtlas(): { data: Uint8Array; width: number; height: number } {
     const w = TILE_W * FRAMES;
-    const h = TILE_H;
+    const h = TILE_H * VARIANTS;
     const data = new Uint8Array(w * h * 4);
-    for (let f = 0; f < FRAMES; f++) {
-        const phase = (f / FRAMES) * Math.PI * 2;
-        for (let j = 0; j < TILE_H; j++) {
-            const v = ((j + 0.5) / TILE_H) * 2 - 1; // [-1,1]
-            for (let i = 0; i < TILE_W; i++) {
-                const u = ((i + 0.5) / TILE_W) * 2 - 1; // [-1,1]
-                // Diamond mask with a soft inner feather (0 at the rim).
-                const m = smooth(Math.max(0, Math.min(1, (1 - (Math.abs(u) + Math.abs(v))) / 0.32)));
-                let c = 0;
-                if (m > 0) {
-                    // Three drifting wave fronts; +phase keeps the loop seamless.
-                    c += Math.sin((u * 3.1 + v * 1.7) * Math.PI + phase);
-                    c += Math.sin((u * -2.3 + v * 2.9) * Math.PI + phase * 1.3 + 1.7);
-                    c += Math.sin((u * 1.3 - v * 3.7) * Math.PI - phase * 0.8 + 4.1);
-                    c /= 3; // [-1,1]
+    for (let vr = 0; vr < VARIANTS; vr++) {
+        // Per-variant spatial offset + phase seed → a different caustic shape.
+        const s = vr * 1.6180339887;
+        const ax = 0.7 * Math.cos(s);
+        const ay = 0.7 * Math.sin(s * 1.3);
+        for (let f = 0; f < FRAMES; f++) {
+            const phase = (f / FRAMES) * Math.PI * 2;
+            // March in BLOCK steps so each block is one flat "pixel".
+            for (let by = 0; by < TILE_H; by += BLOCK) {
+                for (let bx = 0; bx < TILE_W; bx += BLOCK) {
+                    // Sample the field at the block centre.
+                    const cx = Math.min(bx + (BLOCK >> 1), TILE_W - 1);
+                    const cy = Math.min(by + (BLOCK >> 1), TILE_H - 1);
+                    const u = ((cx + 0.5) / TILE_W) * 2 - 1; // [-1,1]
+                    const v = ((cy + 0.5) / TILE_H) * 2 - 1; // [-1,1]
+                    // Hard diamond mask (no feather → stair-stepped pixel edge).
+                    const inDiamond = Math.abs(u) + Math.abs(v) <= 0.96;
+                    let alpha = 0;
+                    if (inDiamond) {
+                        const uu = u + ax;
+                        const vv = v + ay;
+                        // Three drifting wave fronts; +phase keeps the loop seamless,
+                        // +s shifts the pattern so each variant looks different.
+                        let c = 0;
+                        c += Math.sin((uu * 3.1 + vv * 1.7) * Math.PI + phase + s);
+                        c += Math.sin((uu * -2.3 + vv * 2.9) * Math.PI + phase * 1.3 + 1.7 + s * 2);
+                        c += Math.sin((uu * 1.3 - vv * 3.7) * Math.PI - phase * 0.8 + 4.1 + s * 0.5);
+                        c /= 3; // [-1,1]
+                        // Quantise the crest into a couple of hard pixel levels: only the
+                        // brightest crests sparkle, with a faint band just below — keeps the
+                        // water calm and uncluttered rather than a busy field of specks.
+                        if (c > 0.78) alpha = MAX_ALPHA;
+                        else if (c > 0.6) alpha = MAX_ALPHA * 0.4;
+                    }
+                    const a8 = Math.round(alpha * 255);
+                    // Fill the whole block with the flat sampled value.
+                    for (let j = by; j < by + BLOCK && j < TILE_H; j++) {
+                        for (let i = bx; i < bx + BLOCK && i < TILE_W; i++) {
+                            const o = ((vr * TILE_H + j) * w + (f * TILE_W + i)) * 4;
+                            data[o] = 200;
+                            data[o + 1] = 226;
+                            data[o + 2] = 246;
+                            data[o + 3] = a8;
+                        }
+                    }
                 }
-                // Sharpen into bright veins near the crests.
-                const crest = smooth(Math.max(0, Math.min(1, (c - 0.15) / 0.7)));
-                const a = crest * m * MAX_ALPHA;
-                const o = (f * TILE_W + i + j * w) * 4;
-                data[o] = 200;
-                data[o + 1] = 226;
-                data[o + 2] = 246;
-                data[o + 3] = Math.round(a * 255);
             }
         }
     }
@@ -110,12 +141,17 @@ export function createWater(engine: EngineContext, world: GameMap): Water {
     const layer = createSprite2DLayer(atlas, { capacity: tiles.length || 1, order: 0.5 });
     const sprites: number[] = [];
     const phase: number[] = [];
+    const variant: number[] = [];
     for (const { x, y } of tiles) {
         const [px, py] = isoCentre(x, y);
         // Travelling wave across the map + per-tile jitter so it never marches in step.
-        const p = Math.round((x * 0.7 + y * 0.4) + hash2(x, y) * FRAMES) % FRAMES;
+        const p = Math.round(x * 0.7 + y * 0.4 + hash2(x, y) * FRAMES) % FRAMES;
+        // Distinct spatial pattern per tile so the sea never looks like one repeated
+        // diamond. Mix two hashes so neighbours rarely pick the same variant.
+        const vr = Math.floor(hash2(x * 3 + 1, y * 5 + 2) * VARIANTS) % VARIANTS;
         phase.push(p);
-        sprites.push(addSprite2DIndex(layer, { positionPx: [px, py], sizePx: [TILE_W, TILE_H], frame: p }));
+        variant.push(vr);
+        sprites.push(addSprite2DIndex(layer, { positionPx: [px, py], sizePx: [TILE_W, TILE_H], frame: vr * FRAMES + p }));
     }
 
     let lastIndex = -1;
@@ -126,7 +162,7 @@ export function createWater(engine: EngineContext, world: GameMap): Water {
             if (index === lastIndex) return; // throttle to the flipbook rate
             lastIndex = index;
             for (let i = 0; i < sprites.length; i++) {
-                updateSprite2DIndex(layer, sprites[i]!, { frame: (index + phase[i]!) % FRAMES });
+                updateSprite2DIndex(layer, sprites[i]!, { frame: variant[i]! * FRAMES + ((index + phase[i]!) % FRAMES) });
             }
         },
     };

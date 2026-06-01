@@ -6,12 +6,15 @@
  * Both pieces live in *world* space (the same pixel coordinates the tiles use),
  * so they pan and zoom with the map: the demo's `applyView` drives their layer
  * view exactly as it does the terrain layers. They never animate, so there is no
- * per-frame work — just two static sprites placed once at build.
+ * per-frame work — just three static sprites placed once at build.
  *
- * Layer order (back → front): parchment (-40) → … clouds … → sea halo (-5) →
- * ocean tiles (0). The parchment is darkened via a multiply tint so the colourful
- * tiles stay legible on top; the sea halo is a feathered radial that fades from
- * watery blue at the map to transparent at its rim.
+ * Layer order (back → front): parchment (-40) → wash (-39) → … clouds … → sea
+ * halo (-5) → ocean tiles (0). The parchment is darkened via a multiply tint, then
+ * a flat translucent wash is laid over it: the Mercator's *recognisable* real-world
+ * coastlines read as "a photo of a real map slid behind the game", which fights the
+ * fantasy island. The wash collapses its contrast so it abstracts into aged-paper
+ * texture rather than legible geography. The sea halo is a feathered radial that
+ * fades from watery blue at the map to transparent at its rim.
  */
 
 import {
@@ -32,7 +35,11 @@ export interface Backdrop {
 }
 
 /** Multiply tint that darkens + warms the parchment so tiles read clearly over it. */
-const PARCHMENT_TINT: [number, number, number, number] = [0.62, 0.56, 0.46, 1];
+const PARCHMENT_TINT: [number, number, number, number] = [0.5, 0.45, 0.38, 1];
+/** Flat warm-paper colour laid over the Mercator to mute its contrast. */
+const WASH_RGB: [number, number, number] = [120, 106, 86];
+/** How opaque the wash is — higher = more abstract, less legible coastline. */
+const WASH_ALPHA = 0.55;
 /** How far the parchment extends past the map bounds (covers the void when zoomed out). */
 const PARCHMENT_COVER = 2.6;
 /** How far the sea halo bleeds past the map edge. */
@@ -105,6 +112,26 @@ export async function createBackdrop(engine: EngineContext, world: GameMap, merc
         color: PARCHMENT_TINT,
     });
 
+    // ── Contrast wash (flat paper over the Mercator) ────────────────────────
+    // A solid warm-paper rectangle at partial alpha blended over the map collapses
+    // its light/dark range, so the recognisable real coastlines stop reading as a
+    // specific place and the backdrop abstracts into aged-paper texture.
+    const washPx = new Uint8Array(4 * 4 * 4);
+    for (let i = 0; i < 16; i++) {
+        washPx[i * 4] = WASH_RGB[0];
+        washPx[i * 4 + 1] = WASH_RGB[1];
+        washPx[i * 4 + 2] = WASH_RGB[2];
+        washPx[i * 4 + 3] = 255;
+    }
+    const washTex = createTexture2DFromPixels(engine, washPx, 4, 4);
+    const washAtlas = createGridSpriteAtlas(washTex, { cellWidthPx: 4, cellHeightPx: 4, pivot: [0.5, 0.5] });
+    const washLayer = createSprite2DLayer(washAtlas, { capacity: 1, order: -39, pivot: [0.5, 0.5] });
+    addSprite2DIndex(washLayer, {
+        positionPx: [b.cx, b.cy],
+        sizePx: [b.w * PARCHMENT_COVER, b.h * PARCHMENT_COVER],
+        color: [1, 1, 1, WASH_ALPHA],
+    });
+
     // ── Sea halo (just under the ocean tiles) ───────────────────────────────
     const haloTex = createTexture2DFromPixels(engine, makeSeaHalo(128), 128, 128);
     const haloAtlas = createGridSpriteAtlas(haloTex, { cellWidthPx: 128, cellHeightPx: 128, pivot: [0.5, 0.5] });
@@ -114,5 +141,5 @@ export async function createBackdrop(engine: EngineContext, world: GameMap, merc
         sizePx: [b.w * SEA_COVER, b.h * SEA_COVER],
     });
 
-    return { layers: [parchLayer, haloLayer] };
+    return { layers: [parchLayer, washLayer, haloLayer] };
 }
