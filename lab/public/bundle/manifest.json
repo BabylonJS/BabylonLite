@@ -475,11 +475,11 @@
   },
   "scene27": {
     "rawKB": 73.4,
-    "gzipKB": 29.4,
+    "gzipKB": 29.5,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene27-generate-mipmaps-DYy_RjB2.js",
-      "scene27-gltf-ext-dielectric-fB9ecuBG.js",
+      "scene27-gltf-ext-dielectric-d1hLer-K.js",
       "scene27-gltf-feature-variants-Db9CWz8z.js",
       "scene27-gltf-glb-parser-BdYiApo0.js",
       "scene27-gltf-pbr-builder-ext-Dn4nQG9B.js",
@@ -533,13 +533,13 @@
     "bjsGzipKB": 672
   },
   "scene30": {
-    "rawKB": 93.9,
+    "rawKB": 94,
     "gzipKB": 37.9,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene30-alpha-test-fragment-CYYy-p8Y.js",
       "scene30-generate-mipmaps-C_kZEx8C.js",
-      "scene30-gltf-ext-dielectric-fB9ecuBG.js",
+      "scene30-gltf-ext-dielectric-d1hLer-K.js",
       "scene30-gltf-ext-uv-transform-DQN5DAiE.js",
       "scene30-gltf-feature-draco-Dp1Q_d-R.js",
       "scene30-gltf-glb-parser-BdYiApo0.js",
@@ -600,7 +600,7 @@
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene33-generate-mipmaps-tahNs0PW.js",
-      "scene33-gltf-ext-dielectric-fB9ecuBG.js",
+      "scene33-gltf-ext-dielectric-d1hLer-K.js",
       "scene33-gltf-feature-lights-punctual-Bje_v2lN.js",
       "scene33-gltf-glb-parser-BdYiApo0.js",
       "scene33-ibl-fragment-BfgmykuX.js",
@@ -676,7 +676,7 @@
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene37-generate-mipmaps-DhfusDDo.js",
-      "scene37-gltf-ext-dielectric-fB9ecuBG.js",
+      "scene37-gltf-ext-dielectric-d1hLer-K.js",
       "scene37-gltf-ext-sheen-Cje8BD0o.js",
       "scene37-gltf-ext-uv-transform-hVTzf5Q9.js",
       "scene37-gltf-glb-parser-BdYiApo0.js",
@@ -1654,7 +1654,7 @@
   },
   "scene112": {
     "rawKB": 109.8,
-    "gzipKB": 43.4,
+    "gzipKB": 43.5,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene112-background-dds-skybox-Bbwg9yD_.js",
@@ -1662,7 +1662,7 @@
       "scene112-cubemap-skybox-material-ca0A3rde.js",
       "scene112-generate-mipmaps-ZT5CXwKk.js",
       "scene112-gltf-ext-basisu-C8bKyNng.js",
-      "scene112-gltf-ext-dielectric-fB9ecuBG.js",
+      "scene112-gltf-ext-dielectric-d1hLer-K.js",
       "scene112-ibl-fragment-BfgmykuX.js",
       "scene112-pbr-refraction-eNH5ehi8.js",
       "scene112-pbr-renderable-cM94UL_D.js",
@@ -2251,5 +2251,23 @@
     ],
     "bjsRawKB": 3064.1,
     "bjsGzipKB": 785.3
+  },
+  "scene176": {
+    "rawKB": 92.9,
+    "gzipKB": 36.3,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene176-generate-mipmaps-BEjOyRsy.js",
+      "scene176-gltf-ext-dielectric-d1hLer-K.js",
+      "scene176-ibl-fragment-BfgmykuX.js",
+      "scene176-ibl-skybox-wgsl-CqiGRVBe.js",
+      "scene176-pbr-refraction-CXMiELwK.js",
+      "scene176-pbr-renderable-C5mP_YFq.js",
+      "scene176-pbr-transmission-ext-WWsFlUc5.js",
+      "scene176-reflectance-fragment-8AL1a6iG.js",
+      "scene176-rgbd-decode-O-q0NvD4.js",
+      "scene176-scene-uniforms-FTYH6Ct0.js",
+      "scene176.js"
+    ]
   }
 }

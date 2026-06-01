@@ -116,6 +116,13 @@ const ext: GltfFeature = {
                     ...(color ? { color } : undefined),
                     ...(atDistance !== undefined ? { atDistance } : undefined),
                 };
+            } else if (subsurface.thickness) {
+                // KHR_materials_volume without attenuation: spec defaults to white at
+                // infinite distance (no absorption), but the thickness is a real local
+                // depth that must engage the volume path so it is world-scaled (else it
+                // overshoots on non-unit-scaled models, e.g. MosquitoInAmber). White tint
+                // gives volumeParams = log(1)/dist = 0 → ab = exp(0) = 1 (no tint).
+                subsurface.tint = { color: [1, 1, 1], atDistance: 1 };
             }
         }
 

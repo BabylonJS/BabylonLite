@@ -22,5 +22,9 @@
   "freeciv": {
     "rawKB": 50.7,
     "gzipKB": 19.9
+  },
+  "mosquito-amber": {
+    "rawKB": 95.1,
+    "gzipKB": 37.4
   }
 }

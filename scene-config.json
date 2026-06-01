@@ -1224,5 +1224,16 @@
         "tags": ["navigation", "recast", "wasm", "raycast"],
         "skipPerf": true,
         "bundleTimeoutMs": 120000
+    },
+    {
+        "id": 176,
+        "slug": "scene176-mosquito-amber",
+        "name": "Scene 176 - MosquitoInAmber",
+        "maxMad": 3.6,
+        "maxRawKB": 95,
+        "description": "KhronosGroup MosquitoInAmber.gltf (KHR_materials_transmission + ior + volume) against the studio.env HDR environment used as IBL and a blurred HDR skybox, with frame-graph scene-texture transmission.",
+        "tags": ["pbr", "gltf", "env", "transmission", "volume", "skybox"],
+        "skipPerf": true,
+        "bundleTimeoutMs": 120000
     }
 ]
