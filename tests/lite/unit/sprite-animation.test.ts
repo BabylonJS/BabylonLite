@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createAnimationManager, updateAnimationManager } from "../../packages/babylon-lite/src/animation/animation-manager";
-import type { EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
-import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
-import type { SpriteAtlas } from "../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
-import { addBillboardSpriteIndex, createFacingBillboardSystem, removeBillboardSpriteIndex } from "../../packages/babylon-lite/src/sprite/billboard-sprite";
-import { addBillboardSprite, isBillboardSpriteHandleAlive } from "../../packages/babylon-lite/src/sprite/billboard-sprite-handle";
-import { playBillboardSpriteAnimation } from "../../packages/babylon-lite/src/sprite/billboard-sprite-handle-animation";
-import { playBillboardSpriteIndexAnimation } from "../../packages/babylon-lite/src/sprite/billboard-sprite-index-animation";
+import { createAnimationManager, updateAnimationManager } from "../../../packages/babylon-lite/src/animation/animation-manager";
+import type { EngineContextInternal } from "../../../packages/babylon-lite/src/engine/engine";
+import type { SceneContextInternal } from "../../../packages/babylon-lite/src/scene/scene-core";
+import type { SpriteAtlas } from "../../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
+import { addBillboardSpriteIndex, createFacingBillboardSystem, removeBillboardSpriteIndex } from "../../../packages/babylon-lite/src/sprite/billboard-sprite";
+import { addBillboardSprite, isBillboardSpriteHandleAlive } from "../../../packages/babylon-lite/src/sprite/billboard-sprite-handle";
+import { playBillboardSpriteAnimation } from "../../../packages/babylon-lite/src/sprite/billboard-sprite-handle-animation";
+import { playBillboardSpriteIndexAnimation } from "../../../packages/babylon-lite/src/sprite/billboard-sprite-index-animation";
 import {
     addSpriteAnimation,
     attachSpriteAnimationsToRenderer,
@@ -20,20 +20,20 @@ import {
     removeSpriteAnimation,
     stopSpriteAnimation,
     updateSpriteAnimationManager,
-} from "../../packages/babylon-lite/src/sprite/sprite-animation";
+} from "../../../packages/babylon-lite/src/sprite/sprite-animation";
 import {
     addSpriteAnimationManager,
     removeSpriteAnimationManager,
     startSpriteAnimationManager,
     stopSpriteAnimationManager,
-} from "../../packages/babylon-lite/src/sprite/sprite-animation-task";
-import type { SpriteFrameAnimation } from "../../packages/babylon-lite/src/sprite/sprite-animation";
-import { addSprite2DIndex, createSprite2DLayer, removeSprite2DIndex, setSprite2DFrameIndex } from "../../packages/babylon-lite/src/sprite/sprite-2d";
-import { addSprite2D, getSprite2DHandleIndex, isSprite2DHandleAlive } from "../../packages/babylon-lite/src/sprite/sprite-2d-handle";
-import { playSprite2DAnimation } from "../../packages/babylon-lite/src/sprite/sprite-2d-handle-animation";
-import { playSprite2DIndexAnimation } from "../../packages/babylon-lite/src/sprite/sprite-2d-index-animation";
-import type { SpriteRenderer } from "../../packages/babylon-lite/src/sprite/sprite-renderer";
-import type { Texture2D } from "../../packages/babylon-lite/src/texture/texture-2d";
+} from "../../../packages/babylon-lite/src/sprite/sprite-animation-task";
+import type { SpriteFrameAnimation } from "../../../packages/babylon-lite/src/sprite/sprite-animation";
+import { addSprite2DIndex, createSprite2DLayer, removeSprite2DIndex, setSprite2DFrameIndex } from "../../../packages/babylon-lite/src/sprite/sprite-2d";
+import { addSprite2D, getSprite2DHandleIndex, isSprite2DHandleAlive } from "../../../packages/babylon-lite/src/sprite/sprite-2d-handle";
+import { playSprite2DAnimation } from "../../../packages/babylon-lite/src/sprite/sprite-2d-handle-animation";
+import { playSprite2DIndexAnimation } from "../../../packages/babylon-lite/src/sprite/sprite-2d-index-animation";
+import type { SpriteRenderer } from "../../../packages/babylon-lite/src/sprite/sprite-renderer";
+import type { Texture2D } from "../../../packages/babylon-lite/src/texture/texture-2d";
 
 type SpriteAnimationTestRenderer = SpriteRenderer & {
     _beforeUpdate: Array<(deltaMs: number) => void>;

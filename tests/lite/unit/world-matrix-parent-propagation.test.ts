@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
-import { createSceneNode } from "../../packages/babylon-lite/src/scene/scene-node";
-import { createFreeCamera } from "../../packages/babylon-lite/src/camera/free-camera";
+import { createSceneNode } from "../../../packages/babylon-lite/src/scene/scene-node";
+import { createFreeCamera } from "../../../packages/babylon-lite/src/camera/free-camera";
 
 describe("world matrix parent propagation", () => {
     it("bumps a child's worldMatrixVersion when an ancestor's transform changes", () => {

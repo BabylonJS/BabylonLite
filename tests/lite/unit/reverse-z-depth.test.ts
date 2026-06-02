@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { createRenderTarget, targetSignatureKey } from "../../packages/babylon-lite/src/engine/render-target";
-import { createRenderPass, setRenderPassRenderTarget } from "../../packages/babylon-lite/src/frame-graph/render-pass";
-import type { Task } from "../../packages/babylon-lite/src/frame-graph/task";
-import { mat4PerspectiveLH } from "../../packages/babylon-lite/src/math/mat4-perspective-lh";
-import { createPickingRay } from "../../packages/babylon-lite/src/picking/ray";
+import { createRenderTarget, targetSignatureKey } from "../../../packages/babylon-lite/src/engine/render-target";
+import { createRenderPass, setRenderPassRenderTarget } from "../../../packages/babylon-lite/src/frame-graph/render-pass";
+import type { Task } from "../../../packages/babylon-lite/src/frame-graph/task";
+import { mat4PerspectiveLH } from "../../../packages/babylon-lite/src/math/mat4-perspective-lh";
+import { createPickingRay } from "../../../packages/babylon-lite/src/picking/ray";
 
 function projectDepth(matrix: Float32Array, z: number): number {
     const clipZ = matrix[10]! * z + matrix[14]!;

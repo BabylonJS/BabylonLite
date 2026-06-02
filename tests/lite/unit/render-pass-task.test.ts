@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest";
 
-import type { Camera } from "../../packages/babylon-lite/src/camera/camera";
-import type { EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
-import type { Mat4 } from "../../packages/babylon-lite/src/math/types";
-import type { DrawBinding, DrawUpdateContext, Renderable } from "../../packages/babylon-lite/src/render/renderable";
-import { createSceneContext, registerScene } from "../../packages/babylon-lite/src/scene/scene";
-import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
-import { createRenderTarget } from "../../packages/babylon-lite/src/engine/render-target";
-import { createRenderTask } from "../../packages/babylon-lite/src/frame-graph/render-task";
-import { enableRenderTaskTransmission, enableSceneTransmission } from "../../packages/babylon-lite/src/frame-graph/transmission";
+import type { Camera } from "../../../packages/babylon-lite/src/camera/camera";
+import type { EngineContextInternal } from "../../../packages/babylon-lite/src/engine/engine";
+import type { Mat4 } from "../../../packages/babylon-lite/src/math/types";
+import type { DrawBinding, DrawUpdateContext, Renderable } from "../../../packages/babylon-lite/src/render/renderable";
+import { createSceneContext, registerScene } from "../../../packages/babylon-lite/src/scene/scene";
+import type { SceneContextInternal } from "../../../packages/babylon-lite/src/scene/scene-core";
+import { createRenderTarget } from "../../../packages/babylon-lite/src/engine/render-target";
+import { createRenderTask } from "../../../packages/babylon-lite/src/frame-graph/render-task";
+import { enableRenderTaskTransmission, enableSceneTransmission } from "../../../packages/babylon-lite/src/frame-graph/transmission";
 
 const gpuGlobals = globalThis as typeof globalThis & {
     GPUBufferUsage?: { UNIFORM: number; COPY_DST: number };

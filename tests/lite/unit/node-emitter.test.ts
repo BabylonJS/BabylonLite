@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { parseNodeMaterialSource, findBlockByClassName } from "../../packages/babylon-lite/src/material/node/node-parser";
-import { emitGraph, loadGraphEmitters } from "../../packages/babylon-lite/src/material/node/node-emitter";
+import { parseNodeMaterialSource, findBlockByClassName } from "../../../packages/babylon-lite/src/material/node/node-parser";
+import { emitGraph, loadGraphEmitters } from "../../../packages/babylon-lite/src/material/node/node-emitter";
 
 // End-to-end fixture: an `alpha` uniform + `uv` attribute go through a VectorMerger
 // to produce vec4(uv.x, uv.y, 0, alpha) which is written to the fragment output.

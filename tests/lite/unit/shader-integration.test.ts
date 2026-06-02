@@ -3,21 +3,21 @@
  * and verify the output is structurally valid.
  */
 import { describe, it, expect } from "vitest";
-import { composeShader } from "../../packages/babylon-lite/src/shader/shader-composer";
-import type { ShaderFragment } from "../../packages/babylon-lite/src/shader/fragment-types";
-import { createPbrTemplate } from "../../packages/babylon-lite/src/material/pbr/pbr-template";
-import { createStandardTemplate } from "../../packages/babylon-lite/src/material/standard/standard-template";
-import { createEmissiveColorFragment } from "../../packages/babylon-lite/src/material/pbr/fragments/emissive-fragment";
-import { createClearcoatFragment } from "../../packages/babylon-lite/src/material/pbr/fragments/clearcoat-fragment";
-import { PBR_HAS_CLEARCOAT } from "../../packages/babylon-lite/src/material/pbr/pbr-flags";
-import { createSheenFragment } from "../../packages/babylon-lite/src/material/pbr/fragments/sheen-fragment";
-import { createIblFragment } from "../../packages/babylon-lite/src/material/pbr/fragments/ibl-fragment";
-import { createSkeletonFragment } from "../../packages/babylon-lite/src/material/pbr/fragments/skeleton-fragment";
-import { createMorphFragment } from "../../packages/babylon-lite/src/material/pbr/fragments/morph-fragment";
-import { createThinInstanceFragment } from "../../packages/babylon-lite/src/shader/fragments/thin-instance-fragment";
-import { createPbrShadowFragment } from "../../packages/babylon-lite/src/material/pbr/fragments/pbr-shadow-fragment";
-import { createNormalMapFragment } from "../../packages/babylon-lite/src/material/standard/fragments/normal-map-fragment";
-import type { PbrTemplateConfig } from "../../packages/babylon-lite/src/material/pbr/pbr-template";
+import { composeShader } from "../../../packages/babylon-lite/src/shader/shader-composer";
+import type { ShaderFragment } from "../../../packages/babylon-lite/src/shader/fragment-types";
+import { createPbrTemplate } from "../../../packages/babylon-lite/src/material/pbr/pbr-template";
+import { createStandardTemplate } from "../../../packages/babylon-lite/src/material/standard/standard-template";
+import { createEmissiveColorFragment } from "../../../packages/babylon-lite/src/material/pbr/fragments/emissive-fragment";
+import { createClearcoatFragment } from "../../../packages/babylon-lite/src/material/pbr/fragments/clearcoat-fragment";
+import { PBR_HAS_CLEARCOAT } from "../../../packages/babylon-lite/src/material/pbr/pbr-flags";
+import { createSheenFragment } from "../../../packages/babylon-lite/src/material/pbr/fragments/sheen-fragment";
+import { createIblFragment } from "../../../packages/babylon-lite/src/material/pbr/fragments/ibl-fragment";
+import { createSkeletonFragment } from "../../../packages/babylon-lite/src/material/pbr/fragments/skeleton-fragment";
+import { createMorphFragment } from "../../../packages/babylon-lite/src/material/pbr/fragments/morph-fragment";
+import { createThinInstanceFragment } from "../../../packages/babylon-lite/src/shader/fragments/thin-instance-fragment";
+import { createPbrShadowFragment } from "../../../packages/babylon-lite/src/material/pbr/fragments/pbr-shadow-fragment";
+import { createNormalMapFragment } from "../../../packages/babylon-lite/src/material/standard/fragments/normal-map-fragment";
+import type { PbrTemplateConfig } from "../../../packages/babylon-lite/src/material/pbr/pbr-template";
 
 const defaultPbrConfig: PbrTemplateConfig = {
     _normalMode: "none",

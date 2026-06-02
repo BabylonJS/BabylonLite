@@ -25,7 +25,7 @@ import {
     addSprite2DIndex,
     clearSprite2DLayer,
     createSprite2DLayer,
-} from "../../packages/babylon-lite/src/sprite/sprite-2d";
+} from "../../../packages/babylon-lite/src/sprite/sprite-2d";
 import {
     createSpriteRenderer,
     addSpriteRendererLayer,
@@ -34,11 +34,11 @@ import {
     unregisterSpriteRenderer,
     disposeSpriteRenderer,
     _spriteRendererPipelineCacheSize,
-} from "../../packages/babylon-lite/src/sprite/sprite-renderer";
-import { createSpritePipelineCache, getOrCreateSpritePipeline } from "../../packages/babylon-lite/src/sprite/sprite-pipeline";
-import type { SpriteAtlas } from "../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
-import type { Texture2D } from "../../packages/babylon-lite/src/texture/texture-2d";
-import type { EngineContext, EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
+} from "../../../packages/babylon-lite/src/sprite/sprite-renderer";
+import { createSpritePipelineCache, getOrCreateSpritePipeline } from "../../../packages/babylon-lite/src/sprite/sprite-pipeline";
+import type { SpriteAtlas } from "../../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
+import type { Texture2D } from "../../../packages/babylon-lite/src/texture/texture-2d";
+import type { EngineContext, EngineContextInternal } from "../../../packages/babylon-lite/src/engine/engine";
 
 // ── Mock GPU device ───────────────────────────────────────────────
 

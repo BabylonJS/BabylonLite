@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { computeUboLayout } from "../../packages/babylon-lite/src/shader/ubo-layout";
-import { composeShader } from "../../packages/babylon-lite/src/shader/shader-composer";
-import type { ShaderFragment, ShaderTemplate, UboField } from "../../packages/babylon-lite/src/shader/fragment-types";
+import { computeUboLayout } from "../../../packages/babylon-lite/src/shader/ubo-layout";
+import { composeShader } from "../../../packages/babylon-lite/src/shader/shader-composer";
+import type { ShaderFragment, ShaderTemplate, UboField } from "../../../packages/babylon-lite/src/shader/fragment-types";
 
 // WebGPU shader stage constants for testing (Node has no GPUShaderStage global)
 const _VERTEX = 0x1;

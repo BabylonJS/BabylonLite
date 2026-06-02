@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { parseNodeMaterialSource, findBlockByClassName } from "../../packages/babylon-lite/src/material/node/node-parser";
-import { emitGraph, loadGraphEmitters } from "../../packages/babylon-lite/src/material/node/node-emitter";
+import { parseNodeMaterialSource, findBlockByClassName } from "../../../packages/babylon-lite/src/material/node/node-parser";
+import { emitGraph, loadGraphEmitters } from "../../../packages/babylon-lite/src/material/node/node-emitter";
 
 describe("NME texture / utility blocks", () => {
     it("TextureBlock emits textureSample with binding named after source ImageSourceBlock", async () => {

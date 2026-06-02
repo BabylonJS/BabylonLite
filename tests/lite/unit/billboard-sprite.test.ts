@@ -16,17 +16,17 @@ import {
     removeBillboardSpriteIndex,
     setBillboardSpriteFrameIndex,
     updateBillboardSpriteIndex,
-} from "../../packages/babylon-lite/src/sprite/billboard-sprite";
-import { addFacingBillboardSystem, addAxisLockedBillboardSystem } from "../../packages/babylon-lite/src/sprite/billboard-scene";
-import { BILLBOARD_SYSTEM_UBO_BYTES } from "../../packages/babylon-lite/src/sprite/billboard-pipeline";
-import { createSceneContext, disposeScene } from "../../packages/babylon-lite/src/scene/scene";
-import { registerScene } from "../../packages/babylon-lite/src/scene/scene-core";
-import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
-import type { Mat4 } from "../../packages/babylon-lite/src/math/types";
-import type { Camera } from "../../packages/babylon-lite/src/camera/camera";
-import type { SpriteAtlas } from "../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
-import type { Texture2D } from "../../packages/babylon-lite/src/texture/texture-2d";
-import type { EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
+} from "../../../packages/babylon-lite/src/sprite/billboard-sprite";
+import { addFacingBillboardSystem, addAxisLockedBillboardSystem } from "../../../packages/babylon-lite/src/sprite/billboard-scene";
+import { BILLBOARD_SYSTEM_UBO_BYTES } from "../../../packages/babylon-lite/src/sprite/billboard-pipeline";
+import { createSceneContext, disposeScene } from "../../../packages/babylon-lite/src/scene/scene";
+import { registerScene } from "../../../packages/babylon-lite/src/scene/scene-core";
+import type { SceneContextInternal } from "../../../packages/babylon-lite/src/scene/scene-core";
+import type { Mat4 } from "../../../packages/babylon-lite/src/math/types";
+import type { Camera } from "../../../packages/babylon-lite/src/camera/camera";
+import type { SpriteAtlas } from "../../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
+import type { Texture2D } from "../../../packages/babylon-lite/src/texture/texture-2d";
+import type { EngineContextInternal } from "../../../packages/babylon-lite/src/engine/engine";
 
 interface MockBuffer {
     destroy: ReturnType<typeof vi.fn>;

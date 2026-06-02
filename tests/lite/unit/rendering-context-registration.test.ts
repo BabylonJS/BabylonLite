@@ -7,11 +7,11 @@ import {
     type EngineContext,
     type EngineContextInternal,
     type RenderingContext,
-} from "../../packages/babylon-lite/src/engine/engine";
-import { addTaskAtStart } from "../../packages/babylon-lite/src/frame-graph/frame-graph-actions";
-import type { Task } from "../../packages/babylon-lite/src/frame-graph/task";
-import { createSceneContext, disposeScene, registerScene, unregisterScene } from "../../packages/babylon-lite/src/scene/scene";
-import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
+} from "../../../packages/babylon-lite/src/engine/engine";
+import { addTaskAtStart } from "../../../packages/babylon-lite/src/frame-graph/frame-graph-actions";
+import type { Task } from "../../../packages/babylon-lite/src/frame-graph/task";
+import { createSceneContext, disposeScene, registerScene, unregisterScene } from "../../../packages/babylon-lite/src/scene/scene";
+import type { SceneContextInternal } from "../../../packages/babylon-lite/src/scene/scene-core";
 
 const gpuGlobals = globalThis as typeof globalThis & {
     GPUShaderStage?: { VERTEX: number; FRAGMENT: number };

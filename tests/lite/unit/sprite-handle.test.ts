@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { BillboardSpriteSystem } from "../../packages/babylon-lite/src/sprite/billboard-sprite";
-import { addBillboardSpriteIndex, clearBillboardSprites, createFacingBillboardSystem, removeBillboardSpriteIndex } from "../../packages/babylon-lite/src/sprite/billboard-sprite";
+import type { BillboardSpriteSystem } from "../../../packages/babylon-lite/src/sprite/billboard-sprite";
+import { addBillboardSpriteIndex, clearBillboardSprites, createFacingBillboardSystem, removeBillboardSpriteIndex } from "../../../packages/babylon-lite/src/sprite/billboard-sprite";
 import {
     addBillboardSprite,
     getBillboardSpriteHandleIndex,
@@ -9,10 +9,10 @@ import {
     removeBillboardSprite,
     setBillboardSpriteFrame,
     updateBillboardSprite,
-} from "../../packages/babylon-lite/src/sprite/billboard-sprite-handle";
-import type { SpriteAtlas } from "../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
-import type { Sprite2DLayer } from "../../packages/babylon-lite/src/sprite/sprite-2d";
-import { addSprite2DIndex, clearSprite2DLayer, createSprite2DLayer, removeSprite2DIndex } from "../../packages/babylon-lite/src/sprite/sprite-2d";
+} from "../../../packages/babylon-lite/src/sprite/billboard-sprite-handle";
+import type { SpriteAtlas } from "../../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
+import type { Sprite2DLayer } from "../../../packages/babylon-lite/src/sprite/sprite-2d";
+import { addSprite2DIndex, clearSprite2DLayer, createSprite2DLayer, removeSprite2DIndex } from "../../../packages/babylon-lite/src/sprite/sprite-2d";
 import {
     addSprite2D,
     getSprite2DHandleIndex,
@@ -20,8 +20,8 @@ import {
     removeSprite2D,
     setSprite2DFrame,
     updateSprite2D,
-} from "../../packages/babylon-lite/src/sprite/sprite-2d-handle";
-import type { Texture2D } from "../../packages/babylon-lite/src/texture/texture-2d";
+} from "../../../packages/babylon-lite/src/sprite/sprite-2d-handle";
+import type { Texture2D } from "../../../packages/babylon-lite/src/texture/texture-2d";
 
 interface WithOptionalHandleState {
     readonly _handleHooks?: unknown;

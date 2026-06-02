@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { parseNodeMaterialSource, findBlockByClassName } from "../../packages/babylon-lite/src/material/node/node-parser";
-import { emitGraph, loadGraphEmitters } from "../../packages/babylon-lite/src/material/node/node-emitter";
+import { parseNodeMaterialSource, findBlockByClassName } from "../../../packages/babylon-lite/src/material/node/node-parser";
+import { emitGraph, loadGraphEmitters } from "../../../packages/babylon-lite/src/material/node/node-emitter";
 
 async function compile(source: any, vertex = false, meshCaps?: { hasSkeleton?: boolean; hasInstances?: boolean }) {
     const graph = parseNodeMaterialSource(source);

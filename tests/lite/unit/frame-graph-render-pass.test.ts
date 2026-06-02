@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { createRenderTarget } from "../../packages/babylon-lite/src/engine/render-target";
-import { createRenderPass, setRenderPassRenderTarget, setRenderPassRenderTargetDepth } from "../../packages/babylon-lite/src/frame-graph/render-pass";
-import type { Task } from "../../packages/babylon-lite/src/frame-graph/task";
+import { createRenderTarget } from "../../../packages/babylon-lite/src/engine/render-target";
+import { createRenderPass, setRenderPassRenderTarget, setRenderPassRenderTargetDepth } from "../../../packages/babylon-lite/src/frame-graph/render-pass";
+import type { Task } from "../../../packages/babylon-lite/src/frame-graph/task";
 
 function makeTask(): Task {
     return {

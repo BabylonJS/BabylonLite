@@ -8,7 +8,7 @@ import {
     startAnimationManager,
     stopAnimationManager,
     updateAnimationManager,
-} from "../../packages/babylon-lite/src/animation/animation-manager";
+} from "../../../packages/babylon-lite/src/animation/animation-manager";
 
 describe("AnimationManager", () => {
     it("updates generic animation tasks and removes tasks explicitly", () => {

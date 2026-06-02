@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import { resolve } from "path";
 import { afterEach, describe, expect, it } from "vitest";
 
-const ROOT = resolve(__dirname, "../..");
+const ROOT = resolve(__dirname, "../../..");
 const SCRIPT = resolve(ROOT, "scripts/report-bundle-size-deltas.ts");
 const TSX = resolve(ROOT, "node_modules/tsx/dist/cli.mjs");
 

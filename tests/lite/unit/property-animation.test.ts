@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createAnimationManager, startAnimationManager, stopAnimationManager, updateAnimationManager } from "../../packages/babylon-lite/src/animation/animation-manager";
-import { goToFrame } from "../../packages/babylon-lite/src/animation/animation-group";
-import { setAnimationWeight } from "../../packages/babylon-lite/src/animation/animation-weight";
-import { crossFadeAnimationGroups, enablePropertyAnimationBlending } from "../../packages/babylon-lite/src/animation/weighted-pointer-mixer";
-import { createPropertyAnimationClip, createPropertyAnimationGroup } from "../../packages/babylon-lite/src/animation/property-animation";
+import { createAnimationManager, startAnimationManager, stopAnimationManager, updateAnimationManager } from "../../../packages/babylon-lite/src/animation/animation-manager";
+import { goToFrame } from "../../../packages/babylon-lite/src/animation/animation-group";
+import { setAnimationWeight } from "../../../packages/babylon-lite/src/animation/animation-weight";
+import { crossFadeAnimationGroups, enablePropertyAnimationBlending } from "../../../packages/babylon-lite/src/animation/weighted-pointer-mixer";
+import { createPropertyAnimationClip, createPropertyAnimationGroup } from "../../../packages/babylon-lite/src/animation/property-animation";
 
 describe("Property animation", () => {
     it("updates a Babylon-style position.x frame animation without a scene or engine", () => {

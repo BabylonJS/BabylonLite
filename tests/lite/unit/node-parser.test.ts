@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseNodeMaterialSource, topoSort, findBlockByClassName } from "../../packages/babylon-lite/src/material/node/node-parser";
+import { parseNodeMaterialSource, topoSort, findBlockByClassName } from "../../../packages/babylon-lite/src/material/node/node-parser";
 
 // Minimal fixture: UV attribute -> VectorMerger -> FragmentOutput
 // uv attribute (xy) is combined with an input (z=0, w=1) and written out.

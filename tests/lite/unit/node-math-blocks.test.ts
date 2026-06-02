@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { parseNodeMaterialSource, findBlockByClassName } from "../../packages/babylon-lite/src/material/node/node-parser";
-import { emitGraph, loadGraphEmitters } from "../../packages/babylon-lite/src/material/node/node-emitter";
+import { parseNodeMaterialSource, findBlockByClassName } from "../../../packages/babylon-lite/src/material/node/node-parser";
+import { emitGraph, loadGraphEmitters } from "../../../packages/babylon-lite/src/material/node/node-emitter";
 
 /** Build a simple graph: InputBlock(value, mode=0) -> block(op) -> FragmentOutput.rgb */
 function makeUnaryGraph(blockType: string, inputType = 0x8 /* Vec3 */, extra: Record<string, unknown> = {}) {

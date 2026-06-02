@@ -20,15 +20,15 @@ G.GPUShaderStage ??= { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 };
 G.GPUColorWrite ??= { ALL: 0xf };
 G.GPUTextureUsage ??= { RENDER_ATTACHMENT: 16, TEXTURE_BINDING: 4 };
 
-import { DEPTH_INSTANCE_STRIDE_BYTES, addSprite2DIndex, createSprite2DLayer } from "../../packages/babylon-lite/src/sprite/sprite-2d";
-import { addDepthHostedSpriteLayer } from "../../packages/babylon-lite/src/sprite/sprite-scene";
-import { createSceneContext, disposeScene } from "../../packages/babylon-lite/src/scene/scene";
-import { registerScene } from "../../packages/babylon-lite/src/scene/scene-core";
-import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
-import { LAYER_UBO_BYTES } from "../../packages/babylon-lite/src/sprite/sprite-pipeline";
-import type { SpriteAtlas } from "../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
-import type { Texture2D } from "../../packages/babylon-lite/src/texture/texture-2d";
-import type { EngineContext, EngineContextInternal } from "../../packages/babylon-lite/src/engine/engine";
+import { DEPTH_INSTANCE_STRIDE_BYTES, addSprite2DIndex, createSprite2DLayer } from "../../../packages/babylon-lite/src/sprite/sprite-2d";
+import { addDepthHostedSpriteLayer } from "../../../packages/babylon-lite/src/sprite/sprite-scene";
+import { createSceneContext, disposeScene } from "../../../packages/babylon-lite/src/scene/scene";
+import { registerScene } from "../../../packages/babylon-lite/src/scene/scene-core";
+import type { SceneContextInternal } from "../../../packages/babylon-lite/src/scene/scene-core";
+import { LAYER_UBO_BYTES } from "../../../packages/babylon-lite/src/sprite/sprite-pipeline";
+import type { SpriteAtlas } from "../../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
+import type { Texture2D } from "../../../packages/babylon-lite/src/texture/texture-2d";
+import type { EngineContext, EngineContextInternal } from "../../../packages/babylon-lite/src/engine/engine";
 
 interface MockBuffer {
     destroy: ReturnType<typeof vi.fn>;

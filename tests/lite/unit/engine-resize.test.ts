@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resizeEngine, type EngineContext, type EngineContextInternal, type RenderingContext } from "../../packages/babylon-lite/src/engine/engine";
+import { resizeEngine, type EngineContext, type EngineContextInternal, type RenderingContext } from "../../../packages/babylon-lite/src/engine/engine";
 
 function setDevicePixelRatio(value: number): void {
     Object.defineProperty(globalThis, "devicePixelRatio", {
