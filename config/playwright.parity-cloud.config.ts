@@ -44,7 +44,7 @@ export default defineConfig({
         },
     },
     webServer: {
-        command: "pnpm --filter lab dev",
+        command: "pnpm --filter @babylon-lite/lab dev",
         port: 5174,
         reuseExistingServer: true,
         timeout: 15_000,

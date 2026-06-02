@@ -53,7 +53,7 @@ const SELECTED = process.env.PERF_SCENES ? process.env.PERF_SCENES.split(",").ma
 
 const SCENES = SELECTED ? ALL_SCENES.filter((s) => SELECTED.includes(s.name)) : ALL_SCENES;
 
-const MANIFEST_PATH = resolve(__dirname, "../../lab/public/perf-manifest.json");
+const MANIFEST_PATH = resolve(__dirname, "../../../lab/public/perf-manifest.json");
 
 // ── RAF instrumentation (injected before page scripts) ─────────────
 

@@ -38,6 +38,7 @@ function getHtmlInputs(): Record<string, string> {
 function serveReferenceImages(): Plugin {
     return {
         name: "serve-reference-images",
+        enforce: "pre",
         configureServer(server) {
             server.middlewares.use((req, res, next) => {
                 const url = (req.url ?? "").split("?")[0]; // strip query string
@@ -86,6 +87,15 @@ function serveReferenceImages(): Plugin {
                         return;
                     }
                 }
+                if (url === "/perf-manifest.json" || url === "/perf-regression-manifest.json") {
+                    const filePath = resolve(__dirname, "public", url.slice(1));
+                    if (existsSync(filePath) && statSync(filePath).isFile()) {
+                        res.setHeader("Content-Type", "application/json");
+                        res.setHeader("Cache-Control", "no-cache");
+                        createReadStream(filePath).pipe(res);
+                        return;
+                    }
+                }
                 // Serve pre-built bundle JS (scenes + demos) directly from lab/public/bundle.
                 // Vite caches the public-file list at startup and never refreshes it for paths
                 // matching `server.watch.ignored` (which includes **/public/bundle/**). So any
@@ -104,6 +114,14 @@ function serveReferenceImages(): Plugin {
                         createReadStream(filePath).pipe(res);
                         return;
                     }
+                    res.statusCode = 404;
+                    res.setHeader("Content-Type", "text/javascript; charset=utf-8");
+                    res.setHeader("Cache-Control", "no-cache");
+                    res.end(
+                        `console.error(${JSON.stringify(`Missing lab bundle ${url}. Run pnpm build:bundle-scenes, pnpm build:bundle-demos, or pnpm dev:lab to regenerate it.`)});\n` +
+                            `document.getElementById("renderCanvas")?.setAttribute("data-error", "missing-bundle");\n`
+                    );
+                    return;
                 }
                 if (url.startsWith("/lite/bundle/") && url.endsWith(".json")) {
                     const filePath = resolve(__dirname, "public", url.slice("/lite/".length));
@@ -138,7 +156,7 @@ function serveReferenceImages(): Plugin {
                         if (existsSync(cfgPath)) {
                             const cfg = JSON.parse(readFileSync(cfgPath, "utf-8")) as Array<{ id: number; slug: string }>;
                             for (const s of cfg) {
-                                const imgPath = resolve(__dirname, "../reference", s.slug, "test-actual.png");
+                                const imgPath = resolve(__dirname, "../reference/lite", s.slug, "test-actual.png");
                                 const m = mtime(imgPath);
                                 if (m != null) sig.parity["scene" + s.id] = m;
                             }
@@ -292,7 +310,7 @@ function tabContentPlugin(): Plugin {
                 for (const s of cfg) {
                     if (s.skipParity) continue;
                     total++;
-                    const m = mtimeOf(resolve(repoRoot, "reference", s.slug, "test-actual.png"));
+                    const m = mtimeOf(resolve(repoRoot, "reference/lite", s.slug, "test-actual.png"));
                     if (m != null) {
                         present++;
                         mtime = mtime == null ? m : Math.max(mtime, m);

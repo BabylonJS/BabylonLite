@@ -64,7 +64,7 @@ const hasBaseline = existsSync(BASELINE_DIR);
 const RUNS_PER_SCENE = Number(process.env.PERF_RUNS) || 6;
 
 // Manifest written for the lab's "Perf Regression" tab: current Lite vs upstream Lite baseline.
-const MANIFEST_PATH = resolve(__dirname, "../../lab/public/perf-regression-manifest.json");
+const MANIFEST_PATH = resolve(__dirname, "../../../lab/public/perf-regression-manifest.json");
 interface RegressionEntry {
     id: number;
     name: string;

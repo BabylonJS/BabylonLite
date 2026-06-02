@@ -101,7 +101,7 @@ export async function buildDemo(slug: string): Promise<void> {
             sourcemap: "hidden",
             modulePreload: { polyfill: false, resolveDependencies: () => [] },
             rollupOptions: {
-                input: { [slug]: resolve(labDir, `lite/lite/src/demos/${slug}.ts`) },
+                input: { [slug]: resolve(labDir, `lite/src/demos/${slug}.ts`) },
                 external: isLiteBundleExternal,
                 output: {
                     format: "es",
