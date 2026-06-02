@@ -147,9 +147,6 @@ function uploadSystem(renderable: BillboardRenderableInternal, context: DrawUpda
     if (renderable._disposed) {
         return;
     }
-    if (renderable._fx) {
-        _getBillboardFxHook()!.updateFx(renderable._fx, renderable._system, renderable._engine._currentDelta);
-    }
     refreshBillboardWorldCenter(renderable);
     if (!renderable._system.visible || renderable._system.count === 0) {
         if (renderable._system.count === 0) {
@@ -159,6 +156,11 @@ function uploadSystem(renderable: BillboardRenderableInternal, context: DrawUpda
             renderable._uploadedSorted = false;
         }
         return;
+    }
+    // Match the pure-2D `SpriteRenderer` path: advance `fx.time` (and write the FX UBO) only for
+    // visible, non-empty systems so time semantics stay consistent and we avoid wasted `writeBuffer` traffic.
+    if (renderable._fx) {
+        _getBillboardFxHook()!.updateFx(renderable._fx, renderable._system, renderable._engine._currentDelta);
     }
     const grown = ensureBillboardInstanceBuffer(
         renderable._engine.device,

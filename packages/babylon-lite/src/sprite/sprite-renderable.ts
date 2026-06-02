@@ -182,11 +182,13 @@ function uploadLayer(r: SpriteRenderableInternal, target: DrawUpdateContext): vo
     if (r._disposed) {
         return;
     }
-    if (r._fx) {
-        _getSpriteFxHook()!.updateFx(r._fx, r._layer, r._engine._currentDelta);
-    }
+    // Match the pure-2D `SpriteRenderer` path: skip invisible / empty layers entirely so `fx.time`
+    // (and the FX UBO write) stays consistent across both paths and we avoid wasted `writeBuffer` traffic.
     if (!r._layer.visible || r._layer.count === 0) {
         return;
+    }
+    if (r._fx) {
+        _getSpriteFxHook()!.updateFx(r._fx, r._layer, r._engine._currentDelta);
     }
     const grown = ensureSpriteInstanceBuffer(r._engine.device, r._layer, r._instanceBuffer, r._instanceBufferCapacity, "sprite-depth-hosted-instances");
     if (grown.reallocated) {
