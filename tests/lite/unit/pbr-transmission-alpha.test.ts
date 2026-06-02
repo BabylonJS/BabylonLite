@@ -4,7 +4,13 @@ import type { PbrMaterialProps } from "../../../packages/babylon-lite/src/materi
 import type { EngineContextInternal } from "../../../packages/babylon-lite/src/engine/engine";
 import type { _PbrBindCtx } from "../../../packages/babylon-lite/src/material/pbr/pbr-flags";
 import { _computePbrMaterialFeatures } from "../../../packages/babylon-lite/src/material/pbr/pbr-material";
-import { PBR_HAS_ALPHA_BLEND, PBR_HAS_ALPHA_TEST, PBR2_HAS_REFRACTION, PBR2_HAS_REFRACTION_MAP, PBR2_HAS_VOLUME } from "../../../packages/babylon-lite/src/material/pbr/pbr-flag-bits";
+import {
+    PBR_HAS_ALPHA_BLEND,
+    PBR_HAS_ALPHA_TEST,
+    PBR2_HAS_REFRACTION,
+    PBR2_HAS_REFRACTION_MAP,
+    PBR2_HAS_VOLUME,
+} from "../../../packages/babylon-lite/src/material/pbr/pbr-flag-bits";
 import { refractionRttExt } from "../../../packages/babylon-lite/src/material/pbr/fragments/refraction-rtt-fragment";
 
 const dummyTexture = {} as Texture2D;

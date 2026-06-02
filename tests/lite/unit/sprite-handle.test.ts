@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { BillboardSpriteSystem } from "../../../packages/babylon-lite/src/sprite/billboard-sprite";
-import { addBillboardSpriteIndex, clearBillboardSprites, createFacingBillboardSystem, removeBillboardSpriteIndex } from "../../../packages/babylon-lite/src/sprite/billboard-sprite";
+import {
+    addBillboardSpriteIndex,
+    clearBillboardSprites,
+    createFacingBillboardSystem,
+    removeBillboardSpriteIndex,
+} from "../../../packages/babylon-lite/src/sprite/billboard-sprite";
 import {
     addBillboardSprite,
     getBillboardSpriteHandleIndex,
