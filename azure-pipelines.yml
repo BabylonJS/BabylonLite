@@ -56,10 +56,13 @@ stages:
                 - script: pnpm exec playwright install chromium
                   displayName: "Install Playwright browsers"
 
-                - script: npx vitest run
+                - script: npx vitest run --project unit
                   displayName: "Run vitest unit tests"
                   env:
                       CI: "true"
+
+                - script: npx vitest run --project build
+                  displayName: "Run vitest build-output tests"
 
                 - script: |
                       npx playwright test tests/lite/plumbing/dispose.spec.ts

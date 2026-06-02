@@ -24,13 +24,14 @@ import {
 } from "babylon-lite";
 import type { Mesh } from "babylon-lite";
 import type { ArcRotateCamera } from "babylon-lite";
+import type { EngineContextInternal } from "babylon-lite/engine/engine.js";
 import { SCENE66_MORPH_PERIOD_MS, getScene66Nme, sanitizeName, sphereScrambleDeltas } from "../shared/scene66-nme.js";
 
 async function main(): Promise<void> {
     const __initStart = performance.now();
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
     const engine = await createEngine(canvas);
-    const engineInternal = engine as Parameters<typeof createMorphTargets>[0];
+    const engineInternal = engine as EngineContextInternal;
     const scene = createSceneContext(engine);
     scene.clearColor = { r: 0, g: 0, b: 0, a: 1 };
 

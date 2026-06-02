@@ -21,8 +21,8 @@
  *   - `dispose()` is called when the frame graph is disposed.
  */
 
-import type { EngineContextInternal } from "../engine/engine.js";
-import type { SceneContextInternal } from "../scene/scene-core.js";
+import type { EngineContext } from "../engine/engine.js";
+import type { SceneContext } from "../scene/scene-core.js";
 import type { Pass } from "./pass.js";
 
 /** Polymorphic interface that all frame-graph tasks implement: records `Pass` objects during `record()` and is executed once per frame. */
@@ -30,8 +30,8 @@ export interface Task {
     readonly name: string;
 
     /** Engine and scene captured at task creation. */
-    readonly engine: EngineContextInternal;
-    readonly scene: SceneContextInternal;
+    readonly engine: EngineContext;
+    readonly scene: SceneContext;
 
     /** Passes recorded by this task. Populated during `record()` by
      *  `createRenderPass(name, task)` / `addRenderPass(fg, name)`.
