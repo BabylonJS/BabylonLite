@@ -310,11 +310,11 @@ The current concrete post-processes mirror their Babylon.js thin post-process sh
 - `lab/lite/src/bjs/scene144.ts`
 - `lab/lite/src/lite/scene144.ts`
 - `lab/lite/babylon-ref-scene142.html`
-- `lab/scene142.html`
+- `lab/lite/scene142.html`
 - `lab/lite/babylon-ref-scene143.html`
-- `lab/scene143.html`
+- `lab/lite/scene143.html`
 - `lab/lite/babylon-ref-scene144.html`
-- `lab/scene144.html`
+- `lab/lite/scene144.html`
 - `tests/lite/parity/scenes/scene142-black-and-white-post-process.spec.ts`
 - `tests/lite/parity/scenes/scene143-pipelined-post-processes.spec.ts`
 - `tests/lite/parity/scenes/scene144-bloom-post-process.spec.ts`

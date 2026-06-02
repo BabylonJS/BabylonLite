@@ -65,7 +65,7 @@ export default tseslint.config(
     // TypeScript source files (type-checked)
     // ===========================================
     {
-        files: ["packages/**/src/**/*.ts", "apps/**/src/**/*.ts"],
+        files: ["packages/**/src/**/*.ts"],
         extends: [...tseslint.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
         languageOptions: {
             parser: tseslint.parser,

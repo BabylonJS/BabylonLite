@@ -58,6 +58,8 @@ stages:
 
                 - script: npx vitest run
                   displayName: "Run vitest unit tests"
+                  env:
+                      CI: "true"
 
                 - script: |
                       npx playwright test tests/lite/plumbing/dispose.spec.ts
@@ -349,3 +351,7 @@ stages:
                 - script: |
                       npx tsc -p packages/babylon-lite/tsconfig.json --noEmit 2>&1 | sed -E 's/^(.+)\(([0-9]+),([0-9]+)\): error (TS[0-9]+): (.+)/##vso[task.logissue type=error;sourcepath=\1;linenumber=\2;columnnumber=\3]\4: \5/'
                   displayName: "TypeScript type-check"
+
+                - script: |
+                      npx tsc -p lab/tsconfig.typecheck.json --noEmit 2>&1 | sed -E 's/^(.+)\(([0-9]+),([0-9]+)\): error (TS[0-9]+): (.+)/##vso[task.logissue type=error;sourcepath=\1;linenumber=\2;columnnumber=\3]\4: \5/'
+                  displayName: "Lab TypeScript type-check"

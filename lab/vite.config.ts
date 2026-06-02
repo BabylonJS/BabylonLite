@@ -42,7 +42,9 @@ function serveReferenceImages(): Plugin {
         configureServer(server) {
             server.middlewares.use((req, res, next) => {
                 const url = (req.url ?? "").split("?")[0]; // strip query string
-                const liteHtmlCompat = url.match(/^\/((?:scene|bundle-scene|bundle-bjs-scene|babylon-ref-scene|bundle-baseline-scene)\d+|demo-[^/]+|dispose-test|leak-test|material-swap-test|picking-test)\.html$/);
+                const liteHtmlCompat = url.match(
+                    /^\/((?:scene|bundle-scene|bundle-bjs-scene|babylon-ref-scene|bundle-baseline-scene)\d+|demo-[^/]+|dispose-test|leak-test|material-swap-test|picking-test)\.html$/
+                );
                 if (liteHtmlCompat) {
                     const filePath = resolve(__dirname, "lite", `${liteHtmlCompat[1]}.html`);
                     if (existsSync(filePath)) {
@@ -123,8 +125,9 @@ function serveReferenceImages(): Plugin {
                     );
                     return;
                 }
-                if (url.startsWith("/lite/bundle/") && url.endsWith(".json")) {
-                    const filePath = resolve(__dirname, "public", url.slice("/lite/".length));
+                if ((url.startsWith("/bundle/") || url.startsWith("/lite/bundle/")) && url.endsWith(".json")) {
+                    const bundlePath = url.startsWith("/lite/bundle/") ? url.slice("/lite/".length) : url.slice(1);
+                    const filePath = resolve(__dirname, "public", bundlePath);
                     if (existsSync(filePath) && statSync(filePath).isFile()) {
                         res.setHeader("Content-Type", "application/json");
                         res.setHeader("Cache-Control", "no-cache");

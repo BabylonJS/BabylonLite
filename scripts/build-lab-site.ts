@@ -107,6 +107,12 @@ function copyStaticRuntimeData(): void {
             rmSync(docsTarget, { recursive: true, force: true });
             cpSync(docsSource, docsTarget, { recursive: true });
         }
+        const apiDocsSource = resolve(LAB_DIR, "public", "lite", "api-docs");
+        if (existsSync(apiDocsSource)) {
+            const apiDocsTarget = resolve(liteDist, "api-docs");
+            rmSync(apiDocsTarget, { recursive: true, force: true });
+            cpSync(apiDocsSource, apiDocsTarget, { recursive: true });
+        }
         for (const file of readdirSync(liteSourceDir)) {
             if (file.endsWith(".html")) {
                 const html = readFileSync(resolve(liteSourceDir, file), "utf-8");
@@ -122,6 +128,13 @@ function copyStaticRuntimeData(): void {
         rmSync(glDocsTarget, { recursive: true, force: true });
         mkdirSync(resolve(DIST_DIR, "gl"), { recursive: true });
         cpSync(glDocsSource, glDocsTarget, { recursive: true });
+    }
+    const glApiDocsSource = resolve(LAB_DIR, "public", "gl", "api-docs");
+    if (existsSync(glApiDocsSource)) {
+        const glApiDocsTarget = resolve(DIST_DIR, "gl", "api-docs");
+        rmSync(glApiDocsTarget, { recursive: true, force: true });
+        mkdirSync(resolve(DIST_DIR, "gl"), { recursive: true });
+        cpSync(glApiDocsSource, glApiDocsTarget, { recursive: true });
     }
 }
 

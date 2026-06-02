@@ -1112,6 +1112,8 @@ export async function buildLiteSceneBundleInfo(scene: string, sourceRoot: string
     const sourceSrcDir = resolve(sourceRoot, "packages/babylon-lite/src");
     const sceneOutDir = resolve(ROOT, ".bundle-size-tmp/master-bundle-info-build", scene);
     rmSync(sceneOutDir, { recursive: true, force: true });
+    const sceneEntry = resolve(sourceLabDir, `lite/src/lite/${scene}.ts`);
+    const legacySceneEntry = resolve(sourceLabDir, `src/lite/${scene}.ts`);
 
     const buildResult = await build({
         root: sourceLabDir,
@@ -1134,7 +1136,7 @@ export async function buildLiteSceneBundleInfo(scene: string, sourceRoot: string
             sourcemap: "hidden",
             modulePreload: { polyfill: false, resolveDependencies: () => [] },
             rollupOptions: {
-                input: { [scene]: resolve(sourceLabDir, `lite/lite/src/lite/${scene}.ts`) },
+                input: { [scene]: existsSync(sceneEntry) ? sceneEntry : legacySceneEntry },
                 external: isLiteBundleExternal,
                 output: {
                     format: "es",
