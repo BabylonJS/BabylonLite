@@ -160,6 +160,9 @@ export { mat4Scale } from "./math/mat4-scale.js";
 export { mat4Compose } from "./math/mat4-compose.js";
 export type { Vec3, Vec3Tuple } from "./math/types.js";
 
+// ─── Color ───────────────────────────────────────────────────────────
+export { linearToSrgbByte, srgbByteToLinear, packedSrgbToLinearRgba } from "./color/color.js";
+
 // ─── Thin Instances ──────────────────────────────────────────────────
 export { addThinInstance, removeThinInstance, setThinInstanceMatrix, setThinInstances, flushThinInstances, setThinInstanceColors } from "./mesh/thin-instance.js";
 export type { ThinInstanceData } from "./mesh/thin-instance.js";
