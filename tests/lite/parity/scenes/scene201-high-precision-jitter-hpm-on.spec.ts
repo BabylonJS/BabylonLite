@@ -12,7 +12,7 @@ import * as path from "path";
 import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
 
 const sceneConfig = getSceneConfig(201);
-const REFERENCE_DIR = path.resolve(__dirname, "../../../../reference/scene201-high-precision-jitter-hpm-on");
+const REFERENCE_DIR = path.resolve(__dirname, "../../../../reference/lite/scene201-high-precision-jitter-hpm-on");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
 test.skip(!!sceneConfig.skipParity, "Scene 201 skipped via skipParity in scene-config.json");

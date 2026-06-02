@@ -27,8 +27,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { PNG } from "pngjs";
 
-const SCENE200_GOLDEN = resolve(__dirname, "../../../reference/scene200-high-precision-jitter-hpm-off/babylon-ref-golden.png");
-const SCENE201_GOLDEN = resolve(__dirname, "../../../reference/scene201-high-precision-jitter-hpm-on/babylon-ref-golden.png");
+const SCENE200_GOLDEN = resolve(__dirname, "../../../reference/lite/scene200-high-precision-jitter-hpm-off/babylon-ref-golden.png");
+const SCENE201_GOLDEN = resolve(__dirname, "../../../reference/lite/scene201-high-precision-jitter-hpm-on/babylon-ref-golden.png");
 
 function loadPng(p: string): PNG {
     return PNG.sync.read(readFileSync(p));
