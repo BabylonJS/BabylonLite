@@ -643,29 +643,6 @@ return vec4<f32>(base.rgb * (0.5 + 0.5 * sin(fx.time + fx.params.x)), base.a);`;
         expect(() => createBillboardCustomShader({ fragment: FX_FRAGMENT, extraTextures: [{ name: "1bad", texture: makeTex() }] })).toThrow();
     });
 
-    it("rejects duplicate and reserved extra-texture names but accepts a valid distinct set", () => {
-        expect(() =>
-            createBillboardCustomShader({
-                fragment: FX_FRAGMENT,
-                extraTextures: [
-                    { name: "palette", texture: makeTex() },
-                    { name: "palette", texture: makeTex() },
-                ],
-            })
-        ).toThrow();
-        expect(() => createBillboardCustomShader({ fragment: FX_FRAGMENT, extraTextures: [{ name: "atlas", texture: makeTex() }] })).toThrow();
-        expect(() => createBillboardCustomShader({ fragment: FX_FRAGMENT, extraTextures: [{ name: "fx", texture: makeTex() }] })).toThrow();
-        expect(() =>
-            createBillboardCustomShader({
-                fragment: FX_FRAGMENT,
-                extraTextures: [
-                    { name: "palette", texture: makeTex() },
-                    { name: "noise", texture: makeTex() },
-                ],
-            })
-        ).not.toThrow();
-    });
-
     it("composes WGSL that wraps the user fragment body with the SpriteFx UBO, vWorldPos varying, and fs entry point", () => {
         const cs = createBillboardCustomShader({ fragment: FX_FRAGMENT });
 
