@@ -103,13 +103,28 @@ async function main(): Promise<void> {
 
     function addBoxWireframe(half: { x: number; y: number; z: number }, position: { x: number; y: number; z: number }, rotationY: number): WireMesh[] {
         const corners = [
-            { x: -half.x, y: -half.y, z: -half.z }, { x: half.x, y: -half.y, z: -half.z },
-            { x: half.x, y: -half.y, z: half.z }, { x: -half.x, y: -half.y, z: half.z },
-            { x: -half.x, y: half.y, z: -half.z }, { x: half.x, y: half.y, z: -half.z },
-            { x: half.x, y: half.y, z: half.z }, { x: -half.x, y: half.y, z: half.z },
+            { x: -half.x, y: -half.y, z: -half.z },
+            { x: half.x, y: -half.y, z: -half.z },
+            { x: half.x, y: -half.y, z: half.z },
+            { x: -half.x, y: -half.y, z: half.z },
+            { x: -half.x, y: half.y, z: -half.z },
+            { x: half.x, y: half.y, z: -half.z },
+            { x: half.x, y: half.y, z: half.z },
+            { x: -half.x, y: half.y, z: half.z },
         ];
         const edgeIdx: [number, number][] = [
-            [0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7],
+            [0, 1],
+            [1, 2],
+            [2, 3],
+            [3, 0],
+            [4, 5],
+            [5, 6],
+            [6, 7],
+            [7, 4],
+            [0, 4],
+            [1, 5],
+            [2, 6],
+            [3, 7],
         ];
         const tubes: WireMesh[] = [];
         for (const [a, b] of edgeIdx) {
@@ -123,14 +138,17 @@ async function main(): Promise<void> {
         for (let i = 0; i < segments; i++) {
             const a1 = (i / segments) * Math.PI * 2;
             const a2 = ((i + 1) / segments) * Math.PI * 2;
-            const x1 = Math.cos(a1) * radius, z1 = Math.sin(a1) * radius;
-            const x2 = Math.cos(a2) * radius, z2 = Math.sin(a2) * radius;
+            const x1 = Math.cos(a1) * radius,
+                z1 = Math.sin(a1) * radius;
+            const x2 = Math.cos(a2) * radius,
+                z2 = Math.sin(a2) * radius;
             addEdgeTube({ x: x1, y: h, z: z1 }, { x: x2, y: h, z: z2 }, position, 0);
             addEdgeTube({ x: x1, y: -h, z: z1 }, { x: x2, y: -h, z: z2 }, position, 0);
         }
         for (let i = 0; i < 4; i++) {
             const a = (i / 4) * Math.PI * 2;
-            const x = Math.cos(a) * radius, z = Math.sin(a) * radius;
+            const x = Math.cos(a) * radius,
+                z = Math.sin(a) * radius;
             addEdgeTube({ x, y: h, z }, { x, y: -h, z }, position, 0);
         }
     }
@@ -139,7 +157,7 @@ async function main(): Promise<void> {
     let boxTubes: WireMesh[] | null = addBoxWireframe(BOX_HALF, BOX_POS, BOX_ANGLE);
 
     const debugGeo = createDebugNavMeshGeometry(nav);
-    let navDebug = createMeshFromData(engine as never, "navDebug", debugGeo.positions, debugGeo.normals, debugGeo.indices);
+    let navDebug = createMeshFromData(engine, "navDebug", debugGeo.positions, debugGeo.normals, debugGeo.indices);
     const navDebugMat = createStandardMaterial();
     navDebugMat.diffuseColor = [0.1, 0.2, 1];
     navDebugMat.alpha = 0.2;
@@ -191,7 +209,7 @@ async function main(): Promise<void> {
                 boxObstacle = null;
                 removeFromScene(scene, navDebug);
                 const newGeo = createDebugNavMeshGeometry(nav);
-                navDebug = createMeshFromData(engine as never, "navDebug", newGeo.positions, newGeo.normals, newGeo.indices);
+                navDebug = createMeshFromData(engine, "navDebug", newGeo.positions, newGeo.normals, newGeo.indices);
                 navDebug.material = navDebugMat;
                 navDebug.position.set(0, 0.02, 0);
                 addToScene(scene, navDebug);

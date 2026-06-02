@@ -21,17 +21,16 @@ import {
     loadTexture2D,
     parseNodeMaterialFromSnippet,
     setShadowTaskCasterMeshes,
+    setMorphTargetWeights,
 } from "babylon-lite";
 import type { Mesh } from "babylon-lite";
 import type { ArcRotateCamera } from "babylon-lite";
-import type { EngineContextInternal } from "babylon-lite/engine/engine.js";
 import { SCENE66_MORPH_PERIOD_MS, createScene66FinalAlphaDiscardJson, getScene66Nme, sanitizeName, sphereScrambleDeltas } from "../shared/scene66-nme.js";
 
 async function main(): Promise<void> {
     const __initStart = performance.now();
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
     const engine = await createEngine(canvas);
-    const engineInternal = engine as EngineContextInternal;
     const scene = createSceneContext(engine);
     scene.clearColor = { r: 0, g: 0, b: 0, a: 1 };
 
@@ -61,7 +60,7 @@ async function main(): Promise<void> {
     const sphereData = createSphereData({ segments: 16, diameter: 2 });
     const deltas = sphereScrambleDeltas(sphereData.vertexCount);
     const freeze = params.has("freeze");
-    const morph = createMorphTargets(engineInternal, [{ positions: deltas, normals: null }], sphereData.vertexCount, [freeze ? 1 : 0]);
+    const morph = createMorphTargets(engine, [{ positions: deltas, normals: null }], sphereData.vertexCount, [freeze ? 1 : 0]);
     sphere.morphTargets = morph;
 
     const sg = noShadows
@@ -113,7 +112,7 @@ async function main(): Promise<void> {
         const w = new Float32Array([0]);
         const setMorphWeight = (value: number): void => {
             w[0] = value;
-            engineInternal.device.queue.writeBuffer(morph.weightsBuffer, 0, w);
+            setMorphTargetWeights(engine, morph, w);
         };
         (globalThis as { __scene140SetMorphWeight?: (value: number) => void }).__scene140SetMorphWeight = setMorphWeight;
         setMorphWeight(0);
@@ -139,7 +138,7 @@ async function main(): Promise<void> {
                 const s = Math.sin(t * Math.PI * 2);
                 w[0] = s * s;
             }
-            engineInternal.device.queue.writeBuffer(morph.weightsBuffer, 0, w);
+            setMorphTargetWeights(engine, morph, w);
         });
     }
 

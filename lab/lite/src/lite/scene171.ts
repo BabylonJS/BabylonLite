@@ -74,7 +74,7 @@ async function main(): Promise<void> {
     });
 
     const debugGeo = createDebugNavMeshGeometry(nav);
-    const navDebug = createMeshFromData(engine as never, "navDebug", debugGeo.positions, debugGeo.normals, debugGeo.indices);
+    const navDebug = createMeshFromData(engine, "navDebug", debugGeo.positions, debugGeo.normals, debugGeo.indices);
     const navDebugMat = createStandardMaterial();
     navDebugMat.diffuseColor = [0.1, 0.2, 1];
     navDebugMat.alpha = 0.2;

@@ -13,17 +13,16 @@ import {
     onBeforeRender,
     registerScene,
     parseNodeMaterialFromSnippet,
+    setMorphTargetWeights,
 } from "babylon-lite";
 import type { Mesh } from "babylon-lite";
 import type { ArcRotateCamera } from "babylon-lite";
-import type { EngineContextInternal } from "babylon-lite/engine/engine.js";
 import { SCENE64_NME_JSON, SCENE64_MORPH_DELTA_Y, SCENE64_MORPH_PERIOD_MS } from "../shared/scene64-nme.js";
 
 async function main(): Promise<void> {
     const __initStart = performance.now();
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
     const engine = await createEngine(canvas);
-    const engineInternal = engine as EngineContextInternal;
     const scene = createSceneContext(engine);
     scene.clearColor = { r: 0, g: 0, b: 0, a: 1 };
 
@@ -42,7 +41,7 @@ async function main(): Promise<void> {
     }
     const sphere = createSphere(engine) as Mesh & { morphTargets?: unknown };
     const freeze = new URLSearchParams(location.search).has("freeze");
-    const morph = createMorphTargets(engineInternal, [{ positions: deltas, normals: null }], vertexCount, [freeze ? 1.0 : 0]);
+    const morph = createMorphTargets(engine, [{ positions: deltas, normals: null }], vertexCount, [freeze ? 1.0 : 0]);
     sphere.morphTargets = morph;
     (sphere as { material?: unknown }).material = material;
     addToScene(scene, sphere);
@@ -56,7 +55,7 @@ async function main(): Promise<void> {
         onBeforeRender(scene, () => {
             const t = (performance.now() - t0) / SCENE64_MORPH_PERIOD_MS;
             weightBuf[0] = 0.5 - 0.5 * Math.cos(t * Math.PI * 2);
-            engineInternal.device.queue.writeBuffer(morph.weightsBuffer, 0, weightBuf);
+            setMorphTargetWeights(engine, morph, weightBuf);
         });
     }
 
