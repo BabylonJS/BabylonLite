@@ -4,6 +4,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 import eslintPluginPrettier from "eslint-plugin-prettier";
 import eslintConfigPrettier from "eslint-config-prettier";
+import tsdoc from "eslint-plugin-tsdoc";
 
 export default tseslint.config(
     // ===========================================
@@ -16,7 +17,7 @@ export default tseslint.config(
             "pages-dist/**",
             "node_modules/**",
             "**/node_modules/**",
-            "reference/**",
+            "reference/lite/**",
             "test-results/**",
             "scripts/**",
             "**/public/**",
@@ -64,7 +65,7 @@ export default tseslint.config(
     // TypeScript source files (type-checked)
     // ===========================================
     {
-        files: ["packages/**/src/**/*.ts", "apps/**/src/**/*.ts"],
+        files: ["packages/**/src/**/*.ts"],
         extends: [...tseslint.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
         languageOptions: {
             parser: tseslint.parser,
@@ -72,7 +73,13 @@ export default tseslint.config(
                 projectService: true,
             },
         },
+        plugins: {
+            tsdoc,
+        },
         rules: {
+            // TSDoc syntax correctness — any TSDoc comment that IS written must be valid.
+            "tsdoc/syntax": "error",
+
             // Console
             "no-console": ["error", { allow: ["warn", "error", "time", "timeEnd", "trace"] }],
 
@@ -138,7 +145,7 @@ export default tseslint.config(
     // Test files (lighter rules)
     // ===========================================
     {
-        files: ["tests/**/*.ts", "**/*.test.ts", "**/*.spec.ts"],
+        files: ["tests/lite/**/*.ts", "**/*.test.ts", "**/*.spec.ts"],
         extends: [...tseslint.configs.recommended],
         languageOptions: {
             parser: tseslint.parser,

@@ -46,6 +46,7 @@ import { SCENE_UBO_BYTES } from "../shader/scene-uniforms-size.js";
 import { ensureSceneLightState, refreshSceneLightsUBO } from "../render/lights-ubo.js";
 import type { Task } from "./task.js";
 
+/** Configuration for `createRenderTask`: render target, clear state, optional camera override, and transmission settings. */
 export interface RenderTaskConfig {
     name: string;
     /** TODO: rt should not live in this config long-term. Until texture
@@ -66,6 +67,7 @@ export interface RenderTaskConfig {
     transmission?: { copyCount?: number; generateMipmaps?: boolean };
 }
 
+/** A frame-graph task that records a single `RenderPass`, binds the scene's `RenderTarget`, and draws renderables into it. */
 export interface RenderTask extends Task {
     readonly name: string;
     /** Live task configuration. Mutating `clr` or `clrColor` affects subsequent frames. */
@@ -95,6 +97,8 @@ export interface RenderTask extends Task {
     _lightsUBO: GPUBuffer;
     _suData: Float32Array;
     _su: unknown[];
+    /** Optional transmission-enabled execute path: copies the scene texture for refraction and draws transmissive
+     *  renderables. Present only when the task was configured with `transmission`. Returns the number of draw calls issued. */
     _executeWithTransmission?(sampleCount: number): number;
     _targetSignature: RenderTargetSignature;
 
@@ -287,7 +291,7 @@ function buildBindings(task: RenderTask, eng: EngineContextInternal, targetSigna
     opaque.sort((a, b) => a.renderable.order - b.renderable.order);
     direct.sort((a, b) => a.renderable.order - b.renderable.order);
     task._opaqueBundles.length = 0;
-    task._lastVersion = task.scene._renderableVersion;
+    task._lastVersion = (task.scene as SceneContextInternal)._renderableVersion;
 }
 
 function buildRenderPassDescriptor(task: RenderTask, rt: RenderTarget): void {
@@ -314,7 +318,7 @@ function buildRenderPassDescriptor(task: RenderTask, rt: RenderTarget): void {
 }
 
 function prepareRenderTaskPass(task: RenderTask, eng: EngineContextInternal, targetSignature: RenderTargetSignature, context: DrawUpdateContext): void {
-    const sc = task.scene;
+    const sc = task.scene as SceneContextInternal;
     // Auto-resync when the source scene mutates.
     if (task._autoFromScene && task._lastVersion !== sc._renderableVersion) {
         task._renderables.length = 0;
@@ -375,10 +379,10 @@ function executePass(task: RenderTask, eng: EngineContextInternal, targetSignatu
  *  and issues all draws (viewport/scissor, group(0) bind, opaque bundle replay,
  *  then direct-draws non-transparent direct + transparent). Returns the draw count. */
 function executePassBody(task: RenderTask, pass: GPURenderPassEncoder): number {
-    const eng = task.engine;
+    const eng = task.engine as EngineContextInternal;
     const cfg = task._config;
     const rt = cfg.rt;
-    const scene = task.scene;
+    const scene = task.scene as SceneContextInternal;
     const opaqueBindings = task._opaqueBindings;
     const opaqueBundles = task._opaqueBundles;
     const sceneBG = task._sceneBG;
@@ -424,7 +428,7 @@ function executePassBody(task: RenderTask, pass: GPURenderPassEncoder): number {
 }
 
 function refreshTaskSceneBindGroup(task: RenderTask, eng: EngineContextInternal): void {
-    const lightsUBO = ensureSceneLightState(eng, task.scene)._buffer;
+    const lightsUBO = ensureSceneLightState(eng, task.scene as SceneContextInternal)._buffer;
     if (lightsUBO === task._lightsUBO) {
         return;
     }

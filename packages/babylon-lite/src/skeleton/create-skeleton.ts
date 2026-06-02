@@ -6,21 +6,21 @@
  *  (shader/fragments/skeleton-fragment.ts) and composed at pipeline
  *  creation time — no global registration needed. */
 
-import type { EngineContextInternal } from "../engine/engine.js";
+import type { EngineContext, EngineContextInternal } from "../engine/engine.js";
 import type { SkeletonData } from "../animation/types.js";
 import { createMappedBuffer } from "../resource/gpu-buffers.js";
 
 /** Create skeleton GPU data from parsed glTF skin.
- *  @param engine   Engine context (provides GPUDevice)
- *  @param joints   Joint indices (4 per vertex, u8 or u16)
- *  @param weights  Blend weights (4 per vertex, f32)
- *  @param boneCount Number of bones (joints) in the skeleton
- *  @param boneData  Initial bone matrices (Float32Array, 16 floats per bone)
- *  @param joints1  Extra joint indices for 8-bone skinning (JOINTS_1)
- *  @param weights1 Extra blend weights for 8-bone skinning (WEIGHTS_1)
+ *  @param engine   - Engine context (provides GPUDevice)
+ *  @param joints   - Joint indices (4 per vertex, u8 or u16)
+ *  @param weights  - Blend weights (4 per vertex, f32)
+ *  @param boneCount - Number of bones (joints) in the skeleton
+ *  @param boneData  - Initial bone matrices (Float32Array, 16 floats per bone)
+ *  @param joints1  - Extra joint indices for 8-bone skinning (JOINTS_1)
+ *  @param weights1 - Extra blend weights for 8-bone skinning (WEIGHTS_1)
  */
 export function createSkeleton(
-    engine: EngineContextInternal,
+    engine: EngineContext,
     joints: Uint16Array | Uint8Array,
     weights: Float32Array,
     boneCount: number,
@@ -28,7 +28,8 @@ export function createSkeleton(
     joints1?: Uint16Array | Uint8Array | null,
     weights1?: Float32Array | null
 ): SkeletonData {
-    const device = engine.device;
+    const engineInternal = engine as EngineContextInternal;
+    const device = engineInternal.device;
     // Bone texture: rgba32float, 4 texels per bone (one mat4 column each)
     const texWidth = boneCount * 4;
     const boneTexture = device.createTexture({
@@ -44,8 +45,8 @@ export function createSkeleton(
         joints32[i] = joints[i]!;
     }
 
-    const jointsBuffer = createMappedBuffer(engine, joints32, GPUBufferUsage.VERTEX);
-    const weightsBuffer = createMappedBuffer(engine, weights, GPUBufferUsage.VERTEX);
+    const jointsBuffer = createMappedBuffer(engineInternal, joints32, GPUBufferUsage.VERTEX);
+    const weightsBuffer = createMappedBuffer(engineInternal, weights, GPUBufferUsage.VERTEX);
 
     let joints1Buffer: GPUBuffer | null = null;
     let weights1Buffer: GPUBuffer | null = null;
@@ -54,8 +55,8 @@ export function createSkeleton(
         for (let i = 0; i < joints1.length; i++) {
             joints132[i] = joints1[i]!;
         }
-        joints1Buffer = createMappedBuffer(engine, joints132, GPUBufferUsage.VERTEX);
-        weights1Buffer = createMappedBuffer(engine, weights1, GPUBufferUsage.VERTEX);
+        joints1Buffer = createMappedBuffer(engineInternal, joints132, GPUBufferUsage.VERTEX);
+        weights1Buffer = createMappedBuffer(engineInternal, weights1, GPUBufferUsage.VERTEX);
     }
 
     return {

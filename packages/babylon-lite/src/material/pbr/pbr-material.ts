@@ -9,6 +9,7 @@ import type { SceneContextInternal } from "../../scene/scene.js";
 import type { Material } from "../material.js";
 import {
     _getPbrExts,
+    PBR2_HAS_BASE_COLOR_FACTOR,
     PBR2_HAS_UV_TRANSFORM,
     PBR2_HAS_UV2,
     PBR_HAS_ALPHA_TEST,
@@ -38,8 +39,14 @@ export const pbrGroupBuilder: MeshGroupBuilder = async (scene, meshes) => {
 
 pbrGroupBuilder._materialFamily = "pbr";
 
+/** User-facing properties for a physically based (metallic-roughness) material.
+ *  Create one manually via `createPbrMaterial()` or let `loadGltf()` build it.
+ *  Optional sub-feature objects (clearcoat, sheen, anisotropy, subsurface) are
+ *  only bundled when referenced. */
 export interface PbrMaterialProps extends Material {
     baseColorTexture?: Texture2D;
+    /** Linear RGB/A factor multiplied with the base-color texture (glTF baseColorFactor). Default [1,1,1,1]. */
+    baseColorFactor?: [number, number, number, number];
     normalTexture?: Texture2D;
     /** Normal map scale (glTF normalTexture.scale). Default 1.0. */
     normalTextureScale?: number;
@@ -82,6 +89,8 @@ export interface PbrMaterialProps extends Material {
     occlusionTexture?: Texture2D;
     /** Scales dielectric F0 (default 1.0). Maps to BJS metallicF0Factor. */
     metallicF0Factor?: number;
+    /** Grazing specular/F90 weight (default follows metallicF0Factor for legacy callers). */
+    specularWeight?: number;
     /** Tints dielectric reflectance (linear RGB, default [1,1,1]). Maps to BJS metallicReflectanceColor. */
     metallicReflectanceColor?: [number, number, number];
     /** Texture whose RGB tints reflectance and A scales F0. Maps to BJS metallicReflectanceTexture. */
@@ -176,6 +185,9 @@ export function _computePbrMaterialFeatures(mat: PbrMaterialProps): { features: 
     }
     if (mat.occlusionTexCoord) {
         features2 |= PBR2_HAS_UV2;
+    }
+    if (mat.baseColorFactor) {
+        features2 |= PBR2_HAS_BASE_COLOR_FACTOR;
     }
     return { features, features2 };
 }
