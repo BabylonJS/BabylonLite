@@ -68,3 +68,5 @@ pages-dist/
 
 # Generated TypeDoc API documentation (regenerated on demand)
 lab/public/api-docs/
+
+playwright-report/
