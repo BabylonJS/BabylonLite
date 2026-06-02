@@ -99,7 +99,7 @@ export interface PcfDirectionalShadowGeneratorConfig {
  * @returns A `ShadowGenerator` wired to the directional PCF render path.
  */
 export function createPcfDirectionalShadowGenerator(engine: EngineContext, _light: DirectionalLight, cfg: PcfDirectionalShadowGeneratorConfig = {}): ShadowGenerator {
-    const device = engine.device;
+    const device = engine._device;
     const mapSize = cfg.mapSize ?? 1024;
     const bias = cfg.bias ?? 0.00005;
     const darkness = cfg.darkness ?? 0;

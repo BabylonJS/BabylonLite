@@ -95,8 +95,8 @@ function makeMockEngine(): { engine: EngineContext; counters: MockCounters } {
         canvas: {} as HTMLCanvasElement,
         msaaSamples: 4,
         drawCallCount: 0,
-        device,
-        context: {} as GPUCanvasContext,
+        _device: device,
+        _context: {} as GPUCanvasContext,
         format: "bgra8unorm",
         _targets: {
             msaaTexture: {} as GPUTexture,
@@ -169,7 +169,7 @@ describe("createSpriteRenderer", () => {
         const { engine } = makeMockEngine();
         createSpriteRenderer(engine, { layers: [createSprite2DLayer(makeMockAtlas())] });
 
-        const device = engine.device as unknown as { createRenderPipeline: ReturnType<typeof vi.fn>; createShaderModule: ReturnType<typeof vi.fn> };
+        const device = engine._device as unknown as { createRenderPipeline: ReturnType<typeof vi.fn>; createShaderModule: ReturnType<typeof vi.fn> };
         const descriptor = device.createRenderPipeline.mock.calls[0]![0] as GPURenderPipelineDescriptor;
         const vertexBuffer = (descriptor.vertex.buffers as GPUVertexBufferLayout[])[0]!;
         const shaderLocations = vertexBuffer.attributes.map((attr) => attr.shaderLocation);
@@ -189,7 +189,7 @@ describe("createSpriteRenderer", () => {
 
         getOrCreateSpritePipeline(engine, cache, "bgra8unorm", 4, "alpha", true, false, "depth24plus-stencil8", sceneBGL);
 
-        const device = engine.device as unknown as { createRenderPipeline: ReturnType<typeof vi.fn>; createShaderModule: ReturnType<typeof vi.fn> };
+        const device = engine._device as unknown as { createRenderPipeline: ReturnType<typeof vi.fn>; createShaderModule: ReturnType<typeof vi.fn> };
         const shaderDescriptor = device.createShaderModule.mock.calls[0]![0] as GPUShaderModuleDescriptor;
         const descriptor = device.createRenderPipeline.mock.calls[0]![0] as GPURenderPipelineDescriptor;
         expect(shaderDescriptor.code).toContain("vec4<f32>(ndc, 1.0 - in.iZ, 1.0)");
@@ -373,7 +373,7 @@ describe("pure-2D instance layout", () => {
         const layer = createSprite2DLayer(makeMockAtlas(), { capacity: 1 });
         addSprite2DIndex(layer, { positionPx: [10, 10], sizePx: [32, 32], frame: 0, z: 0.25 });
         const sr = createSpriteRenderer(engine, { layers: [layer] });
-        const device = engine.device as unknown as { createBuffer: ReturnType<typeof vi.fn>; queue: { writeBuffer: ReturnType<typeof vi.fn> } };
+        const device = engine._device as unknown as { createBuffer: ReturnType<typeof vi.fn>; queue: { writeBuffer: ReturnType<typeof vi.fn> } };
         device.createBuffer.mockClear();
         device.queue.writeBuffer.mockClear();
 

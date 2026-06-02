@@ -114,7 +114,7 @@ let _gndCachedDevice: GPUDevice | null = null;
 
 function createGroundMaterial(enableNoise: boolean, fragCode: string): GroundMaterial {
     function getLayout(engine: EngineContext): GPUBindGroupLayout {
-        const device = engine.device;
+        const device = engine._device;
         if (_gndLayout && _gndCachedDevice === device) {
             return _gndLayout;
         }
@@ -132,7 +132,7 @@ function createGroundMaterial(enableNoise: boolean, fragCode: string): GroundMat
 
     return {
         getPipeline(engine, sig) {
-            const device = engine.device;
+            const device = engine._device;
             if (_gndCachedDevice !== device) {
                 _gndPipelines.clear();
                 _gndLayout = null;
@@ -185,7 +185,7 @@ function createGroundMaterial(enableNoise: boolean, fragCode: string): GroundMat
         },
 
         createBindGroup(engine, meshUBO, groundTextureView, groundSampler) {
-            const device = engine.device;
+            const device = engine._device;
             return device.createBindGroup({
                 layout: getLayout(engine),
                 entries: [
@@ -261,7 +261,7 @@ function createBgMeshUBO(engine: EngineContext, world: Mat4, primaryColor: [numb
 /** Load a ground diffuse texture from URL and upload to GPU.
  *  Falls back to a 1×1 white pixel if no URL provided. */
 async function loadGroundTexture(engine: EngineContext, url?: string, preloadedImage?: Promise<ImageBitmap>): Promise<GPUTexture> {
-    const device = engine.device;
+    const device = engine._device;
     if (!url) {
         const tex = device.createTexture({
             size: [1, 1],

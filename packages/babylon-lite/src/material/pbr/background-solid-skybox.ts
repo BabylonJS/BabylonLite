@@ -72,7 +72,7 @@ let _skyCachedDevice: GPUDevice | null = null;
 
 function createSkyboxMaterial(): SkyboxMaterial {
     function getLayout(engine: EngineContext): GPUBindGroupLayout {
-        const device = engine.device;
+        const device = engine._device;
         if (_skyLayout && _skyCachedDevice === device) {
             return _skyLayout;
         }
@@ -82,7 +82,7 @@ function createSkyboxMaterial(): SkyboxMaterial {
 
     return {
         getPipeline(_engine, sig) {
-            const device = _engine.device;
+            const device = _engine._device;
             if (_skyCachedDevice !== device) {
                 _skyPipelines.clear();
                 _skyLayout = null;
@@ -117,7 +117,7 @@ function createSkyboxMaterial(): SkyboxMaterial {
         },
 
         createBindGroup(engine, meshUBO, _env) {
-            const device = engine.device;
+            const device = engine._device;
             return device.createBindGroup({
                 layout: getLayout(engine),
                 entries: [{ binding: 0, resource: { buffer: meshUBO } }],

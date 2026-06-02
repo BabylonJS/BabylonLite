@@ -192,7 +192,7 @@ function computeSH(raw: Uint8Array, width: number, mipCount: number): Float32Arr
  */
 export async function loadDdsEnvironment(scene: SceneContext, url: string, options: { brdfUrl: string; skipSkybox?: boolean; skipGround?: boolean }): Promise<EnvironmentTextures> {
     const engine = scene.engine as EngineContext;
-    const device = engine.device;
+    const device = engine._device;
 
     // Fetch DDS and BRDF PNG in parallel
     const ddsPromise = fetch(url).then((r) => r.arrayBuffer());

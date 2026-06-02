@@ -91,7 +91,7 @@ let _tex2dCache: WeakMap<GPUDevice, Map<string, Promise<Texture2D>>> | null = nu
 
 /** Clear the texture cache for a device, releasing cache-held refs. */
 export function clearTexture2DCache(engine: EngineContext): void {
-    const device = engine.device;
+    const device = engine._device;
     _tex2dCache?.delete(device);
 }
 
@@ -103,7 +103,7 @@ export function clearTexture2DCache(engine: EngineContext): void {
  *  @param opts - Sampler, format, and decode overrides.
  *  @returns A promise resolving to the uploaded `Texture2D`. */
 export function loadTexture2D(engine: EngineContext, url: string, opts: Texture2DOptions = {}): Promise<Texture2D> {
-    const device = engine.device;
+    const device = engine._device;
     if (!_tex2dCache) {
         _tex2dCache = new WeakMap();
     }
@@ -127,7 +127,7 @@ export function loadTexture2D(engine: EngineContext, url: string, opts: Texture2
 }
 
 async function loadTexture2DImpl(engine: EngineContext, url: string, opts: Texture2DOptions): Promise<Texture2D> {
-    const device = engine.device;
+    const device = engine._device;
     const mipMaps = opts.mipMaps ?? true;
     const addressModeU = opts.addressModeU ?? "repeat";
     const addressModeV = opts.addressModeV ?? "repeat";

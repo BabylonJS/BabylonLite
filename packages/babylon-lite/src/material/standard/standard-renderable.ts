@@ -40,7 +40,7 @@ export interface StdFragmentFactories {
  *  builder) for material swaps + per-pass material overrides. */
 export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[], factories: StdFragmentFactories): MeshGroupBuildResult {
     const engine = scene.engine;
-    const device = engine.device;
+    const device = engine._device;
     const { tiSync, tiFragment, shadowFragment } = factories;
 
     // Collect per-light shadow info.

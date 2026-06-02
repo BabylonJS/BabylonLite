@@ -29,20 +29,20 @@ function getEmptyMorph(engine: EngineContext): { texture: GPUTexture; weightsBuf
     if (cached) {
         return cached;
     }
-    const texture = engine.device.createTexture({
+    const texture = engine._device.createTexture({
         label: "node-morph-empty",
         size: [1, 1],
         format: "rgba32float",
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
-    engine.device.queue.writeTexture({ texture }, new Float32Array([0, 0, 0, 0]).buffer, { bytesPerRow: 16 }, { width: 1, height: 1 });
+    engine._device.queue.writeTexture({ texture }, new Float32Array([0, 0, 0, 0]).buffer, { bytesPerRow: 16 }, { width: 1, height: 1 });
     const ubo = new ArrayBuffer(32);
     const u32 = new Uint32Array(ubo, 16, 4);
     u32[0] = 0; // count
     u32[1] = 1; // texWidth
     u32[2] = 1; // rowsPerBand
-    const weightsBuffer = engine.device.createBuffer({ label: "node-morph-empty-ubo", size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    engine.device.queue.writeBuffer(weightsBuffer, 0, new Uint8Array(ubo));
+    const weightsBuffer = engine._device.createBuffer({ label: "node-morph-empty-ubo", size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    engine._device.queue.writeBuffer(weightsBuffer, 0, new Uint8Array(ubo));
     const entry = { texture, weightsBuffer };
     emptyMorphByEngine.set(engine, entry);
     return entry;
@@ -63,7 +63,7 @@ type NodeRenderPass = GPURenderPassEncoder | GPURenderBundleEncoder;
 /** Build NME renderables for a set of meshes that share a NodeMaterial. */
 export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[], materialOverride?: Material): MeshGroupBuildResult {
     const engine = scene.engine;
-    const device = engine.device;
+    const device = engine._device;
 
     // All meshes in this group use the same NodeMaterial (scene-core batches by ctor).
     // We deliberately do NOT re-group by material instance: each renderable loops
@@ -306,7 +306,7 @@ function getZeroAttrBuffer(engine: EngineContext, gpu: MeshGPU, name: string): G
     // position buffer size in bytes / 12 (vec3) = vertex count.
     const vertexCount = gpu.positionBuffer.size / 12;
     const stride = name === "uv" || name === "uv2" ? 8 : name === "normal" ? 12 : name === "tangent" || name === "color" ? 16 : 16;
-    const buf = engine.device.createBuffer({ label: `node-zero-${name}`, size: vertexCount * stride, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+    const buf = engine._device.createBuffer({ label: `node-zero-${name}`, size: vertexCount * stride, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     // Initialize with zeros (buffer starts zeroed when not mappedAtCreation).
     cache.set(name, buf);
     return buf;

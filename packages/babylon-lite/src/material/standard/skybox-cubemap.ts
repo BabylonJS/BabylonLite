@@ -36,7 +36,7 @@ export interface SkyboxCubeMapGPU {
  * active RenderTask.
  */
 export function buildSkyboxCubeMapGPU(engine: EngineContext, worldMatrix: Float32Array, cubeView: GPUTextureView, cubeSampler: GPUSampler): SkyboxCubeMapGPU {
-    const device = engine.device;
+    const device = engine._device;
     const meshBindGroupLayout = device.createBindGroupLayout({
         label: "skybox-cm-mesh",
         entries: [
@@ -66,7 +66,7 @@ export function buildSkyboxCubeMapGPU(engine: EngineContext, worldMatrix: Float3
             if (cached) {
                 return cached;
             }
-            const pipeline = _engine.device.createRenderPipeline(
+            const pipeline = _engine._device.createRenderPipeline(
                 createDefaultPipelineDescriptor({
                     _label: "skybox-cubemap-pipeline",
                     _engine,

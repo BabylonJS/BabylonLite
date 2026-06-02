@@ -24,7 +24,7 @@ const _tiUboScratch = new Uint32Array(4);
 
 /** GPU-based picker — pure state. Use pickAsync() and disposePicker() standalone functions. */
 export interface GpuPicker {
-    /** Optional hook for detailed picking (Phase 2). */
+    /** @internal Optional hook for detailed picking (Phase 2). */
     _detailedPick: ((info: PickingInfo, ray: { origin: [number, number, number]; direction: [number, number, number]; length: number }) => void | Promise<void>) | null;
     /** @internal */
     _scene: SceneContext;
@@ -62,7 +62,7 @@ export function createGpuPicker(scene: SceneContext): GpuPicker {
 }
 
 function ensureTargets(engine: EngineContext, picker: GpuPicker): PickTargets1x1 {
-    const device = engine.device;
+    const device = engine._device;
     if (picker._rt) {
         return picker._rt;
     }
@@ -88,7 +88,7 @@ function ensureTargets(engine: EngineContext, picker: GpuPicker): PickTargets1x1
 }
 
 function ensureSceneUbo(engine: EngineContext, picker: GpuPicker): GPUBuffer {
-    const device = engine.device;
+    const device = engine._device;
     if (!picker._sceneUbo) {
         picker._sceneUbo = createEmptyUniformBuffer(engine, 64, "pick-scene-ubo");
         const sceneBGL = getPickingSceneBGL(engine);
@@ -117,7 +117,7 @@ function computePickVP(out: Float32Array, vp: Float32Array, px: number, py: numb
 export async function pickAsync(picker: GpuPicker, x: number, y: number): Promise<PickingInfo> {
     const scene = picker._scene;
     const engine = scene.engine;
-    const device = engine.device;
+    const device = engine._device;
     const canvas = engine.canvas;
     const camera = scene.camera;
     if (!camera) {

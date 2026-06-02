@@ -221,5 +221,5 @@ export interface NodeEmitContext {
     /** Access the surrounding graph (so emitters can find upstream blocks). */
     readonly graph: NodeGraph;
     /** @internal */
-    readonly loadedEmitters: Map<string, BlockEmitter>;
+    readonly _loadedEmitters: Map<string, BlockEmitter>;
 }

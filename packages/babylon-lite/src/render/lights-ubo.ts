@@ -62,10 +62,15 @@ function fillLightsData(data: Float32Array, lights: readonly LightBase[]): void 
 
 /** @internal */
 export interface SceneLightGpuState {
+    /** @internal */
     _buffer: GPUBuffer;
+    /** @internal */
     _scratch: Float32Array;
+    /** @internal */
     _version: number;
+    /** @internal */
     _lightCount: number;
+    /** @internal */
     _byteSize: number;
 }
 
@@ -105,7 +110,7 @@ export function refreshSceneLightsUBO(engine: EngineContext, scene: SceneContext
         state._version = version;
         state._lightCount = scene.lights.length;
         fillLightsData(state._scratch, scene.lights);
-        engine.device.queue.writeBuffer(state._buffer, 0, state._scratch as Float32Array<ArrayBuffer>);
+        engine._device.queue.writeBuffer(state._buffer, 0, state._scratch as Float32Array<ArrayBuffer>);
     }
     return state._buffer;
 }

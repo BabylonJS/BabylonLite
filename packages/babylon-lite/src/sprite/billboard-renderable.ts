@@ -68,7 +68,7 @@ interface BillboardRenderableInternal extends Renderable {
 export function buildBillboardRenderable(engine: EngineContext, system: BillboardSpriteSystem): { renderable: Renderable; dispose: () => void } {
     const indexBuffer = createMappedBuffer(engine, BILLBOARD_INDEX_DATA, GPUBufferUsage.INDEX);
     const uniformBuffer = createEmptyUniformBuffer(engine, BILLBOARD_SYSTEM_UBO_BYTES, `${system._orientation}-billboard-system-ubo`);
-    const instanceBuffer = createBillboardInstanceBuffer(engine.device, system, `${system._orientation}-billboard-instances`);
+    const instanceBuffer = createBillboardInstanceBuffer(engine._device, system, `${system._orientation}-billboard-instances`);
     const isTransparent = system._depthMode === "transparent";
     const renderable: BillboardRenderableInternal = {
         order: system.order,
@@ -153,7 +153,7 @@ function uploadSystem(renderable: BillboardRenderableInternal, context: DrawUpda
         return;
     }
     const grown = ensureBillboardInstanceBuffer(
-        renderable._engine.device,
+        renderable._engine._device,
         renderable._system,
         renderable._instanceBuffer,
         renderable._instanceBufferCapacity,
@@ -176,7 +176,7 @@ function uploadSystem(renderable: BillboardRenderableInternal, context: DrawUpda
             renderable._uploadedCamera !== camera ||
             renderable._uploadedCameraViewVersion !== camera.worldMatrixVersion
         ) {
-            uploadSortedBillboardInstances(renderable._engine.device, renderable._system, renderable._instanceBuffer, renderable._instanceSortScratch, cameraViewMatrix);
+            uploadSortedBillboardInstances(renderable._engine._device, renderable._system, renderable._instanceBuffer, renderable._instanceSortScratch, cameraViewMatrix);
             renderable._uploadedVersion = renderable._system._version;
             renderable._uploadedCamera = camera;
             renderable._uploadedCameraViewVersion = camera.worldMatrixVersion;
@@ -184,13 +184,13 @@ function uploadSystem(renderable: BillboardRenderableInternal, context: DrawUpda
         }
     } else {
         const uploadedVersion = renderable._uploadedSorted ? -1 : renderable._uploadedVersion;
-        renderable._uploadedVersion = uploadBillboardInstances(renderable._engine.device, renderable._system, renderable._instanceBuffer, uploadedVersion);
+        renderable._uploadedVersion = uploadBillboardInstances(renderable._engine._device, renderable._system, renderable._instanceBuffer, uploadedVersion);
         renderable._uploadedCamera = null;
         renderable._uploadedCameraViewVersion = -1;
         renderable._uploadedSorted = false;
     }
     buildBillboardSystemUbo(renderable._system, renderable._scratchUbo);
-    writeBillboardSystemUboIfDirty(renderable._engine.device, renderable._uniformBuffer, renderable._scratchUbo, renderable._lastUbo, !renderable._uboUploaded);
+    writeBillboardSystemUboIfDirty(renderable._engine._device, renderable._uniformBuffer, renderable._scratchUbo, renderable._lastUbo, !renderable._uboUploaded);
     renderable._uboUploaded = true;
 }
 

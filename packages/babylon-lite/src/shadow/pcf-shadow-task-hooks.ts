@@ -11,19 +11,30 @@ import { casterVersionSum, createShadowCamera, createShadowRenderTarget, updateS
 import type { ShadowGenerator, ShadowTaskInternalState } from "./shadow-generator.js";
 
 export interface PcfLightMatrix {
+    /** @internal */
     _view: Float32Array;
+    /** @internal */
     _viewProj: Float32Array;
+    /** @internal */
     _near: number;
+    /** @internal */
     _far: number;
 }
 
 export interface PcfTaskState extends ShadowTaskInternalState {
+    /** @internal */
     _task: RenderTask;
+    /** @internal */
     _camera: Camera;
+    /** @internal */
     _cameraVersion: number;
+    /** @internal */
     _lastCasterVersion: number;
+    /** @internal */
     _lastLightVersion: number;
+    /** @internal */
     _shadowUboData: Float32Array;
+    /** @internal */
     _casterMeshes: readonly Mesh[];
 }
 
@@ -117,12 +128,7 @@ export function ensurePcfShadowTaskState(
     return state;
 }
 
-export function renderPcfShadowMap(
-    engine: EngineContext,
-    sg: ShadowGenerator,
-    state: PcfTaskState,
-    computeLightMatrix: (casterMeshes: readonly Mesh[]) => PcfLightMatrix
-): number {
+export function renderPcfShadowMap(engine: EngineContext, sg: ShadowGenerator, state: PcfTaskState, computeLightMatrix: (casterMeshes: readonly Mesh[]) => PcfLightMatrix): number {
     const casterMeshes = state._casterMeshes;
     const casterVersion = casterVersionSum(casterMeshes);
     const lightVersion = sg._light.worldMatrixVersion;
@@ -136,7 +142,7 @@ export function renderPcfShadowMap(
         sg._lightMatrix.set(matrix._viewProj);
         sg._version++;
         writeShadowUboFields(state._shadowUboData, sg);
-        engine.device.queue.writeBuffer(sg._shadowUBO, 0, state._shadowUboData as Float32Array<ArrayBuffer>);
+        engine._device.queue.writeBuffer(sg._shadowUBO, 0, state._shadowUboData as Float32Array<ArrayBuffer>);
     }
     updateShadowCamera(state, sg, matrix);
 

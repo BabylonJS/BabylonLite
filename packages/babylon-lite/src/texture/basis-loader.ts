@@ -205,7 +205,7 @@ function pickTarget(device: GPUDevice, sourceHasAlpha: boolean): BasisTargetForm
  * @returns A Texture2D.
  */
 export async function loadBasisTexture2D(engine: EngineContext, url: string, opts: Texture2DOptions = {}): Promise<Texture2D> {
-    const device = engine.device;
+    const device = engine._device;
 
     const [mod, buffer] = await Promise.all([loadBasisModule(), fetch(url).then((r) => r.arrayBuffer())]);
 

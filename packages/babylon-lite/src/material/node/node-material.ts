@@ -426,5 +426,5 @@ export function writeNodeUBO(engine: EngineContext, buffer: GPUBuffer, material:
         const dstIdx = slot._offsetBytes >> 2;
         scratch.set(slot._values, dstIdx);
     }
-    engine.device.queue.writeBuffer(buffer, 0, scratch);
+    engine._device.queue.writeBuffer(buffer, 0, scratch);
 }

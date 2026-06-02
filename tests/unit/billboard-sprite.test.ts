@@ -59,10 +59,10 @@ function makeMockEngine(): EngineContext {
         canvas: { width: 800, height: 600 } as HTMLCanvasElement,
         msaaSamples: 4,
         drawCallCount: 0,
-        device,
-        context: {} as GPUCanvasContext,
+        _device: device,
+        _context: {} as GPUCanvasContext,
         format: "bgra8unorm",
-        alphaMode: "opaque",
+        _alphaMode: "opaque",
         _animFrameId: 0,
         _renderFn: null,
         _renderingContexts: [],
@@ -282,7 +282,7 @@ describe("addFacingBillboardSystem", () => {
     it("registers a deferred builder without eager GPU work", () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContext;
-        const device = engine.device as unknown as { createBuffer: ReturnType<typeof vi.fn> };
+        const device = engine._device as unknown as { createBuffer: ReturnType<typeof vi.fn> };
         device.createBuffer.mockClear();
 
         addFacingBillboardSystem(scene, createFacingBillboardSystem(makeMockAtlas()));
@@ -329,7 +329,7 @@ describe("addFacingBillboardSystem", () => {
         addFacingBillboardSystem(scene, system);
         await registerScene(engine, scene);
 
-        const device = engine.device as unknown as {
+        const device = engine._device as unknown as {
             createRenderPipeline: ReturnType<typeof vi.fn>;
             createShaderModule: ReturnType<typeof vi.fn>;
             queue: { writeBuffer: ReturnType<typeof vi.fn> };
@@ -368,7 +368,7 @@ describe("addFacingBillboardSystem", () => {
         addFacingBillboardSystem(scene, system);
         await registerScene(engine, scene);
 
-        const device = engine.device as unknown as {
+        const device = engine._device as unknown as {
             createRenderPipeline: ReturnType<typeof vi.fn>;
             createShaderModule: ReturnType<typeof vi.fn>;
             queue: { writeBuffer: ReturnType<typeof vi.fn> };
@@ -410,7 +410,7 @@ describe("addFacingBillboardSystem", () => {
         addFacingBillboardSystem(scene, system);
         await registerScene(engine, scene);
 
-        const device = engine.device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } };
+        const device = engine._device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } };
         const binding = scene._renderables[0]!.bind(engine, { _colorFormat: "bgra8unorm", _depthStencilFormat: "depth32float", _sampleCount: 1 });
         device.queue.writeBuffer.mockClear();
 
@@ -472,7 +472,7 @@ describe("addFacingBillboardSystem", () => {
         addFacingBillboardSystem(scene, system);
         await registerScene(engine, scene);
 
-        const device = engine.device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } };
+        const device = engine._device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } };
         const binding = scene._renderables[0]!.bind(engine, { _colorFormat: "bgra8unorm", _depthStencilFormat: "depth32float", _sampleCount: 1 });
         device.queue.writeBuffer.mockClear();
 
@@ -492,7 +492,7 @@ describe("addFacingBillboardSystem", () => {
         addFacingBillboardSystem(scene, system);
         await registerScene(engine, scene);
 
-        const device = engine.device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } };
+        const device = engine._device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } };
         const binding = scene._renderables[0]!.bind(engine, { _colorFormat: "bgra8unorm", _depthStencilFormat: "depth32float", _sampleCount: 1 });
         device.queue.writeBuffer.mockClear();
 
@@ -517,7 +517,7 @@ describe("addFacingBillboardSystem", () => {
         expect(pass.setBindGroup).toHaveBeenCalledWith(1, expect.anything());
         expect(pass.drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
 
-        const device = engine.device as unknown as { createBuffer: ReturnType<typeof vi.fn> };
+        const device = engine._device as unknown as { createBuffer: ReturnType<typeof vi.fn> };
         const destroySpies = device.createBuffer.mock.results.map((result) => (result.value as MockBuffer).destroy);
         disposeScene(scene);
         expect(destroySpies.filter((destroy) => destroy.mock.calls.length > 0).length).toBeGreaterThanOrEqual(3);
@@ -570,7 +570,7 @@ describe("AxisLockedBillboardSpriteSystem", () => {
         addAxisLockedBillboardSystem(scene, system);
         await registerScene(engine, scene);
 
-        const device = engine.device as unknown as {
+        const device = engine._device as unknown as {
             createRenderPipeline: ReturnType<typeof vi.fn>;
             createShaderModule: ReturnType<typeof vi.fn>;
         };
@@ -598,7 +598,7 @@ describe("AxisLockedBillboardSpriteSystem", () => {
         addAxisLockedBillboardSystem(scene, system);
         await registerScene(engine, scene);
 
-        const device = engine.device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } };
+        const device = engine._device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } };
         const binding = scene._renderables[0]!.bind(engine, { _colorFormat: "bgra8unorm", _depthStencilFormat: "depth32float", _sampleCount: 1 });
         device.queue.writeBuffer.mockClear();
 

@@ -22,7 +22,7 @@ export function createMorphTargets(
     vertexCount: number,
     morphWeights: number[] | null
 ): MorphTargetData {
-    const device = engine.device;
+    const device = engine._device;
     const targetCount = Math.min(targets.length, 4); // max 4 (vec4 weights)
     const texWidth = Math.min(vertexCount, 2048);
     const rowsPerBand = Math.ceil(vertexCount / texWidth);

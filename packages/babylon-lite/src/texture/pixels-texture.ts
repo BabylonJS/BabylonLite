@@ -47,7 +47,7 @@ export function createTexture2DFromPixels(engine: EngineContext, data: Uint8Arra
         throw new Error(`createTexture2DFromPixels: data too short — need ${expected} bytes for ${width}x${height} RGBA, got ${data.length}`);
     }
 
-    const device = engine.device;
+    const device = engine._device;
     const format: GPUTextureFormat = options.srgb ? "rgba8unorm-srgb" : "rgba8unorm";
 
     const texture = device.createTexture({

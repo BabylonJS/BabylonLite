@@ -29,7 +29,7 @@ function clearCache(): void {
 }
 
 function ensureResources(engine: EngineContext): void {
-    const device = engine.device;
+    const device = engine._device;
     if (device !== cachedDevice) {
         clearCache();
         cachedDevice = device;
@@ -45,7 +45,7 @@ function ensureResources(engine: EngineContext): void {
 }
 
 function getPipeline(engine: EngineContext, format: GPUTextureFormat): GPURenderPipeline {
-    const device = engine.device;
+    const device = engine._device;
     ensureResources(engine);
     pipelineCache ??= new Map();
     let pipeline = pipelineCache.get(format);
@@ -63,7 +63,7 @@ function getPipeline(engine: EngineContext, format: GPUTextureFormat): GPURender
 
 /** Generate mip chain for a 2D texture via GPU blit. Works for cube faces via optional `face` layer index. */
 export function generateMipmaps(engine: EngineContext, texture: GPUTexture, face?: number): void {
-    const device = engine.device;
+    const device = engine._device;
     const encoder = device.createCommandEncoder();
     recordMipmaps(engine, texture, encoder, face);
     device.queue.submit([encoder.finish()]);
@@ -73,7 +73,7 @@ export function recordMipmaps(engine: EngineContext, texture: GPUTexture, encode
     if (texture.mipLevelCount <= 1) {
         return;
     }
-    const device = engine.device;
+    const device = engine._device;
     const pipeline = getPipeline(engine, texture.format);
     const vp = face != null ? { dimension: "2d" as const, baseArrayLayer: face, arrayLayerCount: 1 } : {};
     for (let mip = 1; mip < texture.mipLevelCount; mip++) {

@@ -44,7 +44,7 @@ export function createImageProcessingTask(config: ImageProcessingTaskConfig, eng
             }
             const img = scene.imageProcessing as { exposure: number; contrast: number; toneMappingEnabled: boolean | number };
             const data = new Float32Array([img.exposure, img.contrast, img.toneMappingEnabled === true ? 1 : 0, 0]);
-            engine.device.queue.writeBuffer(state.params, 0, data);
+            engine._device.queue.writeBuffer(state.params, 0, data);
             const pass = engine._currentEncoder.beginRenderPass({
                 colorAttachments: [
                     {
@@ -75,7 +75,7 @@ function createImageProcessingState(engine: EngineContext, source: ImageProcessi
     if (!texture) {
         throw new Error("Image processing source has no color texture");
     }
-    const device = engine.device;
+    const device = engine._device;
     const sampleCount = (texture as { sampleCount?: number }).sampleCount ?? 1;
     const multisampled = sampleCount > 1;
     const params = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });

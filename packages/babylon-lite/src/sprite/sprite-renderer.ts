@@ -69,6 +69,7 @@ export interface SpriteRendererOptions {
  * a depth-enabled `Sprite2DLayer` instead — that route is fully owned by the scene.
  */
 export interface SpriteRenderer extends RenderingContext {
+    /** @internal */
     readonly _kind: typeof KIND;
     /** Renderer-owned layer membership. Use `addSpriteRendererLayer` / `removeSpriteRendererLayer` to mutate. */
     readonly layers: readonly Sprite2DLayer[];
@@ -142,7 +143,7 @@ function ensureLayerGpu(rr: SpriteRenderer, layer: Sprite2DLayer): LayerGpu {
     let lg = rr._layerGpu.get(layer);
     if (!lg) {
         const cap = layer._capacity;
-        const instanceBuffer = createSpriteInstanceBuffer(rr._engine.device, layer, "sprite-layer-instances");
+        const instanceBuffer = createSpriteInstanceBuffer(rr._engine._device, layer, "sprite-layer-instances");
         const uniformBuffer = createEmptyUniformBuffer(rr._engine, LAYER_UBO_BYTES, "sprite-layer-ubo");
         lg = {
             layer,
@@ -159,7 +160,7 @@ function ensureLayerGpu(rr: SpriteRenderer, layer: Sprite2DLayer): LayerGpu {
         };
         rr._layerGpu.set(layer, lg);
     }
-    const grown = ensureSpriteInstanceBuffer(rr._engine.device, layer, lg.instanceBuffer, lg.instanceBufferCapacity, "sprite-layer-instances");
+    const grown = ensureSpriteInstanceBuffer(rr._engine._device, layer, lg.instanceBuffer, lg.instanceBufferCapacity, "sprite-layer-instances");
     if (grown.reallocated) {
         lg.instanceBuffer = grown.buffer;
         lg.instanceBufferCapacity = grown.capacity;
@@ -174,9 +175,9 @@ function ensureLayerGpu(rr: SpriteRenderer, layer: Sprite2DLayer): LayerGpu {
  *  Both helpers are version-/dirty-gated and skip work in the steady state. */
 function uploadLayer(rr: SpriteRenderer, lg: LayerGpu): void {
     const layer = lg.layer;
-    lg.uploadedVersion = uploadSpriteInstances(rr._engine.device, layer, lg.instanceBuffer, lg.uploadedVersion);
+    lg.uploadedVersion = uploadSpriteInstances(rr._engine._device, layer, lg.instanceBuffer, lg.uploadedVersion);
     buildSpriteLayerUbo(layer, rr._targetWidth, rr._targetHeight, _scratchUbo);
-    lg.uboUploaded = writeSpriteLayerUboIfDirty(rr._engine.device, lg.uniformBuffer, _scratchUbo, lg.lastUbo, lg.uboUploaded);
+    lg.uboUploaded = writeSpriteLayerUboIfDirty(rr._engine._device, lg.uniformBuffer, _scratchUbo, lg.lastUbo, lg.uboUploaded);
 }
 
 function disposeLayerGpu(lg: LayerGpu): void {
@@ -354,7 +355,7 @@ function spriteRendererRecord(rr: SpriteRenderer): number {
         // (Re)record the bundle when count changes (drawIndexed instance count is baked in)
         // or when ensureLayerGpu reallocated the instance buffer (renderBundle was nulled).
         if (lg.renderBundle == null || lg.bundleCount !== layer.count) {
-            const be = rr._engine.device.createRenderBundleEncoder({
+            const be = rr._engine._device.createRenderBundleEncoder({
                 colorFormats: [rr._engine.format],
                 sampleCount,
             });
@@ -445,5 +446,5 @@ export function disposeSpriteRenderer(sr: SpriteRenderer): void {
 
 /** @internal Test-only accessor for pipeline-cache size. */
 export function _spriteRendererPipelineCacheSize(sr: SpriteRenderer): number {
-    return getSpritePipelineCacheSize(sr._pipelineCache, sr._engine.device);
+    return getSpritePipelineCacheSize(sr._pipelineCache, sr._engine._device);
 }

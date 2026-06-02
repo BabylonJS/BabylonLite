@@ -37,6 +37,7 @@ export interface PostProcessTaskSettings {
 }
 
 export interface PostProcessTaskConfig extends PostProcessTaskSettings {
+    /** @internal */
     _shader: PostProcessShaderConfig;
 }
 
@@ -181,12 +182,12 @@ function createPostProcessGpuState(task: PostProcessTask, engine: EngineContext)
     writePostProcessUniforms(task, engine);
 
     const bgl = getBindGroupLayout(task, engine);
-    task._pipelineLayout ??= engine.device.createPipelineLayout({ label: `${task.name}-pipeline-layout`, bindGroupLayouts: [bgl] });
+    task._pipelineLayout ??= engine._device.createPipelineLayout({ label: `${task.name}-pipeline-layout`, bindGroupLayouts: [bgl] });
     const signature: RenderTargetSignature = {
         _colorFormat: colorFormat,
         _sampleCount: target._descriptor.sampleCount ?? 1,
     };
-    task._pipeline = engine.device.createRenderPipeline({
+    task._pipeline = engine._device.createRenderPipeline({
         label: `${task.name}-${targetSignatureKey(signature)}-${task.alphaMode}`,
         layout: task._pipelineLayout,
         vertex: { module: getShaderModule(task, engine), entryPoint: "postProcessVertex" },
@@ -213,7 +214,7 @@ function createPostProcessGpuState(task: PostProcessTask, engine: EngineContext)
         }
         entries.push({ binding: 2 + i, resource: texture._colorView });
     }
-    task._bindGroup = engine.device.createBindGroup({
+    task._bindGroup = engine._device.createBindGroup({
         label: `${task.name}-bind-group`,
         layout: bgl,
         entries,
@@ -275,7 +276,7 @@ function getBindGroupLayout(task: PostProcessTask, engine: EngineContext): GPUBi
     if (hasUniform) {
         entries.push({ binding: getUniformBinding(task), visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } });
     }
-    task._bindGroupLayout = engine.device.createBindGroupLayout({ label: `${task.name}-bind-group-layout`, entries });
+    task._bindGroupLayout = engine._device.createBindGroupLayout({ label: `${task.name}-bind-group-layout`, entries });
     return task._bindGroupLayout;
 }
 
@@ -291,7 +292,7 @@ function getShaderModule(task: PostProcessTask, engine: EngineContext): GPUShade
     const code = `${fullscreenVertexWGSL(outputFlipY, task._shader.vertexOutputWGSL ?? "", task._shader.vertexMainWGSL ?? "")}\n${SOURCE_WGSL}\n${task._shader.extraTextureWGSL ?? ""}\n${task._shader.uniformWGSL ?? ""}\n${task._shader.fragmentWGSL}\n${task._shader.fragmentWrapperWGSL ?? FRAGMENT_WRAPPER_WGSL}`;
     if (!task._shaderModule || task._shaderModuleCode !== code) {
         task._shaderModuleCode = code;
-        task._shaderModule = engine.device.createShaderModule({
+        task._shaderModule = engine._device.createShaderModule({
             label: task.name,
             code,
         });
@@ -304,7 +305,7 @@ function createUniformBuffer(task: PostProcessTask, engine: EngineContext): GPUB
     if (size === 0) {
         return null;
     }
-    return engine.device.createBuffer({
+    return engine._device.createBuffer({
         label: `${task.name}-uniforms`,
         size,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -322,7 +323,7 @@ function writePostProcessUniforms(task: PostProcessTask, engine: EngineContext):
     }
     task._uniformData!.fill(0);
     task._shader.writeUniforms?.(task._uniformData!);
-    engine.device.queue.writeBuffer(task._uniformBuffer!, 0, task._uniformData as Float32Array<ArrayBuffer>);
+    engine._device.queue.writeBuffer(task._uniformBuffer!, 0, task._uniformData as Float32Array<ArrayBuffer>);
 }
 
 function applyColorAttachmentState(att: GPURenderPassColorAttachment, rt: RenderTarget, eng: EngineContext, clear: boolean): void {

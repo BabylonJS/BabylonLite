@@ -82,7 +82,9 @@ export interface EffectRenderTaskConfig {
 /** A frame-graph task that renders an `EffectWrapper` as a fullscreen pass into an offscreen `RenderTarget`. */
 export interface EffectRenderTask extends Task {
     readonly name: string;
+    /** @internal */
     readonly _config: EffectRenderTaskConfig;
+    /** @internal */
     readonly _rt: RenderTarget;
     /** @internal */
     _targetSignature: RenderTargetSignature;
@@ -403,7 +405,7 @@ function createBindingSlots(wrapper: EffectWrapper): void {
         seen.add(layout.binding);
         if (layout.kind === "uniform") {
             const byteLength = align4(layout.uniformByteLength ?? 16);
-            const buffer = wrapper._engine.device.createBuffer({
+            const buffer = wrapper._engine._device.createBuffer({
                 label: `${wrapper.name}-${layout.name ?? layout.binding}-ubo`,
                 size: byteLength,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -451,7 +453,7 @@ function getEffectPipeline(wrapper: EffectWrapper, targetSignature: RenderTarget
     if (hit) {
         return hit;
     }
-    const device = wrapper._engine.device;
+    const device = wrapper._engine._device;
     const pipeline = device.createRenderPipeline({
         label: `${wrapper.name}-${key}`,
         layout: getPipelineLayout(wrapper),
@@ -470,7 +472,7 @@ function getEffectPipeline(wrapper: EffectWrapper, targetSignature: RenderTarget
 
 function getShaderModule(wrapper: EffectWrapper): GPUShaderModule {
     if (!wrapper._shader) {
-        wrapper._shader = wrapper._engine.device.createShaderModule({
+        wrapper._shader = wrapper._engine._device.createShaderModule({
             label: wrapper.name,
             code: `${wrapper.options.vertexWGSL ?? DEFAULT_VERTEX_WGSL}\n${wrapper.options.fragmentWGSL}`,
         });
@@ -480,7 +482,7 @@ function getShaderModule(wrapper: EffectWrapper): GPUShaderModule {
 
 function getPipelineLayout(wrapper: EffectWrapper): GPUPipelineLayout {
     if (!wrapper._pipelineLayout) {
-        wrapper._pipelineLayout = wrapper._engine.device.createPipelineLayout({
+        wrapper._pipelineLayout = wrapper._engine._device.createPipelineLayout({
             label: `${wrapper.name}-pipeline-layout`,
             bindGroupLayouts: [getBindGroupLayout(wrapper)],
         });
@@ -494,7 +496,7 @@ function getBindGroupLayout(wrapper: EffectWrapper): GPUBindGroupLayout {
             .slice()
             .sort((a, b) => a.binding - b.binding)
             .map((layout) => bindingLayoutEntry(layout));
-        wrapper._bindGroupLayout = wrapper._engine.device.createBindGroupLayout({
+        wrapper._bindGroupLayout = wrapper._engine._device.createBindGroupLayout({
             label: `${wrapper.name}-bgl`,
             entries,
         });
@@ -525,7 +527,7 @@ function getEffectBindGroup(wrapper: EffectWrapper): GPUBindGroup | null {
         .slice()
         .sort((a, b) => a.binding - b.binding)
         .map((layout) => bindGroupEntry(wrapper, layout));
-    wrapper._bindGroup = wrapper._engine.device.createBindGroup({
+    wrapper._bindGroup = wrapper._engine._device.createBindGroup({
         label: `${wrapper.name}-bg`,
         layout: getBindGroupLayout(wrapper),
         entries,
@@ -581,7 +583,7 @@ function writeUniformSlot(wrapper: EffectWrapper, slot: EffectUniformSlot, data:
     if (bytes.byteLength > slot.byteLength) {
         throw new Error(`writeUniformSlot: ${bytes.byteLength} bytes exceeds uniform binding ${slot.layout.binding} size ${slot.byteLength}.`);
     }
-    wrapper._engine.device.queue.writeBuffer(slot.buffer, 0, bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    wrapper._engine._device.queue.writeBuffer(slot.buffer, 0, bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }
 
 function toBytes(data: ArrayBuffer | ArrayBufferView): Uint8Array {

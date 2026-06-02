@@ -100,7 +100,7 @@ export function buildSpriteRenderable(engine: EngineContext, layer: Sprite2DLaye
     const indexBuffer = createMappedBuffer(engine, SHARED_SPRITE_INDEX_DATA, GPUBufferUsage.INDEX);
     const uniformBuffer = createEmptyUniformBuffer(engine, LAYER_UBO_BYTES, "sprite-depth-hosted-ubo");
     const cap = layer._capacity;
-    const instanceBuffer = createSpriteInstanceBuffer(engine.device, layer, "sprite-depth-hosted-instances");
+    const instanceBuffer = createSpriteInstanceBuffer(engine._device, layer, "sprite-depth-hosted-instances");
 
     const isTransparent = layer.depth === "test";
     const isDirect = layer.depth === "test-write";
@@ -176,15 +176,15 @@ function uploadLayer(r: SpriteRenderableInternal, target: DrawUpdateContext): vo
     if (r._disposed || !r._layer.visible || r._layer.count === 0) {
         return;
     }
-    const grown = ensureSpriteInstanceBuffer(r._engine.device, r._layer, r._instanceBuffer, r._instanceBufferCapacity, "sprite-depth-hosted-instances");
+    const grown = ensureSpriteInstanceBuffer(r._engine._device, r._layer, r._instanceBuffer, r._instanceBufferCapacity, "sprite-depth-hosted-instances");
     if (grown.reallocated) {
         r._instanceBuffer = grown.buffer;
         r._instanceBufferCapacity = grown.capacity;
         r._uploadedVersion = -1;
     }
-    r._uploadedVersion = uploadSpriteInstances(r._engine.device, r._layer, r._instanceBuffer, r._uploadedVersion);
+    r._uploadedVersion = uploadSpriteInstances(r._engine._device, r._layer, r._instanceBuffer, r._uploadedVersion);
     buildSpriteLayerUbo(r._layer, target.targetWidth, target.targetHeight, r._scratchUbo);
-    r._uboUploaded = writeSpriteLayerUboIfDirty(r._engine.device, r._uniformBuffer, r._scratchUbo, r._lastUbo, r._uboUploaded);
+    r._uboUploaded = writeSpriteLayerUboIfDirty(r._engine._device, r._uniformBuffer, r._scratchUbo, r._lastUbo, r._uboUploaded);
 }
 
 /** Issue the indexed instanced draw for this depth-hosted sprite layer. */

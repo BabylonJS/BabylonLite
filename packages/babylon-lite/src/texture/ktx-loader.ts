@@ -129,7 +129,7 @@ function parseKtx1(buffer: ArrayBuffer): KtxParseResult {
 // ── GPU upload ──────────────────────────────────────────────────────
 
 function uploadCompressed(engine: EngineContext, parsed: KtxParseResult, opts: Texture2DOptions): Texture2D {
-    const device = engine.device;
+    const device = engine._device;
     const fmt = parsed.format;
     const texture = device.createTexture({
         size: { width: parsed.width, height: parsed.height },
@@ -200,7 +200,7 @@ function rewriteUrl(baseUrl: string, suffix: string): string {
  * @returns A Texture2D (same interface whether compressed or fallback).
  */
 export async function loadKtxTexture2D(engine: EngineContext, baseUrl: string, suffixes: string[], opts: Texture2DOptions = {}): Promise<Texture2D> {
-    const device = engine.device;
+    const device = engine._device;
 
     // Collect all suffixes whose feature the device supports
     const supported: string[] = [];

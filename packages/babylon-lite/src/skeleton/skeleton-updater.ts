@@ -60,9 +60,9 @@ export interface AnimationController {
     speedRatio: number;
     /** Whether animation loops (default true). */
     loop: boolean;
-    /** Debug: node world matrices (numNodes × 16 floats, column-major). */
+    /** @internal Debug: node world matrices (numNodes × 16 floats, column-major). */
     readonly _debugWorldMat?: Float32Array;
-    /** Debug: node names. */
+    /** @internal Debug: node names. */
     readonly _debugNodeNames?: string[];
 }
 
@@ -125,7 +125,7 @@ export function createAnimationController(
                       if (requiresEngine && !activeEngine) {
                           throw new Error("AnimationController.tick requires an EngineContext for skeleton or morph animation");
                       }
-                      const device = requiresEngine ? activeEngine!.device : null;
+                      const device = requiresEngine ? activeEngine!._device : null;
 
                       if (ctrl.playing) {
                           ctrl.time += (deltaMs / 1000) * ctrl.speedRatio;

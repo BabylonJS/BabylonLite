@@ -115,7 +115,7 @@ export function applyGsFragments(wgsl: string, fragments: readonly GsShaderFragm
 }
 
 function getOrCreatePipeline(engine: EngineContext, sig: RenderTargetSignature, fragments?: readonly GsShaderFragment[]): PipelineEntry {
-    const device = engine.device;
+    const device = engine._device;
     if (!_cache || _cache.device !== device) {
         _cache = { device, modules: new Map(), entries: new Map() };
     }
@@ -191,7 +191,7 @@ function getOrCreatePipeline(engine: EngineContext, sig: RenderTargetSignature, 
  *  bind-group cache. */
 export function buildGaussianSplattingRenderable(scene: SceneContext, mesh: GaussianSplattingMesh, fragments?: readonly GsShaderFragment[]): Renderable {
     const engine = scene.engine;
-    const device = engine.device;
+    const device = engine._device;
 
     const UBO_BYTES = 16 * 4 * 3 + 8 * 4; // 3 mat4 + viewport,focal,dataSize,alpha,pad → 224 bytes
     const ubo = device.createBuffer({

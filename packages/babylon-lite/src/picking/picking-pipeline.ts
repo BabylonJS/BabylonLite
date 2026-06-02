@@ -12,7 +12,7 @@ let _meshBGL: GPUBindGroupLayout | null = null;
 let _tiMeshBGL: GPUBindGroupLayout | null = null;
 
 function invalidateIfNeeded(engine: EngineContext): void {
-    const device = engine.device;
+    const device = engine._device;
     if (device !== _cachedDevice) {
         _pipeline = null;
         _tiPipeline = null;
@@ -45,7 +45,7 @@ export function getPickingMeshBGL(engine: EngineContext): GPUBindGroupLayout {
 
 /** Group 1: per-mesh baseMeshPickId uniform + instance storage buffer (thin instances). */
 export function getPickingTIMeshBGL(engine: EngineContext): GPUBindGroupLayout {
-    const device = engine.device;
+    const device = engine._device;
     invalidateIfNeeded(engine);
     if (!_tiMeshBGL) {
         _tiMeshBGL = device.createBindGroupLayout({
@@ -83,7 +83,7 @@ interface PickingPipelineOptions {
 }
 
 function createPickingPipelineInternal(engine: EngineContext, opts: PickingPipelineOptions): GPURenderPipeline {
-    const device = engine.device;
+    const device = engine._device;
     const module = device.createShaderModule({ label: `${opts.label}-shader`, code: opts.shader });
     const layout = device.createPipelineLayout({
         label: `${opts.label}-pipeline-layout`,

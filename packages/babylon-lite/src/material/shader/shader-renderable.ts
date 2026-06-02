@@ -89,7 +89,7 @@ function createPacket(scene: SceneContext, material: ShaderMaterial, systemSpec:
     const systemUBO = createEmptyUniformBuffer(engine, systemSpec._totalBytes, "shader-system-ubo");
     const systemData = new Float32Array(systemSpec._totalBytes / 4);
     writeSystemUniforms(systemData, systemSpec, material, mesh, scene.camera, engine.canvas.width || 1, engine.canvas.height || 1);
-    engine.device.queue.writeBuffer(systemUBO, 0, systemData);
+    engine._device.queue.writeBuffer(systemUBO, 0, systemData);
     const packet: ShaderPacket = {
         mesh,
         systemUBO,
@@ -195,7 +195,7 @@ function updatePacket(scene: SceneContext, material: ShaderMaterial, packet: Sha
     const engine = scene.engine;
     const state = material as ShaderMaterialRenderState;
     writeSystemUniforms(packet.systemData, state._shaderBindings!.systemSpec, material, packet.mesh, context._camera ?? scene.camera, context.targetWidth, context.targetHeight);
-    engine.device.queue.writeBuffer(packet.systemUBO, 0, packet.systemData as Float32Array<ArrayBuffer>);
+    engine._device.queue.writeBuffer(packet.systemUBO, 0, packet.systemData as Float32Array<ArrayBuffer>);
     if (packet._lastResourceVersion !== material._resourceVersion) {
         for (const tex of packet._boundTextures) {
             releaseTexture(tex);
@@ -256,7 +256,7 @@ function updateCustomUbo(engine: EngineContext, material: ShaderMaterial): void 
             writeTypedValue(customData, offset, slot.decl.type, slot.value);
         }
     }
-    engine.device.queue.writeBuffer(customUbo, 0, bytes);
+    engine._device.queue.writeBuffer(customUbo, 0, bytes);
     state._shaderCustomVersion = material._uniformVersion;
 }
 
@@ -288,7 +288,7 @@ function createShaderBindGroup(engine: EngineContext, material: ShaderMaterial, 
         }
         entries.push({ binding: nextBinding++, resource: tex.view }, { binding: nextBinding++, resource: tex.sampler });
     }
-    return engine.device.createBindGroup({ label: "shader-material-bg", layout: bindings.group1BGL, entries });
+    return engine._device.createBindGroup({ label: "shader-material-bg", layout: bindings.group1BGL, entries });
 }
 
 function collectShaderTextures(material: ShaderMaterial): Texture2D[] {
@@ -402,7 +402,7 @@ function getZeroAttrBuffer(engine: EngineContext, gpu: MeshGPU, name: string): G
     }
     const vertexCount = gpu.positionBuffer.size / 12;
     const stride = name === "uv" || name === "uv2" ? 8 : name === "normal" ? 12 : 16;
-    const buffer = engine.device.createBuffer({ label: `shader-zero-${name}`, size: vertexCount * stride, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+    const buffer = engine._device.createBuffer({ label: `shader-zero-${name}`, size: vertexCount * stride, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
     cache.set(name, buffer);
     return buffer;
 }

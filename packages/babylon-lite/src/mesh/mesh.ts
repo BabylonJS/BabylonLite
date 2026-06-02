@@ -145,7 +145,7 @@ export function uploadMeshToGPU(
     tangents?: Float32Array,
     colors?: Float32Array
 ): MeshGPU {
-    const device = engine.device;
+    const device = engine._device;
     const positionBuffer = createMappedBuffer(engine, positions, GPUBufferUsage.VERTEX);
     const normalBuffer = createMappedBuffer(engine, normals, GPUBufferUsage.VERTEX);
     const indexBuffer = createMappedBuffer(engine, indices, GPUBufferUsage.INDEX);

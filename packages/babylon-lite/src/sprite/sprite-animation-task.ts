@@ -63,7 +63,7 @@ export function startSpriteAnimationManager(manager: SpriteAnimationManager): vo
     assertNoActiveBinding(manager);
     let loopManager = manager._loopManager;
     if (!loopManager) {
-        loopManager = createAnimationManager({ fixedDeltaMs: manager.fixedDeltaMs, onUpdate: manager.onUpdate });
+        loopManager = createAnimationManager({ fixedDeltaMs: manager.fixedDeltaMs, onUpdate: manager._onUpdate });
         manager._loopManager = loopManager;
     }
     loopManager.fixedDeltaMs = manager.fixedDeltaMs;

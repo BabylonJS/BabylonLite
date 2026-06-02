@@ -59,6 +59,7 @@ export interface Sprite2DLayerOptions {
 
 /** A `Sprite2DLayer` — pure data, no methods. */
 export interface Sprite2DLayer {
+    /** @internal */
     readonly _entityType: "sprite-2d-layer";
     readonly atlas: SpriteAtlas;
     readonly depth: Sprite2DDepthMode;

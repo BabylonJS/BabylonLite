@@ -21,7 +21,7 @@ let _cmCachedDevice: GPUDevice | null = null;
 
 export function createCubemapSkyboxMaterial(label: string, vertCode: string, fragCode: string): CubemapSkyboxMaterial {
     function getLayout(engine: EngineContext): GPUBindGroupLayout {
-        const device = engine.device;
+        const device = engine._device;
         if (_cmCachedDevice !== device) {
             _cmPipelines.clear();
             _cmLayouts.clear();
@@ -45,7 +45,7 @@ export function createCubemapSkyboxMaterial(label: string, vertCode: string, fra
 
     return {
         getPipeline(_engine, sig) {
-            const device = _engine.device;
+            const device = _engine._device;
             if (_cmCachedDevice !== device) {
                 _cmPipelines.clear();
                 _cmLayouts.clear();
@@ -80,7 +80,7 @@ export function createCubemapSkyboxMaterial(label: string, vertCode: string, fra
         },
 
         createBindGroup(engine, meshUBO, cubeView, cubeSampler) {
-            const device = engine.device;
+            const device = engine._device;
             return device.createBindGroup({
                 layout: getLayout(engine),
                 entries: [

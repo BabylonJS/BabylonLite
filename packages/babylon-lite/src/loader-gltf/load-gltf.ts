@@ -20,24 +20,37 @@ import { assemblePbrProps, buildDefaultPbrTextures, identityTexWrap, runMatExts,
 import type * as GltfPbrBuilderExt from "./gltf-pbr-builder-ext.js";
 /** Parsed mesh data ready for GPU upload. */
 export interface GltfMeshData {
+    /** @internal */
     _positions: Float32Array;
+    /** @internal */
     _normals: Float32Array;
+    /** @internal */
     _tangents: Float32Array | null;
+    /** @internal */
     _uvs: Float32Array;
+    /** @internal */
     _uv2s: Float32Array | null;
+    /** @internal */
     _colors: Float32Array | null;
+    /** @internal */
     _indices: Uint16Array | Uint32Array;
+    /** @internal */
     _vertexCount: number;
+    /** @internal */
     _indexCount: number;
+    /** @internal */
     _worldMatrix: Mat4;
+    /** @internal */
     _material: GltfMaterialData;
     /** glTF node index this mesh came from (for hierarchy reconstruction
      *  and for features that need to resolve skin/morph data lazily). */
+    /** @internal */
     _nodeIndex: number;
     /** Raw primitive definition — features (skeleton, morph, …) read their
      *  own attributes/targets from here without bloating core extraction. */
+    /** @internal */
     _primitive: any;
-    /** Pre-decoded primitive (Draco et al.) if a preMesh feature produced one. */
+    /** @internal Pre-decoded primitive (Draco et al.) if a preMesh feature produced one. */
     _decoded?: DecodedPrimitive;
 }
 

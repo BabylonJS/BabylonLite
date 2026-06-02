@@ -61,6 +61,7 @@ function trimInternalDts(outDir: string): Plugin {
                             "ae-missing-release-tag": { logLevel: ExtractorLogLevel.None },
                             "ae-forgotten-export": { logLevel: ExtractorLogLevel.None },
                             "ae-unresolved-link": { logLevel: ExtractorLogLevel.None },
+                            "ae-internal-missing-underscore": { logLevel: ExtractorLogLevel.Error },
                         },
                         tsdocMessageReporting: {
                             default: { logLevel: ExtractorLogLevel.None },

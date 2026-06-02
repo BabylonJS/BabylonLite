@@ -38,64 +38,67 @@ return F0+(F90-F0)*(t2*t2*t);
 `;
 
 export interface PbrTemplateConfig {
-    /** When true, generates a non-looping single-light direct block + lights UBO binding. */
+    /** @internal When true, generates a non-looping single-light direct block + lights UBO binding. */
     readonly _hasSingleLight?: boolean;
     /** When true, generates a multi-light loop + lights UBO binding.
      *  Used for multiple lights or shadow receivers. */
+    /** @internal */
     readonly _hasMultiLight?: boolean;
-    /** Pre-built WGSL for the single-light UBO structs. */
+    /** @internal Pre-built WGSL for the single-light UBO structs. */
     readonly _singleLightWGSL?: string;
-    /** Pre-built WGSL for the single-light direct lighting block. */
+    /** @internal Pre-built WGSL for the single-light direct lighting block. */
     readonly _singleLightBlock?: string;
     /** Pre-built WGSL for multi-light (structs + computePbrLight). Passed from
      *  dynamically imported fragments/multilight-wgsl.ts to keep it out of non-shadow bundles. */
+    /** @internal */
     readonly _multiLightWGSL?: string;
-    /** Pre-built WGSL for the multi-light direct lighting loop body. */
+    /** @internal Pre-built WGSL for the multi-light direct lighting loop body. */
     readonly _multiLightLoop?: string;
-    /** Normal map mode (default: "none") */
+    /** @internal Normal map mode (default: "none") */
     readonly _normalMode?: "tangent" | "cotangent" | "none";
-    /** Has emissive texture */
+    /** @internal Has emissive texture */
     readonly _hasEmissiveTexture?: boolean;
-    /** Has specular-glossiness workflow */
+    /** @internal Has specular-glossiness workflow */
     readonly _hasSpecGloss?: boolean;
-    /** Has double-sided rendering */
+    /** @internal Has double-sided rendering */
     readonly _hasDoubleSided?: boolean;
-    /** Has tonemap */
+    /** @internal Has tonemap */
     readonly _hasTonemap?: boolean;
-    /** ACES WGSL: tonemap helper functions (dynamically imported). Empty string = standard exponential tonemap. */
+    /** @internal ACES WGSL: tonemap helper functions (dynamically imported). Empty string = standard exponential tonemap. */
     readonly _acesHelpers?: string;
-    /** ACES WGSL: tonemap call block replacing the default exponential one. */
+    /** @internal ACES WGSL: tonemap call block replacing the default exponential one. */
     readonly _acesTonemapCall?: string;
-    /** Has alpha blending */
+    /** @internal Has alpha blending */
     readonly _hasAlphaBlend?: boolean;
-    /** Has specular AA */
+    /** @internal Has specular AA */
     readonly _hasSpecularAA?: boolean;
-    /** Has gamma albedo (sRGB base color decode) */
+    /** @internal Has gamma albedo (sRGB base color decode) */
     readonly _hasGammaAlbedo?: boolean;
-    /** Has morph targets (changes position/normal variable names in vertex shader) */
+    /** @internal Has morph targets (changes position/normal variable names in vertex shader) */
     readonly _hasMorph?: boolean;
-    /** Has occlusion in ORM texture (simple path, no reflectance ext) */
+    /** @internal Has occlusion in ORM texture (simple path, no reflectance ext) */
     readonly _hasOcclusion?: boolean;
-    /** Has emissive color UBO field (fragment handles emissive computation) */
+    /** @internal Has emissive color UBO field (fragment handles emissive computation) */
     readonly _hasEmissiveColor?: boolean;
-    /** When true, the reflectance fragment handles F0 + occlusion computation */
+    /** @internal When true, the reflectance fragment handles F0 + occlusion computation */
     readonly _hasReflectanceExt?: boolean;
-    /** When true, include IBL SH coefficients in scene UBO */
+    /** @internal When true, include IBL SH coefficients in scene UBO */
     readonly _hasIbl?: boolean;
-    /** Has anisotropy layer */
+    /** @internal Has anisotropy layer */
     readonly _hasAnisotropy?: boolean;
-    /** Anisotropy WGSL: BRDF helper functions (dynamically imported). */
+    /** @internal Anisotropy WGSL: BRDF helper functions (dynamically imported). */
     readonly _anisoBrdfFunctions?: string;
-    /** Anisotropy WGSL: T/B computation block (dynamically imported). */
+    /** @internal Anisotropy WGSL: T/B computation block (dynamically imported). */
     readonly _anisoTBBlock?: string;
     /** Optional extension config for advanced features (UV transforms, UV2, vertex colors).
      *  When undefined, base template defaults to master-like behavior (no feature strings). */
+    /** @internal */
     readonly _ext?: PbrTemplateExt;
-    /** Generate a fragment stage that runs discard/alpha-test logic and writes no color. */
+    /** @internal Generate a fragment stage that runs discard/alpha-test logic and writes no color. */
     readonly _noColorOutput?: boolean;
-    /** Generate a fragment stage that runs discard/alpha-test logic and writes ESM shadow color. */
+    /** @internal Generate a fragment stage that runs discard/alpha-test logic and writes ESM shadow color. */
     readonly _esmShadowOutput?: boolean;
-    /** ESM shadow depth output code. Supplied by the ESM material view so normal PBR bundles don't retain it. */
+    /** @internal ESM shadow depth output code. Supplied by the ESM material view so normal PBR bundles don't retain it. */
     readonly _esmShadowDepthCode?: string;
 }
 

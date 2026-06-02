@@ -45,11 +45,11 @@ export interface EngineContext {
     maxDevicePixelRatio: number;
 
     /** @internal */
-    device: GPUDevice;
+    _device: GPUDevice;
     /** @internal */
-    readonly context: GPUCanvasContext;
+    readonly _context: GPUCanvasContext;
     /** @internal */
-    readonly alphaMode: GPUCanvasAlphaMode;
+    readonly _alphaMode: GPUCanvasAlphaMode;
     /** @internal */
     _dlr?: DeviceLostRecoveryCapture;
     /** @internal */
@@ -79,7 +79,7 @@ export interface EngineContext {
 export interface RenderingContext {
     /** @internal Draw calls produced by pre-pass work during `_update` (shadows + pre-passes). */
     _drawCallsPre: number;
-    /** @internal Clear color used when this context is the first active one in a frame. */
+    /** Clear color used when this context is the first active one in a frame. */
     clearColor: GPUColorDict;
     /** @internal Run per-frame update work (beforeRender hooks, shadow + pre-passes, UBO updates,
      *  transparent sort). Reads / mutates engine state via `engine._currentEncoder` and
@@ -200,10 +200,10 @@ export async function createEngine(canvas: RenderCanvas, options?: EngineOptions
     const msaaSamples: 1 | 4 = options?.msaaSamples === 1 ? 1 : 4;
 
     const engine: EngineContext = {
-        device,
-        context,
+        _device: device,
+        _context: context,
         format,
-        alphaMode,
+        _alphaMode: alphaMode,
         canvas,
         msaaSamples,
         drawCallCount: 0,
@@ -316,8 +316,8 @@ export function stopEngine(engine: EngineContext): void {
 export function disposeEngine(engine: EngineContext): void {
     stopEngine(engine);
     engine._renderingContexts.length = 0;
-    engine.context.unconfigure();
-    engine.device.destroy();
+    engine._context.unconfigure();
+    engine._device.destroy();
 }
 
 function renderFrame(engine: EngineContext, delta: number): void {
@@ -326,10 +326,10 @@ function renderFrame(engine: EngineContext, delta: number): void {
         return;
     }
 
-    const encoder = engine.device.createCommandEncoder({ label: "frame" });
+    const encoder = engine._device.createCommandEncoder({ label: "frame" });
     engine._currentEncoder = encoder;
     engine._currentDelta = delta;
-    engine._swapchainView = engine.context.getCurrentTexture().createView();
+    engine._swapchainView = engine._context.getCurrentTexture().createView();
 
     let drawCalls = 0;
     for (let i = 0; i < ctxs.length; i++) {
@@ -341,6 +341,6 @@ function renderFrame(engine: EngineContext, delta: number): void {
 
     const finalEncoder = engine._currentEncoder;
     engine._cbs[0] = finalEncoder.finish();
-    engine.device.queue.submit(engine._cbs);
+    engine._device.queue.submit(engine._cbs);
     engine.drawCallCount = drawCalls;
 }

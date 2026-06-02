@@ -5,13 +5,17 @@ import { DEPTH_INSTANCE_STRIDE_BYTES, PURE_2D_INSTANCE_STRIDE_BYTES } from "./sp
 
 /** @internal */
 export interface SpritePipelineDeviceCache {
+    /** @internal */
     _shaderModule: GPUShaderModule | null;
+    /** @internal */
     _sceneShaderModule: GPUShaderModule | null;
+    /** @internal */
     _pipelines: Map<string, GPURenderPipeline>;
 }
 
 /** @internal */
 export interface SpritePipelineCache {
+    /** @internal */
     _devices: WeakMap<GPUDevice, SpritePipelineDeviceCache>;
 }
 
@@ -157,7 +161,7 @@ export function createSpriteLayerBindGroup(
     uniformBuffer: GPUBuffer
 ): GPUBindGroup {
     const tex = layer.atlas.texture;
-    return engine.device.createBindGroup({
+    return engine._device.createBindGroup({
         layout: pipeline.getBindGroupLayout(spriteBindGroupIndex),
         entries: [
             { binding: 0, resource: { buffer: uniformBuffer } },
@@ -168,14 +172,14 @@ export function createSpriteLayerBindGroup(
 }
 
 function getSpritePipelineDeviceCache(engine: EngineContext, cache: SpritePipelineCache): SpritePipelineDeviceCache {
-    let deviceCache = cache._devices.get(engine.device);
+    let deviceCache = cache._devices.get(engine._device);
     if (!deviceCache) {
         deviceCache = {
             _shaderModule: null,
             _sceneShaderModule: null,
             _pipelines: new Map(),
         };
-        cache._devices.set(engine.device, deviceCache);
+        cache._devices.set(engine._device, deviceCache);
     }
     return deviceCache;
 }
@@ -203,10 +207,10 @@ function spritePipelineKey(
 
 function getShaderModule(engine: EngineContext, cache: SpritePipelineDeviceCache, hasDepth: boolean): GPUShaderModule {
     if (hasDepth) {
-        cache._sceneShaderModule ??= engine.device.createShaderModule({ code: makeSpriteWgsl(true, 1) });
+        cache._sceneShaderModule ??= engine._device.createShaderModule({ code: makeSpriteWgsl(true, 1) });
         return cache._sceneShaderModule;
     }
-    cache._shaderModule ??= engine.device.createShaderModule({ code: makeSpriteWgsl(false, 0) });
+    cache._shaderModule ??= engine._device.createShaderModule({ code: makeSpriteWgsl(false, 0) });
     return cache._shaderModule;
 }
 
@@ -221,7 +225,7 @@ function buildSpritePipeline(
     depthStencilFormat: GPUTextureFormat | null,
     sceneBindGroupLayout?: GPUBindGroupLayout
 ): GPURenderPipeline {
-    const device = engine.device;
+    const device = engine._device;
     const bindGroupLayout = device.createBindGroupLayout({
         entries: [
             { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },

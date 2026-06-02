@@ -27,19 +27,23 @@ import type { Task } from "./task.js";
 
 /** A frame-graph pass that begins a render pass into its bound `RenderTarget`, runs an execute callback, then ends the pass. */
 export interface RenderPass extends Pass {
-    /** Color render target. `null` until set via `setRenderPassRenderTarget`. */
+    /** @internal Color render target. `null` until set via `setRenderPassRenderTarget`. */
     _renderTarget: RenderTarget | null;
 
     /** Optional separate depth target. When `null`, the depth view is taken
      *  from `_renderTarget` (today's combined-RT behavior). Mirrors BJS'
      *  `setRenderTargetDepth`. */
+    /** @internal */
     _renderTargetDepth: RenderTarget | null;
 
     /** Cached descriptor + attachments — built once in `_initialize`, then
      *  patched per-frame in `_execute` for swapchain mode + clearColor +
      *  loadOp. */
+    /** @internal */
     _renderPassDescriptor: GPURenderPassDescriptor;
+    /** @internal */
     _colorAttachment: GPURenderPassColorAttachment | null;
+    /** @internal */
     _depthAttachment: GPURenderPassDepthStencilAttachment | null;
 
     /** Per-frame mutable state. RenderTask mirrors live scene state
@@ -49,9 +53,9 @@ export interface RenderPass extends Pass {
     /** True → loadOp `"clear"`, false → `"load"` (overlay mode). */
     clear: boolean;
 
-    /** Cached at descriptor build — `_renderTarget.descriptor.resolveToSwapchain`. */
+    /** @internal Cached at descriptor build — `_renderTarget.descriptor.resolveToSwapchain`. */
     _swapchain: boolean;
-    /** Cached at descriptor build — `_renderTarget.descriptor.sampleCount`. */
+    /** @internal Cached at descriptor build — `_renderTarget.descriptor.sampleCount`. */
     _sampleCount: number;
 }
 

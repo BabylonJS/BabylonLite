@@ -28,8 +28,11 @@ const TYPE_SIZES: Record<string, number> = {
 // --- Accessor Resolution ---
 
 export interface AccessorView {
+    /** @internal */
     _data: ArrayBufferView;
+    /** @internal */
     _count: number;
+    /** @internal */
     _componentCount: number;
 }
 

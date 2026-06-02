@@ -52,7 +52,7 @@ function encodeDispatch(encoder: GPUCommandEncoder, pipeline: GPUComputePipeline
 
 /** Decode a single RGBD PNG (e.g. BRDF LUT) `->` rgba16float 2D texture. No Y-flip. */
 export function decodeBrdfPng(engine: EngineContext, image: ImageBitmap): GPUTexture {
-    const device = engine.device;
+    const device = engine._device;
     const pipeline = getPipeline(device, false);
     const w = image.width;
     const h = image.height;
@@ -78,7 +78,7 @@ export function decodeBrdfPng(engine: EngineContext, image: ImageBitmap): GPUTex
 /** Decode and upload a RGBD cubemap (6 faces × N mips) → rgba16float cube texture.
  *  Y-flipped on read (BJS uploads cubemap faces with invertY=true). */
 export function uploadCubemapRGBD(engine: EngineContext, images: ImageBitmap[], width: number, mipCount: number): GPUTexture {
-    const device = engine.device;
+    const device = engine._device;
     const pipeline = getPipeline(device, true);
 
     const texture = device.createTexture({

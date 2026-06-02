@@ -73,7 +73,7 @@ export function createMeshFromData(
  *  Zero-allocation GPU upload only — CPU-side picking geometry is not refreshed. */
 export function updateMeshPositions(engine: EngineContext, mesh: Mesh, positions: Float32Array, vertexOffset = 0): void {
     const gpu = mesh._gpu;
-    engine.device.queue.writeBuffer(gpu.positionBuffer, vertexOffset * 3 * 4, positions.buffer as ArrayBuffer, positions.byteOffset, positions.byteLength);
+    engine._device.queue.writeBuffer(gpu.positionBuffer, vertexOffset * 3 * 4, positions.buffer as ArrayBuffer, positions.byteOffset, positions.byteLength);
 }
 
 /** Create a sphere mesh. Caller must assign material. */

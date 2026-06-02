@@ -2,6 +2,7 @@ import type { EngineContext } from "../engine/engine.js";
 
 /** A unit of per-frame animation work owned by an {@link AnimationManager}. */
 export interface AnimationTask {
+    /** @internal */
     readonly _entityType: "animation-task";
     active: boolean;
     /** @internal */
@@ -44,8 +45,11 @@ export interface AnimationManager {
     readonly onUpdate?: (deltaMs: number) => void;
     /** @internal Optional feature updaters installed by category-specific adapters. */
     _taskCategory?: string;
+    /** @internal */
     _taskCategoryHandler?: AnimationTaskCategoryHandler;
+    /** @internal */
     _rafId: number;
+    /** @internal */
     _lastTime: number;
 }
 

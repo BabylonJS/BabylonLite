@@ -8,7 +8,7 @@ type CubeResult = { texture: GPUTexture; view: GPUTextureView; sampler: GPUSampl
 let _cc: WeakMap<GPUDevice, Map<string, Promise<CubeResult>>> | null = null;
 
 export function loadCubeTexture(engine: EngineContext, baseUrl: string, ext = ".jpg"): Promise<CubeResult> {
-    const device = engine.device;
+    const device = engine._device;
     if (!_cc) {
         _cc = new WeakMap();
     }

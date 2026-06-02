@@ -111,7 +111,7 @@ function createDdsMeshUBO(engine: EngineContext, world: Float32Array, primaryCol
  *  Uploads only mip 0 from the DDS file and generates remaining mipmaps on the
  *  GPU so that cube face edges blend seamlessly — matching BJS's behaviour. */
 async function loadDdsCube(engine: EngineContext, url: string): Promise<{ cubeView: GPUTextureView; sampler: GPUSampler }> {
-    const device = engine.device;
+    const device = engine._device;
     const buf = await (await fetch(url)).arrayBuffer();
     const header = new Int32Array(buf, 0, 32);
     const width = header[3]!;

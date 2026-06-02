@@ -21,6 +21,7 @@ export interface PlaySpriteAnimationOptions {
 
 /** A single frame-range animation playing on a {@link SpriteAnimationTarget}. */
 export interface SpriteFrameAnimation {
+    /** @internal */
     readonly _entityType: "sprite-frame-animation";
     readonly target: SpriteAnimationTarget;
     from: number;
@@ -44,12 +45,13 @@ export interface SpriteAnimationManagerOptions {
 
 /** Owns a set of sprite frame animations and advances them in lockstep. */
 export interface SpriteAnimationManager {
+    /** @internal */
     readonly _entityType: "sprite-animation-manager";
     animations: SpriteFrameAnimation[];
     fixedDeltaMs: number;
     running: boolean;
     /** @internal */
-    readonly onUpdate?: (deltaMs: number) => void;
+    readonly _onUpdate?: (deltaMs: number) => void;
     /** @internal */
     _binding?: SpriteAnimationBinding;
     /** @internal */
@@ -62,6 +64,7 @@ export interface SpriteAnimationManager {
 
 /** Handle to a sprite animation manager attached to a scene or renderer; dispose it to detach. */
 export interface SpriteAnimationBinding {
+    /** @internal */
     readonly _entityType: "sprite-animation-binding";
     active: boolean;
     /** @internal */
@@ -104,7 +107,7 @@ export function createSpriteAnimationManager(options?: SpriteAnimationManagerOpt
         animations: [],
         fixedDeltaMs: options?.fixedDeltaMs ?? 0,
         running: false,
-        onUpdate: options?.onUpdate,
+        _onUpdate: options?.onUpdate,
     };
     return manager;
 }

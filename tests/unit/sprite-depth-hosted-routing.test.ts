@@ -64,10 +64,10 @@ function makeMockEngine(): EngineContext {
         canvas: { width: 800, height: 600 } as HTMLCanvasElement,
         msaaSamples: 4,
         drawCallCount: 0,
-        device,
-        context: {} as GPUCanvasContext,
+        _device: device,
+        _context: {} as GPUCanvasContext,
         format: "bgra8unorm",
-        alphaMode: "opaque",
+        _alphaMode: "opaque",
         _targets: {
             msaaTexture: {} as GPUTexture,
             msaaView: {} as GPUTextureView,
@@ -123,7 +123,7 @@ describe("addDepthHostedSpriteLayer", () => {
     it("registers a deferred builder for depth: 'test' (no eager GPU work)", () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine);
-        const device = engine.device as unknown as { createBuffer: ReturnType<typeof vi.fn> };
+        const device = engine._device as unknown as { createBuffer: ReturnType<typeof vi.fn> };
         device.createBuffer.mockClear();
         const layer = createSprite2DLayer(makeMockAtlas(), { depth: "test" });
         addDepthHostedSpriteLayer(scene, layer);
@@ -162,7 +162,7 @@ describe("addDepthHostedSpriteLayer", () => {
         addDepthHostedSpriteLayer(scene, createSprite2DLayer(makeMockAtlas(), { depth: "test-write" }));
         await registerScene(engine, scene);
 
-        const device = engine.device as unknown as { createRenderPipeline: ReturnType<typeof vi.fn>; createShaderModule: ReturnType<typeof vi.fn> };
+        const device = engine._device as unknown as { createRenderPipeline: ReturnType<typeof vi.fn>; createShaderModule: ReturnType<typeof vi.fn> };
         const depthShaderDescriptor = device.createShaderModule.mock.calls
             .map((call) => call[0] as GPUShaderModuleDescriptor)
             .find((descriptor) => descriptor.code.includes("@location(6) iZ: f32"));
@@ -196,7 +196,7 @@ describe("addDepthHostedSpriteLayer", () => {
         addDepthHostedSpriteLayer(scene, layer);
         await registerScene(engine, scene);
 
-        const device = engine.device as unknown as { createBuffer: ReturnType<typeof vi.fn>; queue: { writeBuffer: ReturnType<typeof vi.fn> } };
+        const device = engine._device as unknown as { createBuffer: ReturnType<typeof vi.fn>; queue: { writeBuffer: ReturnType<typeof vi.fn> } };
         const instanceBufferCreate = device.createBuffer.mock.calls.find((call) => (call[0] as GPUBufferDescriptor).label === "sprite-depth-hosted-instances");
         expect((instanceBufferCreate![0] as GPUBufferDescriptor).size).toBe(DEPTH_INSTANCE_STRIDE_BYTES);
 
@@ -216,7 +216,7 @@ describe("addDepthHostedSpriteLayer", () => {
         await registerScene(engine, scene);
 
         const binding = scene._renderables[0]!.bind(engine, { _colorFormat: "bgra8unorm", _depthStencilFormat: "depth24plus-stencil8", _sampleCount: 1 });
-        const queue = (engine.device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } }).queue;
+        const queue = (engine._device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } }).queue;
         queue.writeBuffer.mockClear();
         binding.update?.({ targetWidth: 512, targetHeight: 256 });
 
@@ -237,7 +237,7 @@ describe("addDepthHostedSpriteLayer", () => {
         addDepthHostedSpriteLayer(scene, layer);
         await registerScene(engine, scene);
 
-        const device = engine.device as unknown as { createBindGroup: ReturnType<typeof vi.fn> };
+        const device = engine._device as unknown as { createBindGroup: ReturnType<typeof vi.fn> };
         device.createBindGroup.mockClear();
 
         const renderable = scene._renderables[0]!;
@@ -261,7 +261,7 @@ describe("addDepthHostedSpriteLayer", () => {
         const scene = createSceneContext(engine);
         addDepthHostedSpriteLayer(scene, createSprite2DLayer(makeMockAtlas(), { depth: "test-write" }));
         await registerScene(engine, scene);
-        const device = engine.device as unknown as { createBuffer: ReturnType<typeof vi.fn> };
+        const device = engine._device as unknown as { createBuffer: ReturnType<typeof vi.fn> };
         const buffersBefore = device.createBuffer.mock.results.length;
         // Each created buffer is a MockBuffer with a tracked `destroy` spy.
         const allDestroySpies = device.createBuffer.mock.results.map((r) => (r.value as MockBuffer).destroy);

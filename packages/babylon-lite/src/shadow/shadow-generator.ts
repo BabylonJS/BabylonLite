@@ -7,11 +7,13 @@ interface ShadowGeneratorRuntimeConfig {
 }
 
 export interface ShadowTaskInternalState {
+    /** @internal */
     _task: {
         record(): void;
         execute?(): number;
         dispose(): void;
     };
+    /** @internal */
     _casterMeshes: readonly import("../mesh/mesh.js").Mesh[];
 }
 

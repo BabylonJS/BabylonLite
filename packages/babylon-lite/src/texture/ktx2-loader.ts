@@ -179,12 +179,12 @@ function makeSampler(engine: EngineContext, mipCount: number): GPUSampler {
 }
 
 function uploadCompressed(engine: EngineContext, mips: Ktx2DecodedMip[], format: CompressedFormatInfo, sRGB: boolean): Texture2D {
-    if (!engine.device.features.has(format.feature as GPUFeatureName)) {
+    if (!engine._device.features.has(format.feature as GPUFeatureName)) {
         throw new Error(`KTX2: device does not support ${format.feature}`);
     }
     const width = mips[0]!.width;
     const height = mips[0]!.height;
-    const texture = engine.device.createTexture({
+    const texture = engine._device.createTexture({
         size: { width, height },
         format: sRGB ? srgbFormat(format.gpuFormat) : format.gpuFormat,
         mipLevelCount: mips.length,
@@ -193,7 +193,7 @@ function uploadCompressed(engine: EngineContext, mips: Ktx2DecodedMip[], format:
     for (let level = 0; level < mips.length; level++) {
         const mip = mips[level]!;
         const rowBytes = Math.ceil(mip.width / format.blockW) * format.blockBytes;
-        engine.device.queue.writeTexture({ texture, mipLevel: level }, mip.data as Uint8Array<ArrayBuffer>, { bytesPerRow: rowBytes }, { width: mip.width, height: mip.height });
+        engine._device.queue.writeTexture({ texture, mipLevel: level }, mip.data as Uint8Array<ArrayBuffer>, { bytesPerRow: rowBytes }, { width: mip.width, height: mip.height });
     }
     const tex2d: Texture2D = { texture, view: texture.createView(), sampler: makeSampler(engine, mips.length), width, height, invertY: true };
     acquireTexture(tex2d);
@@ -203,7 +203,7 @@ function uploadCompressed(engine: EngineContext, mips: Ktx2DecodedMip[], format:
 function uploadUncompressed(engine: EngineContext, mips: Ktx2DecodedMip[], info: { format: GPUTextureFormat; bytesPerPixel: number }, sRGB: boolean): Texture2D {
     const width = mips[0]!.width;
     const height = mips[0]!.height;
-    const texture = engine.device.createTexture({
+    const texture = engine._device.createTexture({
         size: { width, height },
         format: sRGB ? srgbFormat(info.format) : info.format,
         mipLevelCount: mips.length,
@@ -215,7 +215,7 @@ function uploadUncompressed(engine: EngineContext, mips: Ktx2DecodedMip[], info:
         if (mip.data.length !== expected) {
             throw new Error(`KTX2: uncompressed mip ${level} has ${mip.data.length} bytes, expected ${expected}`);
         }
-        engine.device.queue.writeTexture(
+        engine._device.queue.writeTexture(
             { texture, mipLevel: level },
             mip.data as Uint8Array<ArrayBuffer>,
             { bytesPerRow: mip.width * info.bytesPerPixel },

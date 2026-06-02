@@ -13,7 +13,7 @@ import { getBilinearSampler } from "../resource/samplers.js";
  *  @param a - Alpha channel (0–1). Default 1.0.
  *  @returns A bilinear-sampled `Texture2D` backed by a tiny GPU texture. */
 export function createSolidTexture2D(engine: EngineContext, r: number, g: number, b: number, a: number = 1.0): Texture2D {
-    const device = engine.device;
+    const device = engine._device;
     const texture = device.createTexture({
         size: { width: 1, height: 1 },
         format: "rgba8unorm",

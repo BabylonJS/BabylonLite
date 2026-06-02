@@ -29,19 +29,30 @@ import type { ShadowGenerator, ShadowTaskInternalState } from "./shadow-generato
 import blurVertSrc from "../../shaders/shadow-blur.vertex.wgsl?raw";
 
 export interface EsmLightMatrix {
+    /** @internal */
     _view: Float32Array;
+    /** @internal */
     _viewProj: Float32Array;
+    /** @internal */
     _near: number;
+    /** @internal */
     _far: number;
 }
 
 export interface EsmShadowTaskResources {
+    /** @internal */
     _esmTexture: GPUTexture;
+    /** @internal */
     _depthBuffer: GPUTexture;
+    /** @internal */
     _blurTexH: GPUTexture;
+    /** @internal */
     _blurPipeline: GPURenderPipeline;
+    /** @internal */
     _blurHBG: GPUBindGroup;
+    /** @internal */
     _blurVBG: GPUBindGroup;
+    /** @internal */
     _shadowUboData: Float32Array;
 }
 
@@ -321,7 +332,7 @@ function renderEsmShadowMap(engine: EngineContext, sg: ShadowGenerator, state: E
         sg._lightMatrix.set(matrix._viewProj);
         sg._version++;
         writeShadowUboFields(resources._shadowUboData, sg);
-        engine.device.queue.writeBuffer(sg._shadowUBO, 0, resources._shadowUboData as Float32Array<ArrayBuffer>);
+        engine._device.queue.writeBuffer(sg._shadowUBO, 0, resources._shadowUboData as Float32Array<ArrayBuffer>);
     }
     updateShadowCamera(state, matrix);
     state._lastCasterVersion = casterVersion;
@@ -403,7 +414,7 @@ function shadowMatrixChanged(a: Float32Array, b: Float32Array): boolean {
  * @returns A `ShadowGenerator` wired to the directional ESM render path.
  */
 export function createEsmDirectionalShadowGenerator(engine: EngineContext, _light: DirectionalLight, cfg: EsmDirectionalShadowGeneratorConfig = {}): ShadowGenerator {
-    const device = engine.device;
+    const device = engine._device;
     const mapSize = cfg.mapSize ?? 1024;
     const depthScale = cfg.depthScale ?? 50;
     const bias = cfg.bias ?? 0.00005;

@@ -5,5 +5,5 @@ export function forceWebGpuDeviceLossForTesting(engine: EngineContext): void {
     if (!markNextDeviceLossForRecovery(engine)) {
         throw new Error("forceWebGpuDeviceLossForTesting requires enableDeviceLostRecovery(engine) first");
     }
-    engine.device.destroy();
+    engine._device.destroy();
 }

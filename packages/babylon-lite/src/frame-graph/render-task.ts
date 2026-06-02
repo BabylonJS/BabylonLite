@@ -70,36 +70,53 @@ export interface RenderTaskConfig {
 /** A frame-graph task that records a single `RenderPass`, binds the scene's `RenderTarget`, and draws renderables into it. */
 export interface RenderTask extends Task {
     readonly name: string;
-    /** Live task configuration. Mutating `clr` or `clrColor` affects subsequent frames. */
+    /** @internal Live task configuration. Mutating `clr` or `clrColor` affects subsequent frames. */
     readonly _config: RenderTaskConfig;
+    /** @internal */
     _autoFromScene: boolean;
 
     /** Source-of-truth renderables. Bucketed binding lists below are derived from
      *  this list at `record()` (or re-sync when auto-filled and `_renderableVersion` changes). */
+    /** @internal */
     _renderables: Renderable[];
+    /** @internal */
     _opaqueBindings: DrawBinding[];
+    /** @internal */
     _directBindings: DrawBinding[];
+    /** @internal */
     _transparentBindings: DrawBinding[];
     /** Cached opaque render bundle. Invalidated by renderable list mutations
      *  (`_lastVersion`) and visibility changes (`_lastVis`). */
+    /** @internal */
     _opaqueBundles: GPURenderBundle[];
+    /** @internal */
     _lastVersion: number;
+    /** @internal */
     _lastVis: number;
 
+    /** @internal */
     _renderPassDescriptor: GPURenderPassDescriptor;
+    /** @internal */
     _colorAttachment: GPURenderPassColorAttachment;
 
     /** Per-task scene UBO + bind group. Created eagerly in createRenderTask
      *  so renderables can reference `_sceneBG` at `bind()` time. Written each
      *  frame by `writePassSceneUBO`. Destroyed in `dispose()`. */
+    /** @internal */
     _sceneUBO: GPUBuffer;
+    /** @internal */
     _sceneBG: GPUBindGroup;
+    /** @internal */
     _lightsUBO: GPUBuffer;
+    /** @internal */
     _suData: Float32Array;
+    /** @internal */
     _su: unknown[];
     /** Optional transmission-enabled execute path: copies the scene texture for refraction and draws transmissive
      *  renderables. Present only when the task was configured with `transmission`. Returns the number of draw calls issued. */
+    /** @internal */
     _executeWithTransmission?(sampleCount: number): number;
+    /** @internal */
     _targetSignature: RenderTargetSignature;
 
     /** Add a mesh to this task's explicit render list with an optional per-pass material override.
@@ -107,6 +124,7 @@ export interface RenderTask extends Task {
      *  so the mesh's material family must already have been registered with
      *  the scene (so its batch builder has run). */
     addMesh(mesh: Mesh, opts?: { material?: Material }): void;
+    /** @internal */
     _pendingMeshes: { mesh: Mesh; material: Material }[];
 }
 
@@ -139,7 +157,7 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
     const sceneBGL = getSceneBindGroupLayout(engine);
     const sceneUBO = createEmptyUniformBuffer(engine, SCENE_UBO_BYTES);
     const lightsUBO = ensureSceneLightState(engine, scene)._buffer;
-    const sceneBG = engine.device.createBindGroup({
+    const sceneBG = engine._device.createBindGroup({
         layout: sceneBGL,
         entries: [
             { binding: 0, resource: { buffer: sceneUBO } },
@@ -405,7 +423,7 @@ function executePassBody(task: RenderTask, pass: GPURenderPassEncoder): number {
     // be replayed standalone (executeBundles inherits no inherited state).
     if (task._lastVersion !== scene._renderableVersion || task._lastVis !== _vis || opaqueBundles.length === 0) {
         const desc = rt._descriptor;
-        const be = eng.device.createRenderBundleEncoder({
+        const be = eng._device.createRenderBundleEncoder({
             colorFormats: desc.colorFormat ? [desc.colorFormat] : [],
             depthStencilFormat: desc.depthStencilFormat,
             sampleCount: desc.sampleCount ?? 1,
@@ -431,7 +449,7 @@ function refreshTaskSceneBindGroup(task: RenderTask, eng: EngineContext): void {
         return;
     }
     task._lightsUBO = lightsUBO;
-    task._sceneBG = eng.device.createBindGroup({
+    task._sceneBG = eng._device.createBindGroup({
         layout: getSceneBindGroupLayout(eng),
         entries: [
             { binding: 0, resource: { buffer: task._sceneUBO } },
@@ -523,7 +541,7 @@ function writePassSceneUBO(task: RenderTask, eng: EngineContext, scene: SceneCon
         data[91] = scene.clipPlane[3];
     }
 
-    eng.device.queue.writeBuffer(task._sceneUBO, 0, data as Float32Array<ArrayBuffer>);
+    eng._device.queue.writeBuffer(task._sceneUBO, 0, data as Float32Array<ArrayBuffer>);
 }
 
 function updateBindings(list: readonly DrawBinding[], context: DrawUpdateContext): void {

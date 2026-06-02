@@ -27,7 +27,7 @@ export function uploadTex(
     generateMipmaps: GenerateMipmapsFn,
     fallback?: Uint8Array
 ): Texture2D {
-    const device = engine.device;
+    const device = engine._device;
     const w = bitmap?.width ?? 1;
     const h = bitmap?.height ?? 1;
     const fmt: GPUTextureFormat = srgb ? "rgba8unorm-srgb" : "rgba8unorm";

@@ -86,7 +86,7 @@ export function enableDeviceLostRecovery(engine: EngineContext, options: DeviceL
     const state = getState(engine);
     state.enabled = true;
     state.options = options;
-    state.requiredFeatures = Array.from(engine.device.features) as GPUFeatureName[];
+    state.requiredFeatures = Array.from(engine._device.features) as GPUFeatureName[];
     attachRecoveryCapture(engine);
 
     arm(engine, state);
@@ -140,7 +140,7 @@ export function markNextDeviceLossForRecovery(engine: EngineContext): boolean {
 }
 
 function arm(engine: EngineContext, state: RecoveryState): void {
-    const device = engine.device;
+    const device = engine._device;
     if (state.armedDevice === device) {
         return;
     }
@@ -184,8 +184,8 @@ async function recoverDevice(engine: EngineContext, state: RecoveryState): Promi
         if (missingFeatures.length > 0) {
             throw new Error(`WebGPU device recovery missing required features: ${missingFeatures.join(", ")}`);
         }
-        engine.device = await adapter.requestDevice({ requiredFeatures: state.requiredFeatures });
-        engine.context.configure({ device: engine.device, format: engine.format, alphaMode: engine.alphaMode });
+        engine._device = await adapter.requestDevice({ requiredFeatures: state.requiredFeatures });
+        engine._context.configure({ device: engine._device, format: engine.format, alphaMode: engine._alphaMode });
         clearSceneBGLCache();
         resizeEngine(engine);
 
@@ -241,7 +241,7 @@ function resetFrameGraphTasks(engine: EngineContext, scene: SceneContext): void 
         const rt = task as unknown as RecoverableRenderTask;
         rt._sceneUBO = createEmptyUniformBuffer(engine, SCENE_UBO_BYTES);
         rt._lightsUBO = ensureSceneLightState(engine, scene)._buffer;
-        rt._sceneBG = engine.device.createBindGroup({
+        rt._sceneBG = engine._device.createBindGroup({
             layout: getSceneBindGroupLayout(engine),
             entries: [
                 { binding: 0, resource: { buffer: rt._sceneUBO } },
@@ -290,7 +290,7 @@ function uploadRetainedMesh(engine: EngineContext, mesh: Mesh): MeshGPU {
     const normals = mesh._cpuNormals!;
     const uvs = mesh._cpuUvs;
     const indices = mesh._cpuGpuIndices ?? mesh._cpuIndices!;
-    const device = engine.device;
+    const device = engine._device;
     let uvBuffer: GPUBuffer;
     if (uvs && uvs.length > 0) {
         uvBuffer = createMappedBuffer(engine, uvs, GPUBufferUsage.VERTEX);
@@ -331,9 +331,9 @@ async function rebuildTexture2D(engine: EngineContext, tex: Texture2D): Promise<
         return;
     }
     if (source.kind === "solid") {
-        const texture = engine.device.createTexture({ size: { width: 1, height: 1 }, format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+        const texture = engine._device.createTexture({ size: { width: 1, height: 1 }, format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
         const data = new Uint8Array(source.rgba.map((v) => Math.round(v * 255)));
-        engine.device.queue.writeTexture({ texture }, data, { bytesPerRow: 4, rowsPerImage: 1 }, { width: 1, height: 1 });
+        engine._device.queue.writeTexture({ texture }, data, { bytesPerRow: 4, rowsPerImage: 1 }, { width: 1, height: 1 });
         tex.texture = texture;
         tex.view = texture.createView();
         tex.sampler = getBilinearSampler(engine);
@@ -345,20 +345,20 @@ async function rebuildTexture2D(engine: EngineContext, tex: Texture2D): Promise<
     const height = source.bitmap?.height ?? 1;
     const format: GPUTextureFormat = source.srgb ? "rgba8unorm-srgb" : "rgba8unorm";
     const mipLevelCount = source.mipMaps ? Math.floor(Math.log2(Math.max(width, height))) + 1 : 1;
-    const texture = engine.device.createTexture({
+    const texture = engine._device.createTexture({
         size: { width, height },
         format,
         mipLevelCount,
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
     });
     if (source.bitmap) {
-        engine.device.queue.copyExternalImageToTexture({ source: source.bitmap }, { texture, premultipliedAlpha: false }, { width, height });
+        engine._device.queue.copyExternalImageToTexture({ source: source.bitmap }, { texture, premultipliedAlpha: false }, { width, height });
         if (source.mipMaps && mipLevelCount > 1) {
             const { generateMipmaps } = await import("../texture/generate-mipmaps.js");
             generateMipmaps(engine, texture);
         }
     } else {
-        engine.device.queue.writeTexture(
+        engine._device.queue.writeTexture(
             { texture },
             (source.fallback ?? new Uint8Array([255, 255, 255, 255])) as Uint8Array<ArrayBuffer>,
             { bytesPerRow: 4 },
@@ -391,13 +391,13 @@ async function rebuildUrlTexture2D(engine: EngineContext, url: string, opts: Tex
     const width = imageBitmap.width;
     const height = imageBitmap.height;
     const mipLevelCount = mipMaps ? Math.floor(Math.log2(Math.max(width, height))) + 1 : 1;
-    const texture = engine.device.createTexture({
+    const texture = engine._device.createTexture({
         size: { width, height },
         format,
         mipLevelCount,
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
     });
-    engine.device.queue.copyExternalImageToTexture({ source: imageBitmap, flipY: invertY }, { texture, premultipliedAlpha: premultiplyAlpha }, { width, height });
+    engine._device.queue.copyExternalImageToTexture({ source: imageBitmap, flipY: invertY }, { texture, premultipliedAlpha: premultiplyAlpha }, { width, height });
     imageBitmap.close();
 
     if (mipMaps && mipLevelCount > 1) {

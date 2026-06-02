@@ -28,7 +28,7 @@ export function createSkeleton(
     joints1?: Uint16Array | Uint8Array | null,
     weights1?: Float32Array | null
 ): SkeletonData {
-    const device = engine.device;
+    const device = engine._device;
     // Bone texture: rgba32float, 4 texels per bone (one mat4 column each)
     const texWidth = boneCount * 4;
     const boneTexture = device.createTexture({

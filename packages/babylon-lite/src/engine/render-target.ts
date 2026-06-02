@@ -15,15 +15,19 @@ import type { Texture2D } from "../texture/texture-2d.js";
 
 /** Signature of a render target's attachment set — enough to key a GPURenderPipeline. */
 export interface RenderTargetSignature {
+    /** @internal */
     readonly _colorFormat?: GPUTextureFormat;
+    /** @internal */
     readonly _depthStencilFormat?: GPUTextureFormat;
-    /** Depth compare for this target. Defaults to reverse-Z `"greater-equal"`. Shadow-map targets use standard-Z `"less-equal"`. */
+    /** @internal Depth compare for this target. Defaults to reverse-Z `"greater-equal"`. Shadow-map targets use standard-Z `"less-equal"`. */
     readonly _depthCompare?: GPUCompareFunction;
+    /** @internal */
     readonly _sampleCount: number;
     /** When true, the projection matrix's Y is flipped (offscreen RTT — see writePassSceneUBO).
      *  Pipelines must invert frontFace to keep back-face culling correct. */
+    /** @internal */
     readonly _flipY?: boolean;
-    /** Internal per-task refraction texture shared by transmissive material bindings. */
+    /** @internal Internal per-task refraction texture shared by transmissive material bindings. */
     readonly _transmissionTexture?: Texture2D | null;
 }
 
@@ -36,9 +40,9 @@ export interface RenderTargetDescriptor {
     label?: string;
     colorFormat?: GPUTextureFormat;
     depthStencilFormat?: GPUTextureFormat;
-    /** Depth clear value. Defaults to reverse-Z far depth `0`. Shadow-map targets use standard-Z far depth `1`. */
+    /** @internal Depth clear value. Defaults to reverse-Z far depth `0`. Shadow-map targets use standard-Z far depth `1`. */
     _depthClearValue?: number;
-    /** Depth compare for pipelines targeting this RT. Defaults to reverse-Z `"greater-equal"`. */
+    /** @internal Depth compare for pipelines targeting this RT. Defaults to reverse-Z `"greater-equal"`. */
     _depthCompare?: GPUCompareFunction;
     sampleCount: number;
     /** 'canvas' means match the canvas pixel size. Otherwise explicit pixels. */
@@ -60,16 +64,24 @@ export function targetSignatureKey(desc: RenderTargetSignature): string {
 
 /** Allocated GPU state for a render target. */
 export interface RenderTarget {
+    /** @internal */
     readonly _descriptor: RenderTargetDescriptor;
+    /** @internal */
     _colorTexture: GPUTexture | null;
+    /** @internal */
     _colorView: GPUTextureView | null;
+    /** @internal */
     _depthTexture: GPUTexture | null;
+    /** @internal */
     _depthView: GPUTextureView | null;
+    /** @internal */
     _width: number;
+    /** @internal */
     _height: number;
     /** True when textures were allocated eagerly (before frame graph build) —
      *  `buildRenderTarget` becomes a no-op so existing GPUTexture handles
      *  (e.g. exposed as SampledTexture) stay valid. */
+    /** @internal */
     _eager?: boolean;
 }
 
@@ -102,7 +114,7 @@ export function buildRenderTarget(rt: RenderTarget, engine: EngineContext): void
     rt._width = width;
     rt._height = height;
 
-    const device = engine.device;
+    const device = engine._device;
     const allocColor = !!desc.colorFormat && (!desc.resolveToSwapchain || desc.sampleCount > 1);
 
     if (allocColor) {

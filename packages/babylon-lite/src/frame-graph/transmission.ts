@@ -12,13 +12,21 @@ import { createImageProcessingTask } from "./image-processing-task.js";
 
 export interface RenderTaskTransmissionState {
     readonly texture: Texture2D;
+    /** @internal */
     readonly _baseView: GPUTextureView;
+    /** @internal */
     _sourceWidth: number;
+    /** @internal */
     _sourceHeight: number;
+    /** @internal */
     _sourceTexture: GPUTexture | null;
+    /** @internal */
     _blit: TransmissionBlitState | null;
+    /** @internal */
     readonly _copyCount: number;
+    /** @internal */
     readonly _generateMipmaps: boolean;
+    /** @internal */
     _copies: number;
 }
 
@@ -176,7 +184,7 @@ function createRenderTaskTransmission(task: RenderTask, engine: EngineContext): 
     const height = 1024;
     const format: GPUTextureFormat = "rgba16float";
     const generateMipmaps = shouldGenerateMipmaps(task._config.transmission);
-    const texture = engine.device.createTexture({
+    const texture = engine._device.createTexture({
         label: task.name,
         size: { width, height },
         format,
@@ -270,7 +278,7 @@ function updateTransmissionTexture(state: RenderTaskTransmissionState, engine: E
 }
 
 function getBlitPipeline(engine: EngineContext, format: GPUTextureFormat, multisampled: boolean): GPURenderPipeline {
-    const device = engine.device;
+    const device = engine._device;
     if (device !== blitDevice) {
         blitPipelines?.clear();
         blitPipelines = null;
@@ -316,7 +324,7 @@ function shouldBlitTransmission(state: RenderTaskTransmissionState, sampleCount:
 }
 
 function createTransmissionBlit(state: RenderTaskTransmissionState, engine: EngineContext, source: GPUTexture, multisampled: boolean): TransmissionBlitState {
-    const device = engine.device;
+    const device = engine._device;
     const pipeline = getBlitPipeline(engine, state.texture.texture.format, multisampled);
     const bindGroup = device.createBindGroup({
         layout: multisampled ? blitMsaaBgl! : blitBgl!,
@@ -396,7 +404,7 @@ function drawBaseTask(task: RenderTask, pass: GPURenderPassEncoder): number {
 
     if (task._lastVersion !== scene._renderableVersion || task._lastVis !== _vis || opaqueBundles.length === 0) {
         const desc = rt._descriptor;
-        const be = eng.device.createRenderBundleEncoder({
+        const be = eng._device.createRenderBundleEncoder({
             colorFormats: desc.colorFormat ? [desc.colorFormat] : [],
             depthStencilFormat: desc.depthStencilFormat,
             sampleCount: desc.sampleCount ?? 1,

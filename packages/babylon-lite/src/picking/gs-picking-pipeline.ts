@@ -187,7 +187,7 @@ fn fs(in: VOut) -> FsOut {
 }
 
 function getCache(engine: EngineContext): GsPickingCache {
-    const device = engine.device;
+    const device = engine._device;
     if (_cache && _cache.device === device) {
         return _cache;
     }
@@ -240,7 +240,7 @@ function getCache(engine: EngineContext): GsPickingCache {
 /** Write a 4x4 pickMatrix into the shared scene UBO and bind group 0 on `pass`. */
 export function gsPickWritePickMatrixAndBind(pass: GPURenderPassEncoder, engine: EngineContext, pickMatrix: Float32Array): void {
     const cache = getCache(engine);
-    engine.device.queue.writeBuffer(cache.pickMatrixUbo, 0, pickMatrix.buffer, pickMatrix.byteOffset, pickMatrix.byteLength);
+    engine._device.queue.writeBuffer(cache.pickMatrixUbo, 0, pickMatrix.buffer, pickMatrix.byteOffset, pickMatrix.byteLength);
     pass.setBindGroup(0, cache.sceneBG);
 }
 
@@ -261,7 +261,7 @@ export interface GsPickMeshResources {
 }
 
 export function createGsPickMeshResources(engine: EngineContext, mesh: GaussianSplattingMesh): GsPickMeshResources {
-    const device = engine.device;
+    const device = engine._device;
     const cache = getCache(engine);
 
     const UBO_BYTES = 16 * 4 * 3 + 8 * 4;
@@ -337,7 +337,7 @@ export function drawGsForPicking(
     cpu[48 + 2] = size.width * 0.5 * proj[0]!;
     cpu[48 + 3] = size.height * 0.5 * proj[5]!;
     // dataSize/alpha already written at construction.
-    engine.device.queue.writeBuffer(res.meshUbo, 0, cpu.buffer, 0, cpu.byteLength);
+    engine._device.queue.writeBuffer(res.meshUbo, 0, cpu.buffer, 0, cpu.byteLength);
 
     // ── Picking-color UBO ───────────────────────────────────────────
     const [r, g, b] = encodeIdToColor(pickId);
@@ -345,7 +345,7 @@ export function drawGsForPicking(
     res.pickingCpu[1] = g;
     res.pickingCpu[2] = b;
     res.pickingCpu[3] = 0;
-    engine.device.queue.writeBuffer(res.pickingUbo, 0, res.pickingCpu.buffer, 0, 16);
+    engine._device.queue.writeBuffer(res.pickingUbo, 0, res.pickingCpu.buffer, 0, 16);
 
     pass.setPipeline(cache.pipeline);
     pass.setBindGroup(1, res.meshBG);

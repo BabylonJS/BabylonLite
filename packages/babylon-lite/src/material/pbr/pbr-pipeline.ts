@@ -39,9 +39,9 @@ const _bindingsCache = new Map<string, _PbrShaderBindings>();
 let _cachedDevice: GPUDevice | null = null;
 
 function ensureDevice(engine: EngineContext): void {
-    if (_cachedDevice !== engine.device) {
+    if (_cachedDevice !== engine._device) {
         _bindingsCache.clear();
-        _cachedDevice = engine.device;
+        _cachedDevice = engine._device;
     }
 }
 
@@ -69,7 +69,7 @@ export function getOrCreatePbrBindings(
         return cached;
     }
 
-    const device = engine.device;
+    const device = engine._device;
     const meshBGL = device.createBindGroupLayout(composed._meshBGLDescriptor);
     let shadowBGL: GPUBindGroupLayout | null = null;
     if (composed._shadowBGLDescriptor) {
@@ -97,7 +97,7 @@ export function getOrCreatePbrPipeline(engine: EngineContext, sig: RenderTargetS
         return cached;
     }
 
-    const device = engine.device;
+    const device = engine._device;
     const { _features: features, _features2: features2, _composed: composed } = bindings;
     const esmShadowOutput = (features2 & PBR2_ESM_SHADOW_OUTPUT) !== 0;
     const hasAlpha = !esmShadowOutput && (features & PBR_HAS_ALPHA_BLEND) !== 0;
@@ -151,7 +151,7 @@ export function createPbrMeshBindGroup(
     meshCtx: { skeleton?: { boneTexture: GPUTexture } | null; morphTargets?: { texture: GPUTexture; weightsBuffer?: GPUBuffer } | null } | null,
     refractionTexture?: Texture2D | null
 ): GPUBindGroup {
-    const device = engine.device;
+    const device = engine._device;
     const features = bindings._features;
     const features2 = bindings._features2;
     const meshFeatures = bindings._meshFeatures;

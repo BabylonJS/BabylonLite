@@ -57,7 +57,7 @@ export function _computeSpotLightMatrix(light: SpotLight, near: number, far: num
  * @returns A `ShadowGenerator` wired to the spot-light PCF render path.
  */
 export function createPcfSpotlightShadowGenerator(engine: EngineContext, _light: SpotLight, cfg: PcfSpotlightShadowGeneratorConfig = {}): ShadowGenerator {
-    const device = engine.device;
+    const device = engine._device;
     const mapSize = cfg.mapSize ?? 512;
     const bias = cfg.bias ?? 0.00005;
     const darkness = cfg.darkness ?? 0;

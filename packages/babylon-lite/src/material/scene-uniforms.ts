@@ -12,7 +12,7 @@ export function updateSceneUniforms(
     eyePosition: [number, number, number],
     fog?: FogConfig
 ): void {
-    const device = engine.device;
+    const device = engine._device;
     if (!_sceneUniformScratch) {
         _sceneUniformScratch = new Float32Array(SCENE_UNIFORM_FLOATS);
     }

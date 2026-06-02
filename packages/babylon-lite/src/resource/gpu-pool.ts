@@ -73,7 +73,7 @@ function samplerKey(desc: GPUSamplerDescriptor): string {
 
 /** Get or create a deduplicated sampler. Same config → same GPUSampler. */
 export function getOrCreateSampler(engine: EngineContext, desc: GPUSamplerDescriptor = {}): GPUSampler {
-    const device = engine.device;
+    const device = engine._device;
     if (!_samplerCache) {
         _samplerCache = new WeakMap();
     }
@@ -93,6 +93,6 @@ export function getOrCreateSampler(engine: EngineContext, desc: GPUSamplerDescri
 
 /** Clear sampler cache for a device. */
 export function clearSamplerCache(engine: EngineContext): void {
-    const device = engine.device;
+    const device = engine._device;
     _samplerCache?.delete(device);
 }

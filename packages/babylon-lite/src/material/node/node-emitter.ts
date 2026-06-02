@@ -110,7 +110,7 @@ export function castExpr(value: NodeExpr, target: NodeValueType): NodeExpr {
 function makeContext(graph: NodeGraph, loadedEmitters: Map<string, BlockEmitter>): NodeEmitContext {
     const ctx: NodeEmitContext = {
         graph,
-        loadedEmitters,
+        _loadedEmitters: loadedEmitters,
         temp: (state, prefix) => mintTemp(state, prefix),
         cast: castExpr,
         resolve: (block, inputName, stage, state) => {

@@ -5,14 +5,8 @@ import type { ThinInstanceData } from "./thin-instance.js";
 import type { EngineContext } from "../engine/engine.js";
 
 /** Sync thin instance matrix + optional color GPU buffers and bind to vertex slots. */
-export function syncThinInstanceBuffers(
-    engine: EngineContext,
-    ti: ThinInstanceData,
-    pass: GPURenderPassEncoder | GPURenderBundleEncoder,
-    slot: number,
-    hasColor: boolean
-): number {
-    const device = engine.device;
+export function syncThinInstanceBuffers(engine: EngineContext, ti: ThinInstanceData, pass: GPURenderPassEncoder | GPURenderBundleEncoder, slot: number, hasColor: boolean): number {
+    const device = engine._device;
     if (ti._version !== ti._gpuVersion) {
         const byteSize = ti.count * 64;
         let bufferRecreated = false;

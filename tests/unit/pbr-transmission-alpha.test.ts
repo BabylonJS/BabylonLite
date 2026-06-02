@@ -55,7 +55,7 @@ describe("PBR transmission and alpha feature detection", () => {
     it("binds refraction maps with wrap/wrap/wrap anisotropic sampling", () => {
         const samplers: GPUSamplerDescriptor[] = [];
         const engine = {
-            device: {
+            _device: {
                 createSampler: (descriptor: GPUSamplerDescriptor) => {
                     samplers.push(descriptor);
                     return descriptor as unknown as GPUSampler;
