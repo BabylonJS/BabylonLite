@@ -29,6 +29,7 @@ import { makeBillboardBasisWgsl } from "./billboard-pipeline.js";
 import type { CustomShaderTexture, SpriteLayerFx } from "./custom-shader-core.js";
 import {
     createSpriteLayerFx,
+    EMPTY_PARAMS,
     makeCustomShaderLayoutEntries,
     makeExtraBindingsWgsl,
     makeFxStructWgsl,
@@ -155,8 +156,6 @@ const BILLBOARD_FX_HOOK: BillboardFxHook = {
         fx.destroy();
     },
 };
-
-const EMPTY_PARAMS: readonly number[] = [0, 0, 0, 0];
 
 /**
  * Build a custom-shader descriptor to pass as `customShader` when creating a billboard system.

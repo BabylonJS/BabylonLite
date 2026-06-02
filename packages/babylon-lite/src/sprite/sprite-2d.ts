@@ -51,9 +51,9 @@ export interface Sprite2DLayerOptions {
      */
     pivot?: [number, number];
     /**
-     * Opt-in per-layer custom fragment shader (see `createSprite2DCustomShader`). Supported on
-     * pure-2D (`depth: "none"`) layers drawn by a `SpriteRenderer`; passing one together with
-     * `depth: "test" | "test-write"` throws. Drives procedural effects (animated sky, clouds,
+     * Opt-in per-layer custom fragment shader (see `createSprite2DCustomShader`). Works on both
+     * pure-2D (`depth: "none"`) layers drawn by a `SpriteRenderer` and depth-hosted
+     * (`depth: "test" | "test-write"`) layers. Drives procedural effects (animated sky, clouds,
      * water / heat shimmer, twinkle, vignette) from a built-in `fx.time` clock plus an optional
      * `fx.params` vec4 set via `setSprite2DShaderParams`.
      */
@@ -241,6 +241,8 @@ export function createSprite2DLayer(atlas: SpriteAtlas, opts: Sprite2DLayerOptio
  * as `fx.params`. Mutates in place; the renderer re-uploads the small FX UBO next frame.
  */
 export function setSprite2DShaderParams(layer: Sprite2DLayer, params: readonly [number, number, number, number]): void {
+    // Lazy-allocate: the base layer never names `shaderParams` (the custom-shader hook sets it only
+    // when `opts.customShader` is present), so a plain layer keeps the field off the always-loaded path.
     const target = (layer.shaderParams ??= [0, 0, 0, 0]);
     target[0] = params[0];
     target[1] = params[1];

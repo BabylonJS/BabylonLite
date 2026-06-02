@@ -51,12 +51,33 @@ export interface SpriteLayerFx {
 /** Valid WGSL identifier (used to validate extra-texture names before splicing them in). */
 const WGSL_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-/** Throw if any extra-texture name is not a legal WGSL identifier. `fnName` names the caller for the message. */
+/** Shared all-zero `fx.params` fallback used when a layer/system has a custom shader but no params set. */
+export const EMPTY_PARAMS: readonly number[] = [0, 0, 0, 0];
+
+/**
+ * Base names reserved by built-in bindings: the atlas (`atlasTex`/`atlasSamp`) and the `fx` UBO.
+ * An extra texture using either base name would collide with the engine's own WGSL declarations.
+ */
+const RESERVED_EXTRA_NAMES: readonly string[] = ["atlas", "fx"];
+
+/**
+ * Throw if any extra-texture name is not a legal WGSL identifier, collides with a built-in
+ * binding base name (`atlas`, `fx`), or duplicates another extra's name. `fnName` names the
+ * caller for the message.
+ */
 export function validateExtraTextureNames(fnName: string, extras: readonly CustomShaderTexture[]): void {
+    const seen = new Set<string>();
     for (const extra of extras) {
         if (!WGSL_NAME.test(extra.name)) {
             throw new Error(`${fnName}: extra texture name "${extra.name}" is not a valid WGSL identifier.`);
         }
+        if (RESERVED_EXTRA_NAMES.includes(extra.name)) {
+            throw new Error(`${fnName}: extra texture name "${extra.name}" is reserved by a built-in binding.`);
+        }
+        if (seen.has(extra.name)) {
+            throw new Error(`${fnName}: duplicate extra texture name "${extra.name}".`);
+        }
+        seen.add(extra.name);
     }
 }
 

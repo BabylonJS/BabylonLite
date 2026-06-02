@@ -26,6 +26,7 @@
 import type { CustomShaderTexture, SpriteLayerFx } from "./custom-shader-core.js";
 import {
     createSpriteLayerFx,
+    EMPTY_PARAMS,
     makeCustomShaderLayoutEntries,
     makeExtraBindingsWgsl,
     makeFxStructWgsl,
@@ -112,8 +113,6 @@ const SPRITE_FX_HOOK: SpriteFxHook = {
     },
 };
 
-const EMPTY_PARAMS: readonly number[] = [0, 0, 0, 0];
-
 /**
  * Create a custom fragment shader for a sprite layer. Pass the result as the `customShader`
  * option of `createSprite2DLayer`. See the module-level docs for the WGSL contract.
@@ -132,6 +131,8 @@ export function createSprite2DCustomShader(options: Sprite2DCustomShaderOptions)
         _extraTextures: extraTextures,
         _key: nextCustomShaderKey("s"),
         _composeWgsl: (hasDepth, spriteGroupIndex) => makeCustomSpriteWgsl(hasDepth, spriteGroupIndex, extraTextures, fragment),
+        // `spriteGroupIndex = hasDepth ? 1 : 0`: depth-hosted layers put the scene UBO at group 0, so the
+        // sprite resources (atlas, extras, fx) shift to group 1; pure-2D layers keep them at group 0.
         _getShaderModule: (engine, hasDepth) => moduleCache(engine, hasDepth ? "1" : "0", () => makeCustomSpriteWgsl(hasDepth, hasDepth ? 1 : 0, extraTextures, fragment)),
         _layoutEntries: (startBinding) => makeCustomShaderLayoutEntries(extraTextures, startBinding),
         _createLayerFx: (engine, label) => createSpriteLayerFx(engine, label, extraTextures),

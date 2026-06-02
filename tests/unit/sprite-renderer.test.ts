@@ -405,6 +405,31 @@ describe("Sprite2D custom shader", () => {
         expect(a._key).not.toBe(b._key);
     });
 
+    it("rejects invalid, duplicate, and reserved extra-texture names but accepts a valid distinct set", () => {
+        const makeTex = () => ({ view: {}, sampler: {} }) as unknown as import("../../packages/babylon-lite/src/texture/texture-2d").Texture2D;
+        expect(() => createSprite2DCustomShader({ fragment: FX_FRAGMENT, extraTextures: [{ name: "1bad", texture: makeTex() }] })).toThrow();
+        expect(() =>
+            createSprite2DCustomShader({
+                fragment: FX_FRAGMENT,
+                extraTextures: [
+                    { name: "palette", texture: makeTex() },
+                    { name: "palette", texture: makeTex() },
+                ],
+            })
+        ).toThrow();
+        expect(() => createSprite2DCustomShader({ fragment: FX_FRAGMENT, extraTextures: [{ name: "atlas", texture: makeTex() }] })).toThrow();
+        expect(() => createSprite2DCustomShader({ fragment: FX_FRAGMENT, extraTextures: [{ name: "fx", texture: makeTex() }] })).toThrow();
+        expect(() =>
+            createSprite2DCustomShader({
+                fragment: FX_FRAGMENT,
+                extraTextures: [
+                    { name: "palette", texture: makeTex() },
+                    { name: "noise", texture: makeTex() },
+                ],
+            })
+        ).not.toThrow();
+    });
+
     it("composes WGSL that wraps the user fragment body with the SpriteFx UBO and fs entry point", () => {
         const cs = createSprite2DCustomShader({ fragment: FX_FRAGMENT });
         const wgsl = cs._composeWgsl(false, 0);
