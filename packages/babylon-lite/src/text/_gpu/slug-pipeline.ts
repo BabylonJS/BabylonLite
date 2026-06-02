@@ -89,6 +89,7 @@ export function getOrCreateTextPipeline(
                         { shaderLocation: 2, offset: 16, format: "float32x4" },
                         { shaderLocation: 3, offset: 32, format: "float32x4" },
                         { shaderLocation: 4, offset: 48, format: "float32x4" },
+                        { shaderLocation: 5, offset: 64, format: "float32x4" },
                     ],
                 },
             ],

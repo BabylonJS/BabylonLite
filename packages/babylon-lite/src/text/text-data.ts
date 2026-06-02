@@ -8,9 +8,13 @@ import { getSharedAtlasForCurves, setSharedAtlasForCurves, getTextDataInternals,
 import { createSharedAtlas, packAppendGlyph } from "./slug-pack.js";
 import { disposeSharedAtlasGpu } from "./_gpu/slug-textures.js";
 
-/** Bytes per instance: 4 vec4 attributes (slugBounds, slugAnchor, slugAtlas, slugBand). */
-export const TEXT_INSTANCE_FLOATS = 16;
+/** Bytes per instance: 5 vec4 attributes (slugBounds, slugAnchor, slugAtlas, slugBand, slugColor). */
+export const TEXT_INSTANCE_FLOATS = 20;
 export const TEXT_INSTANCE_BYTES = TEXT_INSTANCE_FLOATS * 4;
+
+/** Fallback glyph color (opaque white) when neither the glyph nor its run specifies one. The
+ *  rendered alpha is still scaled by the whole-block opacity uniform at draw time. */
+const WHITE_COLOR: readonly [number, number, number, number] = [1, 1, 1, 1];
 
 function resolveCurves(descriptor: TextDescriptor, id: CurveSetId): ReadonlyMap<number, GlyphCurves> {
     const m = descriptor.curves.get(id);
@@ -45,12 +49,14 @@ function writeRunInstances(out: Float32Array, writeFloatOffset: number, atlas: S
     let count = 0;
     const scale = run.pixelsPerFontUnit;
     const invScale = scale !== 0 ? 1 / scale : 0;
+    const runColor = run.defaultColor ?? WHITE_COLOR;
     for (const pg of run.glyphs) {
         const glyph = curves.get(pg.glyphId);
         const slot = atlas.glyphSlots.get(pg.glyphId);
         if (!glyph || !slot) {
             continue;
         }
+        const color = pg.color ?? runColor;
         const { xMin, yMin, xMax, yMax } = glyph.bounds;
         const widthFu = xMax - xMin;
         const heightFu = yMax - yMin;
@@ -74,6 +80,10 @@ function writeRunInstances(out: Float32Array, writeFloatOffset: number, atlas: S
         out[w + 13] = bandScaleY;
         out[w + 14] = bandOffsetX;
         out[w + 15] = bandOffsetY;
+        out[w + 16] = color[0];
+        out[w + 17] = color[1];
+        out[w + 18] = color[2];
+        out[w + 19] = color[3];
         w += TEXT_INSTANCE_FLOATS;
         count++;
     }

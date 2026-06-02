@@ -190,7 +190,8 @@ function uploadLayer(rr: TextRendererInternal, lg: LayerGpu, bgl0: GPUBindGroupL
         lg.uploadedViewportH = H;
     }
 
-    // Color = (1,1,1,opacity). Per-run color is reserved for a future GlyphRun field.
+    // Color uniform carries the whole-layer opacity as alpha (RGB = white). Per-glyph/per-run
+    // color comes from the instance `slugColor` attribute and is multiplied by this in the shader.
     const col = new Float32Array([1, 1, 1, layer.opacity]);
     device.queue.writeBuffer(lg.textU, 80, col.buffer as ArrayBuffer, col.byteOffset, 16);
 }

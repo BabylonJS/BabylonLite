@@ -8,6 +8,7 @@
 struct TextU {
 mvp: mat4x4<f32>,
 viewport: vec4<f32>,
+// Whole-draw opacity in .a (rgb unused, always 1). Per-glyph color is the slugColor attribute.
 color: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> textU: TextU;
@@ -18,6 +19,7 @@ struct VIn {
 @location(2) slugAnchor: vec4<f32>,
 @location(3) slugAtlas: vec4<f32>,
 @location(4) slugBand: vec4<f32>,
+@location(5) slugColor: vec4<f32>,
 };
 
 struct VOut {
@@ -69,6 +71,8 @@ out.pos = mvp * vec4<f32>(dilatedPos, 0.0, 1.0);
 out.vTexcoord = dilatedTex;
 out.vBanding = in.slugBand;
 out.vGlyph = in.slugAtlas;
-out.vColor = textU.color;
+// Color comes entirely from the per-glyph instance attribute; the uniform contributes
+// only a whole-draw opacity multiply (textU.color is always (1,1,1,opacity)).
+out.vColor = vec4<f32>(in.slugColor.rgb, in.slugColor.a * textU.color.a);
 return out;
 }

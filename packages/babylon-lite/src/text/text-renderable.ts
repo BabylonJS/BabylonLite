@@ -27,7 +27,9 @@ export interface TextRenderableOptions {
     readonly position?: Readonly<Vec3>;
     readonly rotationQuaternion?: { readonly x: number; readonly y: number; readonly z: number; readonly w: number };
     readonly scaling?: Readonly<Vec3>;
-    readonly color?: readonly [number, number, number, number];
+    /** Whole-block opacity in [0,1]. Default 1. Per-glyph/per-run color comes from the `TextData`
+     *  descriptor (`PlacedGlyph.color` / `GlyphRun.defaultColor`), not from the renderable. */
+    readonly opacity?: number;
     readonly ignoreDepth?: boolean;
     readonly order?: number;
 }
@@ -38,7 +40,8 @@ export interface TextRenderable extends Renderable {
     readonly rotation: EulerProxy;
     readonly rotationQuaternion: ObservableQuat;
     readonly scaling: ObservableVec3;
-    readonly color: [number, number, number, number];
+    /** Whole-block opacity in [0,1]. Color is supplied per-glyph by the `TextData` descriptor. */
+    opacity: number;
     ignoreDepth: boolean;
     order: number;
     /** @internal */ readonly _data: TextData;
@@ -58,7 +61,7 @@ interface TextRenderableGpu {
     uploadedWorldVersion: number;
     uploadedViewportW: number;
     uploadedViewportH: number;
-    uploadedColor: [number, number, number, number];
+    uploadedOpacity: number;
     targetKey: string;
 }
 
@@ -97,7 +100,7 @@ export function createTextRenderable(data: TextData, options?: TextRenderableOpt
         rotationQuaternion: quat,
         rotation: createEulerProxy(quat),
         scaling: new ObservableVec3(sc?.x ?? 1, sc?.y ?? 1, sc?.z ?? 1, markDirty),
-        color: [options?.color?.[0] ?? 1, options?.color?.[1] ?? 1, options?.color?.[2] ?? 1, options?.color?.[3] ?? 1],
+        opacity: options?.opacity ?? 1,
         ignoreDepth: options?.ignoreDepth ?? false,
         _data: data,
         _wmDirty: true,
@@ -146,7 +149,7 @@ function ensureGpu(r: TextRenderable, engine: EngineContextInternal, target: Ren
                 uploadedWorldVersion: -1,
                 uploadedViewportW: 0,
                 uploadedViewportH: 0,
-                uploadedColor: [NaN, NaN, NaN, NaN],
+                uploadedOpacity: NaN,
                 targetKey: key,
             };
             r._gpu = gpu;
@@ -257,15 +260,12 @@ function updateTextRenderable(
         gpu.uploadedViewportW = context.targetWidth;
         gpu.uploadedViewportH = context.targetHeight;
     }
-    const c = r.color;
-    const uc = gpu.uploadedColor;
-    if (uc[0] !== c[0] || uc[1] !== c[1] || uc[2] !== c[2] || uc[3] !== c[3]) {
-        const col = new Float32Array(c);
+    // Color uniform carries whole-block opacity as alpha (rgb fixed to white). Per-glyph color
+    // comes from the instance `slugColor` attribute.
+    if (gpu.uploadedOpacity !== r.opacity) {
+        const col = new Float32Array([1, 1, 1, r.opacity]);
         device.queue.writeBuffer(gpu.textU, 80, col.buffer as ArrayBuffer, col.byteOffset, 16);
-        uc[0] = c[0];
-        uc[1] = c[1];
-        uc[2] = c[2];
-        uc[3] = c[3];
+        gpu.uploadedOpacity = r.opacity;
     }
 }
 

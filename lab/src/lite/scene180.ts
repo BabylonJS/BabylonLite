@@ -13,6 +13,7 @@ import {
     createTextRenderer,
     registerTextRenderer,
 } from "babylon-lite";
+import type { TextDescriptor } from "babylon-lite";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const textarea = document.getElementById("textInput") as HTMLTextAreaElement;
@@ -20,16 +21,28 @@ const rot = document.getElementById("rot") as HTMLInputElement;
 const opacity = document.getElementById("opacity") as HTMLInputElement;
 const rotVal = document.getElementById("rotVal")!;
 const opacityVal = document.getElementById("opacityVal")!;
+const red = document.getElementById("red") as HTMLInputElement;
+const green = document.getElementById("green") as HTMLInputElement;
+const blue = document.getElementById("blue") as HTMLInputElement;
+const redVal = document.getElementById("redVal")!;
+const greenVal = document.getElementById("greenVal")!;
+const blueVal = document.getElementById("blueVal")!;
+
+/** Return a copy of `desc` with the current R/G/B slider color applied as each run's defaultColor. */
+function colored(desc: TextDescriptor): TextDescriptor {
+    const color: [number, number, number, number] = [+red.value, +green.value, +blue.value, 1];
+    return { curves: desc.curves, runs: desc.runs.map((run) => ({ ...run, defaultColor: color })) };
+}
 
 async function run(): Promise<void> {
     const engine = await createEngine(canvas);
     const font = await loadFont("/fonts/Inter.ttf");
 
     let desc = createDefaultTextDescriptor(font, textarea.value, 48, { maxWidth: 1200, align: "left" });
-    const data = createTextData(desc);
+    const data = createTextData(colored(desc));
 
     const layer = createTextLayer(data, {
-        positionPx: { x: 360, y: 240 },
+        positionPx: { x: 360, y: 380 },
         scale: 1,
         rotationRad: 0,
         opacity: 1,
@@ -43,8 +56,18 @@ async function run(): Promise<void> {
 
     textarea.addEventListener("input", () => {
         desc = updateDefaultTextDescriptor(desc, textarea.value);
-        updateTextData(data, desc);
+        updateTextData(data, colored(desc));
     });
+
+    const onColor = (): void => {
+        updateTextData(data, colored(desc));
+        redVal.textContent = (+red.value).toFixed(2);
+        greenVal.textContent = (+green.value).toFixed(2);
+        blueVal.textContent = (+blue.value).toFixed(2);
+    };
+    red.addEventListener("input", onColor);
+    green.addEventListener("input", onColor);
+    blue.addEventListener("input", onColor);
 
     rot.addEventListener("input", () => {
         layer.rotationRad = (+rot.value * Math.PI) / 180;

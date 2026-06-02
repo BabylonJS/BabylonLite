@@ -32,7 +32,7 @@ async function run(): Promise<void> {
     const font = await loadFont("/fonts/Inter.ttf");
     let desc = createDefaultTextDescriptor(font, textarea.value, 48, { maxWidth: 1200, align: "left" });
     const data = createTextData(desc);
-    const text = createTextRenderable(data, { color: [1, 1, 1, 1] });
+    const text = createTextRenderable(data, { opacity: 1 });
     text.position.set(-desc.width * 0.005, desc.height * 0.005, 0);
     text.scaling.set(0.01, 0.01, 0.01);
     addTextRenderable(scene, text);

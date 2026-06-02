@@ -27,6 +27,11 @@ export type PlacedGlyph = {
     /** Pixel position of glyph baseline origin. */
     readonly x: number;
     readonly y: number;
+    /** Optional per-glyph color as linear RGBA in [0,1]. When present this overrides the
+     *  run's `defaultColor` for this glyph. When omitted, the glyph falls back to the run's
+     *  `defaultColor`, and if that is also omitted, to opaque white. The rendered alpha is
+     *  additionally scaled by the whole-block opacity (e.g. `TextRenderable.opacity`). */
+    readonly color?: readonly [number, number, number, number];
 };
 
 /** Identifier for a curve set (a font's glyph-curves map) within a `TextDescriptor.curves` dictionary.
@@ -39,6 +44,10 @@ export type GlyphRun = {
     readonly glyphs: readonly PlacedGlyph[];
     /** Font-units → pixels scale used by the layout. */
     readonly pixelsPerFontUnit: number;
+    /** Optional default color for every glyph in this run, as linear RGBA in [0,1]. A glyph's
+     *  own `PlacedGlyph.color` takes precedence over this. When omitted, glyphs default to
+     *  opaque white. The rendered alpha is additionally scaled by the whole-block opacity. */
+    readonly defaultColor?: readonly [number, number, number, number];
 };
 
 export type TextDescriptor = {
