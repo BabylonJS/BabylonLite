@@ -396,7 +396,7 @@ describe("addFacingBillboardSystem", () => {
         const descriptor = device.createRenderPipeline.mock.calls[0]![0] as GPURenderPipelineDescriptor;
         expect(descriptor.depthStencil?.depthCompare).toBe("greater-equal");
         expect(descriptor.depthStencil?.depthWriteEnabled).toBe(true);
-        const vertexBuffer = (descriptor.vertex.buffers as GPUVertexBufferLayout[])[0]!;
+        const vertexBuffer = descriptor.vertex.buffers![0]!;
         expect(vertexBuffer.arrayStride).toBe(BILLBOARD_INSTANCE_STRIDE_BYTES);
         expect(vertexBuffer.attributes).toContainEqual({ shaderLocation: 6, offset: 48, format: "float32x4" });
         const target = (descriptor.fragment!.targets as GPUColorTargetState[])[0]!;
