@@ -16,10 +16,10 @@
 import type { Mat4 } from "../math/types.js";
 import type { Aabb } from "../math/aabb.js";
 import { computeAabb } from "../math/compute-aabb.js";
-import type { EngineContextInternal } from "../engine/engine.js";
-import type { Mesh, MeshGPU, MeshInternal } from "../mesh/mesh.js";
+import type { EngineContext } from "../engine/engine.js";
+import type { Mesh, MeshGPU } from "../mesh/mesh.js";
 import { initMeshTransform } from "../mesh/mesh.js";
-import type { PbrMaterialPropsInternal } from "../material/pbr/pbr-material.js";
+import type { PbrMaterialProps } from "../material/pbr/pbr-material.js";
 import { createMappedBuffer } from "../resource/gpu-buffers.js";
 import { resolveAccessor, TYPE_SIZES } from "./gltf-parser.js";
 import type { GltfMeshData } from "./load-gltf.js";
@@ -35,30 +35,36 @@ const COMP_BYTES: Record<number, number> = { [UNSIGNED_BYTE]: 1, [UNSIGNED_SHORT
  *  The raw slice is shared across attributes of the same bufferView; the
  *  pipeline uses `_stride` as arrayStride and binds at `_offset`. */
 export interface AccessorInterleave {
-    /** glTF bufferView index — shared-buffer key (same view → one GPU buffer). */
+    /** @internal glTF bufferView index — shared-buffer key (same view → one GPU buffer). */
     _bufferView: number;
-    /** Interleave byte stride (bufferView.byteStride) → pipeline arrayStride. */
+    /** @internal Interleave byte stride (bufferView.byteStride) → pipeline arrayStride. */
     _stride: number;
-    /** Attribute byte offset within the bufferView → setVertexBuffer bind offset. */
+    /** @internal Attribute byte offset within the bufferView → setVertexBuffer bind offset. */
     _offset: number;
-    /** glTF component type (FLOAT, UNSIGNED_SHORT, …). */
+    /** @internal glTF component type (FLOAT, UNSIGNED_SHORT, …). */
     _componentType: number;
-    /** Components per vertex. */
+    /** @internal Components per vertex. */
     _componentCount: number;
-    /** Vertex count. */
+    /** @internal Vertex count. */
     _count: number;
-    /** Raw bufferView bytes (shared across attributes). Retained after GPU upload
+    /** @internal Raw bufferView bytes (shared across attributes). Retained after GPU upload
      *  so the CPU copy can be de-strided lazily on demand. */
     _slice?: Uint8Array;
 }
 
 /** Per-attribute interleave sources for a primitive (keys mirror MeshVbLayout). */
 export interface GltfVb {
+    /** @internal */
     _p?: AccessorInterleave;
+    /** @internal */
     _n?: AccessorInterleave;
+    /** @internal */
     _t?: AccessorInterleave;
+    /** @internal */
     _u?: AccessorInterleave;
+    /** @internal */
     _u2?: AccessorInterleave;
+    /** @internal */
     _c?: AccessorInterleave;
 }
 
@@ -220,7 +226,7 @@ export function buildInterleavedPartial(json: any, binChunk: DataView, primitive
  *  attributes get their own buffer — byte-identical to non-interleaved meshes.
  *  The raw `_slice` is intentionally retained on `_vb` so the CPU copy can be
  *  de-strided lazily later (see {@link installLazyCpu}). */
-function buildInterleavedGpu(engine: EngineContextInternal, m: GltfMeshData): MeshGPU {
+function buildInterleavedGpu(engine: EngineContext, m: GltfMeshData): MeshGPU {
     const vbsrc = m._vb!;
     const shared = new Map<number, GPUBuffer>();
     const vbuf = (a: AccessorInterleave | undefined, tight: Float32Array | null): GPUBuffer | null => {
@@ -253,7 +259,7 @@ function buildInterleavedGpu(engine: EngineContextInternal, m: GltfMeshData): Me
  *  retention) so the core loader's tight path stays byte-identical to the
  *  non-interleaved engine — keeping interleave bytes out of every glTF scene that
  *  doesn't use it. */
-export function buildInterleavedMesh(engine: EngineContextInternal, m: GltfMeshData, index: number, material: PbrMaterialPropsInternal): Mesh {
+export function buildInterleavedMesh(engine: EngineContext, m: GltfMeshData, index: number, material: PbrMaterialProps): Mesh {
     const gpu = buildInterleavedGpu(engine, m);
 
     // AABB: fold strided positions straight from the slice; tight positions normally.
@@ -269,7 +275,7 @@ export function buildInterleavedMesh(engine: EngineContextInternal, m: GltfMeshD
         morphTargets: null,
         _materialDirty: false,
         _gpu: gpu,
-    } as unknown as MeshInternal;
+    } as unknown as Mesh;
     initMeshTransform(mesh);
 
     // Lazy CPU geometry: the de-strided tight copy is built only on first read.
