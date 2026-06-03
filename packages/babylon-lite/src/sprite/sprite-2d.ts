@@ -114,7 +114,7 @@ export interface Sprite2DLayer {
      */
     shaderParams?: [number, number, number, number];
     /**
-     * Opt-in per-sprite UV-scroll flag; see `Sprite2DLayerOptions.uvScroll`. **Absent** (not `false`)
+     * @internal Opt-in per-sprite UV-scroll flag; see `Sprite2DLayerOptions.uvScroll`. **Absent** (not `false`)
      * on plain layers — never default-initialized, so the always-loaded path and every non-scroll
      * sprite scene keep the narrow layout and base shader. Present (`true`) only when the layer was
      * created with `uvScroll: true`, which widens the instance stride by two floats (`uvOffset.xy`).
