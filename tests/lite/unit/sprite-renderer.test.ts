@@ -321,7 +321,7 @@ describe("disposeSpriteRenderer", () => {
 
         // Force layer GPU resources to be allocated by running an update.
         const fakeEncoder = {} as GPUCommandEncoder;
-        (sr._update(fakeEncoder, 16);
+        sr._update(fakeEncoder, 16);
         const createdBefore = counters.buffersCreated;
         expect(createdBefore).toBeGreaterThan(0);
 
