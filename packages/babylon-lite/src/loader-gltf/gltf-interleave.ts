@@ -304,12 +304,24 @@ export function computeAabbStrided(il: AccessorInterleave, world?: Mat4): Aabb {
             y = world[1]! * lx + world[5]! * ly + world[9]! * lz + world[13]!;
             z = world[2]! * lx + world[6]! * ly + world[10]! * lz + world[14]!;
         }
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-        if (z < minZ) minZ = z;
-        if (z > maxZ) maxZ = z;
+        if (x < minX) {
+            minX = x;
+        }
+        if (x > maxX) {
+            maxX = x;
+        }
+        if (y < minY) {
+            minY = y;
+        }
+        if (y > maxY) {
+            maxY = y;
+        }
+        if (z < minZ) {
+            minZ = z;
+        }
+        if (z > maxZ) {
+            maxZ = z;
+        }
     }
     return [
         [minX, minY, minZ],

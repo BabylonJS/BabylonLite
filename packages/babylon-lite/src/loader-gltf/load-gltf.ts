@@ -350,7 +350,10 @@ async function extractAllMeshes(
         for (const k in p.attributes) {
             const a = _accs[p.attributes[k]];
             const s = _bvs?.[a?.bufferView]?.byteStride;
-            if (s !== undefined && s !== (TYPE_SIZES[a.type] ?? 1) * (a.componentType === 5126 || a.componentType === 5125 ? 4 : a.componentType === 5123 || a.componentType === 5122 ? 2 : 1)) {
+            if (
+                s !== undefined &&
+                s !== (TYPE_SIZES[a.type] ?? 1) * (a.componentType === 5126 || a.componentType === 5125 ? 4 : a.componentType === 5123 || a.componentType === 5122 ? 2 : 1)
+            ) {
                 return true;
             }
         }
