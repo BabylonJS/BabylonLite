@@ -285,8 +285,14 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         const meshFeatures = _computeMeshFeatures(mesh, receiveShadows);
         const esmShadowDepthCode = (features2 & PBR2_ESM_SHADOW_OUTPUT) !== 0 ? (mat as PbrMaterialProps & { readonly _esmShadowDepthCode: string })._esmShadowDepthCode : "";
 
-        const composed = composePbr(features, features2, meshFeatures, sceneFeatures, lightMode, singleLightType, esmShadowDepthCode);
-        const bindings = getOrCreatePbrBindings(engine, features, features2, meshFeatures, sceneFeatures, composed, `${lightMode}:${singleLightType}`);
+        // Genuine GPU interleaving. Tight meshes have `_vbLayout` undefined → vbKey ""
+        // → composed shader, bindings, and pipeline cache keys are byte-identical to
+        // today. Interleaved meshes carry a precomputed vbKey from the loader module.
+        const vbLayout = mi._gpu._vbLayout;
+        const vbKey = mi._gpu._vbKey ?? "";
+
+        const composed = composePbr(features, features2, meshFeatures, sceneFeatures, lightMode, singleLightType, esmShadowDepthCode, vbLayout, vbKey);
+        const bindings = getOrCreatePbrBindings(engine, features, features2, meshFeatures, sceneFeatures, composed, `${lightMode}:${singleLightType}${vbKey}`);
 
         // Mesh UBO (world matrix at offset 0; spec.totalBytes covers any extra fields).
         const meshUboData = new Float32Array(composed._meshUboSpec._totalBytes / 4);
@@ -390,17 +396,18 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
                 pass.setBindGroup(2, shadowBindGroup);
             }
             let slot = 0;
-            pass.setVertexBuffer(slot++, gpu.positionBuffer);
-            pass.setVertexBuffer(slot++, gpu.normalBuffer);
+            const vb = gpu._vbLayout;
+            pass.setVertexBuffer(slot++, gpu.positionBuffer, vb?._p?._offset);
+            pass.setVertexBuffer(slot++, gpu.normalBuffer, vb?._n?._offset);
             if (hasNormalMap && gpu.tangentBuffer) {
-                pass.setVertexBuffer(slot++, gpu.tangentBuffer);
+                pass.setVertexBuffer(slot++, gpu.tangentBuffer, vb?._t?._offset);
             }
-            pass.setVertexBuffer(slot++, gpu.uvBuffer);
+            pass.setVertexBuffer(slot++, gpu.uvBuffer, vb?._u?._offset);
             if (hasUV2 && gpu.uv2Buffer) {
-                pass.setVertexBuffer(slot++, gpu.uv2Buffer);
+                pass.setVertexBuffer(slot++, gpu.uv2Buffer, vb?._u2?._offset);
             }
             if (hasVertexColor && gpu.colorBuffer) {
-                pass.setVertexBuffer(slot++, gpu.colorBuffer);
+                pass.setVertexBuffer(slot++, gpu.colorBuffer, vb?._c?._offset);
             }
             if (mesh.skeleton) {
                 pass.setVertexBuffer(slot++, mesh.skeleton.jointsBuffer);

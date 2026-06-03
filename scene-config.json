@@ -317,8 +317,8 @@
         "slug": "scene33-lights-punctual",
         "name": "Scene 33 — KHR_lights_punctual",
         "maxMad": 0.07,
-        "maxRawKB": 93.1,
-        "description": "LightsPunctualLamp.glb (KHR_lights_punctual point lights + KHR_materials_transmission) with default IBL environment. Matches PG #YG3BBF#54.",
+        "maxRawKB": 94.5,
+        "description": "LightsPunctualLamp.glb (KHR_lights_punctual point lights + KHR_materials_transmission) with default IBL environment. Matches PG #YG3BBF#54. Ceiling raised 93.1->94.5 (user-approved) to absorb shared glTF-core growth from native interleaved-buffer support + EXT_meshopt_compression/KHR_xmp_json_ld/KHR_mesh_quantization registrations.",
         "tags": ["pbr", "gltf", "env", "lights-punctual", "transmission"],
         "skipPerf": true
     },
@@ -1338,5 +1338,27 @@
         "tags": ["pbr", "gltf", "clustered", "lights"],
         "skipPerf": true,
         "bundleTimeoutMs": 180000
+    },
+    {
+        "id": 210,
+        "slug": "scene210-xmp-metadata-cube",
+        "name": "Scene 210 — XMP Metadata Cube",
+        "maxMad": 0.2,
+        "maxRawKB": 71,
+        "description": "KhronosGroup XmpMetadataRoundedCube.glb exercising the KHR_xmp_json_ld extension; JSON-LD metadata packets are surfaced on the AssetContainer with zero render impact, rendered in environmentSpecular.env with a skybox.",
+        "tags": ["pbr", "gltf", "xmp", "metadata", "env", "skybox"],
+        "skipPerf": true,
+        "bundleTimeoutMs": 120000
+    },
+    {
+        "id": 211,
+        "slug": "scene211-meshopt-brainstem",
+        "name": "Scene 211 — BrainStem Meshopt",
+        "maxMad": 0.2,
+        "maxRawKB": 86,
+        "description": "KhronosGroup BrainStem (glTF-Meshopt-EXT) exercising EXT_meshopt_compression + KHR_mesh_quantization; skinned and animated, decoded via dynamic-imported loader features so non-meshopt scenes pay nothing. Frozen via seekTime for deterministic parity.",
+        "tags": ["pbr", "gltf", "meshopt", "quantization", "skeleton", "animation"],
+        "skipPerf": true,
+        "bundleTimeoutMs": 120000
     }
 ]

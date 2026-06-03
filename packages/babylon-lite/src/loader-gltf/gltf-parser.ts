@@ -15,7 +15,7 @@ const UNSIGNED_INT = 5125;
 const UNSIGNED_BYTE = 5121;
 
 // glTF accessor type → component count
-const TYPE_SIZES: Record<string, number> = {
+export const TYPE_SIZES: Record<string, number> = {
     SCALAR: 1,
     VEC2: 2,
     VEC3: 3,

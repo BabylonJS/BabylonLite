@@ -16,6 +16,29 @@ import { eulerToQuat, createEulerProxy } from "../scene/scene-node.js";
 
 // ─── Mesh GPU Geometry ───────────────────────────────────────────────
 
+/** Per-attribute interleave override. When present, the attribute's GPU buffer
+ *  is a shared interleaved slice: the pipeline uses `_stride` as the vertex
+ *  buffer arrayStride and the draw binds the buffer at byte offset `_offset`.
+ *  Absent attributes use the canonical tight layout (own buffer, default stride,
+ *  offset 0) — byte-identical to non-interleaved meshes. */
+export interface MeshVbAttr {
+    /** Vertex buffer arrayStride for this attribute's pipeline layout entry. */
+    readonly _stride: number;
+    /** Byte offset passed to setVertexBuffer (bind offset into the shared buffer). */
+    readonly _offset: number;
+}
+
+/** Optional per-attribute interleave layout. Only set for meshes that source one
+ *  or more attributes from a strided (interleaved) glTF bufferView. */
+export interface MeshVbLayout {
+    readonly _p?: MeshVbAttr;
+    readonly _n?: MeshVbAttr;
+    readonly _t?: MeshVbAttr;
+    readonly _u?: MeshVbAttr;
+    readonly _u2?: MeshVbAttr;
+    readonly _c?: MeshVbAttr;
+}
+
 /** Opaque GPU geometry handle (user never touches these). */
 export interface MeshGPU {
     readonly positionBuffer: GPUBuffer;
@@ -31,6 +54,12 @@ export interface MeshGPU {
     readonly indexBuffer: GPUBuffer;
     readonly indexCount: number;
     readonly indexFormat: GPUIndexFormat;
+    /** Per-attribute interleave layout. Undefined → all attributes tight (default). */
+    readonly _vbLayout?: MeshVbLayout;
+    /** Precomputed pipeline cache-key suffix for this mesh's interleave layout.
+     *  Built once by the interleave module so the hot render path never assembles
+     *  it. Undefined → tight mesh (empty suffix, byte-identical pipeline key). */
+    readonly _vbKey?: string;
 }
 
 // ─── Mesh ────────────────────────────────────────────────────────────
