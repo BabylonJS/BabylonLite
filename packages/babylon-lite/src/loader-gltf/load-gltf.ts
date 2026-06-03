@@ -1,14 +1,13 @@
 import type { Mat4 } from "../math/types.js";
 import { computeAabb } from "../math/compute-aabb.js";
 import type { EngineContext } from "../engine/engine.js";
-import type { EngineContextInternal } from "../engine/engine.js";
 import type { TransformNode } from "../scene/transform-node.js";
 import type { AssetContainer } from "../asset-container.js";
 import { createTransformNode } from "../scene/transform-node.js";
 import { createSceneNodeFromMatrix } from "../scene/scene-node.js";
 import type { Texture2D } from "../texture/texture-2d.js";
-import type { PbrMaterialPropsInternal } from "../material/pbr/pbr-material.js";
-import type { Mesh, MeshGPU, MeshInternal } from "../mesh/mesh.js";
+import type { PbrMaterialProps } from "../material/pbr/pbr-material.js";
+import type { Mesh, MeshGPU } from "../mesh/mesh.js";
 import { initMeshTransform } from "../mesh/mesh.js";
 import { getOrCreateSampler } from "../resource/gpu-pool.js";
 import { createMappedBuffer } from "../resource/gpu-buffers.js";
@@ -21,24 +20,37 @@ import { assemblePbrProps, buildDefaultPbrTextures, identityTexWrap, runMatExts,
 import type * as GltfPbrBuilderExt from "./gltf-pbr-builder-ext.js";
 /** Parsed mesh data ready for GPU upload. */
 export interface GltfMeshData {
+    /** @internal */
     _positions: Float32Array;
+    /** @internal */
     _normals: Float32Array;
+    /** @internal */
     _tangents: Float32Array | null;
+    /** @internal */
     _uvs: Float32Array;
+    /** @internal */
     _uv2s: Float32Array | null;
+    /** @internal */
     _colors: Float32Array | null;
+    /** @internal */
     _indices: Uint16Array | Uint32Array;
+    /** @internal */
     _vertexCount: number;
+    /** @internal */
     _indexCount: number;
+    /** @internal */
     _worldMatrix: Mat4;
+    /** @internal */
     _material: GltfMaterialData;
     /** glTF node index this mesh came from (for hierarchy reconstruction
      *  and for features that need to resolve skin/morph data lazily). */
+    /** @internal */
     _nodeIndex: number;
     /** Raw primitive definition — features (skeleton, morph, …) read their
      *  own attributes/targets from here without bloating core extraction. */
+    /** @internal */
     _primitive: any;
-    /** Pre-decoded primitive (Draco et al.) if a preMesh feature produced one. */
+    /** @internal Pre-decoded primitive (Draco et al.) if a preMesh feature produced one. */
     _decoded?: DecodedPrimitive;
 }
 
@@ -82,7 +94,7 @@ export async function loadGltf(engine: EngineContext, url: string): Promise<Asse
     const meshDatas = await extractAllMeshes(json, binChunk, baseUrl, parentMap, worldMatrixCache, decodedPrimitives);
 
     const ctx: GltfLoadCtx = {
-        _engine: engine as EngineContextInternal,
+        _engine: engine,
         _json: json,
         _binChunk: binChunk,
         _baseUrl: baseUrl,
@@ -195,7 +207,7 @@ const _features: GltfFeatureLoader[] = [
     [hasMatExt("pbrSpecularGlossiness"), () => import("./gltf-ext-spec-gloss.js")],
     // Dielectric cluster (ior/specular/transmission/volume) — any of the four triggers the loader;
     // transmission refraction is wired dynamically by the PBR material path when the loaded material needs it.
-    [(j) => ["transmission", "volume", "ior", "specular"].some((e) => hasMatExt(e)(j)), () => import("./gltf-ext-dielectric.js")],
+    [(j) => ["transmission", "volume", "ior", "specular", "dispersion"].some((e) => hasMatExt(e)(j)), () => import("./gltf-ext-dielectric.js")],
     [hasExt("KHR_texture_transform"), () => import("./gltf-ext-uv-transform.js")],
     [hasExt("KHR_texture_basisu"), () => import("./gltf-ext-basisu.js")],
     [needsOrmComposite, () => import("./gltf-ext-orm.js")],
@@ -373,7 +385,7 @@ async function extractAllMeshes(
 // --- GPU Upload ---
 
 // Pre-resolved generateMipmaps function— loaded once before texture uploads
-let _generateMipmaps: ((engine: EngineContextInternal, texture: GPUTexture, face?: number) => void) | null = null;
+let _generateMipmaps: ((engine: EngineContext, texture: GPUTexture, face?: number) => void) | null = null;
 
 async function ensureMipmapModule(): Promise<void> {
     if (!_generateMipmaps) {
@@ -447,10 +459,10 @@ async function uploadMeshes(meshDatas: GltfMeshData[], features: GltfFeature[], 
      *  metallicFactor/roughnessFactor. The composite case (MR+occlusion separate) is
      *  handled by the gltf-ext-orm extension which overrides this via `extLayers`. */
 
-    // Build a PbrMaterialPropsInternal from parsed glTF material data.
+    // Build a PbrMaterialProps from parsed glTF material data.
     // Uses shared texture caches so identical bitmaps are uploaded once.
-    const builtMaterialCache = new Map<GltfMaterialData, Promise<PbrMaterialPropsInternal>>();
-    async function buildPbrFromGltfMat(mat: GltfMaterialData): Promise<PbrMaterialPropsInternal> {
+    const builtMaterialCache = new Map<GltfMaterialData, Promise<PbrMaterialProps>>();
+    async function buildPbrFromGltfMat(mat: GltfMaterialData): Promise<PbrMaterialProps> {
         let cached = builtMaterialCache.get(mat);
         if (cached) {
             return cached;
@@ -497,7 +509,7 @@ async function uploadMeshes(meshDatas: GltfMeshData[], features: GltfFeature[], 
                 morphTargets: null,
                 _materialDirty: false,
                 _gpu: gpu,
-            } as unknown as MeshInternal;
+            } as unknown as Mesh;
             initMeshTransform(mesh);
 
             // Retain CPU geometry for detailed picking
@@ -513,7 +525,7 @@ async function uploadMeshes(meshDatas: GltfMeshData[], features: GltfFeature[], 
                 await Promise.all(meshFeatures.map((f) => f.applyMesh!(m, mesh, ctx)));
             }
 
-            return mesh as Mesh;
+            return mesh;
         })
     );
 
