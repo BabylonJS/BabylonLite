@@ -5,7 +5,6 @@ import type { EngineContext } from "../../../packages/babylon-lite/src/engine/en
 import type { Mat4 } from "../../../packages/babylon-lite/src/math/types";
 import type { DrawBinding, DrawUpdateContext, Renderable } from "../../../packages/babylon-lite/src/render/renderable";
 import { createSceneContext, registerScene } from "../../../packages/babylon-lite/src/scene/scene";
-import type { SceneContext } from "../../../packages/babylon-lite/src/scene/scene-core";
 import { createRenderTarget } from "../../../packages/babylon-lite/src/engine/render-target";
 import { createRenderTask, type RenderTask } from "../../../packages/babylon-lite/src/frame-graph/render-task";
 import { enableRenderTaskTransmission, enableSceneTransmission } from "../../../packages/babylon-lite/src/frame-graph/transmission";

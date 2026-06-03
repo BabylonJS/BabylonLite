@@ -24,7 +24,6 @@ import { DEPTH_INSTANCE_STRIDE_BYTES, addSprite2DIndex, createSprite2DLayer } fr
 import { addDepthHostedSpriteLayer } from "../../../packages/babylon-lite/src/sprite/sprite-scene";
 import { createSceneContext, disposeScene } from "../../../packages/babylon-lite/src/scene/scene";
 import { registerScene } from "../../../packages/babylon-lite/src/scene/scene-core";
-import type { SceneContext } from "../../../packages/babylon-lite/src/scene/scene-core";
 import { LAYER_UBO_BYTES } from "../../../packages/babylon-lite/src/sprite/sprite-pipeline";
 import type { SpriteAtlas } from "../../../packages/babylon-lite/src/sprite/shared/sprite-atlas";
 import type { Texture2D } from "../../../packages/babylon-lite/src/texture/texture-2d";
