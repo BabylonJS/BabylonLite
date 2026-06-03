@@ -63,15 +63,17 @@ export interface SceneContext extends RenderingContext {
     /** Fixed delta time in ms for deterministic animation. 0 = use real rAF delta. */
     fixedDeltaMs: number;
 
-    /** @internal All renderables in this scene. The active frame-graph tasks bucket them
+    /** All renderables in this scene. The active frame-graph tasks bucket them
      *  (opaque / direct / transparent) at bind time based on `isTransparent`, `_direct`, and `_transmissive`. */
+    /** @internal */
     _renderables: Renderable[];
     /** @internal Pre-pass work (shadow maps, compute, etc.). */
     _prePasses: PrePassRenderable[];
-    /** @internal GaussianSplatting meshes attached to this scene.  Populated by
+    /** GaussianSplatting meshes attached to this scene.  Populated by
      *  `attachGaussianSplattingMesh`.  Scene-core stays GS-agnostic apart from
      *  this opaque registry (used by `gpu-picker` to iterate GS meshes without
      *  scanning `_renderables`). */
+    /** @internal */
     _gsMeshes: GaussianSplattingMesh[];
     /** @internal Scene uniform updaters (one per shared UBO). */
     _uniformUpdaters: SceneUniformUpdater[];
@@ -93,9 +95,10 @@ export interface SceneContext extends RenderingContext {
     _renderableVersion: number;
     /** @internal Lazily-loaded processor; populated on first material reassignment. */
     _processSwaps?: (scene: SceneContext) => void;
-    /** @internal True once the initial deferred build (buildScene) has run. Meshes added after
+    /** True once the initial deferred build (buildScene) has run. Meshes added after
      *  this point are materialized via the per-frame swap drain rather than the
      *  boot-only deferred-builder path. */
+    /** @internal */
     _built: boolean;
 
     // ─── Stashed internal state (typed to avoid `as any` casts) ────
@@ -104,10 +107,11 @@ export interface SceneContext extends RenderingContext {
     /** @internal Scene-owned shared LightsUniforms UBO state (group 0 binding 1). */
     _lightGpuState?: SceneLightGpuState;
 
-    /** @internal Frame graph driving this scene's rendering. Created eagerly by
+    /** Frame graph driving this scene's rendering. Created eagerly by
      *  `createSceneContext` with a default `RenderTask` that mirrors
      *  `_renderables` into the swapchain. User code may add additional tasks
      *  (offscreen RTTs, post-FX, UI overlays, etc.). */
+    /** @internal */
     _frameGraph: FrameGraph;
 }
 
@@ -121,10 +125,11 @@ export interface SceneContextOptions {
  *  mesh add). Lazily loads the swap processor so scenes that never mutate at runtime
  *  don't pull it into their bundle. */
 function enqueueMaterialSwap(scene: SceneContext, mesh: Mesh): void {
-    if (mesh._materialDirty) {
+    const mi = mesh as Mesh;
+    if (mi._materialDirty) {
         return;
     }
-    mesh._materialDirty = true;
+    mi._materialDirty = true;
     scene._materialSwapQueue.push(mesh);
     if (!scene._processSwaps) {
         void import("./scene-material-swap.js").then((m) => {
@@ -154,6 +159,8 @@ function installMaterialSetter(scene: SceneContext, mesh: Mesh): void {
 
 /** Create an empty scene context bound to the given engine. */
 export function createSceneContext(engine: EngineContext, options?: SceneContextOptions): SceneContext {
+    const eng = engine as EngineContext;
+
     // Closures below capture `ctx` by-reference via this object.
     const ctxLocal: Omit<SceneContext, "_frameGraph"> = {
         engine,
@@ -182,8 +189,8 @@ export function createSceneContext(engine: EngineContext, options?: SceneContext
         _drawCallsPre: 0,
 
         _update(): void {
-            const d = ctx.fixedDeltaMs > 0 ? ctx.fixedDeltaMs : engine._currentDelta;
-            const encoder = engine._currentEncoder;
+            const d = ctx.fixedDeltaMs > 0 ? ctx.fixedDeltaMs : eng._currentDelta;
+            const encoder = eng._currentEncoder;
             let draws = 0;
             for (const cb of ctx._beforeRender) {
                 cb(d);
@@ -192,10 +199,10 @@ export function createSceneContext(engine: EngineContext, options?: SceneContext
                 ctx._processSwaps?.(ctx);
             }
             for (const pp of ctx._prePasses) {
-                draws += pp.execute(encoder, engine);
+                draws += pp.execute(encoder, eng);
             }
             for (const u of ctx._uniformUpdaters) {
-                u.update(engine);
+                u.update(eng);
             }
             ctx._drawCallsPre = draws;
         },
@@ -213,14 +220,14 @@ export function createSceneContext(engine: EngineContext, options?: SceneContext
     // Eagerly attach the frame graph + a default swapchain render-pass task. The
     // graph drives all GPU work for this scene; user code can add more tasks
     // (offscreen RTTs, post-FX, UI overlays) before/after.
-    const fg = createFrameGraph(engine, ctx);
+    const fg = createFrameGraph(eng);
     ctx._frameGraph = fg;
     if (options?.defaultRenderTask !== false) {
         const swapRT = createRenderTarget({
             label: "scene-swapchain",
-            colorFormat: engine.format,
+            colorFormat: eng.format,
             depthStencilFormat: "depth24plus-stencil8",
-            sampleCount: engine.msaaSamples,
+            sampleCount: eng.msaaSamples,
             size: "canvas",
             resolveToSwapchain: true,
         });
@@ -232,7 +239,7 @@ export function createSceneContext(engine: EngineContext, options?: SceneContext
                     rt: swapRT,
                     clrColor: ctx.clearColor,
                 },
-                engine,
+                eng,
                 ctx
             )
         );
@@ -243,18 +250,18 @@ export function createSceneContext(engine: EngineContext, options?: SceneContext
 
 /** Register a callback to run before each rendered frame. */
 export function onBeforeRender(scene: SceneContext, cb: (deltaMs: number) => void): void {
-    scene._beforeRender.unshift(cb);
+    (scene as SceneContext)._beforeRender.unshift(cb);
 }
 
 /** Register a callback to run when `disposeScene` is called. Used to tie
  *  user-owned GPU resources (e.g. a `SpriteRenderer`) to the scene's lifetime. */
 export function onSceneDispose(scene: SceneContext, cb: () => void): void {
-    scene._disposables.push(cb);
+    (scene as SceneContext)._disposables.push(cb);
 }
 
 /** Get the scene's frame graph. Always non-null — created in `createSceneContext`. */
 export function getFrameGraph(scene: SceneContext): FrameGraph {
-    return scene._frameGraph;
+    return (scene as SceneContext)._frameGraph;
 }
 
 export interface DeferredSceneRenderables {
@@ -267,11 +274,12 @@ export function addDeferredSceneRenderables(
     scene: SceneContext,
     build: (engine: EngineContext, scene: SceneContext) => DeferredSceneRenderables | Promise<DeferredSceneRenderables>
 ): void {
-    scene._deferredBuilders.push(async () => {
-        const built = await build(scene.engine, scene);
-        scene._renderables.push(...built.renderables);
+    const ctx = scene as SceneContext;
+    ctx._deferredBuilders.push(async () => {
+        const built = await build(ctx.engine as EngineContext, ctx);
+        ctx._renderables.push(...built.renderables);
         if (built.dispose) {
-            scene._disposables.push(built.dispose);
+            ctx._disposables.push(built.dispose);
         }
     });
 }
@@ -284,6 +292,7 @@ export function addDeferredSceneRenderables(
  * @param entity - The entity (or asset container) to add.
  */
 export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camera | ShadowGenerator | TransformNode | AssetContainer): void {
+    const ctx = scene as SceneContext;
     // AssetContainer from loadGltf / loadBabylon — process each field present
     if ("entities" in entity) {
         const result = entity as AssetContainer;
@@ -291,16 +300,16 @@ export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camer
             addToScene(scene, e);
         }
         if (result.clearColor) {
-            scene.clearColor = result.clearColor;
+            ctx.clearColor = result.clearColor;
         }
-        if (result.camera && !scene.camera) {
-            scene.camera = result.camera;
+        if (result.camera && !ctx.camera) {
+            ctx.camera = result.camera;
         }
         if (result.animationGroups?.length) {
-            const engine = scene.engine;
+            const engine = ctx.engine as EngineContext;
             const groups = result.animationGroups;
-            scene.animationGroups.push(...groups);
-            scene._beforeRender.push((deltaMs: number) => {
+            ctx.animationGroups.push(...groups);
+            ctx._beforeRender.push((deltaMs: number) => {
                 for (const g of groups) {
                     if (!g._stopped && g._ctrl) {
                         g._ctrl.tick(deltaMs, engine);
@@ -312,19 +321,19 @@ export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camer
     }
     if ("_gpu" in entity && "material" in entity) {
         const mesh = entity as unknown as Mesh;
-        scene.meshes.push(mesh);
-        installMaterialSetter(scene, mesh);
+        ctx.meshes.push(mesh);
+        installMaterialSetter(ctx, mesh);
         const build = mesh.material?._buildGroup;
         if (build) {
-            let group = scene._groups.get(build);
+            let group = ctx._groups.get(build);
             if (!group) {
                 group = [];
-                scene._groups.set(build, group);
-                scene._deferredBuilders.push(async () => {
-                    const result = await build(scene, group!);
-                    scene._renderables.push(...result.renderables);
+                ctx._groups.set(build, group);
+                ctx._deferredBuilders.push(async () => {
+                    const result = await build(ctx, group!);
+                    ctx._renderables.push(...result.renderables);
                     if (result.updater) {
-                        scene._uniformUpdaters.push(result.updater);
+                        ctx._uniformUpdaters.push(result.updater);
                     }
                 });
             }
@@ -332,12 +341,12 @@ export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camer
             // Added after the initial build: the deferred builder for this group has
             // already run (and only runs at boot), so materialize this mesh's renderable
             // through the per-frame material-swap drain instead.
-            if (scene._built) {
-                enqueueMaterialSwap(scene, mesh);
+            if (ctx._built) {
+                enqueueMaterialSwap(ctx, mesh);
             }
         }
     } else if ("lightType" in entity) {
-        scene.lights.push(entity as LightBase);
+        ctx.lights.push(entity as LightBase);
     }
     // Recurse into children of meshes, lights, cameras — set parent links
     const kids = (entity as unknown as SceneNode).children;
@@ -351,47 +360,49 @@ export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camer
 
 /** Release all GPU resources owned by this scene. */
 export function disposeScene(scene: SceneContext): void {
-    unregisterRenderingContext(scene.engine, scene);
-    for (const fn of scene._disposables) {
+    const ctx = scene as SceneContext;
+    unregisterRenderingContext(ctx.engine, ctx);
+    for (const fn of ctx._disposables) {
         fn();
     }
-    for (const fns of scene._meshDisposables.values()) {
+    for (const fns of ctx._meshDisposables.values()) {
         for (const fn of fns) {
             fn();
         }
     }
-    scene._meshDisposables.clear();
-    for (const mesh of scene.meshes) {
+    ctx._meshDisposables.clear();
+    for (const mesh of ctx.meshes) {
         disposeMeshGpu(mesh);
     }
-    scene.meshes.length = 0;
-    scene._renderables.length = 0;
-    scene._prePasses.length = 0;
-    scene._gsMeshes.length = 0;
-    scene._uniformUpdaters.length = 0;
-    scene._beforeRender.length = 0;
-    scene._deferredBuilders.length = 0;
-    scene._disposables.length = 0;
-    scene._materialSwapQueue.length = 0;
-    scene.lights.length = 0;
-    scene.animationGroups.length = 0;
-    scene.shadowGenerators.length = 0;
-    scene.camera = null;
+    ctx.meshes.length = 0;
+    ctx._renderables.length = 0;
+    ctx._prePasses.length = 0;
+    ctx._gsMeshes.length = 0;
+    ctx._uniformUpdaters.length = 0;
+    ctx._beforeRender.length = 0;
+    ctx._deferredBuilders.length = 0;
+    ctx._disposables.length = 0;
+    ctx._materialSwapQueue.length = 0;
+    ctx.lights.length = 0;
+    ctx.animationGroups.length = 0;
+    ctx.shadowGenerators.length = 0;
+    ctx.camera = null;
 }
 
 /** @internal Run all deferred builders (called by registerScene's boot step before the first frame). */
 export async function buildScene(scene: SceneContext): Promise<void> {
-    while (scene._deferredBuilders.length > 0) {
-        const builders = [...scene._deferredBuilders];
-        scene._deferredBuilders = [];
+    const ctx = scene as SceneContext;
+    while (ctx._deferredBuilders.length > 0) {
+        const builders = [...ctx._deferredBuilders];
+        ctx._deferredBuilders = [];
         await Promise.all(builders.map(async (b) => b()));
     }
-    for (const mesh of scene._materialSwapQueue) {
-        mesh._materialDirty = false;
+    for (const mesh of ctx._materialSwapQueue) {
+        (mesh as Mesh)._materialDirty = false;
     }
-    scene._materialSwapQueue.length = 0;
-    scene._renderableVersion++;
-    scene._built = true;
+    ctx._materialSwapQueue.length = 0;
+    ctx._renderableVersion++;
+    ctx._built = true;
 }
 
 /**
@@ -399,17 +410,18 @@ export async function buildScene(scene: SceneContext): Promise<void> {
  * and adds the scene to the engine's render list in overlay order.
  */
 export async function registerScene(engine: EngineContext, scene: SceneContext): Promise<void> {
-    if (isRenderingContextRegistered(engine, scene)) {
+    const ctx = scene as SceneContext;
+    if (isRenderingContextRegistered(engine, ctx)) {
         return;
     }
     await buildScene(scene);
-    scene._renderables.sort(byOrder);
-    await Promise.all(scene._frameGraph._tasks.map((task) => task._preload?.()).filter((preload): preload is Promise<void> => preload !== undefined));
-    scene._frameGraph.build();
-    if (engine._renderingContexts.length > 0) {
-        (await import("./swapchain-overlay.js")).configureSwapchainOverlayScene(engine as EngineContext, scene);
+    ctx._renderables.sort(byOrder);
+    await Promise.all(ctx._frameGraph._tasks.map((task) => task._preload?.()).filter((preload): preload is Promise<void> => preload !== undefined));
+    ctx._frameGraph.build();
+    if ((engine as EngineContext)._renderingContexts.length > 0) {
+        (await import("./swapchain-overlay.js")).configureSwapchainOverlayScene(engine as EngineContext, ctx);
     }
-    registerRenderingContext(engine, scene);
+    registerRenderingContext(engine, ctx);
 }
 
 /**
@@ -417,18 +429,19 @@ export async function registerScene(engine: EngineContext, scene: SceneContext):
  * Use only for scenes that generate shadow maps.
  */
 export async function registerSceneWithShadowSupport(engine: EngineContext, scene: SceneContext): Promise<void> {
-    if (isRenderingContextRegistered(engine, scene)) {
+    const ctx = scene as SceneContext;
+    if (isRenderingContextRegistered(engine, ctx)) {
         return;
     }
     await buildScene(scene);
-    scene._renderables.sort(byOrder);
-    await ensureShadowTask(engine as EngineContext, scene);
-    await Promise.all(scene._frameGraph._tasks.map((task) => task._preload?.()).filter((preload): preload is Promise<void> => preload !== undefined));
-    scene._frameGraph.build();
-    if (engine._renderingContexts.length > 0) {
-        (await import("./swapchain-overlay.js")).configureSwapchainOverlayScene(engine as EngineContext, scene);
+    ctx._renderables.sort(byOrder);
+    await ensureShadowTask(engine as EngineContext, ctx);
+    await Promise.all(ctx._frameGraph._tasks.map((task) => task._preload?.()).filter((preload): preload is Promise<void> => preload !== undefined));
+    ctx._frameGraph.build();
+    if ((engine as EngineContext)._renderingContexts.length > 0) {
+        (await import("./swapchain-overlay.js")).configureSwapchainOverlayScene(engine as EngineContext, ctx);
     }
-    registerRenderingContext(engine, scene);
+    registerRenderingContext(engine, ctx);
 }
 
 const byOrder = (a: Renderable, b: Renderable): number => a.order - b.order;
@@ -440,5 +453,5 @@ async function ensureShadowTask(engine: EngineContext, scene: SceneContext): Pro
 
 /** Remove a previously-registered scene. Idempotent. Does not dispose scene resources. */
 export function unregisterScene(engine: EngineContext, scene: SceneContext): void {
-    unregisterRenderingContext(engine, scene);
+    unregisterRenderingContext(engine, scene as SceneContext);
 }

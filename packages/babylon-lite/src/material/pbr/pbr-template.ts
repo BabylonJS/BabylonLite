@@ -38,67 +38,95 @@ return F0+(F90-F0)*(t2*t2*t);
 `;
 
 export interface PbrTemplateConfig {
-    /** @internal When true, generates a non-looping single-light direct block + lights UBO binding. */
+    /** When true, generates a non-looping single-light direct block + lights UBO binding. */
+    /** @internal */
     readonly _hasSingleLight?: boolean;
     /** When true, generates a multi-light loop + lights UBO binding.
      *  Used for multiple lights or shadow receivers. */
     /** @internal */
     readonly _hasMultiLight?: boolean;
-    /** @internal Pre-built WGSL for the single-light UBO structs. */
+    /** Pre-built WGSL for the single-light UBO structs. */
+    /** @internal */
     readonly _singleLightWGSL?: string;
-    /** @internal Pre-built WGSL for the single-light direct lighting block. */
+    /** Pre-built WGSL for the single-light direct lighting block. */
+    /** @internal */
     readonly _singleLightBlock?: string;
     /** Pre-built WGSL for multi-light (structs + computePbrLight). Passed from
      *  dynamically imported fragments/multilight-wgsl.ts to keep it out of non-shadow bundles. */
     /** @internal */
     readonly _multiLightWGSL?: string;
-    /** @internal Pre-built WGSL for the multi-light direct lighting loop body. */
+    /** Pre-built WGSL for the multi-light direct lighting loop body. */
+    /** @internal */
     readonly _multiLightLoop?: string;
-    /** @internal Normal map mode (default: "none") */
+    /** Normal map mode (default: "none") */
+    /** @internal */
     readonly _normalMode?: "tangent" | "cotangent" | "none";
-    /** @internal Has emissive texture */
+    /** Has emissive texture */
+    /** @internal */
     readonly _hasEmissiveTexture?: boolean;
-    /** @internal Has specular-glossiness workflow */
+    /** Has specular-glossiness workflow */
+    /** @internal */
     readonly _hasSpecGloss?: boolean;
-    /** @internal Has double-sided rendering */
+    /** Has double-sided rendering */
+    /** @internal */
     readonly _hasDoubleSided?: boolean;
-    /** @internal Has tonemap */
+    /** Has tonemap */
+    /** @internal */
     readonly _hasTonemap?: boolean;
-    /** @internal ACES WGSL: tonemap helper functions (dynamically imported). Empty string = standard exponential tonemap. */
+    /** ACES WGSL: tonemap helper functions (dynamically imported). Empty string = standard exponential tonemap. */
+    /** @internal */
     readonly _acesHelpers?: string;
-    /** @internal ACES WGSL: tonemap call block replacing the default exponential one. */
+    /** ACES WGSL: tonemap call block replacing the default exponential one. */
+    /** @internal */
     readonly _acesTonemapCall?: string;
-    /** @internal Has alpha blending */
+    /** Has alpha blending */
+    /** @internal */
     readonly _hasAlphaBlend?: boolean;
-    /** @internal Has specular AA */
+    /** Has specular AA */
+    /** @internal */
     readonly _hasSpecularAA?: boolean;
-    /** @internal Has gamma albedo (sRGB base color decode) */
+    /** Has gamma albedo (sRGB base color decode) */
+    /** @internal */
     readonly _hasGammaAlbedo?: boolean;
-    /** @internal Has morph targets (changes position/normal variable names in vertex shader) */
+    /** Has a non-default base-color factor multiplied over the base-color texture. */
+    /** @internal */
+    readonly _hasBaseColorFactor?: boolean;
+    /** Has morph targets (changes position/normal variable names in vertex shader) */
+    /** @internal */
     readonly _hasMorph?: boolean;
-    /** @internal Has occlusion in ORM texture (simple path, no reflectance ext) */
+    /** Has occlusion in ORM texture (simple path, no reflectance ext) */
+    /** @internal */
     readonly _hasOcclusion?: boolean;
-    /** @internal Has emissive color UBO field (fragment handles emissive computation) */
+    /** Has emissive color UBO field (fragment handles emissive computation) */
+    /** @internal */
     readonly _hasEmissiveColor?: boolean;
-    /** @internal When true, the reflectance fragment handles F0 + occlusion computation */
+    /** When true, the reflectance fragment handles F0 + occlusion computation */
+    /** @internal */
     readonly _hasReflectanceExt?: boolean;
-    /** @internal When true, include IBL SH coefficients in scene UBO */
+    /** When true, include IBL SH coefficients in scene UBO */
+    /** @internal */
     readonly _hasIbl?: boolean;
-    /** @internal Has anisotropy layer */
+    /** Has anisotropy layer */
+    /** @internal */
     readonly _hasAnisotropy?: boolean;
-    /** @internal Anisotropy WGSL: BRDF helper functions (dynamically imported). */
+    /** Anisotropy WGSL: BRDF helper functions (dynamically imported). */
+    /** @internal */
     readonly _anisoBrdfFunctions?: string;
-    /** @internal Anisotropy WGSL: T/B computation block (dynamically imported). */
+    /** Anisotropy WGSL: T/B computation block (dynamically imported). */
+    /** @internal */
     readonly _anisoTBBlock?: string;
     /** Optional extension config for advanced features (UV transforms, UV2, vertex colors).
      *  When undefined, base template defaults to master-like behavior (no feature strings). */
     /** @internal */
     readonly _ext?: PbrTemplateExt;
-    /** @internal Generate a fragment stage that runs discard/alpha-test logic and writes no color. */
+    /** Generate a fragment stage that runs discard/alpha-test logic and writes no color. */
+    /** @internal */
     readonly _noColorOutput?: boolean;
-    /** @internal Generate a fragment stage that runs discard/alpha-test logic and writes ESM shadow color. */
+    /** Generate a fragment stage that runs discard/alpha-test logic and writes ESM shadow color. */
+    /** @internal */
     readonly _esmShadowOutput?: boolean;
-    /** @internal ESM shadow depth output code. Supplied by the ESM material view so normal PBR bundles don't retain it. */
+    /** ESM shadow depth output code. Supplied by the ESM material view so normal PBR bundles don't retain it. */
+    /** @internal */
     readonly _esmShadowDepthCode?: string;
 }
 
@@ -124,6 +152,7 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
         _hasAlphaBlend = false,
         _hasSpecularAA = false,
         _hasGammaAlbedo = false,
+        _hasBaseColorFactor = false,
         _hasMorph = false,
         _hasOcclusion = false,
         _hasEmissiveColor = false,
@@ -178,6 +207,7 @@ export function createPbrTemplate(config: PbrTemplateConfig): ShaderTemplate {
         { _name: "directIntensity", _type: "f32" },
         { _name: "reflectance", _type: "f32" },
         { _name: "materialAlpha", _type: "f32" },
+        ...(_hasBaseColorFactor ? [{ _name: "baseColorFactor", _type: "vec4<f32>" as const }] : []),
         // glTF metallicFactor / roughnessFactor (default 1.0) — applied over MR texture channels.
         { _name: "metallicFactor", _type: "f32" },
         { _name: "roughnessFactor", _type: "f32" },
@@ -294,11 +324,13 @@ var N=N_geom;`;
 
     // Base color decoding
     const vertexColorMod = _ext?.baseColorMod ?? "";
+    const baseColorFactorRgb = _hasBaseColorFactor ? "*material.baseColorFactor.rgb" : "";
+    const baseColorFactorAlpha = _hasBaseColorFactor ? "*material.baseColorFactor.a" : "";
     const baseColorDecode = _hasGammaAlbedo
-        ? `var baseColor=pow(baseColorSample.rgb,vec3<f32>(2.2));
-var alpha=baseColorSample.a;${vertexColorMod}`
-        : `var baseColor=baseColorSample.rgb;
-var alpha=baseColorSample.a;${vertexColorMod}`;
+        ? `var baseColor=pow(baseColorSample.rgb,vec3<f32>(2.2))${baseColorFactorRgb};
+var alpha=baseColorSample.a${baseColorFactorAlpha};${vertexColorMod}`
+        : `var baseColor=baseColorSample.rgb${baseColorFactorRgb};
+var alpha=baseColorSample.a${baseColorFactorAlpha};${vertexColorMod}`;
 
     // Roughness / metallic
     const specGlossUV = _ext?.uvForSpecGloss ?? "input.uv";

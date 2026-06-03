@@ -9,7 +9,7 @@
     {
         "slug": "torus-states",
         "name": "Torus States",
-        "description": "Fullscreen WGSL raymarched twisted-torus SDF that auto-morphs through 7 states. Pure Lite effect pipeline — no scene, camera, or mesh. Reproduction of Robert Penner's demo.",
+        "description": "Fullscreen WGSL raymarched twisted-torus SDF that auto-morphs through 7 states, renders through a scene-less Lite frame graph, and pipes the result through bloom. No scene, camera, or mesh; just an effect render task plus post-process chain focused on bundle size. Reproduction of Robert Penner's demo.",
         "tags": ["effect", "shader", "procedural"],
         "mobile": false
     },
@@ -44,5 +44,12 @@
         "tags": ["game", "strategy", "2d", "showcase"],
         "fetch": "freeciv",
         "mobile": false
+    },
+    {
+        "slug": "mosquito-amber",
+        "name": "Mosquito in Amber",
+        "description": "glTF PBR showcase: the Khronos MosquitoInAmber model (KHR_materials_transmission + ior + volume) framed with the same static camera and studio HDR environment as Scene 176. Frame-graph scene-texture transmission renders the refractive amber. Pure Lite — no BJS.",
+        "tags": ["gltf", "pbr", "transmission", "env", "showcase"],
+        "mobile": true
     }
 ]

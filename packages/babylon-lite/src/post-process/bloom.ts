@@ -29,19 +29,15 @@ export interface BloomPostProcessTask extends Task, PostProcessTaskSettings {
     readonly bloomScale: number;
     /** Recompute and upload the uniforms of all sub-passes (extract, blur X/Y, merge) from current settings. */
     updateUniforms(): void;
-    /** @internal */
+}
+
+interface BloomTaskInternal extends BloomPostProcessTask {
     _extract: ExtractHighlightsPostProcessTask;
-    /** @internal */
     _blurX: BlurPostProcessTask;
-    /** @internal */
     _blurY: BlurPostProcessTask;
-    /** @internal */
     _merge: PostProcessTask;
-    /** @internal */
     _extractTarget: RenderTarget;
-    /** @internal */
     _blurXTarget: RenderTarget;
-    /** @internal */
     _blurYTarget: RenderTarget;
 }
 
@@ -58,10 +54,11 @@ const scaledKernel = (kernel: number, scale: number): number => kernel * scale;
  * Create a bloom post-process task by chaining highlight extraction, separable blur, and a merge pass.
  * @param config - Bloom parameters and source/target settings.
  * @param engine - The owning engine.
- * @param scene - The owning scene.
+ * @param scene - Optional owning scene. Omit for scene-less standalone frame graphs.
  * @returns The bloom post-process task.
  */
-export function createBloomPostProcessTask(config: BloomPostProcessTaskConfig, engine: EngineContext, scene: SceneContext): BloomPostProcessTask {
+export function createBloomPostProcessTask(config: BloomPostProcessTaskConfig, engine: EngineContext, scene?: SceneContext): BloomPostProcessTask {
+    const eng = engine as EngineContext;
     const params = {
         sourceTexture: config.sourceTexture,
         targetTexture: config.targetTexture ?? null,
@@ -76,9 +73,9 @@ export function createBloomPostProcessTask(config: BloomPostProcessTaskConfig, e
         bloomScale: config.bloomScale ?? 0.5,
     };
     const name = config.name ?? "bloom";
-    const extractTarget = createScaledBloomTarget(`${name}-extract-output`, params.sourceTexture, params.bloomScale, engine);
-    const blurXTarget = createScaledBloomTarget(`${name}-blur-x-output`, params.sourceTexture, params.bloomScale, engine);
-    const blurYTarget = createScaledBloomTarget(`${name}-blur-y-output`, params.sourceTexture, params.bloomScale, engine);
+    const extractTarget = createScaledBloomTarget(`${name}-extract-output`, params.sourceTexture, params.bloomScale, eng);
+    const blurXTarget = createScaledBloomTarget(`${name}-blur-x-output`, params.sourceTexture, params.bloomScale, eng);
+    const blurYTarget = createScaledBloomTarget(`${name}-blur-y-output`, params.sourceTexture, params.bloomScale, eng);
 
     const extract = createExtractHighlightsPostProcessTask(
         {
@@ -141,9 +138,9 @@ export function createBloomPostProcessTask(config: BloomPostProcessTaskConfig, e
         scene
     );
 
-    const task: BloomPostProcessTask = {
+    const task: BloomTaskInternal = {
         name,
-        engine,
+        engine: eng,
         scene,
         _passes: [],
         sourceTexture: params.sourceTexture,
@@ -161,9 +158,9 @@ export function createBloomPostProcessTask(config: BloomPostProcessTaskConfig, e
         _blurXTarget: blurXTarget,
         _blurYTarget: blurYTarget,
         record(): void {
-            resizeScaledBloomTarget(task._extractTarget, params.sourceTexture, params.bloomScale, engine);
-            resizeScaledBloomTarget(task._blurXTarget, params.sourceTexture, params.bloomScale, engine);
-            resizeScaledBloomTarget(task._blurYTarget, params.sourceTexture, params.bloomScale, engine);
+            resizeScaledBloomTarget(task._extractTarget, params.sourceTexture, params.bloomScale, eng);
+            resizeScaledBloomTarget(task._blurXTarget, params.sourceTexture, params.bloomScale, eng);
+            resizeScaledBloomTarget(task._blurYTarget, params.sourceTexture, params.bloomScale, eng);
             extract.record();
             blurX.record();
             blurY.record();

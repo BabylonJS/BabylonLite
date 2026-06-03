@@ -135,5 +135,5 @@ export interface MorphTargetData {
     readonly count: number;
     readonly weightsBuffer: GPUBuffer;
     readonly targets: readonly { positions: Float32Array; normals: Float32Array | null }[];
-    readonly weights: Float32Array;
+    readonly weights: Float32Array<ArrayBuffer>;
 }

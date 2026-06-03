@@ -54,29 +54,20 @@ export interface PostProcessTask extends Task, PostProcessTaskSettings {
     updateUniforms(): void;
     /** @internal */
     readonly _shader: PostProcessShaderConfig;
-    /** @internal */
+}
+
+interface PostProcessTaskInternal extends PostProcessTask {
     _internalTarget: RenderTarget | null;
-    /** @internal */
     _internalTargetKey: string;
-    /** @internal */
     _pipeline: GPURenderPipeline | null;
-    /** @internal */
     _bindGroup: GPUBindGroup | null;
-    /** @internal */
     _bindGroupLayout: GPUBindGroupLayout | null;
-    /** @internal */
     _pipelineLayout: GPUPipelineLayout | null;
-    /** @internal */
     _shaderModule: GPUShaderModule | null;
-    /** @internal */
     _shaderModuleCode: string;
-    /** @internal */
     _uniformBuffer: GPUBuffer | null;
-    /** @internal */
     _uniformData: Float32Array | null;
-    /** @internal */
     _renderPassDescriptor: GPURenderPassDescriptor;
-    /** @internal */
     _colorAttachment: GPURenderPassColorAttachment;
 }
 
@@ -94,7 +85,7 @@ fn readPostProcessSource(uv:vec2f)->vec4f{let dims=vec2f(textureDimensions(sourc
 
 const FRAGMENT_WRAPPER_WGSL = `@fragment fn postProcessFragment(input:PostProcessVertexOutput)->@location(0) vec4f{return applyPostProcess(samplePostProcessSource(input.uv),input.uv);}`;
 
-export function createPostProcessTask(config: PostProcessTaskConfig, engine: EngineContext, scene: SceneContext): PostProcessTask {
+export function createPostProcessTask(config: PostProcessTaskConfig, engine: EngineContext, scene?: SceneContext): PostProcessTask {
     const source = config.sourceTexture;
     const internalTarget = config.targetTexture ? null : createInternalTarget(config.name ?? "post-process", source);
     const colorAttachment: GPURenderPassColorAttachment = {
@@ -102,9 +93,9 @@ export function createPostProcessTask(config: PostProcessTaskConfig, engine: Eng
         loadOp: "clear",
         storeOp: "store",
     };
-    const task: PostProcessTask = {
+    const task: PostProcessTaskInternal = {
         name: config.name ?? "post-process",
-        engine,
+        engine: engine,
         scene,
         _passes: [],
         sourceTexture: source,
@@ -164,7 +155,7 @@ export function createPostProcessTask(config: PostProcessTaskConfig, engine: Eng
     return task;
 }
 
-function createPostProcessGpuState(task: PostProcessTask, engine: EngineContext): void {
+function createPostProcessGpuState(task: PostProcessTaskInternal, engine: EngineContext): void {
     const source = task.sourceTexture;
     if (!source._colorTexture || !source._colorView) {
         throw new Error(`PostProcessTask "${task.name}": sourceTexture has no color texture. Render the source to an offscreen RenderTarget before post-processing.`);
@@ -221,7 +212,7 @@ function createPostProcessGpuState(task: PostProcessTask, engine: EngineContext)
     });
 }
 
-function prepareOutputTarget(task: PostProcessTask): void {
+function prepareOutputTarget(task: PostProcessTaskInternal): void {
     const target = task.targetTexture;
     if (target) {
         task.outputTexture = target;
@@ -260,7 +251,7 @@ function internalTargetKey(source: RenderTarget): string {
     return `${desc.colorFormat ?? "-"}|${desc.sampleCount ?? 1}|${size}`;
 }
 
-function getBindGroupLayout(task: PostProcessTask, engine: EngineContext): GPUBindGroupLayout {
+function getBindGroupLayout(task: PostProcessTaskInternal, engine: EngineContext): GPUBindGroupLayout {
     const hasUniform = (task._shader.uniformByteLength ?? 0) > 0;
     if (task._bindGroupLayout) {
         return task._bindGroupLayout;
@@ -280,11 +271,11 @@ function getBindGroupLayout(task: PostProcessTask, engine: EngineContext): GPUBi
     return task._bindGroupLayout;
 }
 
-function getUniformBinding(task: PostProcessTask): number {
+function getUniformBinding(task: PostProcessTaskInternal): number {
     return task._shader.uniformBinding ?? 2 + (task._shader.extraTextures?.length ?? 0);
 }
 
-function getShaderModule(task: PostProcessTask, engine: EngineContext): GPUShaderModule {
+function getShaderModule(task: PostProcessTaskInternal, engine: EngineContext): GPUShaderModule {
     const desc = task.outputTexture._descriptor;
     // Offscreen sources rendered without a projection flip match Babylon.js post-process sources;
     // compensate when sampling so derivative-dependent scene shading is not altered.
@@ -300,7 +291,7 @@ function getShaderModule(task: PostProcessTask, engine: EngineContext): GPUShade
     return task._shaderModule;
 }
 
-function createUniformBuffer(task: PostProcessTask, engine: EngineContext): GPUBuffer | null {
+function createUniformBuffer(task: PostProcessTaskInternal, engine: EngineContext): GPUBuffer | null {
     const size = align16(task._shader.uniformByteLength ?? 0);
     if (size === 0) {
         return null;
@@ -312,12 +303,12 @@ function createUniformBuffer(task: PostProcessTask, engine: EngineContext): GPUB
     });
 }
 
-function createUniformData(task: PostProcessTask): Float32Array | null {
+function createUniformData(task: PostProcessTaskInternal): Float32Array | null {
     const size = align16(task._shader.uniformByteLength ?? 0);
     return size === 0 ? null : new Float32Array(size / 4);
 }
 
-function writePostProcessUniforms(task: PostProcessTask, engine: EngineContext): void {
+function writePostProcessUniforms(task: PostProcessTaskInternal, engine: EngineContext): void {
     if ((task._shader.uniformByteLength ?? 0) === 0) {
         return;
     }

@@ -3,14 +3,85 @@ import { resolve } from "path";
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { spawn } from "child_process";
 
+interface DemoConfigEntry {
+    slug: string;
+    name: string;
+    description: string;
+    tags?: string[];
+    mobile?: boolean;
+}
+
+interface DemoSize {
+    rawKB: number;
+    gzipKB: number;
+}
+
+function readJson<T>(path: string, fallback: T): T {
+    if (!existsSync(path)) {
+        return fallback;
+    }
+    return JSON.parse(readFileSync(path, "utf-8")) as T;
+}
+
+function escapeHtml(value: string): string {
+    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function renderPagesDemoCard(demo: DemoConfigEntry, size: DemoSize | undefined): string {
+    const tagList = demo.tags ?? [];
+    const tags = tagList.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("");
+    const sizeRow = size ? `<div class="size" title="Engine + demo code only — excludes external assets (textures, game data, etc.)"><strong>${size.rawKB} KB</strong> · ${size.gzipKB} KB gzip</div>` : "";
+    return [
+        `<a class="card" href="/demo-${demo.slug}.html" data-tags="${escapeHtml(tagList.join(" "))}" data-mobile="${demo.mobile === false ? "false" : "true"}">`,
+        `<div class="card-image">`,
+        `<img src="/thumbnails/demo-${demo.slug}.png" alt="${escapeHtml(demo.name)} thumbnail" loading="lazy" decoding="async" onerror="this.remove()" />`,
+        `</div>`,
+        `<div class="card-body">`,
+        `<h2>${escapeHtml(demo.name)}</h2>`,
+        `<p>${escapeHtml(demo.description)}</p>`,
+        tags ? `<div class="tags">${tags}</div>` : "",
+        sizeRow,
+        `<span class="card-disabled-badge">Requires WebGPU</span>`,
+        `</div></a>`,
+    ].join("");
+}
+
+function renderPagesDemoFilters(demos: DemoConfigEntry[]): string {
+    const tags = Array.from(new Set(demos.flatMap((d) => d.tags ?? []))).sort();
+    if (tags.length === 0) {
+        return "";
+    }
+    const pills = [
+        `<button type="button" class="filter-pill is-active" data-filter="all" aria-pressed="true">All</button>`,
+        ...tags.map((t) => `<button type="button" class="filter-pill" data-filter="${escapeHtml(t)}" aria-pressed="false">${escapeHtml(t)}</button>`),
+    ].join("");
+    return `<nav class="filters" aria-label="Filter demos by tag">${pills}</nav>`;
+}
+
+function renderPagesDemoIndex(): string {
+    const repoRoot = resolve(__dirname, "..");
+    const demos = readJson<DemoConfigEntry[]>(resolve(repoRoot, "demos-config.json"), []);
+    const sizes = readJson<Record<string, DemoSize>>(resolve(__dirname, "public/bundle/demos-manifest.json"), {});
+    const template = readFileSync(resolve(repoRoot, "pages/index.template.html"), "utf-8");
+    return template
+        .replace("<!--FILTERS-->", renderPagesDemoFilters(demos))
+        .replace("<!--CARDS-->", demos.map((d) => renderPagesDemoCard(d, sizes[d.slug])).join("\n                "))
+        .replace('src="babylon-logo.svg"', 'src="/pages/babylon-logo.svg"')
+        .replace('src="bundle/demos/landing-bg.js"', 'src="/bundle/demos/landing-bg.js"');
+}
+
 function hasBuildableRootScripts(htmlFile: string): boolean {
     const html = readFileSync(resolve(__dirname, htmlFile), "utf-8");
+    if (html.includes('src="/lite/bundle/')) {
+        return false;
+    }
     for (const match of html.matchAll(/<script\b[^>]*\bsrc=["']\/([^"']+)["']/g)) {
         const scriptPath = match[1];
         if (!scriptPath) {
             continue;
         }
-        if (!existsSync(resolve(__dirname, scriptPath)) && !existsSync(resolve(__dirname, "public", scriptPath))) {
+        const localScriptPath = scriptPath.startsWith("lite/bundle/") ? scriptPath.slice("lite/".length) : scriptPath;
+        if (!existsSync(resolve(__dirname, scriptPath)) && !existsSync(resolve(__dirname, "public", localScriptPath))) {
             return false;
         }
     }
@@ -18,23 +89,69 @@ function hasBuildableRootScripts(htmlFile: string): boolean {
 }
 
 function getHtmlInputs(): Record<string, string> {
+    const liteHtml = readdirSync(resolve(__dirname, "lite"))
+        .filter((f) => f.endsWith(".html") && hasBuildableRootScripts(`lite/${f}`))
+        .map((f) => [`lite/${f.replace(".html", "")}`, resolve(__dirname, "lite", f)] as const);
     return Object.fromEntries([
         ["main", resolve(__dirname, "index.html")],
         ...readdirSync(__dirname)
             .filter((f) => f.endsWith(".html") && f !== "index.html" && hasBuildableRootScripts(f))
             .map((f) => [f.replace(".html", ""), resolve(__dirname, f)]),
+        ...liteHtml,
     ]);
 }
 
-/** Serve reference images from the repo-root reference/ directory */
+/** Serve the standalone demo landing page source from repo-root pages/. */
+function pagesDemoPlugin(): Plugin {
+    return {
+        name: "lab-pages-demo",
+        configureServer(server) {
+            server.middlewares.use((req, res, next) => {
+                const url = (req.url ?? "").split("?")[0];
+                if (url === "/pages" || url === "/pages/" || url === "/pages/index.html") {
+                    res.setHeader("Content-Type", "text/html; charset=utf-8");
+                    res.setHeader("Cache-Control", "no-cache");
+                    res.end(renderPagesDemoIndex());
+                    return;
+                }
+                if (url === "/pages/babylon-logo.svg") {
+                    const filePath = resolve(__dirname, "../pages/babylon-logo.svg");
+                    if (existsSync(filePath)) {
+                        res.setHeader("Content-Type", "image/svg+xml");
+                        res.setHeader("Cache-Control", "no-cache");
+                        createReadStream(filePath).pipe(res);
+                        return;
+                    }
+                }
+                next();
+            });
+        },
+    };
+}
+
+/** Serve reference images from the repo-root reference/lite/ directory */
 function serveReferenceImages(): Plugin {
     return {
         name: "serve-reference-images",
+        enforce: "pre",
         configureServer(server) {
             server.middlewares.use((req, res, next) => {
                 const url = (req.url ?? "").split("?")[0]; // strip query string
-                if (url.startsWith("/reference/")) {
-                    const filePath = resolve(__dirname, "..", url.slice(1));
+                const liteHtmlCompat = url.match(
+                    /^\/((?:scene|bundle-scene|bundle-bjs-scene|babylon-ref-scene|bundle-baseline-scene)\d+|demo-[^/]+|dispose-test|leak-test|material-swap-test|picking-test)\.html$/
+                );
+                if (liteHtmlCompat) {
+                    const filePath = resolve(__dirname, "lite", `${liteHtmlCompat[1]}.html`);
+                    if (existsSync(filePath)) {
+                        res.setHeader("Content-Type", "text/html; charset=utf-8");
+                        res.setHeader("Cache-Control", "no-cache");
+                        createReadStream(filePath).pipe(res);
+                        return;
+                    }
+                }
+                if (url.startsWith("/reference/lite/") || url.startsWith("/lite/reference/")) {
+                    const refPath = url.startsWith("/lite/reference/") ? `reference/lite/${url.slice("/lite/reference/".length)}` : url.slice(1);
+                    const filePath = resolve(__dirname, "..", refPath);
                     if (existsSync(filePath)) {
                         res.setHeader("Content-Type", "image/png");
                         res.setHeader("Cache-Control", "no-cache");
@@ -42,8 +159,24 @@ function serveReferenceImages(): Plugin {
                         return;
                     }
                 }
-                if (url === "/scene-config.json") {
-                    const filePath = resolve(__dirname, "../scene-config.json");
+                if (url.startsWith("/lite/thumbnails/")) {
+                    const filePath = resolve(__dirname, "public", url.slice("/lite/".length));
+                    if (existsSync(filePath) && statSync(filePath).isFile()) {
+                        res.setHeader("Content-Type", "image/png");
+                        res.setHeader("Cache-Control", "no-cache");
+                        createReadStream(filePath).pipe(res);
+                        return;
+                    }
+                }
+                const rootJson = new Map([
+                    ["/scene-config.json", "scene-config.json"],
+                    ["/demos-config.json", "demos-config.json"],
+                    ["/scene-config-webgl.json", "scene-config-webgl.json"],
+                    ["/demos-config-webgl.json", "demos-config-webgl.json"],
+                ]);
+                const rootJsonFile = rootJson.get(url);
+                if (rootJsonFile) {
+                    const filePath = resolve(__dirname, "..", rootJsonFile);
                     if (existsSync(filePath)) {
                         res.setHeader("Content-Type", "application/json");
                         res.setHeader("Cache-Control", "no-cache");
@@ -51,9 +184,9 @@ function serveReferenceImages(): Plugin {
                         return;
                     }
                 }
-                if (url === "/demos-config.json") {
-                    const filePath = resolve(__dirname, "../demos-config.json");
-                    if (existsSync(filePath)) {
+                if (url === "/perf-manifest.json" || url === "/perf-regression-manifest.json") {
+                    const filePath = resolve(__dirname, "public", url.slice(1));
+                    if (existsSync(filePath) && statSync(filePath).isFile()) {
                         res.setHeader("Content-Type", "application/json");
                         res.setHeader("Cache-Control", "no-cache");
                         createReadStream(filePath).pipe(res);
@@ -69,10 +202,29 @@ function serveReferenceImages(): Plugin {
                 // is why the file looks present yet demos break). Serving these build outputs
                 // ourselves — before Vite's internal middlewares — makes a freshly regenerated
                 // bundle load immediately without a dev-server restart.
-                if (url.startsWith("/bundle/") && (url.endsWith(".js") || url.endsWith(".mjs"))) {
-                    const filePath = resolve(__dirname, "public", url.slice(1));
+                if ((url.startsWith("/bundle/") || url.startsWith("/lite/bundle/")) && (url.endsWith(".js") || url.endsWith(".mjs"))) {
+                    const bundlePath = url.startsWith("/lite/bundle/") ? url.slice("/lite/".length) : url.slice(1);
+                    const filePath = resolve(__dirname, "public", bundlePath);
                     if (existsSync(filePath) && statSync(filePath).isFile()) {
                         res.setHeader("Content-Type", "text/javascript; charset=utf-8");
+                        res.setHeader("Cache-Control", "no-cache");
+                        createReadStream(filePath).pipe(res);
+                        return;
+                    }
+                    res.statusCode = 404;
+                    res.setHeader("Content-Type", "text/javascript; charset=utf-8");
+                    res.setHeader("Cache-Control", "no-cache");
+                    res.end(
+                        `console.error(${JSON.stringify(`Missing lab bundle ${url}. Run pnpm build:bundle-scenes, pnpm build:bundle-demos, or pnpm dev:lab to regenerate it.`)});\n` +
+                            `document.getElementById("renderCanvas")?.setAttribute("data-error", "missing-bundle");\n`
+                    );
+                    return;
+                }
+                if ((url.startsWith("/bundle/") || url.startsWith("/lite/bundle/")) && url.endsWith(".json")) {
+                    const bundlePath = url.startsWith("/lite/bundle/") ? url.slice("/lite/".length) : url.slice(1);
+                    const filePath = resolve(__dirname, "public", bundlePath);
+                    if (existsSync(filePath) && statSync(filePath).isFile()) {
+                        res.setHeader("Content-Type", "application/json");
                         res.setHeader("Cache-Control", "no-cache");
                         createReadStream(filePath).pipe(res);
                         return;
@@ -102,7 +254,7 @@ function serveReferenceImages(): Plugin {
                         if (existsSync(cfgPath)) {
                             const cfg = JSON.parse(readFileSync(cfgPath, "utf-8")) as Array<{ id: number; slug: string }>;
                             for (const s of cfg) {
-                                const imgPath = resolve(__dirname, "../reference", s.slug, "test-actual.png");
+                                const imgPath = resolve(__dirname, "../reference/lite", s.slug, "test-actual.png");
                                 const m = mtime(imgPath);
                                 if (m != null) sig.parity["scene" + s.id] = m;
                             }
@@ -125,29 +277,45 @@ function serveReferenceImages(): Plugin {
  * Dev-server endpoints backing the lab's "API Docs" tab.
  *  - `GET  /lab-api/docs-status`   → whether the TypeDoc site has been generated.
  *  - `POST /lab-api/generate-docs` → runs TypeDoc (repo-root `typedoc.json`) on demand
- *    and reports success + tail of the log. Output lands in `lab/public/api-docs/`,
- *    which Vite serves statically at `/api-docs/`.
+ *    and reports success + tail of the log. Lite output lands in `lab/public/lite/api-docs/`,
+ *    which Vite serves statically at `/lite/api-docs/`.
  */
 function apiDocsPlugin(): Plugin {
     const repoRoot = resolve(__dirname, "..");
-    const docsIndex = resolve(__dirname, "public/api-docs/index.html");
+    const docsTargets = {
+        lite: {
+            index: resolve(__dirname, "public/lite/api-docs/index.html"),
+            canGenerate: true,
+        },
+        gl: {
+            index: resolve(__dirname, "public/gl/api-docs/index.html"),
+            canGenerate: false,
+        },
+    };
     let generating = false;
+
+    function getDocsTarget(reqUrl: string): (typeof docsTargets)["lite"] {
+        const qs = reqUrl.includes("?") ? new URLSearchParams(reqUrl.slice(reqUrl.indexOf("?") + 1)) : new URLSearchParams();
+        return qs.get("experience") === "gl" ? docsTargets.gl : docsTargets.lite;
+    }
 
     return {
         name: "lab-api-docs",
         configureServer(server) {
             server.middlewares.use((req, res, next) => {
-                const url = (req.url ?? "").split("?")[0];
+                const reqUrl = req.url ?? "";
+                const url = reqUrl.split("?")[0];
 
                 if (url === "/lab-api/docs-status") {
-                    const generated = existsSync(docsIndex);
+                    const target = getDocsTarget(reqUrl);
+                    const generated = existsSync(target.index);
                     res.setHeader("Content-Type", "application/json");
                     res.setHeader("Cache-Control", "no-store");
                     res.end(
                         JSON.stringify({
                             generated,
                             generating,
-                            mtime: generated ? statSync(docsIndex).mtimeMs : null,
+                            mtime: generated ? statSync(target.index).mtimeMs : null,
                         })
                     );
                     return;
@@ -157,6 +325,13 @@ function apiDocsPlugin(): Plugin {
                     if (req.method !== "POST") {
                         res.statusCode = 405;
                         res.end("Method Not Allowed");
+                        return;
+                    }
+                    const target = getDocsTarget(reqUrl);
+                    if (!target.canGenerate) {
+                        res.statusCode = 501;
+                        res.setHeader("Content-Type", "application/json");
+                        res.end(JSON.stringify({ ok: false, error: "Lite GL API documentation generation is not configured yet." }));
                         return;
                     }
                     if (generating) {
@@ -233,7 +408,7 @@ function tabContentPlugin(): Plugin {
                 for (const s of cfg) {
                     if (s.skipParity) continue;
                     total++;
-                    const m = mtimeOf(resolve(repoRoot, "reference", s.slug, "test-actual.png"));
+                    const m = mtimeOf(resolve(repoRoot, "reference/lite", s.slug, "test-actual.png"));
                     if (m != null) {
                         present++;
                         mtime = mtime == null ? m : Math.max(mtime, m);
@@ -356,7 +531,7 @@ function tabContentPlugin(): Plugin {
 }
 
 export default defineConfig({
-    plugins: [serveReferenceImages(), apiDocsPlugin(), tabContentPlugin()],
+    plugins: [pagesDemoPlugin(), serveReferenceImages(), apiDocsPlugin(), tabContentPlugin()],
     optimizeDeps: {
         // BJS uses prototype-patching side-effect imports (e.g. abstractEngine.dom.js).
         // babylon-lite uses ?raw WGSL imports that esbuild can't handle.
@@ -375,7 +550,13 @@ export default defineConfig({
         },
     },
     server: {
-        port: 5174,
+        // Default interactive port is 5174. Playwright test runs pass LAB_DEV_PORT
+        // to spin up an ISOLATED server on a dedicated port (so test traffic never
+        // competes with the interactive lab). strictPort is enabled only for that
+        // test server so the exact port Playwright waits on is guaranteed; the
+        // interactive dev server keeps Vite's default auto-increment behavior.
+        port: Number(process.env.LAB_DEV_PORT) || 5174,
+        strictPort: !!process.env.LAB_DEV_PORT,
         watch: {
             // On-demand tab generation writes many files under the Vite root that
             // would otherwise churn the single-threaded dev server (stalling the
@@ -389,6 +570,8 @@ export default defineConfig({
                 "**/public/bundle/**",
                 "**/public/bundle-baseline/**",
                 "**/public/api-docs/**",
+                "**/public/lite/api-docs/**",
+                "**/public/gl/api-docs/**",
                 "**/public/perf-manifest.json",
                 "**/public/perf-regression-manifest.json",
                 "**/bundle-baseline-scene*.html",

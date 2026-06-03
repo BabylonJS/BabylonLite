@@ -33,14 +33,12 @@ export interface EffectWrapperOptions {
     blend?: GPUBlendState;
 }
 
-/** @internal */
 interface EffectUniformSlot {
     readonly layout: EffectBindingLayout;
     buffer: GPUBuffer;
     byteLength: number;
 }
 
-/** @internal */
 interface EffectTextureSlot {
     readonly layout: EffectBindingLayout;
     texture: Texture2D | null;
@@ -50,23 +48,17 @@ interface EffectTextureSlot {
 export interface EffectWrapper {
     readonly name: string;
     readonly options: EffectWrapperOptions;
-    /** @internal */
+}
+
+interface EffectWrapperInternal extends EffectWrapper {
     _engine: EngineContext;
-    /** @internal */
     _shader: GPUShaderModule | null;
-    /** @internal */
     _bindGroupLayout: GPUBindGroupLayout | null;
-    /** @internal */
     _pipelineLayout: GPUPipelineLayout | null;
-    /** @internal */
     _bindGroup: GPUBindGroup | null;
-    /** @internal */
     _bindGroupDirty: boolean;
-    /** @internal */
     _pipelines: Map<string, GPURenderPipeline> | null;
-    /** @internal */
     _uniforms: EffectUniformSlot[];
-    /** @internal */
     _textures: EffectTextureSlot[];
 }
 
@@ -86,15 +78,13 @@ export interface EffectRenderTask extends Task {
     readonly _config: EffectRenderTaskConfig;
     /** @internal */
     readonly _rt: RenderTarget;
-    /** @internal */
+}
+
+interface EffectRenderTaskInternal extends EffectRenderTask {
     _targetSignature: RenderTargetSignature;
-    /** @internal */
     _renderPassDescriptor: GPURenderPassDescriptor;
-    /** @internal */
     _colorAttachment: GPURenderPassColorAttachment;
-    /** @internal */
     _pipeline: GPURenderPipeline | null;
-    /** @internal */
     _bindGroup: GPUBindGroup | null;
 }
 
@@ -128,25 +118,18 @@ export interface EffectRendererOptions {
  */
 export interface EffectRenderer extends RenderingContext {
     readonly name: string;
-    /** @internal */
+}
+
+interface EffectRendererInternal extends EffectRenderer {
     _engine: EngineContext;
-    /** @internal */
-    _effect: EffectWrapper;
-    /** @internal */
+    _effect: EffectWrapperInternal;
     _clear: boolean;
-    /** @internal */
     _rt: RenderTarget;
-    /** @internal */
     _targetSignature: RenderTargetSignature;
-    /** @internal */
     _renderPassDescriptor: GPURenderPassDescriptor;
-    /** @internal */
     _colorAttachment: GPURenderPassColorAttachment;
-    /** @internal */
     _pipeline: GPURenderPipeline | null;
-    /** @internal */
     _bindGroup: GPUBindGroup | null;
-    /** @internal */
     _disposed: boolean;
 }
 
@@ -158,10 +141,11 @@ export interface EffectRenderer extends RenderingContext {
  * @returns The new effect wrapper.
  */
 export function createEffectWrapper(engine: EngineContext, options: EffectWrapperOptions): EffectWrapper {
-    const wrapper: EffectWrapper = {
+    const eng = engine as EngineContext;
+    const wrapper: EffectWrapperInternal = {
         name: options.name ?? "effect-wrapper",
         options,
-        _engine: engine,
+        _engine: eng,
         _shader: null,
         _bindGroupLayout: null,
         _pipelineLayout: null,
@@ -182,20 +166,21 @@ export function createEffectWrapper(engine: EngineContext, options: EffectWrappe
  * @param data - The uniform bytes, or a map of binding key to uniform bytes.
  */
 export function setEffectUniforms(wrapper: EffectWrapper, data: ArrayBuffer | ArrayBufferView | Record<string | number, ArrayBuffer | ArrayBufferView>): void {
+    const internal = wrapper as EffectWrapperInternal;
     if (isBufferData(data)) {
-        const slot = wrapper._uniforms[0];
+        const slot = internal._uniforms[0];
         if (!slot) {
             throw new Error("setEffectUniforms: wrapper has no uniform binding.");
         }
-        writeUniformSlot(wrapper, slot, data);
+        writeUniformSlot(internal, slot, data);
         return;
     }
     for (const key of Object.keys(data)) {
-        const slot = findUniformSlot(wrapper, key);
+        const slot = findUniformSlot(internal, key);
         if (!slot) {
             throw new Error(`setEffectUniforms: unknown uniform binding "${key}".`);
         }
-        writeUniformSlot(wrapper, slot, data[key]!);
+        writeUniformSlot(internal, slot, data[key]!);
     }
 }
 
@@ -206,23 +191,25 @@ export function setEffectUniforms(wrapper: EffectWrapper, data: ArrayBuffer | Ar
  * @param texture - The texture to bind.
  */
 export function setEffectTexture(wrapper: EffectWrapper, bindingNameOrIndex: string | number, texture: Texture2D): void {
-    const slot = findTextureSlot(wrapper, bindingNameOrIndex);
+    const internal = wrapper as EffectWrapperInternal;
+    const slot = findTextureSlot(internal, bindingNameOrIndex);
     if (!slot) {
         throw new Error(`setEffectTexture: unknown texture binding "${String(bindingNameOrIndex)}".`);
     }
     slot.texture = texture;
-    wrapper._bindGroupDirty = true;
+    internal._bindGroupDirty = true;
 }
 
 /**
  * Create a frame-graph task that draws an effect as a fullscreen pass into `config.target`.
  * @param config - The effect, target, and clear settings.
  * @param engine - The owning engine.
- * @param scene - The owning scene.
- * @returns The render task to add to the scene's frame graph.
+ * @param scene - Optional owning scene. Omit for scene-less standalone frame graphs.
+ * @returns The render task to add to a frame graph.
  */
-export function createEffectRenderTask(config: EffectRenderTaskConfig, engine: EngineContext, scene: SceneContext): EffectRenderTask {
-    const effect = config.effect;
+export function createEffectRenderTask(config: EffectRenderTaskConfig, engine: EngineContext, scene?: SceneContext): EffectRenderTask {
+    const eng = engine as EngineContext;
+    const effect = config.effect as EffectWrapperInternal;
     const rt = config.target;
     config.clearColor ??= { r: 0, g: 0, b: 0, a: 1 };
     const sampleCount = rt._descriptor.sampleCount ?? 1;
@@ -231,10 +218,10 @@ export function createEffectRenderTask(config: EffectRenderTaskConfig, engine: E
         _sampleCount: sampleCount,
     };
     const colorAttachment = { loadOp: "clear", storeOp: "store" } as GPURenderPassColorAttachment;
-    const task: EffectRenderTask = {
+    const task: EffectRenderTaskInternal = {
         name: config.name,
         _config: config,
-        engine,
+        engine: eng,
         scene,
         _passes: [],
         _rt: rt,
@@ -244,7 +231,7 @@ export function createEffectRenderTask(config: EffectRenderTaskConfig, engine: E
         _pipeline: null,
         _bindGroup: null,
         record(): void {
-            buildRenderTarget(rt, engine);
+            buildRenderTarget(rt, eng);
             task._pipeline = getEffectPipeline(effect, task._targetSignature);
             task._bindGroup = getEffectBindGroup(effect);
         },
@@ -254,8 +241,8 @@ export function createEffectRenderTask(config: EffectRenderTaskConfig, engine: E
                 throw new Error(`EffectRenderTask "${task.name}" executed before record().`);
             }
             task._bindGroup = getEffectBindGroup(effect);
-            applyColorAttachmentState(task._colorAttachment, rt, engine, task._config.clear !== false, task._config.clearColor!);
-            const pass = engine._currentEncoder.beginRenderPass(task._renderPassDescriptor);
+            applyColorAttachmentState(task._colorAttachment, rt, eng, task._config.clear !== false, task._config.clearColor!);
+            const pass = eng._currentEncoder.beginRenderPass(task._renderPassDescriptor);
             pass.setPipeline(pipeline);
             if (task._bindGroup) {
                 pass.setBindGroup(0, task._bindGroup);
@@ -276,18 +263,19 @@ export function createEffectRenderTask(config: EffectRenderTaskConfig, engine: E
 
 /** Destroy the uniform buffers and clear the cached pipelines, bind groups, and slots owned by the effect wrapper. */
 export function disposeEffectWrapper(wrapper: EffectWrapper): void {
-    for (const slot of wrapper._uniforms) {
+    const internal = wrapper as EffectWrapperInternal;
+    for (const slot of internal._uniforms) {
         slot.buffer.destroy();
     }
-    wrapper._uniforms.length = 0;
-    wrapper._textures.length = 0;
-    wrapper._pipelines?.clear();
-    wrapper._pipelines = null;
-    wrapper._shader = null;
-    wrapper._bindGroupLayout = null;
-    wrapper._pipelineLayout = null;
-    wrapper._bindGroup = null;
-    wrapper._bindGroupDirty = true;
+    internal._uniforms.length = 0;
+    internal._textures.length = 0;
+    internal._pipelines?.clear();
+    internal._pipelines = null;
+    internal._shader = null;
+    internal._bindGroupLayout = null;
+    internal._pipelineLayout = null;
+    internal._bindGroup = null;
+    internal._bindGroupDirty = true;
 }
 
 /**
@@ -299,6 +287,8 @@ export function disposeEffectWrapper(wrapper: EffectWrapper): void {
  * to pause, and `disposeEffectRenderer` to free GPU resources.
  */
 export function createEffectRenderer(engine: EngineContext, effect: EffectWrapper, options?: EffectRendererOptions): EffectRenderer {
+    const eng = engine as EngineContext;
+    const ew = effect as EffectWrapperInternal;
     const name = options?.name ?? effect.name;
     const clear = options?.clear !== false;
     const clearColor: GPUColorDict = options?.clearColor ?? { r: 0, g: 0, b: 0, a: 1 };
@@ -306,8 +296,8 @@ export function createEffectRenderer(engine: EngineContext, effect: EffectWrappe
 
     const rt = createRenderTarget({
         label: `${name}-swapchain`,
-        colorFormat: engine.format,
-        sampleCount: engine.msaaSamples,
+        colorFormat: eng.format,
+        sampleCount: eng.msaaSamples,
         size: "canvas",
         resolveToSwapchain: true,
     });
@@ -324,12 +314,12 @@ export function createEffectRenderer(engine: EngineContext, effect: EffectWrappe
     };
     const renderPassDescriptor: GPURenderPassDescriptor = { label: name, colorAttachments: [colorAttachment] };
 
-    const er: EffectRenderer = {
+    const er: EffectRendererInternal = {
         name,
         clearColor,
         _drawCallsPre: 0,
-        _engine: engine,
-        _effect: effect,
+        _engine: eng,
+        _effect: ew,
         _clear: clear,
         _rt: rt,
         _targetSignature: targetSignature,
@@ -339,7 +329,7 @@ export function createEffectRenderer(engine: EngineContext, effect: EffectWrappe
         _bindGroup: null,
         _disposed: false,
         _update(): void {
-            update?.(engine._currentDelta);
+            update?.(eng._currentDelta);
         },
         _record(): number {
             if (er._disposed) {
@@ -376,26 +366,28 @@ export function createEffectRenderer(engine: EngineContext, effect: EffectWrappe
 
 /** Register the effect renderer with its engine. Idempotent — a second call is a no-op. */
 export function registerEffectRenderer(er: EffectRenderer): void {
-    prepareEffectRenderer(er);
-    registerRenderingContext(er._engine, er);
+    const internal = er as EffectRendererInternal;
+    prepareEffectRenderer(internal);
+    registerRenderingContext(internal._engine, er);
 }
 
 /** Unregister the effect renderer from its engine. No-op if not registered. */
 export function unregisterEffectRenderer(er: EffectRenderer): void {
-    unregisterRenderingContext(er._engine, er);
+    unregisterRenderingContext((er as EffectRendererInternal)._engine, er);
 }
 
 /** Unregister and free all GPU resources owned by the renderer. */
 export function disposeEffectRenderer(er: EffectRenderer): void {
-    if (er._disposed) {
+    const internal = er as EffectRendererInternal;
+    if (internal._disposed) {
         return;
     }
     unregisterEffectRenderer(er);
-    disposeRenderTarget(er._rt);
-    er._disposed = true;
+    disposeRenderTarget(internal._rt);
+    internal._disposed = true;
 }
 
-function createBindingSlots(wrapper: EffectWrapper): void {
+function createBindingSlots(wrapper: EffectWrapperInternal): void {
     const layouts = [...(wrapper.options.bindings ?? [])].sort((a, b) => a.binding - b.binding);
     const seen = new Set<number>();
     for (const layout of layouts) {
@@ -444,7 +436,7 @@ function ensureRtCanvasSize(rt: RenderTarget, eng: EngineContext): void {
     buildRenderTarget(rt, eng);
 }
 
-function getEffectPipeline(wrapper: EffectWrapper, targetSignature: RenderTargetSignature): GPURenderPipeline {
+function getEffectPipeline(wrapper: EffectWrapperInternal, targetSignature: RenderTargetSignature): GPURenderPipeline {
     const key = targetSignatureKey(targetSignature);
     if (!wrapper._pipelines) {
         wrapper._pipelines = new Map();
@@ -470,7 +462,7 @@ function getEffectPipeline(wrapper: EffectWrapper, targetSignature: RenderTarget
     return pipeline;
 }
 
-function getShaderModule(wrapper: EffectWrapper): GPUShaderModule {
+function getShaderModule(wrapper: EffectWrapperInternal): GPUShaderModule {
     if (!wrapper._shader) {
         wrapper._shader = wrapper._engine._device.createShaderModule({
             label: wrapper.name,
@@ -480,7 +472,7 @@ function getShaderModule(wrapper: EffectWrapper): GPUShaderModule {
     return wrapper._shader;
 }
 
-function getPipelineLayout(wrapper: EffectWrapper): GPUPipelineLayout {
+function getPipelineLayout(wrapper: EffectWrapperInternal): GPUPipelineLayout {
     if (!wrapper._pipelineLayout) {
         wrapper._pipelineLayout = wrapper._engine._device.createPipelineLayout({
             label: `${wrapper.name}-pipeline-layout`,
@@ -490,7 +482,7 @@ function getPipelineLayout(wrapper: EffectWrapper): GPUPipelineLayout {
     return wrapper._pipelineLayout;
 }
 
-function getBindGroupLayout(wrapper: EffectWrapper): GPUBindGroupLayout {
+function getBindGroupLayout(wrapper: EffectWrapperInternal): GPUBindGroupLayout {
     if (!wrapper._bindGroupLayout) {
         const entries = (wrapper.options.bindings ?? [])
             .slice()
@@ -515,7 +507,7 @@ function bindingLayoutEntry(layout: EffectBindingLayout): GPUBindGroupLayoutEntr
     return { binding: layout.binding, visibility, sampler: { type: layout.samplerType ?? "filtering" } };
 }
 
-function getEffectBindGroup(wrapper: EffectWrapper): GPUBindGroup | null {
+function getEffectBindGroup(wrapper: EffectWrapperInternal): GPUBindGroup | null {
     const bindings = wrapper.options.bindings ?? [];
     if (bindings.length === 0) {
         return null;
@@ -536,12 +528,12 @@ function getEffectBindGroup(wrapper: EffectWrapper): GPUBindGroup | null {
     return wrapper._bindGroup;
 }
 
-function prepareEffectRenderer(er: EffectRenderer): void {
+function prepareEffectRenderer(er: EffectRendererInternal): void {
     er._pipeline ??= getEffectPipeline(er._effect, er._targetSignature);
     er._bindGroup = getEffectBindGroup(er._effect);
 }
 
-function bindGroupEntry(wrapper: EffectWrapper, layout: EffectBindingLayout): GPUBindGroupEntry {
+function bindGroupEntry(wrapper: EffectWrapperInternal, layout: EffectBindingLayout): GPUBindGroupEntry {
     if (layout.kind === "uniform") {
         const slot = findUniformSlot(wrapper, layout.binding);
         if (!slot) {
@@ -563,11 +555,11 @@ function bindGroupEntry(wrapper: EffectWrapper, layout: EffectBindingLayout): GP
     return { binding: layout.binding, resource: textureSlot.texture.sampler };
 }
 
-function findUniformSlot(wrapper: EffectWrapper, bindingNameOrIndex: string | number): EffectUniformSlot | undefined {
+function findUniformSlot(wrapper: EffectWrapperInternal, bindingNameOrIndex: string | number): EffectUniformSlot | undefined {
     return wrapper._uniforms.find((slot) => matchesBinding(slot.layout, bindingNameOrIndex));
 }
 
-function findTextureSlot(wrapper: EffectWrapper, bindingNameOrIndex: string | number): EffectTextureSlot | undefined {
+function findTextureSlot(wrapper: EffectWrapperInternal, bindingNameOrIndex: string | number): EffectTextureSlot | undefined {
     return wrapper._textures.find((slot) => matchesBinding(slot.layout, bindingNameOrIndex));
 }
 
@@ -578,7 +570,7 @@ function matchesBinding(layout: EffectBindingLayout, bindingNameOrIndex: string 
     return layout.name === bindingNameOrIndex || String(layout.binding) === bindingNameOrIndex;
 }
 
-function writeUniformSlot(wrapper: EffectWrapper, slot: EffectUniformSlot, data: ArrayBuffer | ArrayBufferView): void {
+function writeUniformSlot(wrapper: EffectWrapperInternal, slot: EffectUniformSlot, data: ArrayBuffer | ArrayBufferView): void {
     const bytes = toBytes(data);
     if (bytes.byteLength > slot.byteLength) {
         throw new Error(`writeUniformSlot: ${bytes.byteLength} bytes exceeds uniform binding ${slot.layout.binding} size ${slot.byteLength}.`);

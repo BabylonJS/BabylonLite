@@ -70,7 +70,10 @@ export interface RenderTaskConfig {
 /** A frame-graph task that records a single `RenderPass`, binds the scene's `RenderTarget`, and draws renderables into it. */
 export interface RenderTask extends Task {
     readonly name: string;
-    /** @internal Live task configuration. Mutating `clr` or `clrColor` affects subsequent frames. */
+    /** Render tasks are scene-bound because they consume scene camera, lights, and renderables. */
+    readonly scene: SceneContext;
+    /** Live task configuration. Mutating `clr` or `clrColor` affects subsequent frames. */
+    /** @internal */
     readonly _config: RenderTaskConfig;
     /** @internal */
     _autoFromScene: boolean;
@@ -139,6 +142,7 @@ interface MutableDrawUpdateContext {
  *
  *  Swapchain-targeted tasks acquire the swap view per-frame at execute time. */
 export function createRenderTask(config: RenderTaskConfig, engine: EngineContext, scene: SceneContext): RenderTask {
+    const sc = scene as SceneContext;
     const rt = config.rt;
     config.clrColor ??= { r: 0.2, g: 0.2, b: 0.3, a: 1.0 };
     config.clr ??= true;
@@ -156,7 +160,7 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
 
     const sceneBGL = getSceneBindGroupLayout(engine);
     const sceneUBO = createEmptyUniformBuffer(engine, SCENE_UBO_BYTES);
-    const lightsUBO = ensureSceneLightState(engine, scene)._buffer;
+    const lightsUBO = ensureSceneLightState(engine, sc)._buffer;
     const sceneBG = engine._device.createBindGroup({
         layout: sceneBGL,
         entries: [
@@ -169,8 +173,8 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
     const task: RenderTask = {
         name: config.name,
         _config: config,
-        engine,
-        scene,
+        engine: engine,
+        scene: sc,
         _passes: [],
         _autoFromScene: false,
         _renderables: [],
@@ -200,10 +204,10 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
             if (task._autoFromScene) {
                 task._renderables.length = 0;
             }
-            resolvePendingMeshes(task, scene);
+            resolvePendingMeshes(task, sc);
             task._autoFromScene = task._renderables.length === 0;
             if (task._autoFromScene) {
-                task._renderables.push(...scene._renderables);
+                task._renderables.push(...sc._renderables);
             }
             buildRenderTarget(rt, engine);
             updateContext.targetWidth = rt._width;
@@ -307,7 +311,7 @@ function buildBindings(task: RenderTask, eng: EngineContext, targetSignature: Re
     opaque.sort((a, b) => a.renderable.order - b.renderable.order);
     direct.sort((a, b) => a.renderable.order - b.renderable.order);
     task._opaqueBundles.length = 0;
-    task._lastVersion = task.scene._renderableVersion;
+    task._lastVersion = (task.scene as SceneContext)._renderableVersion;
 }
 
 function buildRenderPassDescriptor(task: RenderTask, rt: RenderTarget): void {
@@ -334,7 +338,7 @@ function buildRenderPassDescriptor(task: RenderTask, rt: RenderTarget): void {
 }
 
 function prepareRenderTaskPass(task: RenderTask, eng: EngineContext, targetSignature: RenderTargetSignature, context: DrawUpdateContext): void {
-    const sc = task.scene;
+    const sc = task.scene as SceneContext;
     // Auto-resync when the source scene mutates.
     if (task._autoFromScene && task._lastVersion !== sc._renderableVersion) {
         task._renderables.length = 0;
@@ -395,10 +399,10 @@ function executePass(task: RenderTask, eng: EngineContext, targetSignature: Rend
  *  and issues all draws (viewport/scissor, group(0) bind, opaque bundle replay,
  *  then direct-draws non-transparent direct + transparent). Returns the draw count. */
 function executePassBody(task: RenderTask, pass: GPURenderPassEncoder): number {
-    const eng = task.engine;
+    const eng = task.engine as EngineContext;
     const cfg = task._config;
     const rt = cfg.rt;
-    const scene = task.scene;
+    const scene = task.scene as SceneContext;
     const opaqueBindings = task._opaqueBindings;
     const opaqueBundles = task._opaqueBundles;
     const sceneBG = task._sceneBG;
@@ -444,7 +448,7 @@ function executePassBody(task: RenderTask, pass: GPURenderPassEncoder): number {
 }
 
 function refreshTaskSceneBindGroup(task: RenderTask, eng: EngineContext): void {
-    const lightsUBO = ensureSceneLightState(eng, task.scene)._buffer;
+    const lightsUBO = ensureSceneLightState(eng, task.scene as SceneContext)._buffer;
     if (lightsUBO === task._lightsUBO) {
         return;
     }
