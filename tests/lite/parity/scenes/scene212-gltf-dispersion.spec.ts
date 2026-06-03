@@ -18,7 +18,7 @@ test.skip(!!sceneConfig.skipParity, "Scene 212 skipped via skipParity in scene-c
 
 test("Scene 212 — DispersionTest matches Babylon.js reference", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
-    await captureGolden(browser, { sceneId: 212 });
+    await captureGolden(browser, { sceneId: 212, force: true });
 
     await page.goto("/scene212.html");
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 30_000 });
