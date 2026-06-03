@@ -5,7 +5,6 @@ import {
     registerRenderingContext,
     unregisterRenderingContext,
     type EngineContext,
-    type EngineContext,
     type RenderingContext,
 } from "../../../packages/babylon-lite/src/engine/engine";
 import { addTaskAtStart } from "../../../packages/babylon-lite/src/frame-graph/frame-graph-actions";
