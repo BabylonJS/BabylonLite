@@ -236,10 +236,22 @@ function updateTextRenderable(
     ensureInstanceCapacity(device, gpu, internals.instanceCount);
     if (gpu.uploadedDataVersion !== internals.version) {
         if (internals.instanceCount > 0) {
-            const view = internals.instances.subarray(0, internals.instanceCount * (TEXT_INSTANCE_BYTES / 4));
-            device.queue.writeBuffer(gpu.instanceBuf, 0, view.buffer as ArrayBuffer, view.byteOffset, view.byteLength);
+            // Partial upload when only a sub-range is dirty; full upload after grow/reset (when
+            // uploadedDataVersion is -1 we don't trust the dirty range).
+            const dirtyValid = gpu.uploadedDataVersion !== -1 && internals.dirtyEnd > internals.dirtyStart;
+            if (dirtyValid) {
+                const startFloats = internals.dirtyStart * (TEXT_INSTANCE_BYTES / 4);
+                const endFloats = internals.dirtyEnd * (TEXT_INSTANCE_BYTES / 4);
+                const view = internals.instances.subarray(startFloats, endFloats);
+                device.queue.writeBuffer(gpu.instanceBuf, internals.dirtyStart * TEXT_INSTANCE_BYTES, view.buffer as ArrayBuffer, view.byteOffset, view.byteLength);
+            } else {
+                const view = internals.instances.subarray(0, internals.instanceCount * (TEXT_INSTANCE_BYTES / 4));
+                device.queue.writeBuffer(gpu.instanceBuf, 0, view.buffer as ArrayBuffer, view.byteOffset, view.byteLength);
+            }
         }
         gpu.uploadedDataVersion = internals.version;
+        internals.dirtyStart = 0;
+        internals.dirtyEnd = 0;
     }
 
     // Sync text UBO: mvp (vp * world) + viewport + color. The scene UBO is no longer
@@ -277,11 +289,11 @@ function drawTextRenderable(gpu: TextRenderableGpu, internals: TextDataInternals
     pass.setVertexBuffer(1, gpu.instanceBuf);
     let draws = 0;
     for (const g of internals.groups) {
-        if (g.instanceCount === 0 || !g._bindGroup) {
+        if (g.slotCount === 0 || !g._bindGroup) {
             continue;
         }
         pass.setBindGroup(0, g._bindGroup);
-        pass.draw(6, g.instanceCount, 0, g.instanceStart);
+        pass.draw(6, g.slotCount, 0, g.slotStart);
         draws++;
     }
     return draws;

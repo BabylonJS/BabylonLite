@@ -303,10 +303,10 @@ export {
 // ─── Text ────────────────────────────────────────────────────────────
 export type { Font } from "./text/internal.js";
 export { loadFont, createFontFromBuffer, getGlyphId, getGlyphIds } from "./text/font.js";
-export type { QuadCurve, GlyphBounds, GlyphCurves, PlacedGlyph, GlyphRun, TextDescriptor, TextLayoutOptions, CurveSetId } from "./text/public-types.js";
+export type { QuadCurve, GlyphBounds, GlyphCurves, PlacedGlyph, GlyphRun, TextDataUpdate, TextLayoutOptions, CurveSetId } from "./text/public-types.js";
 export { extractGlyphCurves, cubicToQuadratics } from "./text/curves.js";
-export type { DefaultTextDescriptor } from "./text/internal.js";
-export { createDefaultTextDescriptor, updateDefaultTextDescriptor } from "./text/default-descriptor.js";
+export type { DefaultTextData } from "./text/internal.js";
+export { createDefaultTextData, updateDefaultTextData } from "./text/default-text-data.js";
 export type { TextData } from "./text/internal.js";
 export { createTextData, updateTextData, disposeTextData } from "./text/text-data.js";
 export type { TextRenderableOptions, TextRenderable } from "./text/text-renderable.js";

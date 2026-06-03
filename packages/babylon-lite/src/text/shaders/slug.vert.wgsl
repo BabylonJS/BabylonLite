@@ -32,6 +32,20 @@ struct VOut {
 
 @vertex
 fn main(in: VIn) -> VOut {
+// Dead-slot sentinel: slot allocator marks freed slots by setting slugAnchor.w = 1.0
+// (live slots always have it as 0.0). Emit a clip-space point at -2 (outside the unit
+// cube) so all 6 vertices of the quad collapse to the same off-screen position and the
+// rasterizer culls the resulting zero-area triangles cheaply.
+if (in.slugAnchor.w > 0.5) {
+    var dead: VOut;
+    dead.pos = vec4<f32>(-2.0, -2.0, -2.0, 1.0);
+    dead.vTexcoord = vec2<f32>(0.0, 0.0);
+    dead.vBanding = vec4<f32>(0.0);
+    dead.vGlyph = vec4<f32>(0.0);
+    dead.vColor = vec4<f32>(0.0);
+    return dead;
+}
+
 // Reconstruct per-vertex data from the shared corner quad + per-instance fields.
 // Reference shader had: pos (object-space xy), normal (dilation direction xy),
 // tex (em-space xy), invScale, MVP matrix.

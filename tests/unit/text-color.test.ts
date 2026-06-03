@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { GlyphCurves, TextDescriptor } from "../../packages/babylon-lite/src/text/public-types";
+import type { GlyphCurves } from "../../packages/babylon-lite/src/text/public-types";
 import { createTextData, TEXT_INSTANCE_FLOATS } from "../../packages/babylon-lite/src/text/text-data";
 import { getTextDataInternals } from "../../packages/babylon-lite/src/text/internal";
 
@@ -33,16 +33,16 @@ describe("text per-glyph color", () => {
     ]);
 
     it("defaults to white when neither glyph nor run specify a color", () => {
-        const desc: TextDescriptor = {
+        const initial = {
             curves: new Map([["f", inner]]),
             runs: [{ curveSet: "f", glyphs: [{ glyphId: 1, x: 0, y: 0 }], pixelsPerFontUnit: 1 }],
         };
-        const data = createTextData(desc);
+        const data = createTextData(initial);
         expect(instanceColor(data, 0)).toEqual([1, 1, 1, 1]);
     });
 
     it("applies the run defaultColor to every glyph in the run", () => {
-        const desc: TextDescriptor = {
+        const initial = {
             curves: new Map([["f", inner]]),
             runs: [
                 {
@@ -52,49 +52,49 @@ describe("text per-glyph color", () => {
                         { glyphId: 2, x: 10, y: 0 },
                     ],
                     pixelsPerFontUnit: 1,
-                    defaultColor: [1, 0, 0, 1],
+                    defaultColor: [1, 0, 0, 1] as const,
                 },
             ],
         };
-        const data = createTextData(desc);
+        const data = createTextData(initial);
         expect(instanceColor(data, 0)).toEqual([1, 0, 0, 1]);
         expect(instanceColor(data, 1)).toEqual([1, 0, 0, 1]);
     });
 
     it("lets a per-glyph color override the run defaultColor", () => {
-        const desc: TextDescriptor = {
+        const initial = {
             curves: new Map([["f", inner]]),
             runs: [
                 {
                     curveSet: "f",
                     glyphs: [
                         { glyphId: 1, x: 0, y: 0 },
-                        { glyphId: 2, x: 10, y: 0, color: [0, 1, 0, 1] },
+                        { glyphId: 2, x: 10, y: 0, color: [0, 1, 0, 1] as const },
                         { glyphId: 3, x: 20, y: 0 },
                     ],
                     pixelsPerFontUnit: 1,
-                    defaultColor: [1, 0, 0, 1],
+                    defaultColor: [1, 0, 0, 1] as const,
                 },
             ],
         };
-        const data = createTextData(desc);
+        const data = createTextData(initial);
         expect(instanceColor(data, 0)).toEqual([1, 0, 0, 1]); // run default
         expect(instanceColor(data, 1)).toEqual([0, 1, 0, 1]); // glyph override
         expect(instanceColor(data, 2)).toEqual([1, 0, 0, 1]); // run default
     });
 
     it("uses a per-glyph color even when the run has no defaultColor", () => {
-        const desc: TextDescriptor = {
+        const initial = {
             curves: new Map([["f", inner]]),
             runs: [
                 {
                     curveSet: "f",
-                    glyphs: [{ glyphId: 1, x: 0, y: 0, color: [0, 0, 1, 0.5] }],
+                    glyphs: [{ glyphId: 1, x: 0, y: 0, color: [0, 0, 1, 0.5] as const }],
                     pixelsPerFontUnit: 1,
                 },
             ],
         };
-        const data = createTextData(desc);
+        const data = createTextData(initial);
         expect(instanceColor(data, 0)).toEqual([0, 0, 1, 0.5]);
     });
 });

@@ -2,25 +2,28 @@
  *  Not re-exported from `src/index.ts`. */
 
 import type { Font as TextShaperFont } from "text-shaper";
-import type { CurveSetId, GlyphCurves, GlyphRun, TextDescriptor, TextLayoutOptions } from "./public-types.js";
+import type { CurveSetId, GlyphCurves, GlyphRun, TextLayoutOptions } from "./public-types.js";
 import type { GlyphBands } from "./slug-bands.js";
 
 // ─── Brand symbols (nominal-typing only — never instantiated at runtime) ───
 export declare const FONT_BRAND: unique symbol;
 export declare const TEXT_DATA_BRAND: unique symbol;
-export declare const DEFAULT_TEXT_DESCRIPTOR_BRAND: unique symbol;
+export declare const DEFAULT_TEXT_DATA_BRAND: unique symbol;
 
 // ─── Branded public types ───
 export type Font = { readonly [FONT_BRAND]: never };
 export type TextData = {
     readonly [TEXT_DATA_BRAND]: never;
+    /** Live, in-insertion-order view of the runs currently rendered. Mutated by
+     *  `updateTextData`. Do not mutate from outside. */
+    readonly runs: readonly GlyphRun[];
 };
-export type DefaultTextDescriptor = TextDescriptor & {
+export type DefaultTextData = TextData & {
     /** Pixel-space width of the laid-out run (max line width). */
     readonly width: number;
     /** Pixel-space height of the laid-out run (lines × line-height). */
     readonly height: number;
-    readonly [DEFAULT_TEXT_DESCRIPTOR_BRAND]: never;
+    readonly [DEFAULT_TEXT_DATA_BRAND]: never;
 };
 
 // ─── Internal per-handle state ───
@@ -71,38 +74,74 @@ export type SharedAtlasGpu = {
     uploadedVersion: number;
 };
 
-/** Per-curve-set draw group within a TextData. One group per unique font used by the descriptor's runs.
- *  Groups index into the TextData's single contiguous instance buffer. */
+/** Per-curve-set draw group within a TextData. One group per unique font used by the live runs.
+ *  Groups own a contiguous *slot range* in the shared instance buffer; live and dead slots
+ *  intermix within that range. The vertex shader emits a degenerate quad for dead slots so
+ *  they cost only a vertex-shader invocation. */
 export type TextDataDrawGroup = {
-    /** Curve-set id (matches the descriptor key). */
+    /** Curve-set id (matches the live curves dictionary key). */
     curveSetId: CurveSetId;
+    /** Inner curves map this group is bound to. Used to detect when the caller passes a new
+     *  inner-map reference (e.g. via `reset`) and to drive atlas sharing. */
+    curves: ReadonlyMap<number, GlyphCurves>;
     /** Shared atlas for this curve set. May be reused across `TextData`s referencing the same inner map. */
     atlas: SharedAtlas;
-    /** Instance buffer offset in *instances* (not bytes) where this group's quads begin. */
-    instanceStart: number;
-    /** Number of instances in this group. */
-    instanceCount: number;
+    /** First slot index (in instances, not bytes) owned by this group. */
+    slotStart: number;
+    /** Number of slots reserved by this group (live + dead). The draw call covers
+     *  `[slotStart, slotStart + slotCount)`. */
+    slotCount: number;
+    /** Number of *live* (non-dead) instances in this group. Tracked for stats. */
+    liveCount: number;
+    /** Indices (absolute, within `internals.instances`) of dead slots inside this group's
+     *  range, available for reuse by `addRun`/`replaceRun`. LIFO order keeps recent frees
+     *  reusable first (locality). */
+    freeSlots: number[];
     /** Lazy GPU bind group for this group's atlas (recreated on atlas-grow or first bind). */
     _bindGroup: GPUBindGroup | null;
     /** Atlas-GPU upload version captured when `_bindGroup` was last (re)built. */
     _bindGroupVersion: number;
 };
 
+/** Per-run bookkeeping. Lets us locate a run's instances inside its draw group's slot range
+ *  in O(1) for add/remove/replace ops. Slots are not guaranteed to be contiguous (the
+ *  allocator may have reused freed slots from anywhere in the group's range). */
+export type RunRecord = {
+    run: GlyphRun;
+    /** Index of the owning draw group in `internals.groups`. */
+    groupIdx: number;
+    /** Absolute slot indices (within `internals.instances`) currently occupied by this run.
+     *  Length === number of glyphs actually written (skipped glyphs do not occupy slots). */
+    slots: number[];
+};
+
 export type TextDataInternals = {
-    /** Per-curve-set draw groups. Length = number of unique curveSet ids referenced by descriptor.runs. */
+    /** Per-curve-set draw groups. Length = number of unique curveSet ids referenced by live runs. */
     groups: TextDataDrawGroup[];
+    /** Live, in-insertion-order list of runs. Same reference as `TextData.runs`. */
+    runs: GlyphRun[];
+    /** Per-run bookkeeping records, keyed by `GlyphRun` reference. */
+    runRecords: Map<GlyphRun, RunRecord>;
     /** Pooled per-instance float buffer (TEXT_INSTANCE_FLOATS per instance). */
     instances: Float32Array;
-    /** Total instances across all groups (= sum of group.instanceCount). */
+    /** Total *capacity* used (slots reserved by all groups, including dead slots within
+     *  their ranges, plus a tail of fully-free capacity past the last group). The renderer
+     *  uploads up to `internals.instances.subarray(0, instanceCount * floats-per-instance)`. */
     instanceCount: number;
-    /** Last seen `descriptor.runs` reference for identity fast-path. */
-    lastRunsRef: readonly GlyphRun[] | null;
-    /** Last seen sizes of each per-curveSet inner map (parallel to `groups`) for grow detection. */
-    lastCurvesSizes: Map<CurveSetId, number>;
+    /** Per-curveSet curves maps (the live state); mirrors what addCurves/reset has
+     *  accumulated. */
+    curves: Map<CurveSetId, Map<number, GlyphCurves>>;
     /** Atlases this `TextData` currently holds a reference on (for refcount reconcile/release). */
     refdAtlases: Set<SharedAtlas>;
-    /** Monotonic version bumped on any structural change. */
+    /** Monotonic version bumped whenever instance data changes (any non-empty dirty range
+     *  produced). Renderers compare against their `uploadedDataVersion` to decide whether
+     *  to upload. */
     version: number;
+    /** Inclusive-exclusive *instance-index* range that has been written but not yet uploaded
+     *  to the GPU. `dirtyStart === dirtyEnd` means "nothing dirty". Renderers clear it after
+     *  upload. */
+    dirtyStart: number;
+    dirtyEnd: number;
     /** Lazy per-text-block GPU resources (single instance buffer covering all groups). */
     _gpu: TextDataGpu | null;
 };
@@ -114,7 +153,7 @@ export type TextDataGpu = {
     uploadedVersion: number;
 };
 
-export type DefaultTextDescriptorInternals = {
+export type DefaultTextDataInternals = {
     font: Font;
     fontSizePx: number;
     options: TextLayoutOptions | undefined;
@@ -127,7 +166,7 @@ export type DefaultTextDescriptorInternals = {
 // ─── Lazy WeakMaps (zero module-level side effects per GUIDANCE §4) ───
 let _fontInternals: WeakMap<Font, FontInternals> | null = null;
 let _textDataInternals: WeakMap<TextData, TextDataInternals> | null = null;
-let _defaultDescriptorInternals: WeakMap<DefaultTextDescriptor, DefaultTextDescriptorInternals> | null = null;
+let _defaultTextDataInternals: WeakMap<DefaultTextData, DefaultTextDataInternals> | null = null;
 let _atlasByCurves: WeakMap<ReadonlyMap<number, GlyphCurves>, SharedAtlas> | null = null;
 let _curvesCacheByFont: WeakMap<Font, Map<number, GlyphCurves>> | null = null;
 let _bandsCache: WeakMap<GlyphCurves, GlyphBands> | null = null;
@@ -146,11 +185,11 @@ export function setTextDataInternals(data: TextData, state: TextDataInternals): 
     (_textDataInternals ??= new WeakMap()).set(data, state);
 }
 
-export function getDefaultDescriptorInternals(d: DefaultTextDescriptor): DefaultTextDescriptorInternals | undefined {
-    return _defaultDescriptorInternals?.get(d);
+export function getDefaultTextDataInternals(d: DefaultTextData): DefaultTextDataInternals | undefined {
+    return _defaultTextDataInternals?.get(d);
 }
-export function setDefaultDescriptorInternals(d: DefaultTextDescriptor, state: DefaultTextDescriptorInternals): void {
-    (_defaultDescriptorInternals ??= new WeakMap()).set(d, state);
+export function setDefaultTextDataInternals(d: DefaultTextData, state: DefaultTextDataInternals): void {
+    (_defaultTextDataInternals ??= new WeakMap()).set(d, state);
 }
 
 export function getSharedAtlasForCurves(curves: ReadonlyMap<number, GlyphCurves>): SharedAtlas | undefined {

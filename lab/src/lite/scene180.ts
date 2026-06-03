@@ -5,15 +5,13 @@ import {
     createEngine,
     startEngine,
     loadFont,
-    createDefaultTextDescriptor,
-    updateDefaultTextDescriptor,
-    createTextData,
+    createDefaultTextData,
+    updateDefaultTextData,
     updateTextData,
     createTextLayer,
     createTextRenderer,
     registerTextRenderer,
 } from "babylon-lite";
-import type { TextDescriptor } from "babylon-lite";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const textarea = document.getElementById("textInput") as HTMLTextAreaElement;
@@ -28,18 +26,18 @@ const redVal = document.getElementById("redVal")!;
 const greenVal = document.getElementById("greenVal")!;
 const blueVal = document.getElementById("blueVal")!;
 
-/** Return a copy of `desc` with the current R/G/B slider color applied as each run's defaultColor. */
-function colored(desc: TextDescriptor): TextDescriptor {
-    const color: [number, number, number, number] = [+red.value, +green.value, +blue.value, 1];
-    return { curves: desc.curves, runs: desc.runs.map((run) => ({ ...run, defaultColor: color })) };
+function currentColor(): [number, number, number, number] {
+    return [+red.value, +green.value, +blue.value, 1];
 }
 
 async function run(): Promise<void> {
     const engine = await createEngine(canvas);
     const font = await loadFont("/fonts/Inter.ttf");
 
-    let desc = createDefaultTextDescriptor(font, textarea.value, 48, { maxWidth: 1200, align: "left" });
-    const data = createTextData(colored(desc));
+    const data = createDefaultTextData(font, 48, textarea.value, currentColor(), {
+        maxWidth: 1200,
+        align: "left",
+    });
 
     const layer = createTextLayer(data, {
         positionPx: { x: 360, y: 380 },
@@ -55,12 +53,15 @@ async function run(): Promise<void> {
     registerTextRenderer(tr);
 
     textarea.addEventListener("input", () => {
-        desc = updateDefaultTextDescriptor(desc, textarea.value);
-        updateTextData(data, colored(desc));
+        // updateDefaultTextData preserves whatever defaultColor the live run currently has,
+        // so a previous color-slider change carries through automatically.
+        updateDefaultTextData(data, textarea.value);
     });
 
     const onColor = (): void => {
-        updateTextData(data, colored(desc));
+        // Color isn't part of updateDefaultTextData; overlay it via replaceRun.
+        const r = data.runs[0]!;
+        updateTextData(data, { update: "replaceRun", previous: r, run: { ...r, defaultColor: currentColor() } });
         redVal.textContent = (+red.value).toFixed(2);
         greenVal.textContent = (+green.value).toFixed(2);
         blueVal.textContent = (+blue.value).toFixed(2);

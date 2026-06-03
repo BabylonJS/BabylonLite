@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { GlyphCurves, TextDescriptor } from "../../packages/babylon-lite/src/text/public-types";
+import type { GlyphCurves } from "../../packages/babylon-lite/src/text/public-types";
 import { createTextData, disposeTextData, updateTextData } from "../../packages/babylon-lite/src/text/text-data";
 import { getSharedAtlasForCurves } from "../../packages/babylon-lite/src/text/internal";
 import type { SharedAtlas, SharedAtlasGpu } from "../../packages/babylon-lite/src/text/internal";
@@ -16,7 +16,7 @@ function makeGlyph(glyphId: number): GlyphCurves {
     };
 }
 
-function makeDescriptor(inner: ReadonlyMap<number, GlyphCurves>): TextDescriptor {
+function makeInitial(inner: Map<number, GlyphCurves>) {
     return {
         curves: new Map([["f", inner]]),
         runs: [{ curveSet: "f", glyphs: [{ glyphId: 1, x: 0, y: 0 }], pixelsPerFontUnit: 1 }],
@@ -42,13 +42,13 @@ describe("text atlas reclamation", () => {
     it("refcounts a shared atlas across TextData blocks and frees GPU textures only on the last dispose", () => {
         const inner = new Map<number, GlyphCurves>([[1, makeGlyph(1)]]);
 
-        const td1 = createTextData(makeDescriptor(inner));
+        const td1 = createTextData(makeInitial(inner));
         const atlas = getSharedAtlasForCurves(inner);
         expect(atlas).toBeDefined();
         expect(atlas!.refCount).toBe(1);
 
-        const td2 = createTextData(makeDescriptor(inner));
-        // Same curves map identity → same shared atlas, refcount grows.
+        const td2 = createTextData(makeInitial(inner));
+        // Same inner-map identity → same shared atlas, refcount grows.
         expect(getSharedAtlasForCurves(inner)).toBe(atlas);
         expect(atlas!.refCount).toBe(2);
 
@@ -69,11 +69,11 @@ describe("text atlas reclamation", () => {
 
     it("does not double-count the atlas when the same TextData is updated", () => {
         const inner = new Map<number, GlyphCurves>([[1, makeGlyph(1)]]);
-        const td = createTextData(makeDescriptor(inner));
+        const td = createTextData(makeInitial(inner));
         const atlas = getSharedAtlasForCurves(inner)!;
         expect(atlas.refCount).toBe(1);
 
-        updateTextData(td, makeDescriptor(inner));
+        updateTextData(td, { update: "reset", runs: [{ curveSet: "f", glyphs: [{ glyphId: 1, x: 0, y: 0 }], pixelsPerFontUnit: 1 }], curves: new Map([["f", inner]]) });
         expect(atlas.refCount).toBe(1);
 
         const { curveDestroy } = stubAtlasGpu(atlas);

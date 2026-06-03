@@ -8,10 +8,8 @@ import {
     registerScene,
     startEngine,
     loadFont,
-    createDefaultTextDescriptor,
-    updateDefaultTextDescriptor,
-    createTextData,
-    updateTextData,
+    createDefaultTextData,
+    updateDefaultTextData,
     createTextRenderable,
     addTextRenderable,
 } from "babylon-lite";
@@ -30,17 +28,15 @@ async function run(): Promise<void> {
     attachControl(camera, canvas, scene);
 
     const font = await loadFont("/fonts/Inter.ttf");
-    let desc = createDefaultTextDescriptor(font, textarea.value, 48, { maxWidth: 1200, align: "left" });
-    const data = createTextData(desc);
+    const data = createDefaultTextData(font, 48, textarea.value, undefined, { maxWidth: 1200, align: "left" });
     const text = createTextRenderable(data, { opacity: 1 });
-    text.position.set(-desc.width * 0.005, desc.height * 0.005, 0);
+    text.position.set(-data.width * 0.005, data.height * 0.005, 0);
     text.scaling.set(0.01, 0.01, 0.01);
     addTextRenderable(scene, text);
 
     textarea.addEventListener("input", () => {
-        desc = updateDefaultTextDescriptor(desc, textarea.value);
-        updateTextData(data, desc);
-        text.position.set(-desc.width * 0.005, desc.height * 0.005, 0);
+        updateDefaultTextData(data, textarea.value);
+        text.position.set(-data.width * 0.005, data.height * 0.005, 0);
     });
 
     await registerScene(engine, scene);

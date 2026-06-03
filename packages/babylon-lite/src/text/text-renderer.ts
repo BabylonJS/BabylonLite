@@ -161,9 +161,19 @@ function uploadLayer(rr: TextRendererInternal, lg: LayerGpu, bgl0: GPUBindGroupL
     // Instance buffer.
     ensureInstanceCapacity(device, lg, internals.instanceCount);
     if (lg.uploadedDataVersion !== internals.version && internals.instanceCount > 0) {
-        const view = internals.instances.subarray(0, internals.instanceCount * (TEXT_INSTANCE_BYTES / 4));
-        device.queue.writeBuffer(lg.instanceBuf, 0, view.buffer as ArrayBuffer, view.byteOffset, view.byteLength);
+        const dirtyValid = lg.uploadedDataVersion !== -1 && internals.dirtyEnd > internals.dirtyStart;
+        if (dirtyValid) {
+            const startFloats = internals.dirtyStart * (TEXT_INSTANCE_BYTES / 4);
+            const endFloats = internals.dirtyEnd * (TEXT_INSTANCE_BYTES / 4);
+            const view = internals.instances.subarray(startFloats, endFloats);
+            device.queue.writeBuffer(lg.instanceBuf, internals.dirtyStart * TEXT_INSTANCE_BYTES, view.buffer as ArrayBuffer, view.byteOffset, view.byteLength);
+        } else {
+            const view = internals.instances.subarray(0, internals.instanceCount * (TEXT_INSTANCE_BYTES / 4));
+            device.queue.writeBuffer(lg.instanceBuf, 0, view.buffer as ArrayBuffer, view.byteOffset, view.byteLength);
+        }
         lg.uploadedDataVersion = internals.version;
+        internals.dirtyStart = 0;
+        internals.dirtyEnd = 0;
     }
 
     // MVP — skip upload when nothing relevant changed.
@@ -306,11 +316,11 @@ function textRendererRecord(rr: TextRendererInternal): number {
         for (let i = 0; i < internals.groups.length; i++) {
             const g = internals.groups[i]!;
             const bg = lg.bindGroups[i];
-            if (g.instanceCount === 0 || !bg) {
+            if (g.slotCount === 0 || !bg) {
                 continue;
             }
             pass.setBindGroup(0, bg);
-            pass.draw(6, g.instanceCount, 0, g.instanceStart);
+            pass.draw(6, g.slotCount, 0, g.slotStart);
             drawCalls++;
         }
     }
