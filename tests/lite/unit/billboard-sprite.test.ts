@@ -361,7 +361,7 @@ describe("addFacingBillboardSystem", () => {
         expect(descriptor.label).toBe("facing-billboard-sprite-pipeline");
         const vertexBuffer = (descriptor.vertex.buffers as GPUVertexBufferLayout[])[0]!;
         expect(vertexBuffer.arrayStride).toBe(BILLBOARD_INSTANCE_STRIDE_BYTES);
-        expect(vertexBuffer.attributes.map((attribute) => attribute.shaderLocation)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+        expect((vertexBuffer.attributes as GPUVertexAttribute[]).map((attribute) => attribute.shaderLocation)).toEqual([0, 1, 2, 3, 4, 5, 6]);
 
         const shaderDescriptor = device.createShaderModule.mock.calls.find((call) =>
             (call[0] as GPUShaderModuleDescriptor).code.includes("cameraRight")
@@ -396,7 +396,7 @@ describe("addFacingBillboardSystem", () => {
         const descriptor = device.createRenderPipeline.mock.calls[0]![0] as GPURenderPipelineDescriptor;
         expect(descriptor.depthStencil?.depthCompare).toBe("greater-equal");
         expect(descriptor.depthStencil?.depthWriteEnabled).toBe(true);
-        const vertexBuffer = descriptor.vertex.buffers![0]!;
+        const vertexBuffer = (descriptor.vertex.buffers as GPUVertexBufferLayout[])[0]!;
         expect(vertexBuffer.arrayStride).toBe(BILLBOARD_INSTANCE_STRIDE_BYTES);
         expect(vertexBuffer.attributes).toContainEqual({ shaderLocation: 6, offset: 48, format: "float32x4" });
         const target = (descriptor.fragment!.targets as GPUColorTargetState[])[0]!;

@@ -1351,5 +1351,15 @@
         "tags": ["pbr", "gltf", "transmission", "volume", "dispersion", "env", "skybox"],
         "skipPerf": true,
         "bundleTimeoutMs": 120000
+    },
+    {
+        "id": 213,
+        "slug": "scene213-gridmaterial",
+        "name": "Scene 213 — GridMaterial",
+        "maxMad": 0.01,
+        "maxRawKB": 44,
+        "description": "Four meshes shaded by the procedural unlit GridMaterial — an opaque anti-aliased teal ground, a useMaxLine orange sphere whose object-space grid wraps the curved surface, a transparent alpha-blended cyan box (opacity 0.6), and a hard-cutoff antialias:false pink box — validated against a Babylon.js @babylonjs/materials GridMaterial oracle with identical per-mesh grid params, camera, and 4x MSAA.",
+        "tags": ["materials", "grid", "procedural"],
+        "skipPerf": true
     }
 ]

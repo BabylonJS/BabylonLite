@@ -337,7 +337,7 @@ describe("RenderPassTask transparent sorting", () => {
             textures,
             onBeginPass: (descriptor) => {
                 if (descriptor.depthStencilAttachment) {
-                    mainPassResolveTargets.push(!!(descriptor.colorAttachments[0] as GPURenderPassColorAttachment).resolveTarget);
+                    mainPassResolveTargets.push(!!((descriptor.colorAttachments as GPURenderPassColorAttachment[])[0] as GPURenderPassColorAttachment).resolveTarget);
                 }
             },
         });

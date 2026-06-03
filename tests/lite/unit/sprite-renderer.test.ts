@@ -179,7 +179,7 @@ describe("createSpriteRenderer", () => {
         const device = engine._device as unknown as { createRenderPipeline: ReturnType<typeof vi.fn>; createShaderModule: ReturnType<typeof vi.fn> };
         const descriptor = device.createRenderPipeline.mock.calls[0]![0] as GPURenderPipelineDescriptor;
         const vertexBuffer = (descriptor.vertex.buffers as GPUVertexBufferLayout[])[0]!;
-        const shaderLocations = vertexBuffer.attributes.map((attr) => attr.shaderLocation);
+        const shaderLocations = (vertexBuffer.attributes as GPUVertexAttribute[]).map((attr) => attr.shaderLocation);
 
         expect(vertexBuffer.arrayStride).toBe(PURE_2D_INSTANCE_STRIDE_BYTES);
         expect(shaderLocations).toEqual([0, 1, 2, 3, 4, 5]);
@@ -236,11 +236,11 @@ describe("uvScroll (per-sprite uvOffset)", () => {
         const device = engine._device as unknown as { createRenderPipeline: ReturnType<typeof vi.fn>; createShaderModule: ReturnType<typeof vi.fn> };
         const descriptor = device.createRenderPipeline.mock.calls[0]![0] as GPURenderPipelineDescriptor;
         const vertexBuffer = (descriptor.vertex.buffers as GPUVertexBufferLayout[])[0]!;
-        const shaderLocations = vertexBuffer.attributes.map((attr) => attr.shaderLocation);
+        const shaderLocations = (vertexBuffer.attributes as GPUVertexAttribute[]).map((attr) => attr.shaderLocation);
 
         expect(vertexBuffer.arrayStride).toBe(PURE_2D_UVSCROLL_STRIDE_BYTES);
         expect(shaderLocations).toEqual([0, 1, 2, 3, 4, 5, 7]);
-        const uvAttr = vertexBuffer.attributes.find((a) => a.shaderLocation === 7)!;
+        const uvAttr = (vertexBuffer.attributes as GPUVertexAttribute[]).find((a) => a.shaderLocation === 7)!;
         expect(uvAttr.offset).toBe(52);
         expect(uvAttr.format).toBe("float32x2");
 
@@ -260,11 +260,11 @@ describe("uvScroll (per-sprite uvOffset)", () => {
         const device = engine._device as unknown as { createRenderPipeline: ReturnType<typeof vi.fn> };
         const descriptor = device.createRenderPipeline.mock.calls[0]![0] as GPURenderPipelineDescriptor;
         const vertexBuffer = (descriptor.vertex.buffers as GPUVertexBufferLayout[])[0]!;
-        const shaderLocations = vertexBuffer.attributes.map((attr) => attr.shaderLocation);
+        const shaderLocations = (vertexBuffer.attributes as GPUVertexAttribute[]).map((attr) => attr.shaderLocation);
 
         expect(vertexBuffer.arrayStride).toBe(DEPTH_UVSCROLL_STRIDE_BYTES);
         expect(shaderLocations).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
-        const uvAttr = vertexBuffer.attributes.find((a) => a.shaderLocation === 7)!;
+        const uvAttr = (vertexBuffer.attributes as GPUVertexAttribute[]).find((a) => a.shaderLocation === 7)!;
         expect(uvAttr.offset).toBe(56);
     });
 
