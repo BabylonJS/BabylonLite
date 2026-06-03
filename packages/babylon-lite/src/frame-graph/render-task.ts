@@ -70,6 +70,8 @@ export interface RenderTaskConfig {
 /** A frame-graph task that records a single `RenderPass`, binds the scene's `RenderTarget`, and draws renderables into it. */
 export interface RenderTask extends Task {
     readonly name: string;
+    /** Render tasks are scene-bound because they consume scene camera, lights, and renderables. */
+    readonly scene: SceneContext;
     /** Live task configuration. Mutating `clr` or `clrColor` affects subsequent frames. */
     readonly _config: RenderTaskConfig;
     _autoFromScene: boolean;
@@ -332,6 +334,7 @@ function prepareRenderTaskPass(task: RenderTask, eng: EngineContextInternal, tar
     // extension raises MAX_LIGHTS after this task was first recorded).
     refreshTaskSceneBindGroup(task, eng);
     const camera = task._config.cam ?? sc.camera;
+    sc._clusteredLightUpdater?.(camera, context.targetWidth, context.targetHeight);
     writePassSceneUBO(task, eng, sc, camera, targetSignature._flipY);
     refreshSceneLightsUBO(eng, sc);
     // Expose the active camera to per-binding `update()` calls. Some renderables
@@ -524,7 +527,6 @@ function writePassSceneUBO(task: RenderTask, eng: EngineContextInternal, scene: 
         data[90] = scene.clipPlane[2];
         data[91] = scene.clipPlane[3];
     }
-
     eng.device.queue.writeBuffer(task._sceneUBO, 0, data as Float32Array<ArrayBuffer>);
 }
 
