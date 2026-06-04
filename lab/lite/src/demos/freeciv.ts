@@ -26,11 +26,13 @@ import { createPicker } from "./freeciv/pick.js";
 import { createMinimap } from "./freeciv/minimap.js";
 import { DIR8, DIR_DELTA, TILE_H, TILE_W, isoCentre, worldToTile } from "./freeciv/iso.js";
 import { demoAssetUrl } from "./demo-asset-url.js";
+import { installFetchProgress } from "./loading-progress.js";
 
 const BASE_URL = demoAssetUrl("./freeciv", import.meta.url);
 
 async function main(): Promise<void> {
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
+    const progress = installFetchProgress(canvas, { estimatedBytes: 2_400_000 });
     const engine = await createEngine(canvas);
 
     // Ten sheets → fifteen layers (each Sprite2DLayer binds exactly one atlas).
@@ -192,6 +194,7 @@ async function main(): Promise<void> {
         },
     });
 
+    progress.done();
     await startEngine(engine);
     recenter();
 

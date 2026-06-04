@@ -100,6 +100,12 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[], ma
                   _esmShadowOutput: esmShadowOutput,
                   _esmShadowDepthCode: esmShadowOutput ? material._esmShadowDepthCode : undefined,
                   _alphaMode: esmShadowOutput ? 0 : undefined,
+                  // The shared fragment body still references env IBL/BRDF samplers
+                  // (e.g. nmeBrdfLUT) even in the no-color shadow-depth variant, so we
+                  // must emit the env decls + BGL entries here too; otherwise WGSL fails
+                  // to resolve those identifiers. _envEmitter is undefined for non-env
+                  // materials (state.usesEnv === false), leaving them unaffected.
+                  _envEmitter: material._envHelpers?.emitEnv,
               })
             : material._compile;
         const meshBGL = compile._meshBGL;
