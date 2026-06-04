@@ -72,6 +72,36 @@ export function getTextureImageIndex(tex: any): number {
     return tex.extensions?.EXT_texture_webp?.source ?? tex.source;
 }
 
+// --- Optional-feature detection (shared by the core loader gate and the
+//     dynamically-imported feature registry) ---
+
+/** Returns true if any mesh primitive in the asset matches `pred`. */
+export function anyPrimitive(json: any, pred: (p: any) => boolean): boolean {
+    for (const m of json.meshes ?? []) {
+        for (const p of m.primitives ?? []) {
+            if (pred(p)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/** Asset has at least one material that needs ORM compositing
+ *  (separate metallicRoughnessTexture + occlusionTexture pointing at different images). */
+export function needsOrmComposite(json: any): boolean {
+    const mats = json.materials ?? [];
+    const textures = json.textures ?? [];
+    for (const m of mats) {
+        const mr = m.pbrMetallicRoughness?.metallicRoughnessTexture;
+        const occ = m.occlusionTexture;
+        if (mr && occ && textures[mr.index] && textures[occ.index] && getTextureImageIndex(textures[mr.index]) !== getTextureImageIndex(textures[occ.index])) {
+            return true;
+        }
+    }
+    return false;
+}
+
 export async function resolveImage(json: any, binChunk: DataView, imageIdx: number, baseUrl: string): Promise<ImageBitmap> {
     const image = json.images[imageIdx];
 
