@@ -30,5 +30,12 @@
   "littlest-tokyo": {
     "rawKB": 54.1,
     "gzipKB": 20.9
+<<<<<<< HEAD
+=======
+  },
+  "bath-day": {
+    "rawKB": 171.6,
+    "gzipKB": 58.3
+>>>>>>> master
   }
 }
