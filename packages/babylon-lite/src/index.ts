@@ -71,7 +71,8 @@ export type { BloomPostProcessTask, BloomPostProcessTaskConfig } from "./post-pr
 
 // ─── Camera ──────────────────────────────────────────────────────────
 export { createArcRotateCamera } from "./camera/arc-rotate.js";
-export { attachControl } from "./camera/arc-rotate-controls.js";
+export { attachControl, setCameraLimits } from "./camera/arc-rotate-controls.js";
+export type { ArcRotateCameraLimits } from "./camera/arc-rotate-controls.js";
 export { createFreeCamera } from "./camera/free-camera.js";
 export { attachFreeControl } from "./camera/free-camera-controls.js";
 

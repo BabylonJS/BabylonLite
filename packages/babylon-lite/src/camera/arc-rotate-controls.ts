@@ -1,6 +1,110 @@
 import type { ArcRotateCamera } from "./arc-rotate.js";
 import type { SceneContext } from "../scene/scene.js";
 
+/** Orbit limits for an {@link ArcRotateCamera}. Omit a field to leave that bound
+ *  unbounded; pass an explicit `undefined` to clear a previously-set bound. */
+export interface ArcRotateCameraLimits {
+    /** Minimum alpha (orbit) angle, radians. */
+    lowerAlphaLimit?: number;
+    /** Maximum alpha (orbit) angle, radians. */
+    upperAlphaLimit?: number;
+    /** Minimum beta (elevation) angle, radians. */
+    lowerBetaLimit?: number;
+    /** Maximum beta (elevation) angle, radians. */
+    upperBetaLimit?: number;
+    /** Minimum radius (closest zoom). */
+    lowerRadiusLimit?: number;
+    /** Maximum radius (farthest zoom). */
+    upperRadiusLimit?: number;
+}
+
+/**
+ * Clamp a camera's alpha/beta/radius into its configured limits in place, zeroing
+ * the matching inertial offset when a bound is hit so momentum can't keep driving
+ * into the wall (the source of the overshoot-then-snap "jiggle"). A bound only
+ * applies when it is explicitly set, so limit-free cameras are left untouched.
+ */
+function clampCameraToLimits(camera: ArcRotateCamera): void {
+    if (camera.lowerRadiusLimit !== undefined && camera.radius < camera.lowerRadiusLimit) {
+        camera.radius = camera.lowerRadiusLimit;
+        camera.inertialRadiusOffset = 0;
+    } else if (camera.upperRadiusLimit !== undefined && camera.radius > camera.upperRadiusLimit) {
+        camera.radius = camera.upperRadiusLimit;
+        camera.inertialRadiusOffset = 0;
+    }
+
+    if (camera.lowerBetaLimit !== undefined && camera.beta < camera.lowerBetaLimit) {
+        camera.beta = camera.lowerBetaLimit;
+        camera.inertialBetaOffset = 0;
+    } else if (camera.upperBetaLimit !== undefined && camera.beta > camera.upperBetaLimit) {
+        camera.beta = camera.upperBetaLimit;
+        camera.inertialBetaOffset = 0;
+    }
+
+    if (camera.lowerAlphaLimit !== undefined && camera.alpha < camera.lowerAlphaLimit) {
+        camera.alpha = camera.lowerAlphaLimit;
+        camera.inertialAlphaOffset = 0;
+    } else if (camera.upperAlphaLimit !== undefined && camera.alpha > camera.upperAlphaLimit) {
+        camera.alpha = camera.upperAlphaLimit;
+        camera.inertialAlphaOffset = 0;
+    }
+}
+
+/**
+ * Configure orbit/zoom limits on an ArcRotateCamera. This is fully opt-in and
+ * self-contained: it touches nothing in {@link attachControl}'s per-frame loop, so
+ * cameras that never call it pay zero cost and run no clamping code.
+ *
+ * What it does:
+ *  1. Stores the provided bounds on the camera and clamps the current pose into
+ *     range right away (inertia zeroed), so enabling limits never causes a jump.
+ *  2. If a `scene` is given, registers a per-frame enforcement step that runs
+ *     *after* the controls' inertia integration each frame. Because the clamp is
+ *     the last mutation before the frame renders — never the first — inertia/pinch
+ *     that pushed past a bound is corrected before display, with no overshoot-then
+ *     -snap jiggle (the failure mode of clamping in an `onBeforeRender` callback,
+ *     which prepends and therefore runs before inertia is applied).
+ *
+ * Only the fields present on `limits` are written, so calls compose; pass a field
+ * as `undefined` to remove that bound. Returns a disposer that removes the
+ * per-frame enforcement step (a no-op when no `scene` was supplied).
+ */
+export function setCameraLimits(camera: ArcRotateCamera, limits: ArcRotateCameraLimits, scene?: SceneContext): () => void {
+    if ("lowerAlphaLimit" in limits) {
+        camera.lowerAlphaLimit = limits.lowerAlphaLimit;
+    }
+    if ("upperAlphaLimit" in limits) {
+        camera.upperAlphaLimit = limits.upperAlphaLimit;
+    }
+    if ("lowerBetaLimit" in limits) {
+        camera.lowerBetaLimit = limits.lowerBetaLimit;
+    }
+    if ("upperBetaLimit" in limits) {
+        camera.upperBetaLimit = limits.upperBetaLimit;
+    }
+    if ("lowerRadiusLimit" in limits) {
+        camera.lowerRadiusLimit = limits.lowerRadiusLimit;
+    }
+    if ("upperRadiusLimit" in limits) {
+        camera.upperRadiusLimit = limits.upperRadiusLimit;
+    }
+    clampCameraToLimits(camera);
+
+    if (!scene) {
+        return () => {};
+    }
+
+    // Append (not unshift) so this runs after attachControl's inertia step.
+    const enforce = (): void => clampCameraToLimits(camera);
+    scene._beforeRender.push(enforce);
+    return () => {
+        const idx = scene._beforeRender.indexOf(enforce);
+        if (idx >= 0) {
+            scene._beforeRender.splice(idx, 1);
+        }
+    };
+}
+
 /**
  * Attach orbit/zoom/pan controls to an ArcRotateCamera.
  * Matches Babylon.js ArcRotateCameraPointersInput behavior with inertia:
@@ -11,6 +115,9 @@ import type { SceneContext } from "../scene/scene.js";
  *
  * Input handlers accumulate into the camera's inertial offset properties.
  * Inertia is applied each frame via scene._beforeRender (single RAF loop).
+ *
+ * Orbit/zoom limits are entirely opt-in via {@link setCameraLimits} and add no
+ * code to this loop for cameras that don't use them.
  *
  * Camera stays plain data — this function reads/writes its properties.
  * Returns a cleanup function to remove all listeners and the beforeRender hook.
@@ -50,14 +157,22 @@ export function attachControl(camera: ArcRotateCamera, canvas: HTMLCanvasElement
     }
 
     function onPointerMove(e: PointerEvent): void {
-        if (!isDragging && !isPanning) {
-            return;
-        }
-
         const dx = e.clientX - lastX;
         const dy = e.clientY - lastY;
         lastX = e.clientX;
         lastY = e.clientY;
+
+        // While two (or more) fingers are down the gesture is a pinch: the touch
+        // handler drives zoom, so suppress the pointer-driven rotate/pan that the
+        // first finger would otherwise trigger (they'd fight each other). lastX/Y
+        // are still tracked above so the remaining finger doesn't jump on release.
+        if (activeTouches.size >= 2) {
+            return;
+        }
+
+        if (!isDragging && !isPanning) {
+            return;
+        }
 
         if (isDragging) {
             camera.inertialAlphaOffset -= dx / angularSensibility;
@@ -91,12 +206,19 @@ export function attachControl(camera: ArcRotateCamera, canvas: HTMLCanvasElement
             const touch = e.changedTouches[i]!;
             activeTouches.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
         }
-        if (activeTouches.size === 2) {
+        if (activeTouches.size >= 2) {
+            // A second finger landed: this is a pinch, not a rotate. Cancel any
+            // in-progress pointer rotate/pan so the gesture only zooms, and stop
+            // the browser from hijacking the two-finger gesture as a page zoom
+            // (iOS Safari ignores touch-action:none for pinch-zoom).
+            isDragging = false;
+            isPanning = false;
             const iter = activeTouches.values();
             const p0 = iter.next().value!;
             const p1 = iter.next().value!;
             pinchStartDist = Math.hypot(p1.x - p0.x, p1.y - p0.y);
             pinchStartRadius = camera.radius;
+            e.preventDefault();
         }
     }
 
@@ -105,12 +227,15 @@ export function attachControl(camera: ArcRotateCamera, canvas: HTMLCanvasElement
             const touch = e.changedTouches[i]!;
             activeTouches.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
         }
-        if (activeTouches.size === 2) {
+        if (activeTouches.size >= 2) {
+            // Prevent the browser's native pinch-to-zoom (page zoom on iOS) so the
+            // gesture drives the camera radius instead.
+            e.preventDefault();
             const iter = activeTouches.values();
             const p0 = iter.next().value!;
             const p1 = iter.next().value!;
             const dist = Math.hypot(p1.x - p0.x, p1.y - p0.y);
-            if (pinchStartDist > 0) {
+            if (pinchStartDist > 0 && dist > 0) {
                 camera.radius = pinchStartRadius * (pinchStartDist / dist);
                 camera.radius = Math.max(0.01, camera.radius);
             }
@@ -121,6 +246,23 @@ export function attachControl(camera: ArcRotateCamera, canvas: HTMLCanvasElement
         for (let i = 0; i < e.changedTouches.length; i++) {
             activeTouches.delete(e.changedTouches[i]!.identifier);
         }
+        // Returning to a single finger: reseat the rotate origin on the remaining
+        // touch so it doesn't jump, and end the pinch.
+        if (activeTouches.size === 1) {
+            const p = activeTouches.values().next().value!;
+            lastX = p.x;
+            lastY = p.y;
+        }
+        if (activeTouches.size < 2) {
+            pinchStartDist = 0;
+        }
+    }
+
+    // iOS Safari fires non-standard gesture* events for pinch and still zooms the
+    // page even with touch-action:none; preventing them keeps the gesture for the
+    // camera. (No-op on browsers that don't emit these events.)
+    function onGesture(e: Event): void {
+        e.preventDefault();
     }
 
     /** Per-frame: apply inertial offsets to camera properties and decay them. */
@@ -201,9 +343,12 @@ export function attachControl(camera: ArcRotateCamera, canvas: HTMLCanvasElement
         ["pointerup", onPointerUp as EventListener],
         ["wheel", onWheel as EventListener, { passive: false }],
         ["contextmenu", onContextMenu as EventListener],
-        ["touchstart", onTouchStart as EventListener, { passive: true }],
-        ["touchmove", onTouchMove as EventListener, { passive: true }],
+        ["touchstart", onTouchStart as EventListener, { passive: false }],
+        ["touchmove", onTouchMove as EventListener, { passive: false }],
         ["touchend", onTouchEnd as EventListener],
+        ["gesturestart", onGesture as EventListener, { passive: false }],
+        ["gesturechange", onGesture as EventListener, { passive: false }],
+        ["gestureend", onGesture as EventListener, { passive: false }],
     ];
     for (const [ev, h, opts] of listeners) {
         canvas.addEventListener(ev, h, opts);
