@@ -6,7 +6,7 @@ import fragSrc from "../shaders/slug.frag.wgsl?raw";
 import { TEXT_INSTANCE_BYTES } from "../text-data.js";
 
 export interface TextPipelineDeviceCache {
-    bgl0: GPUBindGroupLayout;
+    bindGroupLayout: GPUBindGroupLayout;
     vertModule: GPUShaderModule;
     fragModule: GPUShaderModule;
     quadVertexBuffer: GPUBuffer;
@@ -14,6 +14,11 @@ export interface TextPipelineDeviceCache {
 }
 
 let _cache: WeakMap<GPUDevice, TextPipelineDeviceCache> | null = null;
+
+/** Clear the text pipeline cache for a device, releasing cache-held refs. */
+export function clearTextPipelineCache(engine: EngineContext): void {
+    _cache?.delete(engine._device);
+}
 
 /** Shared 4-vertex unit quad: corner signs (-1,-1), (1,-1), (1,1), (-1,1). */
 const QUAD_CORNERS = [-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1] as const;
@@ -25,8 +30,8 @@ function getOrCreateDeviceCache(engine: EngineContext): TextPipelineDeviceCache 
         return cache;
     }
     const device = engine._device;
-    const bgl0 = device.createBindGroupLayout({
-        label: "text-bgl0",
+    const bindGroupLayout = device.createBindGroupLayout({
+        label: "text-bind-group-layout",
         entries: [
             { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
             { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float" } },
@@ -45,7 +50,7 @@ function getOrCreateDeviceCache(engine: EngineContext): TextPipelineDeviceCache 
     new Float32Array(quadVertexBuffer.getMappedRange()).set(corners);
     quadVertexBuffer.unmap();
 
-    cache = { bgl0, vertModule, fragModule, quadVertexBuffer, pipelines: new Map() };
+    cache = { bindGroupLayout, vertModule, fragModule, quadVertexBuffer, pipelines: new Map() };
     _cache.set(device, cache);
     return cache;
 }
@@ -71,7 +76,7 @@ export function getOrCreateTextPipeline(
     const device = engine._device;
     const descriptor: GPURenderPipelineDescriptor = {
         label: "text-pipeline",
-        layout: device.createPipelineLayout({ bindGroupLayouts: [cache.bgl0] }),
+        layout: device.createPipelineLayout({ bindGroupLayouts: [cache.bindGroupLayout] }),
         vertex: {
             module: cache.vertModule,
             entryPoint: "main",

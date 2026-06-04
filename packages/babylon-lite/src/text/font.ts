@@ -4,15 +4,11 @@ import { Font as TextShaperFont } from "text-shaper";
 import type { Font } from "./internal.js";
 import { getFontInternals, setFontInternals } from "./internal.js";
 
-function makeBrandedFont(): Font {
-    return Object.create(null) as Font;
-}
-
 /** Load a TTF or OTF font from a URL. */
 export async function loadFont(url: string): Promise<Font> {
     const response = await fetch(url);
     if (!response.ok) {
-        throw new Error("loadFont: failed to fetch " + url + " (" + response.status + ")");
+        throw new Error(`loadFont: failed to fetch ${url} (${response.status})`);
     }
     const data = await response.arrayBuffer();
     return createFontFromBuffer(data);
@@ -21,7 +17,7 @@ export async function loadFont(url: string): Promise<Font> {
 /** Build a `Font` from an in-memory TTF/OTF buffer. */
 export function createFontFromBuffer(data: ArrayBuffer): Font {
     const font = TextShaperFont.load(data);
-    const handle = makeBrandedFont();
+    const handle = {} as Font;
     setFontInternals(handle, { font });
     return handle;
 }

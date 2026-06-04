@@ -156,7 +156,7 @@ function ensureGpu(r: TextRenderable, engine: EngineContext, target: RenderTarge
         } else {
             gpu.pipeline = pipeline;
             gpu.targetKey = key;
-            // Pipeline change — per-group bind groups must be rebuilt against the new bgl1.
+            // Pipeline change — per-group bind groups must be rebuilt against the new bindGroupLayout.
             const internals = getTextDataInternalsOrThrow(r._data);
             for (const g of internals.groups) {
                 g._bindGroup = null;
@@ -197,13 +197,13 @@ function bindTextRenderable(r: TextRenderable, engine: EngineContext, target: Re
         target._flipY === true
     );
     const quadVertex = cache.quadVertexBuffer;
-    const bgl0 = cache.bgl0;
+    const bindGroupLayout = cache.bindGroupLayout;
 
     return {
         renderable: r,
         pipeline: gpu.pipeline,
         update(context: DrawUpdateContext): void {
-            updateTextRenderable(r, engine, gpu, internals, bgl0, context);
+            updateTextRenderable(r, engine, gpu, internals, bindGroupLayout, context);
         },
         draw(pass): number {
             return drawTextRenderable(gpu, internals, quadVertex, pass);
@@ -216,7 +216,7 @@ function updateTextRenderable(
     engine: EngineContext,
     gpu: TextRenderableGpu,
     internals: TextDataInternals,
-    bgl0: GPUBindGroupLayout,
+    bindGroupLayout: GPUBindGroupLayout,
     context: DrawUpdateContext
 ): void {
     const device = engine._device;
@@ -227,7 +227,7 @@ function updateTextRenderable(
         if (rebuilt || !g._bindGroup || g._bindGroupVersion !== atlasGpu.uploadedVersion) {
             g._bindGroup = device.createBindGroup({
                 label: "text-bg0-" + g.curveSetId,
-                layout: bgl0,
+                layout: bindGroupLayout,
                 entries: [
                     { binding: 0, resource: { buffer: gpu.textU } },
                     { binding: 1, resource: atlasGpu.curveTex.createView() },

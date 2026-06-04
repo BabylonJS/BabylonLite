@@ -129,7 +129,7 @@ function ensureInstanceCapacity(device: GPUDevice, lg: LayerGpu, needed: number)
     lg.uploadedDataVersion = -1;
 }
 
-function uploadLayer(rr: TextRendererInternal, lg: LayerGpu, bgl0: GPUBindGroupLayout): void {
+function uploadLayer(rr: TextRendererInternal, lg: LayerGpu, bindGroupLayout: GPUBindGroupLayout): void {
     const device = rr._engine._device;
     const layer = lg.layer;
     const internals = getTextDataInternalsOrThrow(layer.data);
@@ -143,7 +143,7 @@ function uploadLayer(rr: TextRendererInternal, lg: LayerGpu, bgl0: GPUBindGroupL
         if (!current || rebuilt || currentVer !== atlasGpu.uploadedVersion) {
             lg.bindGroups[i] = device.createBindGroup({
                 label: "text-renderer-bg0-" + g.curveSetId,
-                layout: bgl0,
+                layout: bindGroupLayout,
                 entries: [
                     { binding: 0, resource: { buffer: lg.textU } },
                     { binding: 1, resource: atlasGpu.curveTex.createView() },
@@ -262,11 +262,11 @@ function textRendererUpdate(rr: TextRendererInternal): void {
         const { pipeline } = getOrCreateTextPipeline(rr._engine, rr._engine.format, 1, null, false, false);
         if (lg.pipeline !== pipeline) {
             lg.pipeline = pipeline;
-            // Pipeline change → bind groups must be rebuilt against new bgl0.
+            // Pipeline change → bind groups must be rebuilt against new bindGroupLayout.
             lg.bindGroups.length = 0;
             lg.bindGroupAtlasVersions.length = 0;
         }
-        uploadLayer(rr, lg, cache.bgl0);
+        uploadLayer(rr, lg, cache.bindGroupLayout);
     }
 }
 

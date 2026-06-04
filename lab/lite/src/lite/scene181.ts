@@ -30,13 +30,14 @@ async function run(): Promise<void> {
     const font = await loadFont("/fonts/Inter.ttf");
     const data = createDefaultTextData(font, 48, textarea.value, undefined, { maxWidth: 1200, align: "left" });
     const text = createTextRenderable(data, { opacity: 1 });
-    text.position.set(-data.width * 0.005, data.height * 0.005, 0);
-    text.scaling.set(0.01, 0.01, 0.01);
+    const scale = 0.01;
+    text.position.set(-data.width * scale * 0.5, data.height * scale * 0.5, 0);
+    text.scaling.set(scale, scale, scale);
     addTextRenderable(scene, text);
 
     textarea.addEventListener("input", () => {
         updateDefaultTextData(data, textarea.value);
-        text.position.set(-data.width * 0.005, data.height * 0.005, 0);
+        text.position.set(-data.width * scale * 0.5, data.height * scale * 0.5, 0);
     });
 
     await registerScene(engine, scene);

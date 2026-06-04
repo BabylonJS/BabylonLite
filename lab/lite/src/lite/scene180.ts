@@ -35,7 +35,7 @@ async function run(): Promise<void> {
     const font = await loadFont("/fonts/Inter.ttf");
 
     const data = createDefaultTextData(font, 48, textarea.value, currentColor(), {
-        maxWidth: 1200,
+        maxWidth: 600,
         align: "left",
     });
 

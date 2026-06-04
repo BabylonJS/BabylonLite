@@ -41,10 +41,10 @@ export function createDefaultTextData(
         pixelsPerFontUnit: laid.pixelsPerFontUnit,
         defaultColor: textColor,
     };
-    const data = createTextData({ runs: [run], curves }) as DefaultTextData;
-    // Attach width/height as own properties so the brand-extended type matches at runtime.
-    Object.defineProperty(data, "width", { value: laid.width, writable: true, configurable: true, enumerable: true });
-    Object.defineProperty(data, "height", { value: laid.height, writable: true, configurable: true, enumerable: true });
+    const data = Object.assign(createTextData({ runs: [run], curves }), {
+        width: laid.width,
+        height: laid.height,
+    }) as DefaultTextData;
     setDefaultTextDataInternals(data, { font, fontSizePx, options, curveSetId });
     return data;
 }
@@ -77,6 +77,5 @@ export function updateDefaultTextData(data: DefaultTextData, text: string, textC
     };
     updateTextData(data, { update: "replaceRun", previous: previousRun, run: newRun });
     // Refresh the cached width/height on the branded object.
-    (data as { width: number }).width = laid.width;
-    (data as { height: number }).height = laid.height;
+    Object.assign(data, { width: laid.width, height: laid.height });
 }
