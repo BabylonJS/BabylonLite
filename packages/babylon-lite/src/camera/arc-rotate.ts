@@ -42,6 +42,19 @@ export interface ArcRotateCamera extends Camera, IWorldMatrixProvider, IParentab
     inertialPanningX: number;
     inertialPanningY: number;
 
+    /**
+     * Optional orbit limits enforced by {@link attachControl}'s per-frame loop.
+     * `undefined` means unbounded on that side. Set these via {@link setCameraLimits}
+     * so the current pose is clamped immediately (and inertia zeroed at the wall),
+     * avoiding any overshoot-then-snap jiggle. Angles are in radians.
+     */
+    lowerAlphaLimit?: number;
+    upperAlphaLimit?: number;
+    lowerBetaLimit?: number;
+    upperBetaLimit?: number;
+    lowerRadiusLimit?: number;
+    upperRadiusLimit?: number;
+
     parent: IWorldMatrixProvider | null;
     readonly worldMatrix: Mat4;
     readonly worldMatrixVersion: number;
