@@ -3,7 +3,7 @@
  *  owns its own render pass, no scene / camera dependency. */
 
 import { getRenderTargetSize, registerRenderingContext, unregisterRenderingContext } from "../engine/engine.js";
-import type { EngineContext, EngineContextInternal, RenderingContext } from "../engine/engine.js";
+import type { EngineContext, RenderingContext } from "../engine/engine.js";
 import { createEmptyUniformBuffer } from "../resource/gpu-buffers.js";
 import type { TextLayer } from "./text-layer.js";
 import { getTextDataInternalsOrThrow, TEXT_INSTANCE_BYTES } from "./text-data.js";
@@ -48,7 +48,7 @@ interface LayerGpu {
 }
 
 interface TextRendererInternal extends TextRenderer {
-    _engine: EngineContextInternal;
+    _engine: EngineContext;
     _layerGpu: Map<TextLayer, LayerGpu>;
     layers: TextLayer[];
     _targetWidth: number;
@@ -86,7 +86,7 @@ function ensureLayerGpu(rr: TextRendererInternal, layer: TextLayer): LayerGpu {
     if (lg) {
         return lg;
     }
-    const device = rr._engine.device;
+    const device = rr._engine._device;
     const internals = getTextDataInternalsOrThrow(layer.data);
     const cap = Math.max(internals.instanceCount, 8);
     lg = {
@@ -130,7 +130,7 @@ function ensureInstanceCapacity(device: GPUDevice, lg: LayerGpu, needed: number)
 }
 
 function uploadLayer(rr: TextRendererInternal, lg: LayerGpu, bgl0: GPUBindGroupLayout): void {
-    const device = rr._engine.device;
+    const device = rr._engine._device;
     const layer = lg.layer;
     const internals = getTextDataInternalsOrThrow(layer.data);
 
@@ -216,12 +216,11 @@ function compareLayers(a: TextLayer, b: TextLayer): number {
 }
 
 export function createTextRenderer(engine: EngineContext, opts: TextRendererOptions): TextRenderer {
-    const eng = engine as EngineContextInternal;
-    const targetSize = getRenderTargetSize(eng);
+    const targetSize = getRenderTargetSize(engine);
 
     const rr: TextRendererInternal = {
         _kind: KIND,
-        _engine: eng,
+        _engine: engine,
         _layerGpu: new Map(),
         _targetWidth: targetSize.width,
         _targetHeight: targetSize.height,

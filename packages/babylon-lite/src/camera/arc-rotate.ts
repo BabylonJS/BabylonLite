@@ -3,9 +3,11 @@ import type { Vec3, Mat4 } from "../math/types.js";
 import { mat4LookAtLH } from "../math/mat4-look-at-lh.js";
 import { Vec3Up } from "../math/vec3-up.js";
 import type { IWorldMatrixProvider, IParentable } from "../scene/parentable.js";
-import { createWorldMatrixState } from "../scene/world-matrix-state.js";
+import { createWorldMatrixState, attachWorldMatrixState } from "../scene/world-matrix-state.js";
 import { ObservableVec3 } from "../math/observable-vec3.js";
 import type { SceneNode } from "../scene/scene-node.js";
+import type { Mat4Storage } from "../math/types.js";
+import { allocateMat4 } from "../math/_matrix-allocator.js";
 
 /** ArcRotateCamera — orbits around a target point.
  *  Uses Babylon.js convention: left-handed, alpha=rotation around Y, beta=elevation.
@@ -62,11 +64,31 @@ export function createArcRotateCamera(alpha: number, beta: number, radius: numbe
         };
     }
 
+    // Reusable local-world matrix.
+    const _localMat: Mat4 = allocateMat4();
+
     function cameraLocalWorldMatrix(): Mat4 {
         const eye = localEyePosition();
         const v = mat4LookAtLH(eye, cam.target, Vec3Up);
+        const m = _localMat as unknown as Mat4Storage;
         // Transpose upper 3×3 of view = camera-to-world rotation; translation = eye.
-        return new Float32Array([v[0]!, v[4]!, v[8]!, 0, v[1]!, v[5]!, v[9]!, 0, v[2]!, v[6]!, v[10]!, 0, eye.x, eye.y, eye.z, 1]) as Mat4;
+        m[0] = v[0]!;
+        m[1] = v[4]!;
+        m[2] = v[8]!;
+        m[3] = 0;
+        m[4] = v[1]!;
+        m[5] = v[5]!;
+        m[6] = v[9]!;
+        m[7] = 0;
+        m[8] = v[2]!;
+        m[9] = v[6]!;
+        m[10] = v[10]!;
+        m[11] = 0;
+        m[12] = eye.x;
+        m[13] = eye.y;
+        m[14] = eye.z;
+        m[15] = 1;
+        return _localMat;
     }
 
     const wm = createWorldMatrixState(cameraLocalWorldMatrix);
@@ -91,6 +113,13 @@ export function createArcRotateCamera(alpha: number, beta: number, radius: numbe
         inertialRadiusOffset: 0,
         inertialPanningX: 0,
         inertialPanningY: 0,
+
+        // Matrix caches use the process-global allocator — F32 by default,
+        // F64 after an HPM engine is created. Same backing as the camera world
+        // matrix above, so the camera's storage precision is uniform.
+        _viewCache: allocateMat4() as unknown as Mat4Storage,
+        _projCache: allocateMat4() as unknown as Mat4Storage,
+        _vpCache: allocateMat4() as unknown as Mat4Storage,
 
         get parent() {
             return wm.parent;
@@ -120,6 +149,9 @@ export function createArcRotateCamera(alpha: number, beta: number, radius: numbe
             enumerable: true,
         });
     }
+
+    // Tag so children parented to this camera get push invalidation (O(1) reads).
+    attachWorldMatrixState(cam, wm);
 
     return cam;
 }

@@ -1,6 +1,6 @@
 /** Owns the text render pipeline + bind-group layouts. Lazy per-device cache. */
 
-import type { EngineContextInternal } from "../../engine/engine.js";
+import type { EngineContext } from "../../engine/engine.js";
 import vertSrc from "../shaders/slug.vert.wgsl?raw";
 import fragSrc from "../shaders/slug.frag.wgsl?raw";
 import { TEXT_INSTANCE_BYTES } from "../text-data.js";
@@ -18,13 +18,13 @@ let _cache: WeakMap<GPUDevice, TextPipelineDeviceCache> | null = null;
 /** Shared 4-vertex unit quad: corner signs (-1,-1), (1,-1), (1,1), (-1,1). */
 const QUAD_CORNERS = [-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1] as const;
 
-function getOrCreateDeviceCache(engine: EngineContextInternal): TextPipelineDeviceCache {
+function getOrCreateDeviceCache(engine: EngineContext): TextPipelineDeviceCache {
     _cache ??= new WeakMap();
-    let cache = _cache.get(engine.device);
+    let cache = _cache.get(engine._device);
     if (cache) {
         return cache;
     }
-    const device = engine.device;
+    const device = engine._device;
     const bgl0 = device.createBindGroupLayout({
         label: "text-bgl0",
         entries: [
@@ -55,7 +55,7 @@ function pipelineKey(format: GPUTextureFormat, sampleCount: number, depthStencil
 }
 
 export function getOrCreateTextPipeline(
-    engine: EngineContextInternal,
+    engine: EngineContext,
     format: GPUTextureFormat,
     sampleCount: 1 | 4,
     depthStencilFormat: GPUTextureFormat | null,
@@ -68,7 +68,7 @@ export function getOrCreateTextPipeline(
     if (pipeline) {
         return { pipeline, cache };
     }
-    const device = engine.device;
+    const device = engine._device;
     const descriptor: GPURenderPipelineDescriptor = {
         label: "text-pipeline",
         layout: device.createPipelineLayout({ bindGroupLayouts: [cache.bgl0] }),
@@ -113,7 +113,7 @@ export function getOrCreateTextPipeline(
     if (depthStencilFormat) {
         descriptor.depthStencil = {
             format: depthStencilFormat,
-            depthCompare: "less-equal",
+            depthCompare: "greater-equal",
             depthWriteEnabled: depthWrite,
         };
     }

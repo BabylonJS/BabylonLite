@@ -1,4 +1,4 @@
-import type { EngineContextInternal } from "../../engine/engine.js";
+import type { EngineContext } from "../../engine/engine.js";
 import type { RenderTargetSignature } from "../../engine/render-target.js";
 import { targetSignatureKey } from "../../engine/render-target.js";
 import { getSceneBindGroupLayout } from "../../render/scene-helpers.js";
@@ -27,18 +27,18 @@ interface ShaderMaterialPipelineState extends ShaderMaterial {
 
 const SHADER_STAGE_ALL = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
 
-export function getOrCreateShaderPipelineBindings(engine: EngineContextInternal, material: ShaderMaterial): ShaderPipelineBindings {
+export function getOrCreateShaderPipelineBindings(engine: EngineContext, material: ShaderMaterial): ShaderPipelineBindings {
     const state = material as ShaderMaterialPipelineState;
-    if (state._shaderBindings && state._shaderDevice === engine.device) {
+    if (state._shaderBindings && state._shaderDevice === engine._device) {
         return state._shaderBindings;
     }
 
-    state._shaderDevice = engine.device;
+    state._shaderDevice = engine._device;
     const systemFields = material.uniformDecls.filter((u) => _isShaderSystemUniform(u.name)).map(toUboField);
     const customFields = material.uniformDecls.filter((u) => !_isShaderSystemUniform(u.name)).map(toUboField);
     const systemSpec = computeUboLayout(systemFields.length > 0 ? systemFields : [{ _name: "_pad", _type: "vec4<f32>" }]);
     const customSpec = customFields.length > 0 ? computeUboLayout(customFields) : null;
-    const group1BGL = engine.device.createBindGroupLayout({
+    const group1BGL = engine._device.createBindGroupLayout({
         label: "shader-material-group1",
         entries: buildBindGroupLayoutEntries(material.samplerDecls, customSpec !== null),
     });
@@ -57,30 +57,31 @@ export function getOrCreateShaderPipelineBindings(engine: EngineContextInternal,
     return bindings;
 }
 
-export function getOrCreateShaderPipeline(
-    engine: EngineContextInternal,
-    sig: RenderTargetSignature,
-    material: ShaderMaterial,
-    bindings: ShaderPipelineBindings
-): GPURenderPipeline {
+export function getOrCreateShaderPipeline(engine: EngineContext, sig: RenderTargetSignature, material: ShaderMaterial, bindings: ShaderPipelineBindings): GPURenderPipeline {
     const key = targetSignatureKey(sig);
     const cached = bindings.pipelines.get(key);
     if (cached) {
         return cached;
     }
-    const device = engine.device;
+    const device = engine._device;
     const prelude = buildShaderPrelude(material, bindings.systemSpec, bindings.customSpec);
     const vertModule = device.createShaderModule({ label: `${material.name ?? "shader"}-vertex`, code: `${prelude}\n${material.vertexSource}` });
-    const fragModule = sig.colorFormat ? device.createShaderModule({ label: `${material.name ?? "shader"}-fragment`, code: `${prelude}\n${material.fragmentSource}` }) : null;
-    const colorTarget: GPUColorTargetState | null = sig.colorFormat
+    const fragModule = sig._colorFormat ? device.createShaderModule({ label: `${material.name ?? "shader"}-fragment`, code: `${prelude}\n${material.fragmentSource}` }) : null;
+    const colorTarget: GPUColorTargetState | null = sig._colorFormat
         ? {
-              format: sig.colorFormat,
+              format: sig._colorFormat,
               ...(material.needAlphaBlending
                   ? {
-                        blend: {
-                            color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
-                            alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
-                        } satisfies GPUBlendState,
+                        blend:
+                            material.blendMode === "additive"
+                                ? ({
+                                      color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" },
+                                      alpha: { srcFactor: "one", dstFactor: "one", operation: "add" },
+                                  } satisfies GPUBlendState)
+                                : ({
+                                      color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
+                                      alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+                                  } satisfies GPUBlendState),
                     }
                   : {}),
           }
@@ -91,17 +92,17 @@ export function getOrCreateShaderPipeline(
         layout: device.createPipelineLayout({ bindGroupLayouts: [getSceneBindGroupLayout(engine), bindings.group1BGL] }),
         vertex: { module: vertModule, entryPoint: "mainVertex", buffers: bindings.vertexBuffers },
         ...(fragModule && colorTarget ? { fragment: { module: fragModule, entryPoint: "mainFragment", targets: [colorTarget] } } : {}),
-        ...(sig.depthStencilFormat
+        ...(sig._depthStencilFormat
             ? {
                   depthStencil: {
-                      format: sig.depthStencilFormat,
+                      format: sig._depthStencilFormat,
                       depthCompare: material.depthCompare,
                       depthWriteEnabled: material.needAlphaBlending ? false : material.depthWrite,
                   },
               }
             : {}),
-        multisample: { count: sig.sampleCount },
-        primitive: { topology: "triangle-list", cullMode: material.backFaceCulling ? "back" : "none", frontFace: sig.flipY ? "cw" : "ccw" },
+        multisample: { count: sig._sampleCount },
+        primitive: { topology: "triangle-list", cullMode: material.backFaceCulling ? "back" : "none", frontFace: sig._flipY ? "cw" : "ccw" },
     });
     bindings.pipelines.set(key, pipeline);
     return pipeline;

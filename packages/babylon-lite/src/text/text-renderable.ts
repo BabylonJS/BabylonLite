@@ -1,7 +1,7 @@
 /** TextRenderable — a scene-attachable text entity backed by a TextData.
  *  Mirrors Mesh's TRS surface (position/rotation/rotationQuaternion/scaling). */
 
-import type { EngineContext, EngineContextInternal } from "../engine/engine.js";
+import type { EngineContext } from "../engine/engine.js";
 import type { RenderTargetSignature } from "../engine/render-target.js";
 import type { DrawBinding, DrawUpdateContext, Renderable } from "../render/renderable.js";
 import { ObservableVec3 } from "../math/observable-vec3.js";
@@ -14,7 +14,7 @@ import { mat4Identity } from "../math/mat4-identity.js";
 import { createEmptyUniformBuffer } from "../resource/gpu-buffers.js";
 import { addDeferredSceneRenderables } from "../scene/scene-core.js";
 import type { SceneContext } from "../scene/scene-core.js";
-import type { Vec3 } from "../math/types.js";
+import type { Mat4, Mat4Storage, Vec3 } from "../math/types.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
 import { getViewProjectionMatrix, getEffectiveAspectRatio } from "../camera/camera.js";
 import type { TextData } from "./internal.js";
@@ -45,7 +45,7 @@ export interface TextRenderable extends Renderable {
     ignoreDepth: boolean;
     order: number;
     /** @internal */ readonly _data: TextData;
-    /** @internal */ readonly _worldMatrix: () => Float32Array;
+    /** @internal */ readonly _worldMatrix: () => Mat4;
     /** @internal */ _wmDirty: boolean;
     /** @internal */ _gpu: TextRenderableGpu | null;
     /** @internal */ _version: number;
@@ -69,7 +69,7 @@ const TEXT_UBO_BYTES = 64 /* mvp */ + 16 /* viewport */ + 16; /* color */
 const _mvpScratch = new Float32Array(16);
 
 function targetSig(target: RenderTargetSignature): string {
-    return (target.colorFormat ?? "-") + ":" + (target.sampleCount ?? 1) + ":" + (target.depthStencilFormat ?? "-") + ":" + (target.flipY ? "y" : "n");
+    return (target._colorFormat ?? "-") + ":" + (target._sampleCount ?? 1) + ":" + (target._depthStencilFormat ?? "-") + ":" + (target._flipY ? "y" : "n");
 }
 
 export function createTextRenderable(data: TextData, options?: TextRenderableOptions): TextRenderable {
@@ -106,7 +106,7 @@ export function createTextRenderable(data: TextData, options?: TextRenderableOpt
         _wmDirty: true,
         _gpu: null,
         _version: 0,
-        _worldMatrix: () => wm.getWorldMatrix() as Float32Array,
+        _worldMatrix: () => wm.getWorldMatrix(),
         bind(engine, target): DrawBinding {
             return bindTextRenderable(r, engine, target);
         },
@@ -114,16 +114,16 @@ export function createTextRenderable(data: TextData, options?: TextRenderableOpt
     return r;
 }
 
-function ensureGpu(r: TextRenderable, engine: EngineContextInternal, target: RenderTargetSignature): TextRenderableGpu {
-    const device = engine.device;
-    const sampleCount = target.sampleCount === 1 ? 1 : 4;
-    const colorFormat = target.colorFormat;
+function ensureGpu(r: TextRenderable, engine: EngineContext, target: RenderTargetSignature): TextRenderableGpu {
+    const device = engine._device;
+    const sampleCount = target._sampleCount === 1 ? 1 : 4;
+    const colorFormat = target._colorFormat;
     if (!colorFormat) {
         throw new Error("TextRenderable: render target has no color format.");
     }
-    const depthFormat = target.depthStencilFormat ?? null;
+    const depthFormat = target._depthStencilFormat ?? null;
     const depthWrite = !r.ignoreDepth;
-    const { pipeline } = getOrCreateTextPipeline(engine, colorFormat, sampleCount, depthFormat, depthWrite, target.flipY === true);
+    const { pipeline } = getOrCreateTextPipeline(engine, colorFormat, sampleCount, depthFormat, depthWrite, target._flipY === true);
     const key = targetSig(target);
     let gpu = r._gpu;
     if (gpu && gpu.device !== device) {
@@ -186,10 +186,16 @@ function ensureInstanceCapacity(device: GPUDevice, gpu: TextRenderableGpu, neede
 }
 
 function bindTextRenderable(r: TextRenderable, engine: EngineContext, target: RenderTargetSignature): DrawBinding {
-    const eng = engine as EngineContextInternal;
-    const gpu = ensureGpu(r, eng, target);
+    const gpu = ensureGpu(r, engine, target);
     const internals = getTextDataInternalsOrThrow(r._data);
-    const { cache } = getOrCreateTextPipeline(eng, target.colorFormat!, target.sampleCount === 1 ? 1 : 4, target.depthStencilFormat ?? null, !r.ignoreDepth, target.flipY === true);
+    const { cache } = getOrCreateTextPipeline(
+        engine,
+        target._colorFormat!,
+        target._sampleCount === 1 ? 1 : 4,
+        target._depthStencilFormat ?? null,
+        !r.ignoreDepth,
+        target._flipY === true
+    );
     const quadVertex = cache.quadVertexBuffer;
     const bgl0 = cache.bgl0;
 
@@ -197,7 +203,7 @@ function bindTextRenderable(r: TextRenderable, engine: EngineContext, target: Re
         renderable: r,
         pipeline: gpu.pipeline,
         update(context: DrawUpdateContext): void {
-            updateTextRenderable(r, eng, gpu, internals, bgl0, context);
+            updateTextRenderable(r, engine, gpu, internals, bgl0, context);
         },
         draw(pass): number {
             return drawTextRenderable(gpu, internals, quadVertex, pass);
@@ -207,13 +213,13 @@ function bindTextRenderable(r: TextRenderable, engine: EngineContext, target: Re
 
 function updateTextRenderable(
     r: TextRenderable,
-    engine: EngineContextInternal,
+    engine: EngineContext,
     gpu: TextRenderableGpu,
     internals: TextDataInternals,
     bgl0: GPUBindGroupLayout,
     context: DrawUpdateContext
 ): void {
-    const device = engine.device;
+    const device = engine._device;
 
     // Sync every group's atlas to the GPU; track which need bind-group rebuild.
     for (const g of internals.groups) {
@@ -261,7 +267,7 @@ function updateTextRenderable(
         const aspect = getEffectiveAspectRatio(camera, context.targetWidth, context.targetHeight);
         const vp = getViewProjectionMatrix(camera, aspect) as unknown as Float32Array;
         const wm = r._worldMatrix();
-        mat4MultiplyInto(_mvpScratch, 0, vp, 0, wm, 0);
+        mat4MultiplyInto(_mvpScratch, 0, vp, 0, wm as unknown as Mat4Storage, 0);
         device.queue.writeBuffer(gpu.textU, 0, _mvpScratch.buffer as ArrayBuffer, _mvpScratch.byteOffset, 64);
         r._wmDirty = false;
         gpu.uploadedWorldVersion++;

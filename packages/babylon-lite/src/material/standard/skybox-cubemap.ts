@@ -6,7 +6,7 @@
  * Renders backfaces (no culling → sees inside of box).
  */
 
-import type { EngineContextInternal } from "../../engine/engine.js";
+import type { EngineContext } from "../../engine/engine.js";
 import type { RenderTargetSignature } from "../../engine/render-target.js";
 import skyVertSrc from "../../../shaders/skybox-cubemap.vertex.wgsl?raw";
 import skyFragSrc from "../../../shaders/skybox-cubemap.fragment.wgsl?raw";
@@ -18,7 +18,7 @@ import { targetSignatureKey } from "../../engine/render-target.js";
 
 export interface SkyboxCubeMapGPU {
     /** Sig-keyed pipeline lookup (called from `bind()` once the target sig is known). */
-    getPipeline(engine: EngineContextInternal, sig: RenderTargetSignature): GPURenderPipeline;
+    getPipeline(engine: EngineContext, sig: RenderTargetSignature): GPURenderPipeline;
     meshBindGroup: GPUBindGroup;
     meshUBO: GPUBuffer;
     meshBindGroupLayout: GPUBindGroupLayout;
@@ -35,8 +35,8 @@ export interface SkyboxCubeMapGPU {
  * once the target sig is known. The scene bind group is supplied per-pass by the
  * active RenderTask.
  */
-export function buildSkyboxCubeMapGPU(engine: EngineContextInternal, worldMatrix: Float32Array, cubeView: GPUTextureView, cubeSampler: GPUSampler): SkyboxCubeMapGPU {
-    const device = engine.device;
+export function buildSkyboxCubeMapGPU(engine: EngineContext, worldMatrix: Float32Array, cubeView: GPUTextureView, cubeSampler: GPUSampler): SkyboxCubeMapGPU {
+    const device = engine._device;
     const meshBindGroupLayout = device.createBindGroupLayout({
         label: "skybox-cm-mesh",
         entries: [
@@ -66,7 +66,7 @@ export function buildSkyboxCubeMapGPU(engine: EngineContextInternal, worldMatrix
             if (cached) {
                 return cached;
             }
-            const pipeline = _engine.device.createRenderPipeline(
+            const pipeline = _engine._device.createRenderPipeline(
                 createDefaultPipelineDescriptor({
                     _label: "skybox-cubemap-pipeline",
                     _engine,
@@ -77,11 +77,12 @@ export function buildSkyboxCubeMapGPU(engine: EngineContextInternal, worldMatrix
                         { arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x3" as GPUVertexFormat }] },
                         { arrayStride: 12, attributes: [{ shaderLocation: 1, offset: 0, format: "float32x3" as GPUVertexFormat }] },
                     ],
-                    _format: sig.colorFormat!,
-                    _depthStencilFormat: sig.depthStencilFormat,
-                    _msaaSamples: sig.sampleCount,
+                    _format: sig._colorFormat!,
+                    _depthStencilFormat: sig._depthStencilFormat,
+                    _depthCompare: sig._depthCompare,
+                    _msaaSamples: sig._sampleCount,
                     _cullMode: "none",
-                    _flipY: sig.flipY,
+                    _flipY: sig._flipY,
                 })
             );
             gpu.pipelines.set(key, pipeline);

@@ -2,12 +2,13 @@
 // Tree-shakable: import only what you use.
 
 // ─── Core ────────────────────────────────────────────────────────────
-export { createEngine, startEngine, stopEngine, renderFrame, resizeEngine, disposeEngine, VERSION } from "./engine/engine.js";
-export type { EngineContext, EngineOptions } from "./engine/engine.js";
+export { createEngine, startEngine, stopEngine, renderFrame, resizeEngine, setEngineSize, disposeEngine, VERSION } from "./engine/engine.js";
+export type { EngineContext, EngineOptions, RenderCanvas } from "./engine/engine.js";
 export {
     createSceneContext,
     createDefaultCamera,
     removeFromScene,
+    setMeshVisible,
     onBeforeRender,
     onSceneDispose,
     addToScene,
@@ -16,6 +17,12 @@ export {
     registerSceneWithShadowSupport,
     unregisterScene,
 } from "./scene/scene.js";
+export type { SceneContextOptions } from "./scene/scene.js";
+export { getFloatingOriginOffset } from "./large-world/floating-origin.js";
+
+// Subtree visibility toggle (used to hide a node before deferring its disposal,
+// e.g. streaming voxel chunks). Standalone module — bundled only when used.
+export { setSubtreeVisible } from "./scene/visibility.js";
 
 // ─── Frame graph ─────────────────────────────────────────────────────
 // Scene-owned ordered list of tasks. The default scene pass is a
@@ -23,6 +30,8 @@ export {
 export { getFrameGraph } from "./scene/scene.js";
 export type { FrameGraph } from "./frame-graph/frame-graph.js";
 export { addRenderPass, addTask, addTaskAtStart, addTaskBefore } from "./frame-graph/frame-graph-actions.js";
+export { createFrameGraphContext, registerFrameGraphContext, unregisterFrameGraphContext, disposeFrameGraphContext } from "./frame-graph/frame-graph-context.js";
+export type { FrameGraphContext, FrameGraphContextOptions } from "./frame-graph/frame-graph-context.js";
 export type { Task } from "./frame-graph/task.js";
 export type { Pass, RenderPassExecuteFunc } from "./frame-graph/pass.js";
 export { addPassDependencies } from "./frame-graph/pass.js";
@@ -31,6 +40,7 @@ export type { RenderTask, RenderTaskConfig } from "./frame-graph/render-task.js"
 export { createRenderTask, removeMeshFromTask } from "./frame-graph/render-task.js";
 export { createImageProcessingTask } from "./frame-graph/image-processing-task.js";
 export type { ImageProcessingSource, ImageProcessingTaskConfig } from "./frame-graph/image-processing-task.js";
+export type { PostProcessTask, PostProcessTaskSettings, PostProcessAlphaMode, PostProcessSamplingMode } from "./frame-graph/post-process-task.js";
 export { createShadowTask } from "./frame-graph/shadow-task.js";
 export type { ShadowTask } from "./frame-graph/shadow-task.js";
 export type { RenderTarget, RenderTargetDescriptor } from "./engine/render-target.js";
@@ -42,6 +52,22 @@ export { createEffectWrapper, setEffectUniforms, setEffectTexture, createEffectR
 export type { EffectBindingKind, EffectBindingLayout, EffectWrapperOptions, EffectWrapper, EffectRenderTaskConfig, EffectRenderTask } from "./effect/effect-renderer.js";
 export { createEffectRenderer, registerEffectRenderer, unregisterEffectRenderer, disposeEffectRenderer } from "./effect/effect-renderer.js";
 export type { EffectRendererOptions, EffectRenderer } from "./effect/effect-renderer.js";
+export { createUniformEffectWrapper, setUniformEffectUniforms, createUniformEffectRenderTask, disposeUniformEffectWrapper } from "./effect/uniform-effect-renderer.js";
+export type { UniformEffectWrapperOptions, UniformEffectWrapper, UniformEffectRenderTaskConfig, UniformEffectRenderTask } from "./effect/uniform-effect-renderer.js";
+
+// ─── Post-processes ─────────────────────────────────────────────────
+export { createBlackAndWhitePostProcessTask } from "./post-process/black-and-white.js";
+export type { BlackAndWhitePostProcessTask, BlackAndWhitePostProcessTaskConfig } from "./post-process/black-and-white.js";
+export { createAnaglyphPostProcessTask } from "./post-process/anaglyph.js";
+export type { AnaglyphPostProcessTask, AnaglyphPostProcessTaskConfig } from "./post-process/anaglyph.js";
+export { createBlurPostProcessTask } from "./post-process/blur.js";
+export type { BlurPostProcessTask, BlurPostProcessTaskConfig } from "./post-process/blur.js";
+export { createExtractHighlightsPostProcessTask } from "./post-process/extract-highlights.js";
+export type { ExtractHighlightsPostProcessTask, ExtractHighlightsPostProcessTaskConfig } from "./post-process/extract-highlights.js";
+export { createChromaticAberrationPostProcessTask } from "./post-process/chromatic-aberration.js";
+export type { ChromaticAberrationPostProcessTask, ChromaticAberrationPostProcessTaskConfig } from "./post-process/chromatic-aberration.js";
+export { createBloomPostProcessTask } from "./post-process/bloom.js";
+export type { BloomPostProcessTask, BloomPostProcessTaskConfig } from "./post-process/bloom.js";
 
 // ─── Camera ──────────────────────────────────────────────────────────
 export { createArcRotateCamera } from "./camera/arc-rotate.js";
@@ -55,6 +81,7 @@ export type { HemisphericLight } from "./light/hemispheric.js";
 export { createPointLight } from "./light/point-light.js";
 export { createDirectionalLight } from "./light/directional-light.js";
 export { createSpotLight } from "./light/spot-light.js";
+export type { ClusteredLightContainer, ClusteredLightContainerOptions, ClusteredPointLight, ClusteredPointLightOptions } from "./light/clustered.js";
 export type { LightBase } from "./light/types.js";
 export { setMaxLights, MAX_LIGHTS } from "./light/types.js";
 
@@ -73,6 +100,7 @@ export {
     createTube,
     createExtrudeShape,
     createMeshFromData,
+    updateMeshPositions,
 } from "./mesh/mesh-factories.js";
 export { createSphereData } from "./mesh/create-sphere.js";
 export type { SphereMeshData } from "./mesh/create-sphere.js";
@@ -83,6 +111,8 @@ export type { Csg2Solid } from "./mesh/csg2.js";
 
 // ─── Textures ────────────────────────────────────────────────────────
 export { createSolidTexture2D } from "./texture/solid-texture.js";
+export { createTexture2DFromPixels } from "./texture/pixels-texture.js";
+export type { PixelsTexture2DOptions } from "./texture/pixels-texture.js";
 export { loadKtxTexture2D } from "./texture/ktx-loader.js";
 export { loadBasisTexture2D } from "./texture/basis-loader.js";
 
@@ -91,6 +121,8 @@ export { createStandardMaterial } from "./material/standard/create-standard-mate
 export { createStandardNoColorMaterialView } from "./material/standard/no-color-view.js";
 export { createPbrMaterial } from "./material/pbr/pbr-material.js";
 export { createShaderMaterial, setShaderUniform, setShaderTexture, setShaderFloat, setShaderVector3, setShaderMatrix } from "./material/shader/shader-material.js";
+export { createGridMaterial } from "./material/grid/grid-material.js";
+export type { GridMaterialOptions, GridVec3 } from "./material/grid/grid-material.js";
 export { createPbrNoColorMaterialView } from "./material/pbr/no-color-view.js";
 export { parseNodeMaterialFromSnippet } from "./material/node/node-material.js";
 export { createNodeNoColorMaterialView } from "./material/node/no-color-view.js";
@@ -123,6 +155,12 @@ export type { GaussianSplattingMesh } from "./mesh/GaussianSplatting/gaussian-sp
 export { bakeCurrentTransformIntoVertices, bakeTransformIntoVertices } from "./mesh/GaussianSplatting/gaussian-splatting-bake.js";
 export type { GsShaderFragment, GsFragmentSlot } from "./mesh/GaussianSplatting/gaussian-splatting-mesh.js";
 export { createProceduralGaussianSplattingMesh } from "./mesh/GaussianSplatting/create-gaussian-splatting-mesh.js";
+export { gsLinearDepthFragment, gsAlphaBlendedDepthFragment } from "./mesh/GaussianSplatting/gs-depth-fragments.js";
+export { gsGpuPickingFragment, encodeIdToColor } from "./mesh/GaussianSplatting/gs-gpu-picking-fragment.js";
+
+// ─── Linear-depth material (matches BJS DepthRenderer's linear depth output) ──
+export { createLinearDepthMaterial } from "./render/linear-depth-material.js";
+export type { LinearDepthMaterialOptions } from "./render/linear-depth-material.js";
 
 // ─── Shadows ─────────────────────────────────────────────────────────
 export { createEsmDirectionalShadowGenerator } from "./shadow/esm-directional-shadow-generator.js";
@@ -133,23 +171,26 @@ export { setShadowTaskCasterMeshes } from "./frame-graph/shadow-inputs.js";
 // ─── Animation ───────────────────────────────────────────────────────
 export { createAnimationController } from "./skeleton/skeleton-updater.js";
 export { createAnimationGroups, playAnimation, pauseAnimation, stopAnimation, goToFrame } from "./animation/animation-group.js";
-export { crossFadeAnimationGroups, fadeAnimationWeight, setAnimationWeight } from "./animation/animation-weight.js";
+export { setAnimationWeight } from "./animation/animation-weight.js";
+export { crossFadeAnimationGroups, enablePropertyAnimationBlending, fadeAnimationWeight } from "./animation/weighted-pointer-mixer.js";
 export { enableAnimationBlending, setAnimationAdditive } from "./animation/weighted-gltf-mixer.js";
-export type { CrossFadeAnimationGroupsOptions, FadeAnimationWeightOptions } from "./animation/animation-weight.js";
+export type { CrossFadeAnimationGroupsOptions, FadeAnimationWeightOptions } from "./animation/weighted-pointer-mixer.js";
 export type { AnimationAdditiveOptions } from "./animation/weighted-gltf-mixer.js";
 export {
-    addAnimationGroup,
-    addAnimationGroups,
+    addAnimationTask,
     clearAnimationManager,
     createAnimationManager,
-    createPropertyAnimationClip,
-    createPropertyAnimationGroup,
-    removeAnimationGroup,
+    createAnimationTask,
+    removeAnimationTask,
+    setAnimationTaskCategoryHandler,
     startAnimationManager,
     stopAnimationManager,
     updateAnimationManager,
 } from "./animation/animation-manager.js";
-export { createMorphTargets } from "./morph/create-morph-targets.js";
+export { addAnimationGroup, addAnimationGroups, getAnimationGroups, removeAnimationGroup } from "./animation/animation-group-task.js";
+export { createPropertyAnimationClip, createPropertyAnimationGroup } from "./animation/property-animation.js";
+export type { AnimationTask, AnimationTaskCategoryHandler, AnimationTaskOptions, AnimationTaskUpdate } from "./animation/animation-manager.js";
+export { createMorphTargets, setMorphTargetWeights } from "./morph/create-morph-targets.js";
 export type { MorphTargetData } from "./animation/types.js";
 
 // ─── Math ────────────────────────────────────────────────────────────
@@ -161,10 +202,18 @@ export { mat4Compose } from "./math/mat4-compose.js";
 export type { Vec3, Vec3Tuple } from "./math/types.js";
 
 // ─── Color ───────────────────────────────────────────────────────────
-export { linearToSrgbByte, srgbByteToLinear, packedSrgbToLinearRgba } from "./color/color.js";
+export { linearToSrgbByte, srgbByteToLinear, packedSrgbToLinearRgba } from "./math/color.js";
 
 // ─── Thin Instances ──────────────────────────────────────────────────
-export { addThinInstance, removeThinInstance, setThinInstanceMatrix, setThinInstances, flushThinInstances, setThinInstanceColors } from "./mesh/thin-instance.js";
+export {
+    addThinInstance,
+    removeThinInstance,
+    setThinInstanceMatrix,
+    setThinInstances,
+    flushThinInstances,
+    setThinInstanceColors,
+    enableThinInstanceGpuCulling,
+} from "./mesh/thin-instance.js";
 export type { ThinInstanceData } from "./mesh/thin-instance.js";
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -216,18 +265,17 @@ export type { PcfSpotlightShadowGeneratorConfig } from "./shadow/pcf-spotlight-s
 export type { PcfDirectionalShadowGeneratorConfig } from "./shadow/pcf-directional-shadow-generator.js";
 export type { AnimationController } from "./skeleton/skeleton-updater.js";
 export type { AnimationGroup } from "./animation/animation-group.js";
+export type { AnimationManager, AnimationManagerOptions } from "./animation/animation-manager.js";
 export type {
     AnimationKeyframe,
     AnimationKeyframeValue,
-    AnimationManager,
-    AnimationManagerOptions,
     CreatePropertyAnimationGroupOptions,
     PropertyAnimationClip,
     PropertyAnimationClipOptions,
     PropertyAnimationInterpolation,
     PropertyAnimationTrack,
     PropertyAnimationTrackOptions,
-} from "./animation/animation-manager.js";
+} from "./animation/property-animation.js";
 export type { AnimationClip, GltfAnimationData } from "./animation/types.js";
 export type { SphereOptions } from "./mesh/create-sphere.js";
 export type { TorusOptions } from "./mesh/create-torus.js";
@@ -256,8 +304,24 @@ export type { RenderTargetSignature } from "./engine/render-target.js";
 // ─── Sprites (2D) ────────────────────────────────────────────────────
 export type { SpriteAtlas, SpriteFrame, SpriteSampling, GridAtlasOptions, LoadAtlasOptions } from "./sprite/shared/sprite-atlas.js";
 export { createGridSpriteAtlas, loadSpriteAtlas } from "./sprite/shared/sprite-atlas.js";
+export type { SpriteAtlasFrameSource, SpriteAtlasPackOptions } from "./sprite/shared/sprite-atlas-packer.js";
+export { createSpriteAtlasFromFrames } from "./sprite/shared/sprite-atlas-packer.js";
 export type { Sprite2DLayer, Sprite2DLayerOptions, Sprite2DProps, Sprite2DView, Sprite2DDepthMode, SpriteBlendMode } from "./sprite/sprite-2d.js";
-export { createSprite2DLayer, addSprite2DIndex, updateSprite2DIndex, removeSprite2DIndex, clearSprite2DLayer, setSprite2DFrameIndex } from "./sprite/sprite-2d.js";
+export type { SpriteBlendDescriptor } from "./sprite/sprite-blend.js";
+export { spriteBlendAlpha, spriteBlendPremultiplied, spriteBlendAdditive, spriteBlendMultiply } from "./sprite/sprite-blend.js";
+export {
+    createSprite2DLayer,
+    addSprite2DIndex,
+    updateSprite2DIndex,
+    removeSprite2DIndex,
+    clearSprite2DLayer,
+    setSprite2DFrameIndex,
+    setSprite2DShaderParams,
+    setSprite2DUvOffset,
+} from "./sprite/sprite-2d.js";
+export type { CustomShaderTexture } from "./sprite/custom-shader-core.js";
+export type { Sprite2DCustomShader, Sprite2DCustomShaderOptions, Sprite2DCustomTexture } from "./sprite/sprite-custom-shader.js";
+export { createSprite2DCustomShader } from "./sprite/sprite-custom-shader.js";
 export type { Sprite2DHandle } from "./sprite/sprite-2d-handle.js";
 export { addSprite2D, updateSprite2D, removeSprite2D, setSprite2DFrame, getSprite2DHandleIndex, isSprite2DHandleAlive } from "./sprite/sprite-2d-handle.js";
 export { addDepthHostedSpriteLayer } from "./sprite/sprite-scene.js";
@@ -271,6 +335,8 @@ export type {
     BillboardDepthMode,
     BillboardBlendMode,
 } from "./sprite/billboard-sprite.js";
+export type { BillboardBlendDescriptor } from "./sprite/billboard-blend.js";
+export { billboardBlendAlpha, billboardBlendPremultiplied, billboardBlendCutout, billboardBlendAdditive } from "./sprite/billboard-blend.js";
 export {
     createFacingBillboardSystem,
     createAxisLockedBillboardSystem,
@@ -279,7 +345,10 @@ export {
     removeBillboardSpriteIndex,
     clearBillboardSprites,
     setBillboardSpriteFrameIndex,
+    setBillboardShaderParams,
 } from "./sprite/billboard-sprite.js";
+export type { BillboardCustomShader, BillboardCustomShaderOptions, BillboardCustomTexture } from "./sprite/billboard-custom-shader.js";
+export { createBillboardCustomShader } from "./sprite/billboard-custom-shader.js";
 export type { BillboardSpriteHandle } from "./sprite/billboard-sprite-handle.js";
 export {
     addBillboardSprite,
@@ -290,6 +359,33 @@ export {
     isBillboardSpriteHandleAlive,
 } from "./sprite/billboard-sprite-handle.js";
 export { addFacingBillboardSystem, addAxisLockedBillboardSystem } from "./sprite/billboard-scene.js";
+// ─── Sprite Animation (Optional) ─────────────────────────────────────
+export type {
+    SpriteAnimationBinding,
+    SpriteAnimationManager,
+    SpriteAnimationManagerOptions,
+    SpriteAnimationTarget,
+    SpriteFrameAnimation,
+    PlaySpriteAnimationOptions,
+} from "./sprite/sprite-animation.js";
+export {
+    createSpriteAnimationManager,
+    createSpriteFrameAnimation,
+    addSpriteAnimation,
+    removeSpriteAnimation,
+    clearSpriteAnimations,
+    updateSpriteAnimationManager,
+    playSpriteFrameAnimation,
+    stopSpriteAnimation,
+    attachSpriteAnimationsToScene,
+    attachSpriteAnimationsToRenderer,
+    disposeSpriteAnimationBinding,
+} from "./sprite/sprite-animation.js";
+export { addSpriteAnimationManager, removeSpriteAnimationManager, startSpriteAnimationManager, stopSpriteAnimationManager } from "./sprite/sprite-animation-task.js";
+export { playSprite2DIndexAnimation } from "./sprite/sprite-2d-index-animation.js";
+export { playSprite2DAnimation } from "./sprite/sprite-2d-handle-animation.js";
+export { playBillboardSpriteIndexAnimation } from "./sprite/billboard-sprite-index-animation.js";
+export { playBillboardSpriteAnimation } from "./sprite/billboard-sprite-handle-animation.js";
 export type { SpriteRenderer, SpriteRendererOptions } from "./sprite/sprite-renderer.js";
 export {
     createSpriteRenderer,

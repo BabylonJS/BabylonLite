@@ -10,14 +10,14 @@
 import type { PbrMaterialProps } from "./pbr-material.js";
 import type { EnvironmentTextures } from "../../loader-env/load-env.js";
 import type { ComposedShader } from "../../shader/fragment-types.js";
-import type { EngineContextInternal } from "../../engine/engine.js";
+import type { EngineContext } from "../../engine/engine.js";
 import type { RenderTargetSignature } from "../../engine/render-target.js";
 import type { Texture2D } from "../../texture/texture-2d.js";
 import type { _PbrBindCtx, PbrExt } from "./pbr-flags.js";
 import { _getPbrExtsSorted, PBR2_ESM_SHADOW_OUTPUT, PBR2_NO_COLOR_OUTPUT, PBR2_HAS_UV2 } from "./pbr-flags.js";
 import { PBR_HAS_NORMAL_MAP, PBR_HAS_EMISSIVE, PBR_HAS_SPEC_GLOSS, PBR_HAS_DOUBLE_SIDED, PBR_HAS_ALPHA_BLEND } from "./pbr-flags.js";
 import { MSH_HAS_TANGENTS, MSH_HAS_UV2 } from "../mesh-features.js";
-import { targetSignatureKey } from "../../engine/render-target.js";
+import { REVERSE_DEPTH_COMPARE, targetSignatureKey } from "../../engine/render-target.js";
 import { getSceneBindGroupLayout } from "../../render/scene-helpers.js";
 
 // ─── Shader Bindings (sig-independent) ──────────────────────────────
@@ -38,10 +38,10 @@ interface _PbrShaderBindings {
 const _bindingsCache = new Map<string, _PbrShaderBindings>();
 let _cachedDevice: GPUDevice | null = null;
 
-function ensureDevice(engine: EngineContextInternal): void {
-    if (_cachedDevice !== engine.device) {
+function ensureDevice(engine: EngineContext): void {
+    if (_cachedDevice !== engine._device) {
         _bindingsCache.clear();
-        _cachedDevice = engine.device;
+        _cachedDevice = engine._device;
     }
 }
 
@@ -54,7 +54,7 @@ export function clearPbrPipelineCache(): void {
 /** Get-or-build the sig-independent PBR shader bindings. Used at renderable build time
  *  so per-mesh bind groups can be created BEFORE any sig is known. */
 export function getOrCreatePbrBindings(
-    engine: EngineContextInternal,
+    engine: EngineContext,
     features: number,
     features2: number,
     meshFeatures: number,
@@ -69,7 +69,7 @@ export function getOrCreatePbrBindings(
         return cached;
     }
 
-    const device = engine.device;
+    const device = engine._device;
     const meshBGL = device.createBindGroupLayout(composed._meshBGLDescriptor);
     let shadowBGL: GPUBindGroupLayout | null = null;
     if (composed._shadowBGLDescriptor) {
@@ -89,7 +89,7 @@ export function getOrCreatePbrBindings(
 }
 
 /** Get-or-build the sig-specific pipeline on top of a PBR shader bindings. Called at bind() time. */
-export function getOrCreatePbrPipeline(engine: EngineContextInternal, sig: RenderTargetSignature, bindings: _PbrShaderBindings): GPURenderPipeline {
+export function getOrCreatePbrPipeline(engine: EngineContext, sig: RenderTargetSignature, bindings: _PbrShaderBindings): GPURenderPipeline {
     ensureDevice(engine);
     const key = targetSignatureKey(sig);
     const cached = bindings._pipelines.get(key);
@@ -97,7 +97,7 @@ export function getOrCreatePbrPipeline(engine: EngineContextInternal, sig: Rende
         return cached;
     }
 
-    const device = engine.device;
+    const device = engine._device;
     const { _features: features, _features2: features2, _composed: composed } = bindings;
     const esmShadowOutput = (features2 & PBR2_ESM_SHADOW_OUTPUT) !== 0;
     const hasAlpha = !esmShadowOutput && (features & PBR_HAS_ALPHA_BLEND) !== 0;
@@ -108,9 +108,9 @@ export function getOrCreatePbrPipeline(engine: EngineContextInternal, sig: Rende
 
     const vertModule = device.createShaderModule({ code: composed._vertexWGSL });
     const noColorOutput = (features2 & PBR2_NO_COLOR_OUTPUT) !== 0;
-    const fragModule = !sig.colorFormat && !noColorOutput ? null : device.createShaderModule({ code: composed._fragmentWGSL });
+    const fragModule = !sig._colorFormat && !noColorOutput ? null : device.createShaderModule({ code: composed._fragmentWGSL });
 
-    const fragTarget: GPUColorTargetState | null = noColorOutput ? null : { format: sig.colorFormat!, writeMask: GPUColorWrite.ALL };
+    const fragTarget: GPUColorTargetState | null = noColorOutput ? null : { format: sig._colorFormat!, writeMask: GPUColorWrite.ALL };
     if (hasAlpha && fragTarget) {
         fragTarget.blend = {
             color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
@@ -122,17 +122,17 @@ export function getOrCreatePbrPipeline(engine: EngineContextInternal, sig: Rende
         layout: device.createPipelineLayout({ bindGroupLayouts: bgls }),
         vertex: { module: vertModule, entryPoint: "main", buffers: composed._vertexBufferLayouts },
         ...(fragModule ? { fragment: { module: fragModule, entryPoint: "main", targets: fragTarget ? [fragTarget] : [] } } : {}),
-        ...(sig.depthStencilFormat
+        ...(sig._depthStencilFormat
             ? {
                   depthStencil: {
-                      format: sig.depthStencilFormat,
-                      depthCompare: "less-equal" as GPUCompareFunction,
+                      format: sig._depthStencilFormat,
+                      depthCompare: sig._depthCompare ?? REVERSE_DEPTH_COMPARE,
                       depthWriteEnabled: noColorOutput || esmShadowOutput || !hasAlpha,
                   },
               }
             : {}),
-        multisample: { count: sig.sampleCount },
-        primitive: { topology: "triangle-list", cullMode: hasDoubleSided ? ("none" as GPUCullMode) : "back", frontFace: sig.flipY ? "cw" : "ccw" },
+        multisample: { count: sig._sampleCount },
+        primitive: { topology: "triangle-list", cullMode: hasDoubleSided ? ("none" as GPUCullMode) : "back", frontFace: sig._flipY ? "cw" : "ccw" },
     });
     bindings._pipelines.set(key, pipeline);
     return pipeline;
@@ -141,7 +141,7 @@ export function getOrCreatePbrPipeline(engine: EngineContextInternal, sig: Rende
 // ─── Per-Mesh Bind Group ────────────────────────────────────────────
 
 export function createPbrMeshBindGroup(
-    engine: EngineContextInternal,
+    engine: EngineContext,
     bindings: _PbrShaderBindings,
     composed: ComposedShader,
     meshUBO: GPUBuffer,
@@ -151,7 +151,7 @@ export function createPbrMeshBindGroup(
     meshCtx: { skeleton?: { boneTexture: GPUTexture } | null; morphTargets?: { texture: GPUTexture; weightsBuffer?: GPUBuffer } | null } | null,
     refractionTexture?: Texture2D | null
 ): GPUBindGroup {
-    const device = engine.device;
+    const device = engine._device;
     const features = bindings._features;
     const features2 = bindings._features2;
     const meshFeatures = bindings._meshFeatures;

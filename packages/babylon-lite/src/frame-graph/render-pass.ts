@@ -20,25 +20,30 @@
  *   4. `enc.end()`.
  */
 
-import type { EngineContextInternal } from "../engine/engine.js";
+import type { EngineContext } from "../engine/engine.js";
 import type { RenderTarget } from "../engine/render-target.js";
 import { addPassDependencies, type Pass } from "./pass.js";
 import type { Task } from "./task.js";
 
+/** A frame-graph pass that begins a render pass into its bound `RenderTarget`, runs an execute callback, then ends the pass. */
 export interface RenderPass extends Pass {
-    /** Color render target. `null` until set via `setRenderPassRenderTarget`. */
+    /** @internal Color render target. `null` until set via `setRenderPassRenderTarget`. */
     _renderTarget: RenderTarget | null;
 
     /** Optional separate depth target. When `null`, the depth view is taken
      *  from `_renderTarget` (today's combined-RT behavior). Mirrors BJS'
      *  `setRenderTargetDepth`. */
+    /** @internal */
     _renderTargetDepth: RenderTarget | null;
 
     /** Cached descriptor + attachments — built once in `_initialize`, then
      *  patched per-frame in `_execute` for swapchain mode + clearColor +
      *  loadOp. */
+    /** @internal */
     _renderPassDescriptor: GPURenderPassDescriptor;
+    /** @internal */
     _colorAttachment: GPURenderPassColorAttachment | null;
+    /** @internal */
     _depthAttachment: GPURenderPassDepthStencilAttachment | null;
 
     /** Per-frame mutable state. RenderTask mirrors live scene state
@@ -48,9 +53,9 @@ export interface RenderPass extends Pass {
     /** True → loadOp `"clear"`, false → `"load"` (overlay mode). */
     clear: boolean;
 
-    /** Cached at descriptor build — `_renderTarget.descriptor.resolveToSwapchain`. */
+    /** @internal Cached at descriptor build — `_renderTarget.descriptor.resolveToSwapchain`. */
     _swapchain: boolean;
-    /** Cached at descriptor build — `_renderTarget.descriptor.sampleCount`. */
+    /** @internal Cached at descriptor build — `_renderTarget.descriptor.sampleCount`. */
     _sampleCount: number;
 }
 
@@ -102,7 +107,7 @@ export function createRenderPass(name: string, task: Task): RenderPass {
             if (depthView) {
                 depthAttachment = {
                     view: depthView,
-                    depthClearValue: 1.0,
+                    depthClearValue: depthRt._descriptor._depthClearValue ?? 0,
                     depthLoadOp: "clear",
                     depthStoreOp: "store",
                     ...(hasStencil ? { stencilClearValue: 0, stencilLoadOp: "clear" as const, stencilStoreOp: "store" as const } : {}),
@@ -124,7 +129,7 @@ export function createRenderPass(name: string, task: Task): RenderPass {
                 return 0;
             }
             pass._beforeExecute?.();
-            const eng = pass._parentTask.engine as EngineContextInternal;
+            const eng = pass._parentTask.engine as EngineContext;
             const att = pass._colorAttachment;
             if (att) {
                 att.clearValue = pass.clearColor;

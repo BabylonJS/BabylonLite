@@ -1,9 +1,10 @@
 import type { SceneContext } from "../scene/scene.js";
 import type { Mesh } from "../mesh/mesh.js";
-import type { MeshInternal } from "../mesh/mesh.js";
 import type { PickingInfo } from "./picking-info.js";
-import type { EngineContextInternal } from "../engine/engine.js";
+import type { EngineContext } from "../engine/engine.js";
 import type * as DeformedGeometry from "./deformed-geometry.js";
+import type * as GsPickingPipeline from "./gs-picking-pipeline.js";
+import type { GaussianSplattingMesh } from "../mesh/GaussianSplatting/gaussian-splatting-mesh.js";
 import { createEmptyPickingInfo } from "./picking-info.js";
 import { createPickingRay } from "./ray.js";
 import { mat4Invert } from "../math/mat4-invert.js";
@@ -14,6 +15,7 @@ import { createEmptyUniformBuffer, createMappedBuffer, createUniformBuffer } fro
 
 // ─── Scratch arrays — allocated once, reused across all picks ──────
 const _pickVP = new Float32Array(16);
+const _gsPickMatrix = new Float32Array(16);
 const _uboScratch = new ArrayBuffer(80);
 const _uboF32 = new Float32Array(_uboScratch, 0, 16);
 const _uboU32 = new Uint32Array(_uboScratch, 64, 1);
@@ -22,7 +24,7 @@ const _tiUboScratch = new Uint32Array(4);
 
 /** GPU-based picker — pure state. Use pickAsync() and disposePicker() standalone functions. */
 export interface GpuPicker {
-    /** Optional hook for detailed picking (Phase 2). */
+    /** @internal Optional hook for detailed picking (Phase 2). */
     _detailedPick: ((info: PickingInfo, ray: { origin: [number, number, number]; direction: [number, number, number]; length: number }) => void | Promise<void>) | null;
     /** @internal */
     _scene: SceneContext;
@@ -32,6 +34,8 @@ export interface GpuPicker {
     _sceneUbo: GPUBuffer | null;
     /** @internal Reusable scene bind group. */
     _sceneBG: GPUBindGroup | null;
+    /** @internal Per-GS-mesh picking resources (created on demand). */
+    _gsMeshResources: Map<GaussianSplattingMesh, GsPickingPipeline.GsPickMeshResources> | null;
 }
 
 interface PickTargets1x1 {
@@ -53,11 +57,12 @@ export function createGpuPicker(scene: SceneContext): GpuPicker {
         _rt: null,
         _sceneUbo: null,
         _sceneBG: null,
+        _gsMeshResources: null,
     };
 }
 
-function ensureTargets(engine: EngineContextInternal, picker: GpuPicker): PickTargets1x1 {
-    const device = engine.device;
+function ensureTargets(engine: EngineContext, picker: GpuPicker): PickTargets1x1 {
+    const device = engine._device;
     if (picker._rt) {
         return picker._rt;
     }
@@ -82,8 +87,8 @@ function ensureTargets(engine: EngineContextInternal, picker: GpuPicker): PickTa
     return picker._rt;
 }
 
-function ensureSceneUbo(engine: EngineContextInternal, picker: GpuPicker): GPUBuffer {
-    const device = engine.device;
+function ensureSceneUbo(engine: EngineContext, picker: GpuPicker): GPUBuffer {
+    const device = engine._device;
     if (!picker._sceneUbo) {
         picker._sceneUbo = createEmptyUniformBuffer(engine, 64, "pick-scene-ubo");
         const sceneBGL = getPickingSceneBGL(engine);
@@ -111,8 +116,8 @@ function computePickVP(out: Float32Array, vp: Float32Array, px: number, py: numb
 /** Pick the mesh at CSS-space canvas coordinates, matching Babylon.js Scene.pick. Returns a PickingInfo. */
 export async function pickAsync(picker: GpuPicker, x: number, y: number): Promise<PickingInfo> {
     const scene = picker._scene;
-    const engine = scene.engine as EngineContextInternal;
-    const device = engine.device;
+    const engine = scene.engine;
+    const device = engine._device;
     const canvas = engine.canvas;
     const camera = scene.camera;
     if (!camera) {
@@ -121,8 +126,8 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
 
     const backingWidth = canvas.width;
     const backingHeight = canvas.height;
-    const clientWidth = canvas.clientWidth || backingWidth;
-    const clientHeight = canvas.clientHeight || backingHeight;
+    const clientWidth = ("clientWidth" in canvas ? canvas.clientWidth : 0) || backingWidth;
+    const clientHeight = ("clientHeight" in canvas ? canvas.clientHeight : 0) || backingHeight;
     const scaleX = backingWidth / clientWidth;
     const scaleY = backingHeight / clientHeight;
     const pickX = x * scaleX;
@@ -144,7 +149,7 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
     const vp = getViewProjectionMatrix(camera, aspect);
 
     // ── Compute pick-zoomed VP (renders single pixel to 1×1 target) ──
-    computePickVP(_pickVP, vp as Float32Array, px, py, w, h);
+    computePickVP(_pickVP, vp as unknown as Float32Array, px, py, w, h);
 
     const rt = ensureTargets(engine, picker);
     const sceneUbo = ensureSceneUbo(engine, picker);
@@ -156,7 +161,7 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
     let nextId = 1;
     let deformedGeometry: typeof DeformedGeometry | null = null;
     for (let mi = 0; mi < meshCount; mi++) {
-        const mesh = meshes[mi] as MeshInternal;
+        const mesh = meshes[mi]!;
         if ((mesh.morphTargets || mesh.skeleton) && mesh._cpuPositions) {
             deformedGeometry = await import("./deformed-geometry.js");
             break;
@@ -170,7 +175,7 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
             { view: rt.colorView, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: "clear", storeOp: "store" },
             { view: rt.depthColorView, clearValue: { r: 1, g: 0, b: 0, a: 0 }, loadOp: "clear", storeOp: "store" },
         ],
-        depthStencilAttachment: { view: rt.depthView, depthClearValue: 1.0, depthLoadOp: "clear", depthStoreOp: "discard" },
+        depthStencilAttachment: { view: rt.depthView, depthClearValue: 0, depthLoadOp: "clear", depthStoreOp: "discard" },
     });
 
     const regularPipeline = getPickingPipeline(engine);
@@ -181,7 +186,7 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
     const tempBuffers: GPUBuffer[] = [];
     for (let mi = 0; mi < meshCount; mi++) {
         const mesh = meshes[mi]!;
-        const gpu = (mesh as MeshInternal)._gpu;
+        const gpu = mesh._gpu;
         const ti = mesh.thinInstances;
 
         if (ti && ti.count > 0 && ti._gpuBuffer) {
@@ -211,9 +216,8 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
             const meshUbo = createUniformBuffer(engine, _uboView);
             tempBuffers.push(meshUbo);
             let positionBuffer = gpu.positionBuffer;
-            const meshInternal = mesh as MeshInternal;
-            if (deformedGeometry && (meshInternal.morphTargets || meshInternal.skeleton) && meshInternal._cpuPositions) {
-                const deformedPositions = deformedGeometry.computeDeformedPositions(meshInternal);
+            if (deformedGeometry && (mesh.morphTargets || mesh.skeleton) && mesh._cpuPositions) {
+                const deformedPositions = deformedGeometry.computeDeformedPositions(mesh);
                 if (deformedPositions) {
                     positionBuffer = createMappedBuffer(engine, deformedPositions, GPUBufferUsage.VERTEX);
                     tempBuffers.push(positionBuffer);
@@ -226,6 +230,31 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
             pass.setVertexBuffer(0, positionBuffer);
             pass.setIndexBuffer(gpu.indexBuffer, gpu.indexFormat);
             pass.drawIndexed(gpu.indexCount);
+            nextId++;
+        }
+    }
+
+    // ── Gaussian-splatting meshes ────────────────────────────────────
+    // Drawn from the same pass against the same depth target.  Each GS mesh
+    // gets one pick id (no thin-instance support — BJS GS picking is per-mesh
+    // too).  The GS picking pipeline applies an independent pickMatrix to the
+    // GS clip-space output so the EWA Jacobian / `u.focal` math stays intact.
+    const gsMeshes = (scene as unknown as { _gsMeshes: GaussianSplattingMesh[] })._gsMeshes;
+    const gsMeshCount = gsMeshes.length;
+    const gsNextIdStart = nextId;
+    if (gsMeshCount > 0) {
+        const gsModule = await import("./gs-picking-pipeline.js");
+        gsModule.computeGsPickMatrix(_gsPickMatrix, px, py, w, h);
+        gsModule.gsPickWritePickMatrixAndBind(pass, engine, _gsPickMatrix);
+        const resMap = picker._gsMeshResources ?? (picker._gsMeshResources = new Map());
+        for (let gi = 0; gi < gsMeshCount; gi++) {
+            const gsMesh = gsMeshes[gi]!;
+            let res = resMap.get(gsMesh);
+            if (!res) {
+                res = gsModule.createGsPickMeshResources(engine, gsMesh);
+                resMap.set(gsMesh, res);
+            }
+            gsModule.drawGsForPicking(pass, engine, scene, gsMesh, res, nextId, w, h);
             nextId++;
         }
     }
@@ -253,8 +282,9 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
     if (pickId === 0) {
         return createEmptyPickingInfo();
     }
-    let hitMesh: Mesh | null = null;
+    let hitMesh: Mesh | GaussianSplattingMesh | null = null;
     let hitThinIdx = -1;
+    let hitIsGs = false;
     let scanId = 1;
     for (let mi = 0; mi < meshCount; mi++) {
         const mesh = meshes[mi]!;
@@ -272,6 +302,13 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
                 break;
             }
             scanId++;
+        }
+    }
+    if (!hitMesh && gsMeshCount > 0 && pickId >= gsNextIdStart) {
+        const gsIdx = pickId - gsNextIdStart;
+        if (gsIdx < gsMeshCount) {
+            hitMesh = gsMeshes[gsIdx]!;
+            hitIsGs = true;
         }
     }
     if (!hitMesh) {
@@ -302,7 +339,7 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
         info.distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    if (picker._detailedPick) {
+    if (picker._detailedPick && !hitIsGs) {
         const ray = createPickingRay(pickX - viewport.x, pickY - viewport.y, vp, w, h);
         if (ray) {
             info.ray = ray;
@@ -327,5 +364,19 @@ export function disposePicker(picker: GpuPicker): void {
         picker._sceneUbo.destroy();
         picker._sceneUbo = null;
         picker._sceneBG = null;
+    }
+    if (picker._gsMeshResources) {
+        // Async dispose — destroy() is synchronous so we can run inline once
+        // the module is loaded.  If the module was never imported (no GS pick
+        // ever happened) the map is empty and there's nothing to do.
+        void import("./gs-picking-pipeline.js").then((m) => {
+            if (!picker._gsMeshResources) {
+                return;
+            }
+            for (const res of picker._gsMeshResources.values()) {
+                m.disposeGsPickMeshResources(res);
+            }
+            picker._gsMeshResources = null;
+        });
     }
 }
