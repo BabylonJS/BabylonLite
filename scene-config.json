@@ -317,7 +317,8 @@
         "slug": "scene33-lights-punctual",
         "name": "Scene 33 — KHR_lights_punctual",
         "maxMad": 0.07,
-        "maxRawKB": 93.1,
+        "maxRawKB": 94.5,
+        "note": "Ceiling raised 93->94 (user-approved) when scene212 added KHR_materials_dispersion: scene33 shares the transmission + dielectric chunks and carries ~0.6 KB of unavoidable dispersion plumbing (the 3-ray WGSL itself ships only in scene212's bundle). Further raised 94->94.5 (user-approved) to absorb shared glTF-core growth from native interleaved-buffer support + EXT_meshopt_compression/KHR_xmp_json_ld/KHR_mesh_quantization registrations.",
         "description": "LightsPunctualLamp.glb (KHR_lights_punctual point lights + KHR_materials_transmission) with default IBL environment. Matches PG #YG3BBF#54.",
         "tags": ["pbr", "gltf", "env", "lights-punctual", "transmission"],
         "skipPerf": true
@@ -798,6 +799,76 @@
         "skipPerf": true
     },
     {
+        "id": 92,
+        "slug": "scene92-sprite-customshader-params",
+        "name": "Scene 92 — Sprite Custom Shader (params tint)",
+        "maxMad": 0.02,
+        "maxRawKB": 24,
+        "description": "25×10 pure-2D sprite grid drawn through an opt-in custom fragment shader that multiplies the atlas sample and per-sprite tint by a constant fx.params vec4 set once before the first frame (no fx.time, fully deterministic). BJS SpriteRenderer oracle pre-multiplies each sprite color by the same params.",
+        "tags": ["sprites", "2d", "shader"],
+        "skipPerf": true
+    },
+    {
+        "id": 93,
+        "slug": "scene93-sprite-customshader-palette",
+        "name": "Scene 93 — Sprite Custom Shader (palette remap)",
+        "maxMad": 0.02,
+        "maxRawKB": 24,
+        "description": "25×10 pure-2D cutout-sprite grid recoloured through a 256×1 palette lookup texture (atlas red channel indexes the palette, source alpha preserved), nearest-filtered for bit-exact lookup. BJS SpriteRenderer oracle renders a pre-baked palette-remapped atlas.",
+        "tags": ["sprites", "2d", "shader"],
+        "skipPerf": true
+    },
+    {
+        "id": 94,
+        "slug": "scene94-billboard-customshader-params",
+        "name": "Scene 94 — Billboard Custom Shader (params tint)",
+        "maxMad": 0.02,
+        "maxRawKB": 68,
+        "description": "World-space facing billboards drawn through an opt-in custom fragment shader that multiplies the atlas sample and per-sprite tint by a constant fx.params vec4 set once before the first frame (no fx.time, fully deterministic). BJS SpriteManager oracle pre-multiplies each sprite color by the same params.",
+        "tags": ["sprites", "billboards", "shader"],
+        "skipPerf": true
+    },
+    {
+        "id": 95,
+        "slug": "scene95-billboard-customshader-palette",
+        "name": "Scene 95 — Billboard Custom Shader (palette remap)",
+        "maxMad": 0.02,
+        "maxRawKB": 68,
+        "description": "World-space facing billboards recoloured through a 256×1 palette lookup texture (cutout atlas red channel indexes the palette, source alpha preserved), nearest-filtered for bit-exact lookup. BJS SpriteManager oracle renders a pre-baked palette-remapped atlas.",
+        "tags": ["sprites", "billboards", "shader"],
+        "skipPerf": true
+    },
+    {
+        "id": 96,
+        "slug": "scene96-sprite-uvoffset-parallax",
+        "name": "Scene 96 — Sprite uvOffset Parallax",
+        "maxMad": 0.02,
+        "maxRawKB": 16,
+        "description": "20×9 pure-2D sprite grid sampling one tileable atlas tile (repeat wrap, nearest) where each horizontal band carries a different fixed per-sprite uvOffset (uvScroll), shifting the sampled UV in the vertex stage — the building block for parallax / infinite-scroll backgrounds. BJS SpriteRenderer oracle bakes the same effect into a per-offset rolled-tile atlas selected by cellIndex.",
+        "tags": ["sprites", "2d", "uvoffset"],
+        "skipPerf": true
+    },
+    {
+        "id": 97,
+        "slug": "scene97-sprite-multiply-blend",
+        "name": "Scene 97 — Sprite Multiply Blend",
+        "maxMad": 0.02,
+        "maxRawKB": 21,
+        "description": "25×10 pure-2D sprite grid drawn with the opt-in spriteBlendMultiply blend mode (result = src.rgb * dst.rgb) over a light, non-black clear colour so the opaque icon sprites darken / tint the background. Fully static / deterministic. BJS SpriteRenderer oracle draws the same atlas with ALPHA_MULTIPLY (DST_COLOR / ZERO), matching the multiply RGB math including anti-aliased sprite edges.",
+        "tags": ["sprites", "2d", "blend"],
+        "skipPerf": true
+    },
+    {
+        "id": 98,
+        "slug": "scene98-billboard-additive-blend",
+        "name": "Scene 98 — Billboard Additive Blend",
+        "maxMad": 0.02,
+        "maxRawKB": 62,
+        "description": "World-space facing billboards drawn with the opt-in billboardBlendAdditive blend mode (src-alpha, one); several large overlapping billboards in front of two boxes make the additive brightening obvious. Fully static / deterministic. BJS SpriteManager oracle uses ALPHA_ONEONE with each sprite's RGB pre-multiplied by its own alpha so one*(rgb*a) matches src-alpha*rgb for the opaque cells.",
+        "tags": ["sprites", "billboards", "blend"],
+        "skipPerf": true
+    },
+    {
         "id": 110,
         "slug": "scene110-rtt-override",
         "name": "Scene 110 — RTT with material override",
@@ -1230,7 +1301,8 @@
         "slug": "scene176-mosquito-amber",
         "name": "Scene 176 - MosquitoInAmber",
         "maxMad": 0.5,
-        "maxRawKB": 95,
+        "maxRawKB": 96,
+        "note": "Ceiling raised 95->96 (user-approved) to absorb shared glTF-core growth (~1.1 KB raw) from native interleaved-buffer support in #157; the de-stride/interleave plumbing lives in mesh core, so every glTF scene grew ~1.1 KB.",
         "description": "KhronosGroup MosquitoInAmber.gltf (KHR_materials_transmission + ior + volume) against the studio.env HDR environment used as IBL and a blurred HDR skybox, with frame-graph scene-texture transmission.",
         "tags": ["pbr", "gltf", "env", "transmission", "volume", "skybox"],
         "skipPerf": true,
@@ -1268,5 +1340,49 @@
         "tags": ["pbr", "gltf", "clustered", "lights"],
         "skipPerf": true,
         "bundleTimeoutMs": 180000
+    },
+    {
+        "id": 210,
+        "slug": "scene210-xmp-metadata-cube",
+        "name": "Scene 210 — XMP Metadata Cube",
+        "maxMad": 0.2,
+        "maxRawKB": 71,
+        "description": "KhronosGroup XmpMetadataRoundedCube.glb exercising the KHR_xmp_json_ld extension; JSON-LD metadata packets are surfaced on the AssetContainer with zero render impact, rendered in environmentSpecular.env with a skybox.",
+        "tags": ["pbr", "gltf", "xmp", "metadata", "env", "skybox"],
+        "skipPerf": true,
+        "bundleTimeoutMs": 120000
+    },
+    {
+        "id": 211,
+        "slug": "scene211-meshopt-brainstem",
+        "name": "Scene 211 — BrainStem Meshopt",
+        "maxMad": 0.2,
+        "maxRawKB": 86,
+        "description": "KhronosGroup BrainStem (glTF-Meshopt-EXT) exercising EXT_meshopt_compression + KHR_mesh_quantization; skinned and animated, decoded via dynamic-imported loader features so non-meshopt scenes pay nothing. Frozen via seekTime for deterministic parity.",
+        "tags": ["pbr", "gltf", "meshopt", "quantization", "skeleton", "animation"],
+        "skipPerf": true,
+        "bundleTimeoutMs": 120000
+    },
+    {
+        "id": 212,
+        "slug": "scene212-gltf-dispersion",
+        "name": "Scene 212 - DispersionTest glTF",
+        "maxMad": 0.6,
+        "maxRawKB": 98,
+        "note": "Native-res floor ~0.44 locally; cloud (BrowserStack OSX/Chrome) parity measures ~0.59 due to GPU/driver differences in MSAA edge-resolve on chromatic refraction through a high-frequency checker (BJS bit-exact, optimally aligned, interiors pixel-identical). Ceiling 0.6 covers cloud variance. In-family with iridescence (0.4) / mosquito (0.5).",
+        "description": "KhronosGroup DispersionTest.glb using KHR_materials_dispersion (per-channel chromatic refraction) on a 5x5 grid of transmissive prisms (KHR_materials_transmission + volume + ior), rendered in studio.env with frame-graph scene-texture transmission.",
+        "tags": ["pbr", "gltf", "transmission", "volume", "dispersion", "env", "skybox"],
+        "skipPerf": true,
+        "bundleTimeoutMs": 120000
+    },
+    {
+        "id": 213,
+        "slug": "scene213-gridmaterial",
+        "name": "Scene 213 — GridMaterial",
+        "maxMad": 0.01,
+        "maxRawKB": 44,
+        "description": "Four meshes shaded by the procedural unlit GridMaterial — an opaque anti-aliased teal ground, a useMaxLine orange sphere whose object-space grid wraps the curved surface, a transparent alpha-blended cyan box (opacity 0.6), and a hard-cutoff antialias:false pink box — validated against a Babylon.js @babylonjs/materials GridMaterial oracle with identical per-mesh grid params, camera, and 4x MSAA.",
+        "tags": ["materials", "grid", "procedural"],
+        "skipPerf": true
     }
 ]
