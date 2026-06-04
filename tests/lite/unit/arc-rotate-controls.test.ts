@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { attachControl, setCameraLimits } from "../../../packages/babylon-lite/src/camera/arc-rotate-controls";
+import { createArcRotateCamera } from "../../../packages/babylon-lite/src/camera/arc-rotate";
 import type { ArcRotateCamera } from "../../../packages/babylon-lite/src/camera/arc-rotate";
 import type { SceneContext } from "../../../packages/babylon-lite/src/scene/scene";
 
@@ -46,20 +47,9 @@ function fire(canvas: FakeCanvas, type: string, ev: unknown): void {
 }
 
 function makeCamera(radius = 10): ArcRotateCamera {
-    return {
-        alpha: 0,
-        beta: 1,
-        radius,
-        fov: 0.8,
-        inertia: 0.9,
-        panningInertia: 0.9,
-        inertialAlphaOffset: 0,
-        inertialBetaOffset: 0,
-        inertialRadiusOffset: 0,
-        inertialPanningX: 0,
-        inertialPanningY: 0,
-        target: { x: 0, y: 0, z: 0 },
-    } as unknown as ArcRotateCamera;
+    // Use the real factory so the alpha/beta/radius setters (and the
+    // setCameraLimits self-clamp hook they invoke) are exercised, not stubbed.
+    return createArcRotateCamera(0, 1, radius, { x: 0, y: 0, z: 0 });
 }
 
 function makeScene(): SceneContext {
@@ -210,8 +200,8 @@ describe("setCameraLimits + clamping", () => {
         let maxSeen = cam.radius;
         for (let i = 0; i < 60; i++) {
             beforeRender(scene);
-            // The enforcement step runs after inertia integration, so the radius
-            // the frame would render with must never exceed the wall.
+            // The camera self-clamps inside its radius setter as inertia integrates,
+            // so the radius the frame would render with never exceeds the wall.
             maxSeen = Math.max(maxSeen, cam.radius);
         }
         expect(maxSeen).toBeLessThanOrEqual(6);
@@ -232,6 +222,57 @@ describe("setCameraLimits + clamping", () => {
         // The per-frame enforcement clamps the direct radius write before render.
         beforeRender(scene);
         expect(cam.radius).toBe(6);
+    });
+
+    it("clamps the pinch radius write immediately, before any _beforeRender runs", () => {
+        // Regression: the pinch handler writes radius directly. If it leaves an
+        // out-of-limit value until the per-frame `enforce` step, other
+        // _beforeRender callbacks that read the camera earlier in the frame
+        // (e.g. a camera-pinned skybox sync) observe a transient far-flung pose
+        // for one frame — the source of the mobile pinch-zoom "blink".
+        const canvas = makeCanvas();
+        const cam = makeCamera(6);
+        const scene = makeScene();
+        attachControl(cam, canvas as unknown as HTMLCanvasElement, scene);
+        setCameraLimits(cam, { lowerRadiusLimit: 4, upperRadiusLimit: 6 }, scene);
+
+        // Pinch fingers together → radius would grow to 12 (6 * 200/100).
+        fire(canvas, "touchstart", touchEvent([touch(1, 0, 0), touch(2, 200, 0)]));
+        fire(canvas, "touchmove", touchEvent([touch(1, 50, 0), touch(2, 150, 0)]));
+        // No beforeRender yet: the radius must already be clamped to the wall.
+        expect(cam.radius).toBe(6);
+
+        // Pinch fingers apart → radius would shrink to 3 (6 * 100/200); clamp up.
+        fire(canvas, "touchstart", touchEvent([touch(1, 0, 0), touch(2, 100, 0)]));
+        fire(canvas, "touchmove", touchEvent([touch(1, 0, 0), touch(2, 200, 0)]));
+        expect(cam.radius).toBe(4);
+    });
+
+    it("does NOT clamp the pinch write when no limits were set (opt-in: zero clamp code in the gesture)", () => {
+        const canvas = makeCanvas();
+        const cam = makeCamera(6);
+        const scene = makeScene();
+        // attachControl but NO setCameraLimits → the input-time clamp hook is
+        // never installed, so the pinch writes radius freely (the per-frame
+        // enforcement that bounds it is what setCameraLimits adds, opt-in).
+        attachControl(cam, canvas as unknown as HTMLCanvasElement, scene);
+
+        fire(canvas, "touchstart", touchEvent([touch(1, 0, 0), touch(2, 200, 0)]));
+        fire(canvas, "touchmove", touchEvent([touch(1, 50, 0), touch(2, 150, 0)]));
+        expect(cam.radius).toBe(12); // 6 * 200/100, unclamped
+    });
+
+    it("stops clamping the pinch write after the limits disposer runs", () => {
+        const canvas = makeCanvas();
+        const cam = makeCamera(6);
+        const scene = makeScene();
+        attachControl(cam, canvas as unknown as HTMLCanvasElement, scene);
+        const dispose = setCameraLimits(cam, { lowerRadiusLimit: 4, upperRadiusLimit: 6 }, scene);
+        dispose();
+
+        fire(canvas, "touchstart", touchEvent([touch(1, 0, 0), touch(2, 200, 0)]));
+        fire(canvas, "touchmove", touchEvent([touch(1, 50, 0), touch(2, 150, 0)]));
+        expect(cam.radius).toBe(12); // hook cleared on dispose → unclamped again
     });
 
     it("clamps beta against an upper beta limit during inertial rotation", () => {
@@ -274,13 +315,19 @@ describe("setCameraLimits + clamping", () => {
         expect(cam.beta).toBe(0);
     });
 
-    it("disposer removes the per-frame enforcement step", () => {
+    it("installs no per-frame step and self-clamps on move; the disposer stops the clamp", () => {
         const cam = makeCamera(10);
         const scene = makeScene();
         const dispose = setCameraLimits(cam, { lowerRadiusLimit: 4, upperRadiusLimit: 6 }, scene);
-        expect((scene as unknown as { _beforeRender: unknown[] })._beforeRender.length).toBe(1);
-        dispose();
+        // Enforcement is via the camera's setters, not a scene hook — nothing pushed.
         expect((scene as unknown as { _beforeRender: unknown[] })._beforeRender.length).toBe(0);
+        // A direct move past a bound is clamped immediately by the setter.
+        cam.radius = 100;
+        expect(cam.radius).toBe(6);
+        // After dispose the hook is gone, so the camera moves freely again.
+        dispose();
+        cam.radius = 100;
+        expect(cam.radius).toBe(100);
     });
 
     it("clamps immediately even without a scene (one-shot), registering no per-frame step", () => {

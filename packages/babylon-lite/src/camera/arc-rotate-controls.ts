@@ -52,24 +52,29 @@ function clampCameraToLimits(camera: ArcRotateCamera): void {
 
 /**
  * Configure orbit/zoom limits on an ArcRotateCamera. This is fully opt-in and
- * self-contained: it touches nothing in {@link attachControl}'s per-frame loop, so
- * cameras that never call it pay zero cost and run no clamping code.
+ * self-contained: cameras that never call it pay zero cost and bundle no clamping
+ * code (the camera's scalar setters call an undefined hook).
  *
  * What it does:
  *  1. Stores the provided bounds on the camera and clamps the current pose into
  *     range right away (inertia zeroed), so enabling limits never causes a jump.
- *  2. If a `scene` is given, registers a per-frame enforcement step that runs
- *     *after* the controls' inertia integration each frame. Because the clamp is
- *     the last mutation before the frame renders — never the first — inertia/pinch
- *     that pushed past a bound is corrected before display, with no overshoot-then
- *     -snap jiggle (the failure mode of clamping in an `onBeforeRender` callback,
- *     which prepends and therefore runs before inertia is applied).
+ *  2. Installs a self-clamp hook on the camera (`_clampToLimits`). The
+ *     alpha/beta/radius setters invoke it on every mutation, so any caller —
+ *     pinch direct-write, inertial overshoot, auto-rotate — is snapped back to
+ *     the wall in the same statement that pushed past it. The camera is therefore
+ *     never observably out of bounds at any point a per-frame callback reads it
+ *     (e.g. a camera-pinned skybox), eliminating both the overshoot-then-snap
+ *     jiggle and the one-frame clip "blink" of a deferred per-frame clamp.
  *
  * Only the fields present on `limits` are written, so calls compose; pass a field
  * as `undefined` to remove that bound. Returns a disposer that removes the
- * per-frame enforcement step (a no-op when no `scene` was supplied).
+ * self-clamp hook.
+ *
+ * The optional `scene` parameter is accepted for backward compatibility and is
+ * unused — enforcement no longer needs a per-frame scene hook.
  */
 export function setCameraLimits(camera: ArcRotateCamera, limits: ArcRotateCameraLimits, scene?: SceneContext): () => void {
+    void scene; // accepted for backward compatibility; no per-frame scene hook is needed anymore
     if ("lowerAlphaLimit" in limits) {
         camera.lowerAlphaLimit = limits.lowerAlphaLimit;
     }
@@ -88,19 +93,19 @@ export function setCameraLimits(camera: ArcRotateCamera, limits: ArcRotateCamera
     if ("upperRadiusLimit" in limits) {
         camera.upperRadiusLimit = limits.upperRadiusLimit;
     }
-    clampCameraToLimits(camera);
-
-    if (!scene) {
-        return () => {};
-    }
-
-    // Append (not unshift) so this runs after attachControl's inertia step.
+    // Install the self-clamp hook the camera's setters call on every move, then
+    // clamp the current pose once. The hook reference lives only on the limits
+    // path, so cameras that never call setCameraLimits pull none of
+    // clampCameraToLimits into their bundle. Re-entrancy is bounded: clamping a
+    // value writes it to exactly the bound, and the re-triggered hook finds it
+    // already in range and stops.
     const enforce = (): void => clampCameraToLimits(camera);
-    scene._beforeRender.push(enforce);
+    camera._clampToLimits = enforce;
+    enforce();
+
     return () => {
-        const idx = scene._beforeRender.indexOf(enforce);
-        if (idx >= 0) {
-            scene._beforeRender.splice(idx, 1);
+        if (camera._clampToLimits === enforce) {
+            camera._clampToLimits = undefined;
         }
     };
 }
@@ -114,10 +119,11 @@ export function setCameraLimits(camera: ArcRotateCamera, limits: ArcRotateCamera
  * - Pinch: zoom (touch, direct — no inertia)
  *
  * Input handlers accumulate into the camera's inertial offset properties.
- * Inertia is applied each frame via scene._beforeRender (single RAF loop).
+ * Inertia is applied each frame via scene._beforeRender (the engine's render
+ * loop); a scene is required for inertia, there is no standalone rAF fallback.
  *
- * Orbit/zoom limits are entirely opt-in via {@link setCameraLimits} and add no
- * code to this loop for cameras that don't use them.
+ * Orbit/zoom limits are entirely opt-in via {@link setCameraLimits}; the camera
+ * self-clamps in its setters, so this loop carries no limit code.
  *
  * Camera stays plain data — this function reads/writes its properties.
  * Returns a cleanup function to remove all listeners and the beforeRender hook.
@@ -135,7 +141,6 @@ export function attachControl(camera: ArcRotateCamera, canvas: HTMLCanvasElement
     let isPanning = false;
     let lastX = 0;
     let lastY = 0;
-    let animFrameId = 0;
 
     // Touch state for pinch-zoom
     const activeTouches = new Map<number, { x: number; y: number }>();
@@ -236,6 +241,9 @@ export function attachControl(camera: ArcRotateCamera, canvas: HTMLCanvasElement
             const p1 = iter.next().value!;
             const dist = Math.hypot(p1.x - p0.x, p1.y - p0.y);
             if (pinchStartDist > 0 && dist > 0) {
+                // Direct write — the camera's radius setter self-clamps to any
+                // configured orbit limits, so no transient out-of-bounds value
+                // is ever visible to a per-frame reader.
                 camera.radius = pinchStartRadius * (pinchStartDist / dist);
                 camera.radius = Math.max(0.01, camera.radius);
             }
@@ -322,19 +330,13 @@ export function attachControl(camera: ArcRotateCamera, canvas: HTMLCanvasElement
                 camera.inertialPanningY = 0;
             }
         }
-
-        // Only self-reschedule in fallback mode (own RAF loop)
-        if (!scene) {
-            animFrameId = requestAnimationFrame(applyInertia);
-        }
     }
 
+    // Inertia is integrated once per frame from the scene's render loop. Callers
+    // always supply a scene; without one the camera is simply static (no inertia),
+    // matching free-camera-controls — there is no standalone rAF fallback.
     if (scene) {
-        // Hook into the engine's render loop — single RAF chain
         scene._beforeRender.push(applyInertia);
-    } else {
-        // Fallback: own RAF loop (for callers that don't pass scene)
-        animFrameId = requestAnimationFrame(applyInertia);
     }
 
     const listeners: [string, EventListener, AddEventListenerOptions?][] = [
@@ -355,9 +357,6 @@ export function attachControl(camera: ArcRotateCamera, canvas: HTMLCanvasElement
     }
 
     return () => {
-        if (animFrameId) {
-            cancelAnimationFrame(animFrameId);
-        }
         if (scene) {
             const idx = scene._beforeRender.indexOf(applyInertia);
             if (idx >= 0) {
