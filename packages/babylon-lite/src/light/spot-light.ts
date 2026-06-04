@@ -7,6 +7,7 @@ import type { SceneNode } from "../scene/scene-node.js";
 import { createLightBase, applyWorldMatrixAccessors, ObservableVec3 } from "./light-base.js";
 import { localMatrixFromDirection } from "./light-matrix.js";
 import type { Mat4 } from "../math/types.js";
+import { allocateMat4 } from "../math/_matrix-allocator.js";
 
 export interface SpotLight extends LightBase {
     readonly lightType: "spot";
@@ -32,10 +33,10 @@ export interface SpotLight extends LightBase {
  * @returns Plain `SpotLight` data to be added to a scene via `addToScene`.
  */
 export function createSpotLight(position: [number, number, number], direction: [number, number, number], angle: number, exponent: number, intensity = 1.0): SpotLight {
-    const _localMatrix = new Float32Array(16) as Mat4;
-    const { wm, onDirty, lvs } = createLightBase(() =>
-        localMatrixFromDirection(light.direction.x, light.direction.y, light.direction.z, light.position.x, light.position.y, light.position.z, _localMatrix)
-    );
+    const _localMatrix: Mat4 = allocateMat4();
+    const { wm, onDirty, lvs } = createLightBase(() => {
+        return localMatrixFromDirection(light.direction.x, light.direction.y, light.direction.z, light.position.x, light.position.y, light.position.z, _localMatrix);
+    });
 
     // Pre-compute cosHalfAngle; updated via Object.defineProperty when angle changes
     let _angle = angle;

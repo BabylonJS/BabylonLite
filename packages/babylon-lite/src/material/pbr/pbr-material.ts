@@ -5,7 +5,7 @@
 
 import type { Texture2D } from "../../texture/texture-2d.js";
 import type { MeshGroupBuilder } from "../../render/renderable.js";
-import type { SceneContextInternal } from "../../scene/scene.js";
+import type { SceneContext } from "../../scene/scene.js";
 import type { Material } from "../material.js";
 import {
     _getPbrExts,
@@ -29,7 +29,7 @@ import {
 /** Lazy-imports the PBR renderable builder and builds the pipeline.
  *  Thin instances are handled by the fragment composer automatically. */
 export const pbrGroupBuilder: MeshGroupBuilder = async (scene, meshes) => {
-    const envTex = (scene as SceneContextInternal)._envTextures;
+    const envTex = (scene as SceneContext)._envTextures;
     const renderableMod = await import("./pbr-renderable.js");
     const result = await renderableMod.buildPbrRenderables(scene, meshes, envTex);
     // Wire the per-mesh rebuild closure used by material swap + per-pass override.
@@ -108,6 +108,11 @@ export interface PbrMaterialProps extends Material {
     /** Sheen layer configuration. When set with isEnabled=true, adds a soft velvet-like
      *  sheen layer (like fabric or cloth). Tree-shakable — only bundled when used. */
     sheen?: SheenProps;
+    /** Iridescence thin-film configuration. When set with isEnabled=true, replaces
+     *  base-layer F0 with a wavelength-dependent thin-film Fresnel blend.
+     *  Maps to BJS PBRMaterial.iridescence and KHR_materials_iridescence.
+     *  Tree-shakable — only bundled when used. */
+    iridescence?: IridescenceProps;
     /** When true, the albedo texture is in sRGB/gamma space (loaded as rgba8unorm)
      *  and the shader applies pow(baseColor, 2.2) for sRGB→linear conversion.
      *  Matches BJS PBRMaterial's Texture.gammaSpace=true behavior.
@@ -136,10 +141,6 @@ export interface PbrMaterialProps extends Material {
      *  `baseColorFactor`). When omitted or [1,1,1], no tint is applied.
      *  Only bundled/bound when the unlit extension is active. */
     unlitColor?: [number, number, number];
-}
-
-/** @internal Extended PbrMaterialProps with internal build group. */
-export interface PbrMaterialPropsInternal extends PbrMaterialProps {
     /** @internal True when any of the material's textures carries `_hasTx=true`
      *  (KHR_texture_transform). Stamped once by the glTF loader's slow path
      *  so the renderer doesn't re-scan 5 textures per mesh. */
@@ -236,6 +237,24 @@ export interface SheenProps {
     albedoScaling?: boolean;
 }
 
+/** Iridescence thin-film properties. Maps to BJS PBRMaterial.iridescence and KHR_materials_iridescence. */
+export interface IridescenceProps {
+    /** Whether iridescence is active. Default false. */
+    isEnabled?: boolean;
+    /** Iridescence blend intensity (0=off, 1=full). Default 1.0 for native PBR; glTF default is supplied by the loader. */
+    intensity?: number;
+    /** Thin-film index of refraction. Default 1.3. */
+    indexOfRefraction?: number;
+    /** Minimum film thickness in nanometres. Default 100. */
+    minimumThickness?: number;
+    /** Maximum film thickness in nanometres. Default 400. */
+    maximumThickness?: number;
+    /** Optional intensity texture; R channel multiplies intensity. */
+    texture?: Texture2D;
+    /** Optional thickness texture; G channel lerps minimum→maximum thickness. */
+    thicknessTexture?: Texture2D;
+}
+
 /** Anisotropy layer properties. Maps to BJS PBRMaterial.anisotropy sub-object.
  *  Stretches specular reflections along the tangent direction. */
 export interface AnisotropyProps {
@@ -296,6 +315,10 @@ export interface RefractionProps {
      *  sample offset depth (KHR_materials_volume — matches BJS
      *  `useThicknessAsDepth`). Default true when volume is present. */
     useThicknessAsDepth?: boolean;
+    /** Chromatic dispersion strength (KHR_materials_dispersion.dispersion).
+     *  Splits the refracted ray into per-RGB index-of-refraction offsets,
+     *  producing chromatic aberration. Requires volume. Default 0 (off). */
+    dispersion?: number;
 }
 
 /** Tint sub-feature. Controls absorption tint color for transmittance. */
@@ -328,7 +351,7 @@ export function createPbrMaterial(props?: Partial<PbrMaterialProps>): PbrMateria
         ...props,
         _buildGroup: pbrGroupBuilder,
         _uboVersion: 0,
-    } as PbrMaterialPropsInternal;
+    } as PbrMaterialProps;
     return mat;
 }
 

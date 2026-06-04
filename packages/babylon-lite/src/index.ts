@@ -18,6 +18,7 @@ export {
     unregisterScene,
 } from "./scene/scene.js";
 export type { SceneContextOptions } from "./scene/scene.js";
+export { getFloatingOriginOffset } from "./large-world/floating-origin.js";
 
 // Subtree visibility toggle (used to hide a node before deferring its disposal,
 // e.g. streaming voxel chunks). Standalone module — bundled only when used.
@@ -70,7 +71,8 @@ export type { BloomPostProcessTask, BloomPostProcessTaskConfig } from "./post-pr
 
 // ─── Camera ──────────────────────────────────────────────────────────
 export { createArcRotateCamera } from "./camera/arc-rotate.js";
-export { attachControl } from "./camera/arc-rotate-controls.js";
+export { attachControl, setCameraLimits } from "./camera/arc-rotate-controls.js";
+export type { ArcRotateCameraLimits } from "./camera/arc-rotate-controls.js";
 export { createFreeCamera } from "./camera/free-camera.js";
 export { attachFreeControl } from "./camera/free-camera-controls.js";
 
@@ -80,6 +82,7 @@ export type { HemisphericLight } from "./light/hemispheric.js";
 export { createPointLight } from "./light/point-light.js";
 export { createDirectionalLight } from "./light/directional-light.js";
 export { createSpotLight } from "./light/spot-light.js";
+export type { ClusteredLightContainer, ClusteredLightContainerOptions, ClusteredPointLight, ClusteredPointLightOptions } from "./light/clustered.js";
 export type { LightBase } from "./light/types.js";
 export { setMaxLights, MAX_LIGHTS } from "./light/types.js";
 
@@ -119,6 +122,8 @@ export { createStandardMaterial } from "./material/standard/create-standard-mate
 export { createStandardNoColorMaterialView } from "./material/standard/no-color-view.js";
 export { createPbrMaterial } from "./material/pbr/pbr-material.js";
 export { createShaderMaterial, setShaderUniform, setShaderTexture, setShaderFloat, setShaderVector3, setShaderMatrix } from "./material/shader/shader-material.js";
+export { createGridMaterial } from "./material/grid/grid-material.js";
+export type { GridMaterialOptions, GridVec3 } from "./material/grid/grid-material.js";
 export { createPbrNoColorMaterialView } from "./material/pbr/no-color-view.js";
 export { parseNodeMaterialFromSnippet } from "./material/node/node-material.js";
 export { createNodeNoColorMaterialView } from "./material/node/no-color-view.js";
@@ -198,7 +203,15 @@ export { mat4Compose } from "./math/mat4-compose.js";
 export type { Vec3, Vec3Tuple } from "./math/types.js";
 
 // ─── Thin Instances ──────────────────────────────────────────────────
-export { addThinInstance, removeThinInstance, setThinInstanceMatrix, setThinInstances, flushThinInstances, setThinInstanceColors } from "./mesh/thin-instance.js";
+export {
+    addThinInstance,
+    removeThinInstance,
+    setThinInstanceMatrix,
+    setThinInstances,
+    flushThinInstances,
+    setThinInstanceColors,
+    enableThinInstanceGpuCulling,
+} from "./mesh/thin-instance.js";
 export type { ThinInstanceData } from "./mesh/thin-instance.js";
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -289,8 +302,24 @@ export type { RenderTargetSignature } from "./engine/render-target.js";
 // ─── Sprites (2D) ────────────────────────────────────────────────────
 export type { SpriteAtlas, SpriteFrame, SpriteSampling, GridAtlasOptions, LoadAtlasOptions } from "./sprite/shared/sprite-atlas.js";
 export { createGridSpriteAtlas, loadSpriteAtlas } from "./sprite/shared/sprite-atlas.js";
+export type { SpriteAtlasFrameSource, SpriteAtlasPackOptions } from "./sprite/shared/sprite-atlas-packer.js";
+export { createSpriteAtlasFromFrames } from "./sprite/shared/sprite-atlas-packer.js";
 export type { Sprite2DLayer, Sprite2DLayerOptions, Sprite2DProps, Sprite2DView, Sprite2DDepthMode, SpriteBlendMode } from "./sprite/sprite-2d.js";
-export { createSprite2DLayer, addSprite2DIndex, updateSprite2DIndex, removeSprite2DIndex, clearSprite2DLayer, setSprite2DFrameIndex } from "./sprite/sprite-2d.js";
+export type { SpriteBlendDescriptor } from "./sprite/sprite-blend.js";
+export { spriteBlendAlpha, spriteBlendPremultiplied, spriteBlendAdditive, spriteBlendMultiply } from "./sprite/sprite-blend.js";
+export {
+    createSprite2DLayer,
+    addSprite2DIndex,
+    updateSprite2DIndex,
+    removeSprite2DIndex,
+    clearSprite2DLayer,
+    setSprite2DFrameIndex,
+    setSprite2DShaderParams,
+    setSprite2DUvOffset,
+} from "./sprite/sprite-2d.js";
+export type { CustomShaderTexture } from "./sprite/custom-shader-core.js";
+export type { Sprite2DCustomShader, Sprite2DCustomShaderOptions, Sprite2DCustomTexture } from "./sprite/sprite-custom-shader.js";
+export { createSprite2DCustomShader } from "./sprite/sprite-custom-shader.js";
 export type { Sprite2DHandle } from "./sprite/sprite-2d-handle.js";
 export { addSprite2D, updateSprite2D, removeSprite2D, setSprite2DFrame, getSprite2DHandleIndex, isSprite2DHandleAlive } from "./sprite/sprite-2d-handle.js";
 export { addDepthHostedSpriteLayer } from "./sprite/sprite-scene.js";
@@ -304,6 +333,8 @@ export type {
     BillboardDepthMode,
     BillboardBlendMode,
 } from "./sprite/billboard-sprite.js";
+export type { BillboardBlendDescriptor } from "./sprite/billboard-blend.js";
+export { billboardBlendAlpha, billboardBlendPremultiplied, billboardBlendCutout, billboardBlendAdditive } from "./sprite/billboard-blend.js";
 export {
     createFacingBillboardSystem,
     createAxisLockedBillboardSystem,
@@ -312,7 +343,10 @@ export {
     removeBillboardSpriteIndex,
     clearBillboardSprites,
     setBillboardSpriteFrameIndex,
+    setBillboardShaderParams,
 } from "./sprite/billboard-sprite.js";
+export type { BillboardCustomShader, BillboardCustomShaderOptions, BillboardCustomTexture } from "./sprite/billboard-custom-shader.js";
+export { createBillboardCustomShader } from "./sprite/billboard-custom-shader.js";
 export type { BillboardSpriteHandle } from "./sprite/billboard-sprite-handle.js";
 export {
     addBillboardSprite,
