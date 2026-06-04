@@ -73,6 +73,7 @@ stages:
             steps:
                 - checkout: self
                   fetchDepth: 0
+                  persistCredentials: true
 
                 - task: UseNode@1
                   inputs:
