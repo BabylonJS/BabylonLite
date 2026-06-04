@@ -35,7 +35,7 @@ import {
     createMeshFromData,
     createPbrMaterial,
     createSolidTexture2D,
-    createSphere,
+    onBeforeRender,
     setThinInstances,
     type EngineContext,
     type Mesh,
@@ -113,81 +113,6 @@ function clearToDegenerate(buf: Float32Array, instances: number): void {
     }
 }
 
-/** Build a 2-D cosmic gradient texture for the inside-out backdrop sphere.
- *  Encodes a vertical band (deep blue-black → indigo → magenta-purple horizon
- *  glow → near-black floor) with a soft horizontal nebula plume across the
- *  middle to give the camera a richly-coloured wash to frame the playfield
- *  against, instead of a flat dark wall. */
-function createGradientTexture(engine: EngineContext): ReturnType<typeof createSolidTexture2D> {
-    const device = (engine as unknown as { device: GPUDevice }).device;
-    const WIDTH = 256;
-    const HEIGHT = 256;
-    const data = new Uint8Array(WIDTH * HEIGHT * 4);
-    const stops: Array<[number, [number, number, number]]> = [
-        [0.0, [0.01, 0.02, 0.06]],
-        [0.32, [0.06, 0.05, 0.18]],
-        [0.55, [0.32, 0.10, 0.42]],
-        [0.72, [0.55, 0.18, 0.48]],
-        [0.88, [0.10, 0.04, 0.16]],
-        [1.0, [0.01, 0.01, 0.04]],
-    ];
-    function sampleStops(t: number): [number, number, number] {
-        for (let i = 0; i < stops.length - 1; i++) {
-            const [t0, c0] = stops[i]!;
-            const [t1, c1] = stops[i + 1]!;
-            if (t >= t0 && t <= t1) {
-                const k = (t - t0) / (t1 - t0);
-                return [c0[0] * (1 - k) + c1[0] * k, c0[1] * (1 - k) + c1[1] * k, c0[2] * (1 - k) + c1[2] * k];
-            }
-        }
-        return stops[stops.length - 1]![1];
-    }
-    for (let y = 0; y < HEIGHT; y++) {
-        const v = y / (HEIGHT - 1);
-        const base = sampleStops(v);
-        const plume = Math.exp(-Math.pow((v - 0.6) / 0.18, 2));
-        for (let x = 0; x < WIDTH; x++) {
-            const u = x / (WIDTH - 1);
-            const cloud =
-                0.55 +
-                0.25 * Math.sin(u * Math.PI * 2 + v * 4.7) +
-                0.20 * Math.sin(u * Math.PI * 6 + v * 9.2 + 1.3);
-            const k = plume * Math.max(0, cloud);
-            const r = base[0] + k * 0.28;
-            const g = base[1] + k * 0.08;
-            const b = base[2] + k * 0.35;
-            const o = (y * WIDTH + x) * 4;
-            data[o + 0] = Math.min(255, Math.round(r * 255));
-            data[o + 1] = Math.min(255, Math.round(g * 255));
-            data[o + 2] = Math.min(255, Math.round(b * 255));
-            data[o + 3] = 255;
-        }
-    }
-    const texture = device.createTexture({
-        size: { width: WIDTH, height: HEIGHT },
-        format: "rgba8unorm",
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
-    device.queue.writeTexture(
-        { texture },
-        data,
-        { bytesPerRow: WIDTH * 4, rowsPerImage: HEIGHT },
-        { width: WIDTH, height: HEIGHT },
-    );
-    return {
-        texture,
-        view: texture.createView(),
-        sampler: device.createSampler({
-            magFilter: "linear",
-            minFilter: "linear",
-            addressModeU: "repeat",
-            addressModeV: "clamp-to-edge",
-        }),
-        width: WIDTH,
-        height: HEIGHT,
-    };
-}
-
 export interface TetrisRenderer {
     /** Push current game state into per-color instance buffers, drain line-clear
      *  events into particle bursts + camera shake, and integrate particles.
@@ -204,11 +129,36 @@ export function createTetrisRenderer(engine: EngineContext, scene: SceneContext)
 
     // ── Camera ────────────────────────────────────────────────────────────
     const target = { x: 0, y: cellWorldY(BOARD_ROWS / 2) - 0.5, z: 0 };
-    const camera = createArcRotateCamera(Math.PI / 2 + 0.04, Math.PI / 2 - 0.06, 26, target);
+    const camera = createArcRotateCamera(Math.PI / 2 + 0.04, Math.PI / 2 - 0.06, 30, target);
     camera.nearPlane = 0.5;
     camera.farPlane = 400;
     scene.camera = camera;
     attachControl(camera, engine.canvas as HTMLCanvasElement, scene);
+
+    // ── Blurred environment skybox ───────────────────────────────────────────
+    // A camera-centred PBR box in `skyboxMode` samples the IBL cubemap along the
+    // view ray, blurred by its surface roughness (≈ BJS createDefaultSkybox with
+    // a microSurface < 1). This turns the loaded studio HDR into a soft, out-of-
+    // focus photographic backdrop with real depth and colour variation — far more
+    // alive than a flat clear colour — while staying unobtrusive behind the well.
+    const skybox = createBox(engine, (camera.farPlane - camera.nearPlane) / 2);
+    skybox.material = createPbrMaterial({
+        baseColorTexture: createSolidTexture2D(engine, 1, 1, 1),
+        // occ=1, roughness=0.45 (soft blur), metallic=1 → mirror the env directly.
+        ormTexture: createSolidTexture2D(engine, 1.0, 0.45, 1.0),
+        environmentIntensity: 1.0,
+        directIntensity: 0,
+        doubleSided: true,
+        skyboxMode: true,
+    });
+    const syncSkybox = (): void => {
+        const w = camera.worldMatrix;
+        skybox.position.set(w[12]!, w[13]!, w[14]!);
+    };
+    syncSkybox();
+    onBeforeRender(scene, syncSkybox);
+    addToScene(scene, skybox);
+
 
     // Camera limits — the ArcRotateCamera in babylon-lite has no built-in
     // bounds, so we clamp every frame. Radius bounds prevent the player from
@@ -216,8 +166,8 @@ export function createTetrisRenderer(engine: EngineContext, scene: SceneContext)
     // near plane) or pulling so far back that the well becomes a postage
     // stamp. Beta bounds prevent flipping over the top/bottom poles, which
     // would invert vertical input + leave the playfield upside-down.
-    const RADIUS_MIN = 22;
-    const RADIUS_MAX = 38;
+    const RADIUS_MIN = 24;
+    const RADIUS_MAX = 42;
     const BETA_MIN = Math.PI * 0.32;
     const BETA_MAX = Math.PI * 0.62;
     // Center the camera on the playfield middle and only let the player swing
@@ -233,15 +183,19 @@ export function createTetrisRenderer(engine: EngineContext, scene: SceneContext)
 
     // ── Lighting ──────────────────────────────────────────────────────────
     // IBL drives reflections + ambient; a low hemi adds floor lift and a
-    // strong directional key lights the front faces so each cube gets a tight
-    // specular highlight along its chamfered edges.
+    // strong directional key positioned just behind-and-above the resting
+    // camera so its specular highlight reflects straight back off the glossy
+    // front faces — i.e. the player sees a bright reflective glint on every
+    // block at the initial camera angle, not just on the chamfered edges.
     addToScene(scene, createHemisphericLight([0, 1, 0.25], 0.18));
-    const sun = createDirectionalLight([-0.45, -0.95, -0.35], 1.5);
+    const sun = createDirectionalLight([0.22, -0.5, -0.84], 2.2);
     addToScene(scene, sun);
 
     // Dark navy clear colour — used only for any viewport pixels the
     // backdrop sphere doesn't cover (it shouldn't, but cheap safety).
-    scene.clearColor = { r: 0.008, g: 0.012, b: 0.028, a: 1 };
+    // Pure black clear colour — only shows on any viewport pixels the HDR
+    // skybox doesn't cover (it shouldn't, but cheap safety).
+    scene.clearColor = { r: 0, g: 0, b: 0, a: 1 };
 
     function orm(roughness: number, metallic: number): ReturnType<typeof createSolidTexture2D> {
         return createSolidTexture2D(engine, 1.0, roughness, metallic);
@@ -252,87 +206,66 @@ export function createTetrisRenderer(engine: EngineContext, scene: SceneContext)
     // every material can drive its colour via `baseColorFactor` alone.
     const whiteTex = createSolidTexture2D(engine, 1.0, 1.0, 1.0);
 
-    // ── Cosmic backdrop ─────────────────────────────────────────────────
-    // Large inside-out sphere surrounding the camera, painted with an
-    // emissive vertical gradient (deep navy zenith → magenta horizon →
-    // dark purple floor) plus a soft nebula plume. Gives the playfield a
-    // rich coloured wash to sit against rather than a flat dark wall.
-    // Rendered far behind everything via a low renderOrder.
-    const backdropTex = createGradientTexture(engine);
-    const backdrop = createSphere(engine, { segments: 24, diameter: 220 });
-    backdrop.material = createPbrMaterial({
-        baseColorTexture: whiteTex,
-        baseColorFactor: [0, 0, 0, 1],
-        ormTexture: orm(1.0, 0.0),
-        emissiveTexture: backdropTex,
-        emissiveColor: [1.8, 1.8, 1.8],
-        environmentIntensity: 0,
-        directIntensity: 0,
-        doubleSided: true,
-    });
-    backdrop.renderOrder = -2000;
-    addToScene(scene, backdrop);
+    // The environment backdrop is a blurred PBR skybox box (built near the top of
+    // this function), so there's no procedural backdrop sphere here.
 
     // ── Static well frame ────────────────────────────────────────────────
-    // Floor: dark glossy slab that catches the colour bleed from blocks above.
-    const floor = createGround(engine, { width: BOARD_COLS + 1.4, height: 2.2 });
+    // Floor: a polished near-black slab. Low roughness lets it pick up soft
+    // environment highlights and the colour bleed from the blocks above, giving
+    // the well a reflective base that grounds the scene.
+    const floor = createGround(engine, { width: BOARD_COLS + 2.2, height: 2.8 });
     floor.material = createPbrMaterial({
         baseColorTexture: whiteTex,
-        baseColorFactor: [0.02, 0.025, 0.04, 1],
-        ormTexture: orm(0.35, 0.05),
-        environmentIntensity: 0.9,
-        directIntensity: 0.7,
+        baseColorFactor: [0.015, 0.018, 0.026, 1],
+        ormTexture: orm(0.12, 0.0),
+        environmentIntensity: 1.0,
+        directIntensity: 0.6,
+        enableSpecularAA: true,
     });
     floor.position.set(0, cellWorldY(BOARD_ROWS - 1) - 0.55, 0);
     addToScene(scene, floor);
 
-    // Back panel — a dim slab sitting just behind the playfield. Catches
-    // shadow gradients from the directional key and gives the camera a
-    // consistent dark backdrop so empty cells in the stack don't reveal
-    // the scene clear colour as a bright window.
+    // Back panel — a dark, slightly glossy backboard behind the playfield so the
+    // colourful blocks read against a deep, even surface rather than the busy
+    // skybox. Mid-low roughness keeps the environment reflection diffuse.
     const back = createBox(engine, 1);
     back.material = createPbrMaterial({
         baseColorTexture: whiteTex,
-        baseColorFactor: [0.05, 0.06, 0.1, 1],
-        ormTexture: orm(0.7, 0.0),
-        environmentIntensity: 0.4,
-        directIntensity: 0.6,
+        baseColorFactor: [0.018, 0.02, 0.028, 1],
+        ormTexture: orm(0.42, 0.0),
+        environmentIntensity: 0.7,
+        directIntensity: 0.45,
+        reflectance: 0.06,
     });
-    back.scaling.set(BOARD_COLS + 1.2, BOARD_ROWS + 1.2, 0.4);
+    back.scaling.set(BOARD_COLS + 1.6, BOARD_ROWS + 1.6, 0.4);
     back.position.set(0, (cellWorldY(0) + cellWorldY(BOARD_ROWS - 1)) / 2, -0.7);
     addToScene(scene, back);
 
-    // Side rails — thin neon-cyan bars that frame the well like an arcade
-    // cabinet edge. The emissive is bright (tone mapping handles the rolloff)
-    // so they read as glowing strips without bloom amplification.
-    for (const side of [-1, 1]) {
-        const rail = createBox(engine, 1);
-        rail.material = createPbrMaterial({
+    // Frame — a real 3-D dark-metal bezel around the left, right and top of the
+    // well (the floor closes the bottom). Polished metallic walls with genuine
+    // Z-thickness catch the studio reflections and define the play area as a
+    // solid cabinet, replacing the old flat neon strips.
+    const FRAME_CY = (cellWorldY(0) + cellWorldY(BOARD_ROWS - 1)) / 2;
+    const frameBars: { sx: number; sy: number; px: number; py: number }[] = [
+        { sx: 0.5, sy: BOARD_ROWS + 1.7, px: -(BOARD_COLS / 2 + 0.35), py: FRAME_CY },
+        { sx: 0.5, sy: BOARD_ROWS + 1.7, px: BOARD_COLS / 2 + 0.35, py: FRAME_CY },
+        { sx: BOARD_COLS + 1.7, sy: 0.5, px: 0, py: cellWorldY(0) + 0.85 },
+    ];
+    for (const f of frameBars) {
+        const bar = createBox(engine, 1);
+        bar.material = createPbrMaterial({
             baseColorTexture: whiteTex,
-            baseColorFactor: [0.04, 0.08, 0.12, 1],
-            ormTexture: orm(0.3, 0.2),
-            emissiveColor: [0.3, 1.1, 1.6],
-            environmentIntensity: 0.6,
-            directIntensity: 0.5,
+            baseColorFactor: [0.05, 0.055, 0.065, 1],
+            // Polished dark metal: low roughness + metallic mirrors the studio HDR.
+            ormTexture: orm(0.25, 1.0),
+            environmentIntensity: 1.15,
+            directIntensity: 0.9,
+            enableSpecularAA: true,
         });
-        rail.scaling.set(0.14, BOARD_ROWS + 0.6, 0.5);
-        rail.position.set(side * (BOARD_COLS / 2 + 0.1), (cellWorldY(0) + cellWorldY(BOARD_ROWS - 1)) / 2, -0.05);
-        addToScene(scene, rail);
+        bar.scaling.set(f.sx, f.sy, 1.3);
+        bar.position.set(f.px, f.py, -0.1);
+        addToScene(scene, bar);
     }
-
-    // Top rail — slim glowing capstone that matches the side rails.
-    const top = createBox(engine, 1);
-    top.material = createPbrMaterial({
-        baseColorTexture: whiteTex,
-        baseColorFactor: [0.04, 0.08, 0.12, 1],
-        ormTexture: orm(0.3, 0.2),
-        emissiveColor: [0.3, 1.1, 1.6],
-        environmentIntensity: 0.6,
-        directIntensity: 0.5,
-    });
-    top.scaling.set(BOARD_COLS + 0.5, 0.14, 0.5);
-    top.position.set(0, cellWorldY(0) + 0.6, -0.05);
-    addToScene(scene, top);
 
     // ── Thin-instanced piece blocks ──────────────────────────────────────
     // Chamfered cube geometry (shared across all 7 colour meshes via
@@ -360,13 +293,13 @@ export function createTetrisRenderer(engine: EngineContext, scene: SceneContext)
             baseColorFactor: [col[0], col[1], col[2], 1],
             // Glossy enamel: low roughness for a crisp specular highlight, no
             // metallic so the dielectric reflection keeps the colour pure.
-            ormTexture: orm(0.18, 0.0),
+            ormTexture: orm(0.13, 0.0),
             // Modest self-emission so colours stay vivid in shadowed faces
             // and so each block's silhouette has a faint halo for the bloom
             // post-process to pick up.
             emissiveColor: [col[0] * 0.15, col[1] * 0.15, col[2] * 0.15],
-            environmentIntensity: 0.95,
-            directIntensity: 1.4,
+            environmentIntensity: 1.15,
+            directIntensity: 1.6,
             // Specular AA widens the BRDF based on normal curvature so the
             // sharp specular spike on cube edges doesn't shimmer.
             enableSpecularAA: true,

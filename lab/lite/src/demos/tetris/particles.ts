@@ -111,10 +111,13 @@ export class TetrisParticles {
             dummyColors,
         );
         dummy.material = this.material;
-        // Park the dummy far below the playfield and shrink it to nothing so
-        // it can never be visible. (Renderable still gets built, which is the
-        // whole point.)
-        dummy.position.y = -1e6;
+        // Park the dummy just below the floor and shrink it to nothing so it
+        // can never be visible. (Renderable still gets built, which is the
+        // whole point.) NOTE: keep this near the scene origin — the scene
+        // auto-sizes the skybox from mesh *translation* bounds (ignoring our
+        // scale=0), so parking it at a huge offset would blow the skybox up
+        // past the camera far plane and clip the background away entirely.
+        dummy.position.y = -2;
         dummy.scaling.x = 0;
         dummy.scaling.y = 0;
         dummy.scaling.z = 0;

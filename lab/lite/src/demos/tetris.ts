@@ -22,11 +22,14 @@ import {
 import { createGame, hardDrop, moveLeft, moveRight, restartGame, rotateCCW, rotateCW, softDrop, tickGame, togglePause } from "./tetris/game.js";
 import { createTetrisRenderer } from "./tetris/renderer.js";
 import { createTetrisHud } from "./tetris/hud.js";
-import { demoAssetUrl } from "./demo-asset-url.js";
 
-// Studio HDR env (same as mosquito-amber) — bright key + soft fill from every
-// angle, gives the glossy enamel cubes something specular to reflect.
-const ENV_URL = "https://assets.babylonjs.com/environments/studio.env";
+// A studio HDR environment drives the IBL — reflections + ambient on every PBR
+// material. The visible background is a *blurred* PBR skybox box that samples
+// this same environment along the view ray (see renderer.ts), giving a soft
+// photographic backdrop with real lighting variation rather than a flat colour.
+// Stored locally under lab/public so it loads same-origin.
+const ENV_URL = "/textures/environment.env";
+const BRDF_URL = "/brdf-lut.png";
 
 // Repeat rates for held arrow keys (ms).
 const DAS_DELAY = 170;
@@ -64,21 +67,19 @@ async function main(): Promise<void> {
     // jagged staircase we'd get from a sampleCount=1 source target.
     const scene = createSceneContext(engine);
 
-    // HDR IBL — drives reflections + ambient on all PBR materials. We don't
-    // want the env as a visible skybox (it would compete with the dark backdrop
-    // designed to make the colored blocks pop), so skip both skybox + ground.
+    // Environment drives the IBL (reflections + ambient on all PBR materials)
+    // only — the visible background is a blurred PBR skybox box built in the
+    // renderer, so we skip the built-in skybox here. skipGround keeps the
+    // environment's ground plane out — the playfield has its own floor slab.
     await loadEnvironment(scene, ENV_URL, {
+        brdfUrl: BRDF_URL,
         skipSkybox: true,
         skipGround: true,
-        brdfUrl: demoAssetUrl("./brdf-lut.png", import.meta.url),
     });
 
-    // ACES-style tone mapping so the bright emissive particle chips don't
-    // clip to pure white. Slightly dialled-down exposure keeps the dark
-    // backdrop punchy.
-    scene.imageProcessing.toneMappingEnabled = true;
-    scene.imageProcessing.exposure = 0.95;
-    scene.imageProcessing.contrast = 1.15;
+    // loadEnvironment enables ACES tone mapping by default (exposure 0.8,
+    // contrast 1.2). Keep those — they read cleanly against the studio backdrop
+    // without crushing the glossy block highlights.
 
     const game = createGame();
     const renderer = createTetrisRenderer(engine, scene);
