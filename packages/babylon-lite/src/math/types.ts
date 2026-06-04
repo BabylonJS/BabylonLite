@@ -40,6 +40,7 @@ export interface Color4 {
  *  Float64Array). Internal kernels and uploaders use the `Mat4Storage` view
  *  defined below to access the concrete typed array behind the brand. */
 export interface Mat4 {
+    /** @internal */
     readonly __brand: "Mat4";
     readonly length: 16;
     readonly [index: number]: number;

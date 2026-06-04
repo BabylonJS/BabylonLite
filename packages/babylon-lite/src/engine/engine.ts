@@ -1,4 +1,4 @@
-import type { MeshInternal } from "../mesh/mesh.js";
+import type { Mesh } from "../mesh/mesh.js";
 import type { Texture2D, Texture2DOptions } from "../texture/texture-2d.js";
 import { _setHpmAllocator } from "../math/_matrix-allocator.js";
 
@@ -62,65 +62,31 @@ export interface EngineContext {
      *  the default `Infinity` is unclamped (full devicePixelRatio). Mutable at runtime — set
      *  before the next `resizeEngine` to take effect (mirrors `setHardwareScalingRatio`). */
     maxDevicePixelRatio: number;
-}
 
-/**
- * Minimal surface an engine sees for anything it renders. Scenes (and any other
- * future renderable thing) register themselves as a `RenderingContext` and
- * own their own update / record logic. Engine knows nothing of scene internals.
- */
-export interface RenderingContext {
-    /** Draw calls produced by pre-pass work during `_update` (shadows + pre-passes). */
-    _drawCallsPre: number;
-    /** Clear color used when this context is the first active one in a frame. */
-    clearColor: GPUColorDict;
-    /** Run per-frame update work (beforeRender hooks, shadow + pre-passes, UBO updates,
-     *  transparent sort). Reads / mutates engine state via `engine._currentEncoder` and
-     *  `engine._currentDelta`. */
-    _update(): void;
-    /** Drive this context's GPU work — typically delegates to
-     *  `frameGraph.execute()`. Returns draw-call count. */
-    _record(): number;
-    /** Optional. Called by the engine when the canvas backing-store size changes.
-     *  Implementations should rebuild any canvas-sized GPU resources (e.g. ask
-     *  their frame graph to rebuild so render targets get re-allocated). */
-    _resize?(): void;
-}
-
-/** @internal */
-interface DeviceLostRecoveryCapture {
-    u(tex: Texture2D, url: string, opts: Texture2DOptions): void;
-    s(tex: Texture2D, r: number, g: number, b: number, a: number): void;
-    b(tex: Texture2D, bitmap: ImageBitmap | null, srgb: boolean, mipMaps: boolean, fallback?: Uint8Array): void;
-    m(
-        mesh: MeshInternal,
-        uv2s: Float32Array | null | undefined,
-        tangents: Float32Array | null | undefined,
-        colors: Float32Array | null | undefined,
-        gpuIndices: Uint16Array | Uint32Array,
-        indexFormat: GPUIndexFormat
-    ): void;
-}
-
-/** @internal Engine with GPU internals exposed. Not re-exported from index.ts. */
-export interface EngineContextInternal extends EngineContext {
-    device: GPUDevice;
-    readonly context: GPUCanvasContext;
-    readonly alphaMode: GPUCanvasAlphaMode;
+    /** @internal */
+    _device: GPUDevice;
+    /** @internal */
+    readonly _context: GPUCanvasContext;
+    /** @internal */
+    readonly _alphaMode: GPUCanvasAlphaMode;
+    /** @internal */
     _dlr?: DeviceLostRecoveryCapture;
+    /** @internal */
     _animFrameId: number;
+    /** @internal */
     _renderFn: ((now: number) => void) | null;
-    /** Registered rendering contexts in render order (first clears; subsequent overlay). */
+    /** @internal Registered rendering contexts in render order (first clears; subsequent overlay). */
     _renderingContexts: RenderingContext[];
 
     // ─── Per-frame transient state ─────────────────────────────────────
-    /** Encoder being filled this frame. Set by `renderFrame` before each context's
+    /** @internal Encoder being filled this frame. Set by `renderFrame` before each context's
      *  `_update`/`_record`; consumed by frame-graph tasks and pre-passes. */
     _currentEncoder: GPUCommandEncoder;
-    /** Swapchain view acquired once per frame before contexts record. */
+    /** @internal Swapchain view acquired once per frame before contexts record. */
     _swapchainView: GPUTextureView;
-    /** Frame delta in ms (read by scenes that don't override fixedDeltaMs). */
+    /** @internal Frame delta in ms (read by scenes that don't override fixedDeltaMs). */
     _currentDelta: number;
+    /** @internal */
     _cbs: GPUCommandBuffer[];
 
     /** @internal Per-frame floating-origin offset updater. Set when the engine
@@ -131,7 +97,7 @@ export interface EngineContextInternal extends EngineContext {
      *  bundle. The function reads `scene.camera.worldMatrix` and writes the
      *  resulting world position into `scene._floatingOriginOffset`, bumping
      *  `scene._floatingOriginVersion` whenever the value changes. */
-    _updateFOOffset?: (scene: import("../scene/scene-core.js").SceneContextInternal) => void;
+    _updateFOOffset?: (scene: import("../scene/scene-core.js").SceneContext) => void;
 
     /** @internal Per-renderable update closure wrapper. Set when the engine
      *  was created with `useFloatingOrigin: true`. Wraps a renderable's bare
@@ -142,7 +108,7 @@ export interface EngineContextInternal extends EngineContext {
      *  FO is off, so non-LWR renderables skip FO version tracking entirely
      *  and stay in the slim shared closure (~80-150 bytes lighter per bundle
      *  for FO-off scenes). */
-    _wrapRenderableForFO?: (inner: () => void, scene: import("../scene/scene-core.js").SceneContextInternal, invalidate: () => void) => () => void;
+    _wrapRenderableForFO?: (inner: () => void, scene: import("../scene/scene-core.js").SceneContext, invalidate: () => void) => () => void;
 
     /** @internal Factory that produces a mesh-world UBO packer with the
      *  scene's floating-origin offset captured. Set when the engine was
@@ -155,13 +121,51 @@ export interface EngineContextInternal extends EngineContext {
      *  on") keeps the 3 subtraction lines + the `_foOffset` captures out of
      *  non-LWR bundles (~140 bytes saved per FO-off bundle). */
     _makePackMeshWorld?: (
-        scene: import("../scene/scene-core.js").SceneContextInternal
+        scene: import("../scene/scene-core.js").SceneContext
     ) => (view: Float32Array, mat: import("../math/types.js").Mat4 | Float32Array | Float64Array, offsetFloats: number, srcOffsetFloats: number) => void;
+}
+
+/**
+ * Minimal surface an engine sees for anything it renders. Scenes (and any other
+ * future renderable thing) register themselves as a `RenderingContext` and
+ * own their own update / record logic. Engine knows nothing of scene internals.
+ */
+export interface RenderingContext {
+    /** @internal Draw calls produced by pre-pass work during `_update` (shadows + pre-passes). */
+    _drawCallsPre: number;
+    /** Clear color used when this context is the first active one in a frame. */
+    clearColor: GPUColorDict;
+    /** @internal Run per-frame update work (beforeRender hooks, shadow + pre-passes, UBO updates,
+     *  transparent sort). Reads / mutates engine state via `engine._currentEncoder` and
+     *  `engine._currentDelta`. */
+    _update(): void;
+    /** @internal Drive this context's GPU work — typically delegates to
+     *  `frameGraph.execute()`. Returns draw-call count. */
+    _record(): number;
+    /** @internal Optional. Called by the engine when the canvas backing-store size changes.
+     *  Implementations should rebuild any canvas-sized GPU resources (e.g. ask
+     *  their frame graph to rebuild so render targets get re-allocated). */
+    _resize?(): void;
+}
+
+/** @internal */
+interface DeviceLostRecoveryCapture {
+    u(tex: Texture2D, url: string, opts: Texture2DOptions): void;
+    s(tex: Texture2D, r: number, g: number, b: number, a: number): void;
+    b(tex: Texture2D, bitmap: ImageBitmap | null, srgb: boolean, mipMaps: boolean, fallback?: Uint8Array): void;
+    m(
+        mesh: Mesh,
+        uv2s: Float32Array | null | undefined,
+        tangents: Float32Array | null | undefined,
+        colors: Float32Array | null | undefined,
+        gpuIndices: Uint16Array | Uint32Array,
+        indexFormat: GPUIndexFormat
+    ): void;
 }
 
 /** @internal Return true if `context` is already registered with `engine`. */
 export function isRenderingContextRegistered(engine: EngineContext, context: RenderingContext): boolean {
-    return (engine as EngineContextInternal)._renderingContexts.indexOf(context) !== -1;
+    return engine._renderingContexts.indexOf(context) !== -1;
 }
 
 /** @internal Register a rendering context with the engine. Returns false if already present. */
@@ -169,13 +173,13 @@ export function registerRenderingContext(engine: EngineContext, context: Renderi
     if (isRenderingContextRegistered(engine, context)) {
         return false;
     }
-    (engine as EngineContextInternal)._renderingContexts.push(context);
+    engine._renderingContexts.push(context);
     return true;
 }
 
 /** @internal Unregister a rendering context from the engine. Returns false if not present. */
 export function unregisterRenderingContext(engine: EngineContext, context: RenderingContext): boolean {
-    const list = (engine as EngineContextInternal)._renderingContexts;
+    const list = engine._renderingContexts;
     const i = list.indexOf(context);
     if (i === -1) {
         return false;
@@ -291,8 +295,8 @@ export async function createEngine(canvas: RenderCanvas, options?: EngineOptions
     // statically anywhere in the package — scene `_update` does
     // `eng._updateFOOffset?.(scene)` which is a no-op when the field is
     // undefined. Tree-shakers drop the module from non-LWR bundles.
-    let _wrapRenderableForFO: EngineContextInternal["_wrapRenderableForFO"];
-    let _makePackMeshWorld: EngineContextInternal["_makePackMeshWorld"];
+    let _wrapRenderableForFO: EngineContext["_wrapRenderableForFO"];
+    let _makePackMeshWorld: EngineContext["_makePackMeshWorld"];
     if (useFO) {
         const [{ wrapRenderableForFO }, { makePackMeshWorld }] = await Promise.all([
             import("../large-world/floating-origin.js"),
@@ -302,11 +306,11 @@ export async function createEngine(canvas: RenderCanvas, options?: EngineOptions
         _makePackMeshWorld = makePackMeshWorld;
     }
 
-    const engine: EngineContextInternal = {
-        device,
-        context,
+    const engine: EngineContext = {
+        _device: device,
+        _context: context,
         format,
-        alphaMode,
+        _alphaMode: alphaMode,
         canvas,
         msaaSamples,
         drawCallCount: 0,
@@ -338,8 +342,7 @@ export async function createEngine(canvas: RenderCanvas, options?: EngineOptions
  *  box, so its size is pushed in externally via {@link setEngineSize} (e.g. from the host
  *  thread that owns the visible canvas) and this call is a no-op for it. */
 export function resizeEngine(engine: EngineContext): void {
-    const eng = engine as EngineContextInternal;
-    const canvas = eng.canvas;
+    const canvas = engine.canvas;
     if (!isDomCanvas(canvas)) {
         return;
     }
@@ -348,7 +351,7 @@ export function resizeEngine(engine: EngineContext): void {
     if (!(clientWidth > 0 && clientHeight > 0)) {
         return;
     }
-    const scale = Math.min(globalThis.devicePixelRatio || 1, eng.maxDevicePixelRatio);
+    const scale = Math.min(globalThis.devicePixelRatio || 1, engine.maxDevicePixelRatio);
     const w = (clientWidth * scale) | 0;
     const h = (clientHeight * scale) | 0;
     setEngineSize(engine, w, h);
@@ -360,8 +363,7 @@ export function resizeEngine(engine: EngineContext): void {
  *  every registered rendering context to rebuild its canvas-sized GPU resources via the
  *  optional `_resize` hook. */
 export function setEngineSize(engine: EngineContext, widthPx: number, heightPx: number): void {
-    const eng = engine as EngineContextInternal;
-    const canvas = eng.canvas;
+    const canvas = engine.canvas;
     const w = widthPx | 0;
     const h = heightPx | 0;
     if (!(w > 0 && h > 0)) {
@@ -372,7 +374,7 @@ export function setEngineSize(engine: EngineContext, widthPx: number, heightPx: 
     }
     canvas.width = w;
     canvas.height = h;
-    for (const c of eng._renderingContexts) {
+    for (const c of engine._renderingContexts) {
         c._resize?.();
     }
 }
@@ -392,56 +394,53 @@ export function getRenderTargetSize(engine: EngineContext): RenderTargetSize {
  * the first frame; later registrations join on subsequent frames.
  */
 export function startEngine(engine: EngineContext): Promise<void> {
-    const eng = engine as EngineContextInternal;
     return new Promise<void>((resolve) => {
         let firstRafFrame = true;
         let lastTime = 0;
-        eng._renderFn = (now: number) => {
+        engine._renderFn = (now: number) => {
             const delta = firstRafFrame ? 0 : lastTime > 0 ? now - lastTime : 16.667;
             lastTime = now;
             resizeEngine(engine);
-            renderFrame(eng, delta);
+            renderFrame(engine, delta);
             if (firstRafFrame) {
                 firstRafFrame = false;
                 resolve();
             }
-            eng._animFrameId = requestAnimationFrame(eng._renderFn!);
+            engine._animFrameId = requestAnimationFrame(engine._renderFn!);
         };
-        eng._animFrameId = requestAnimationFrame(eng._renderFn);
+        engine._animFrameId = requestAnimationFrame(engine._renderFn);
     });
 }
 
 /** Stop the render loop. */
 export function stopEngine(engine: EngineContext): void {
-    const eng = engine as EngineContextInternal;
-    if (eng._animFrameId) {
-        cancelAnimationFrame(eng._animFrameId);
+    if (engine._animFrameId) {
+        cancelAnimationFrame(engine._animFrameId);
     }
-    eng._animFrameId = 0;
-    eng._renderFn = null;
+    engine._animFrameId = 0;
+    engine._renderFn = null;
 }
 
 /** Release all engine-owned GPU resources (device + swapchain). Rendering contexts
  *  own their own GPU resources (frame graphs, render targets) and dispose them
  *  separately. */
 export function disposeEngine(engine: EngineContext): void {
-    const eng = engine as EngineContextInternal;
     stopEngine(engine);
-    eng._renderingContexts.length = 0;
-    eng.context.unconfigure();
-    eng.device.destroy();
+    engine._renderingContexts.length = 0;
+    engine._context.unconfigure();
+    engine._device.destroy();
 }
 
-function renderFrame(engine: EngineContextInternal, delta: number): void {
+function renderFrame(engine: EngineContext, delta: number): void {
     const ctxs = engine._renderingContexts;
     if (ctxs.length === 0) {
         return;
     }
 
-    const encoder = engine.device.createCommandEncoder({ label: "frame" });
+    const encoder = engine._device.createCommandEncoder({ label: "frame" });
     engine._currentEncoder = encoder;
     engine._currentDelta = delta;
-    engine._swapchainView = engine.context.getCurrentTexture().createView();
+    engine._swapchainView = engine._context.getCurrentTexture().createView();
 
     let drawCalls = 0;
     for (let i = 0; i < ctxs.length; i++) {
@@ -453,6 +452,6 @@ function renderFrame(engine: EngineContextInternal, delta: number): void {
 
     const finalEncoder = engine._currentEncoder;
     engine._cbs[0] = finalEncoder.finish();
-    engine.device.queue.submit(engine._cbs);
+    engine._device.queue.submit(engine._cbs);
     engine.drawCallCount = drawCalls;
 }

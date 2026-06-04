@@ -1,12 +1,12 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 
 import { createFreeCamera } from "../../../packages/babylon-lite/src/camera/free-camera";
-import type { EngineContext, EngineContextInternal } from "../../../packages/babylon-lite/src/engine/engine";
+import type { EngineContext } from "../../../packages/babylon-lite/src/engine/engine";
 import { _setHpmAllocator, _resetMatrixAllocatorForTests } from "../../../packages/babylon-lite/src/math/_matrix-allocator";
 import { allocateF64Mat4 } from "../../../packages/babylon-lite/src/math/_mat4-storage-f64";
 import { getFloatingOriginOffset } from "../../../packages/babylon-lite/src/large-world/floating-origin";
 import { createSceneContext } from "../../../packages/babylon-lite/src/scene/scene";
-import type { SceneContextInternal } from "../../../packages/babylon-lite/src/scene/scene-core";
+import type { SceneContext } from "../../../packages/babylon-lite/src/scene/scene-core";
 
 const gpuGlobals = globalThis as typeof globalThis & {
     GPUShaderStage?: unknown;
@@ -45,10 +45,10 @@ function makeMockEngine(hpm = false, useFO = false): EngineContext {
         maxDevicePixelRatio: Infinity,
         useHighPrecisionMatrix: hpm,
         useFloatingOrigin: useFO,
-        device,
-        context: {} as GPUCanvasContext,
+        _device: device,
+        _context: {} as GPUCanvasContext,
         format: "bgra8unorm",
-        alphaMode: "opaque",
+        _alphaMode: "opaque",
         _animFrameId: 0,
         _renderFn: null,
         _renderingContexts: [],
@@ -56,7 +56,7 @@ function makeMockEngine(hpm = false, useFO = false): EngineContext {
         _swapchainView: {} as GPUTextureView,
         _currentDelta: 16.67,
         _cbs: [],
-    } as EngineContextInternal;
+    } as EngineContext;
 }
 
 describe("floating origin", () => {
@@ -67,7 +67,7 @@ describe("floating origin", () => {
 
     it("getFloatingOriginOffset returns the active camera's world position", () => {
         const engine = makeMockEngine(true, true);
-        const scene = createSceneContext(engine) as SceneContextInternal;
+        const scene = createSceneContext(engine) as SceneContext;
         scene.camera = createFreeCamera({ x: 1_000_000.25, y: -2_000_000.5, z: 3_000_000.75 }, { x: 0, y: 0, z: 0 });
 
         const offset = getFloatingOriginOffset(scene);
@@ -78,7 +78,7 @@ describe("floating origin", () => {
 
     it("getFloatingOriginOffset returns zero when no camera is set", () => {
         const engine = makeMockEngine(true, true);
-        const scene = createSceneContext(engine) as SceneContextInternal;
+        const scene = createSceneContext(engine) as SceneContext;
         // scene.camera intentionally left null.
 
         const offset = getFloatingOriginOffset(scene);
@@ -89,7 +89,7 @@ describe("floating origin", () => {
 
     it("scene._update sets the camera's _useFloatingOrigin flag when engine has FO on", () => {
         const engine = makeMockEngine(true, true);
-        const scene = createSceneContext(engine) as SceneContextInternal;
+        const scene = createSceneContext(engine) as SceneContext;
         const cam = createFreeCamera({ x: 100, y: 0, z: 0 }, { x: 0, y: 0, z: 0 });
         scene.camera = cam;
 
@@ -105,7 +105,7 @@ describe("floating origin", () => {
 
     it("scene._update does NOT set the camera's _useFloatingOrigin flag when engine has FO off", () => {
         const engine = makeMockEngine(false, false);
-        const scene = createSceneContext(engine) as SceneContextInternal;
+        const scene = createSceneContext(engine) as SceneContext;
         const cam = createFreeCamera({ x: 100, y: 0, z: 0 }, { x: 0, y: 0, z: 0 });
         scene.camera = cam;
 

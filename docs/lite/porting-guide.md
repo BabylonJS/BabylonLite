@@ -23,6 +23,7 @@ This guide shows how to translate a Babylon.js (BJS) scene to Babylon Lite, side
 | `MeshBuilder.CreateGround("g", {}, scene)` | `createGround(engine, opts)` |
 | `new StandardMaterial("mat", scene)` | `createStandardMaterial()` |
 | `new PBRMaterial("pbr", scene)` | `createPbrMaterial()` |
+| `new GridMaterial("grid", scene)` *(@babylonjs/materials)* | `createGridMaterial(opts)` |
 | `SceneLoader.ImportMeshAsync("", url, file, scene)` | `addToScene(scene, await loadGltf(engine, url))` |
 | `new CubeTexture(url, scene)` + `createDefaultEnvironment()` | `await loadEnvironment(scene, url, opts)` |
 | `new Texture(url, scene)` | `await loadTexture2D(engine, url)` |
@@ -354,6 +355,7 @@ feature is tree-shakable: scenes that don't use it pay no bundle cost.
 | Skeletal animation (4 or 8 bones) | ✅ | Driven by `createAnimationController(scene)` |
 | Animation blending / weights / additive clips | ✅ | `AnimationManager` with `setAnimationWeight()`, `crossFadeAnimationGroups()`, and `setAnimationAdditive()` (Scenes 155-158) |
 | ShaderMaterial | ✅ | WGSL-only `createShaderMaterial()` with typed uniforms, samplers, defines, alpha blend/test (Scenes 159-163) |
+| GridMaterial | ✅ | Procedural unlit object-space grid via `createGridMaterial()`: mainColor/lineColor, gridRatio, gridOffset, major/minor units, opacity, antialias, useMaxLine, preMultiplyAlpha, opacityTexture, visibility (Scene 213) |
 | Node Material | ✅ | NME snippet parser covering core, PBR, math, texture, procedural, normal, screen/depth, matrix, loop, and storage blocks (Scenes 60-89) |
 | Sprites / billboards | ⚡ | 2D layers, depth-hosted sprites, facing/axis-locked/cutout billboards; not the full BJS SpriteManager API (Scenes 50-57) |
 | Gaussian splatting | ✅ | `.ply`, `.splat`, `.sog`, `.spz`, bake transforms, material plugin fragments (Scenes 120-126) |

@@ -24,14 +24,19 @@ export interface Camera {
     /** @internal View matrix cache. Pre-allocated by the camera factory via
      *  `allocateMat4()`. F32 by default, F64 after an HPM engine is created. */
     _viewCache: Mat4Storage;
+    /** @internal */
     _viewVer?: number;
     /** @internal Projection matrix cache. Same allocator as `_viewCache`. */
     _projCache: Mat4Storage;
+    /** @internal */
     _projVer?: number;
+    /** @internal */
     _projAspect?: number;
     /** @internal View-projection matrix cache. Same allocator. */
     _vpCache: Mat4Storage;
+    /** @internal */
     _vpVer?: number;
+    /** @internal */
     _vpAspect?: number;
     /** @internal Marker: when set by an LWR-enabled scene, `getViewMatrix`
      *  zeros the view matrix translation column (the GPU sees the camera at

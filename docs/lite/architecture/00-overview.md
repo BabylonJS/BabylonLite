@@ -10,7 +10,7 @@
 > PBR+Standard Thin Instances, Spotlight Hard Shadows (PCF), PBR Clearcoat, PBR Emissive Spheres Grid,
 > PBR Sheen Cloth, PBR Shadows, PBR Anisotropy, Hill Valley (.babylon), KTX Texture, PBR Subsurface,
 > Material Variants (KHR_materials_variants), CSG/CSG2, FlightHelmetKTX via `KHR_texture_basisu`,
-> Gaussian splats, ShaderMaterial, device-loss recovery, Havok Physics V2, and Recast V2 navigation).
+> Gaussian splats, ShaderMaterial, GridMaterial, device-loss recovery, Havok Physics V2, and Recast V2 navigation).
 > Detailed per-module specs are in the companion docs listed below.
 
 ## Architecture Document Index
@@ -43,10 +43,9 @@
 | [24-loader-babylon.md](24-loader-babylon.md)                       | .babylon Loader         | .babylon format parsing                                                                        |
 | [25-resource-pool.md](25-resource-pool.md)                         | Resource Pool           | GPU buffer/texture pooling                                                                     |
 | [26-sprites.md](26-sprites.md)                                     | Sprites                 | 2D sprites, depth-hosted sprites, sprite renderables                                           |
-| [27-effect-renderer.md](27-effect-renderer.md)                     | Effect Renderer         | Fullscreen post-process pipeline, render-to-texture composition                                |
-| [28-bundle-size-tooling.md](28-bundle-size-tooling.md)             | Bundle-Size Tooling     | Per-scene bundle ceilings, lab Bundle tab, runtime-fetched vs built-but-not-fetched accounting |
-| [29-shader-material.md](29-shader-material.md)                     | Shader Material         | User-supplied WGSL pipelines, vertex/fragment slot composition                                 |
-| [30-frame-graph.md](30-frame-graph.md)                             | Frame Graph             | Task ordering, RenderTask, passes, render targets, RTT texture flow                            |
+| [27-frame-graph.md](27-frame-graph.md)                             | Frame Graph             | Task ordering, RenderTask, passes, render targets, RTT texture flow                            |
+| [29-shader-material.md](29-shader-material.md)                     | Shader Material         | WGSL-only ShaderMaterial: typed uniforms, samplers, defines, alpha blend/test                  |
+| [30-grid-material.md](30-grid-material.md)                         | Grid Material           | Procedural unlit object-space grid built on ShaderMaterial                                      |
 | [31-post-process.md](31-post-process.md)                           | Post Process            | Frame-graph fullscreen post-process helper and concrete post-process tasks                     |
 | [32-large-world-rendering.md](32-large-world-rendering.md)         | LWR / Floating Origin   | `useFloatingOrigin` engine flag, eye-relative upload, FO version tracking                      |
 | [33-high-precision-matrix.md](33-high-precision-matrix.md)         | High-Precision Matrix   | `useHighPrecisionMatrix` engine flag, F64 backing, `allocateMat4` singleton, `packMat4IntoF32` |
@@ -147,6 +146,8 @@ babylon-lite/
 │   │   │           ├── std-reflection-fragment.ts
 │   │   │           ├── std-shadow-fragment.ts
 │   │   │           └── std-specular-fragment.ts
+│   │   ├── grid/                  # Procedural grid material
+│   │   │   └── grid-material.ts   # createGridMaterial() + GridMaterialOptions (on ShaderMaterial)
 │   │   ├── shader/                # Shader composition system
 │   │   │   ├── shader-composer.ts # ShaderFragment composer engine
 │   │   │   ├── fragment-types.ts  # ShaderFragment interface definitions
@@ -1440,6 +1441,7 @@ For production builds, switch to `"./dist/index.js"`.
 | `src/material/standard/no-color-view.ts` | Standard no-color material view helper | — |
 | `src/material/standard/skybox-cubemap.ts` | CubeMap skybox pipeline | 104 |
 | `src/material/standard/fragments/` | Standard ShaderFragment modules | — |
+| `src/material/grid/grid-material.ts` | GridMaterial factory + options (composes WGSL on ShaderMaterial) | — |
 | `src/shader/shader-composer.ts` | ShaderFragment composer engine | — |
 | `src/shader/fragment-types.ts` | ShaderFragment interface definitions | — |
 | `src/shader/ubo-layout.ts` | UBO layout helpers | — |

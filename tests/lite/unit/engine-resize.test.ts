@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resizeEngine, type EngineContext, type EngineContextInternal, type RenderingContext } from "../../../packages/babylon-lite/src/engine/engine";
+import { resizeEngine, type EngineContext, type RenderingContext } from "../../../packages/babylon-lite/src/engine/engine";
 
 function setDevicePixelRatio(value: number): void {
     Object.defineProperty(globalThis, "devicePixelRatio", {
@@ -17,10 +17,10 @@ function makeEngine(canvas: Partial<HTMLCanvasElement>, contexts: RenderingConte
         useHighPrecisionMatrix: false,
         useFloatingOrigin: false,
         maxDevicePixelRatio: Infinity,
-        device: {} as GPUDevice,
-        context: {} as GPUCanvasContext,
+        _device: {} as GPUDevice,
+        _context: {} as GPUCanvasContext,
         format: "bgra8unorm",
-        alphaMode: "opaque",
+        _alphaMode: "opaque",
         _animFrameId: 0,
         _renderFn: null,
         _renderingContexts: contexts,
@@ -28,7 +28,7 @@ function makeEngine(canvas: Partial<HTMLCanvasElement>, contexts: RenderingConte
         _swapchainView: {} as GPUTextureView,
         _currentDelta: 0,
         _cbs: [],
-    } as EngineContextInternal;
+    } as EngineContext;
 }
 
 function makeRenderingContext(onResize: () => void): RenderingContext {
@@ -89,7 +89,7 @@ describe("resizeEngine", () => {
     it("clamps the backing store to maxDevicePixelRatio", () => {
         setDevicePixelRatio(3);
         const canvas = { width: 0, height: 0, clientWidth: 400, clientHeight: 300 };
-        const engine = makeEngine(canvas) as EngineContextInternal;
+        const engine = makeEngine(canvas) as EngineContext;
         engine.maxDevicePixelRatio = 1;
 
         resizeEngine(engine);
