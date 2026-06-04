@@ -70,10 +70,11 @@ function clampCameraToLimits(camera: ArcRotateCamera): void {
  * as `undefined` to remove that bound. Returns a disposer that removes the
  * self-clamp hook.
  *
- * The optional `_scene` parameter is accepted for backward compatibility and is
+ * The optional `scene` parameter is accepted for backward compatibility and is
  * unused — enforcement no longer needs a per-frame scene hook.
  */
-export function setCameraLimits(camera: ArcRotateCamera, limits: ArcRotateCameraLimits, _scene?: SceneContext): () => void {
+export function setCameraLimits(camera: ArcRotateCamera, limits: ArcRotateCameraLimits, scene?: SceneContext): () => void {
+    void scene; // accepted for backward compatibility; no per-frame scene hook is needed anymore
     if ("lowerAlphaLimit" in limits) {
         camera.lowerAlphaLimit = limits.lowerAlphaLimit;
     }
