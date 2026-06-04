@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Texture2D } from "../../../packages/babylon-lite/src/texture/texture-2d";
 import type { PbrMaterialProps } from "../../../packages/babylon-lite/src/material/pbr/pbr-material";
-import type { EngineContextInternal } from "../../../packages/babylon-lite/src/engine/engine";
+import type { EngineContext } from "../../../packages/babylon-lite/src/engine/engine";
 import type { _PbrBindCtx } from "../../../packages/babylon-lite/src/material/pbr/pbr-flags";
 import { _computePbrMaterialFeatures } from "../../../packages/babylon-lite/src/material/pbr/pbr-material";
 import {
@@ -62,13 +62,13 @@ describe("PBR transmission and alpha feature detection", () => {
     it("binds refraction maps with wrap/wrap/wrap anisotropic sampling", () => {
         const samplers: GPUSamplerDescriptor[] = [];
         const engine = {
-            device: {
+            _device: {
                 createSampler: (descriptor: GPUSamplerDescriptor) => {
                     samplers.push(descriptor);
                     return descriptor as unknown as GPUSampler;
                 },
             },
-        } as EngineContextInternal;
+        } as EngineContext;
         const entries: GPUBindGroupEntry[] = [];
 
         refractionRttExt.bind!(

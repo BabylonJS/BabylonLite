@@ -41,7 +41,7 @@ export interface AnimationGroup {
     loopAnimation: boolean;
     /** Weighted contribution used by AnimationManager mixing (default 1). */
     weight: number;
-    /** Debug: internal animation controller. */
+    /** @internal Debug: internal animation controller. */
     readonly _ctrl?: AnimationController;
     /** @internal Manual property animation metadata used by the optional weighted mixer. */
     _propertyMixer?: AnimationPropertyMixer;

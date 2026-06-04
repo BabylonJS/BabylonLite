@@ -1,9 +1,9 @@
-import type { EngineContextInternal } from "../../engine/engine.js";
-import type { SceneContextInternal } from "../../scene/scene.js";
+import type { EngineContext } from "../../engine/engine.js";
+import type { SceneContext } from "../../scene/scene.js";
 import type { PbrExt } from "./pbr-flags.js";
 import type { PbrMaterialProps } from "./pbr-material.js";
 
-export async function registerPbrRefraction(scene: SceneContextInternal, engine: EngineContextInternal, register: (ext: PbrExt) => void): Promise<void> {
+export async function registerPbrRefraction(scene: SceneContext, engine: EngineContext, register: (ext: PbrExt) => void): Promise<void> {
     // Load the per-RGB chromatic-dispersion sample WGSL only when a material in the
     // scene actually uses KHR_materials_dispersion, so its 3-ray code chunk is fetched
     // solely by dispersion scenes and never weighs on other transmission scenes. The
