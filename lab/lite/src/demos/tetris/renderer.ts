@@ -45,6 +45,11 @@ import {
 import { BOARD_COLS, BOARD_ROWS, ghostRow, type GameState } from "./game.js";
 import { TetrisParticles } from "./particles.js";
 import { PIECE_COLORS, PIECE_ROTATIONS } from "./pieces.js";
+import { createChamferedBoxData } from "./chamfered-box.js";
+
+/** Block style: cute Kenney Cube Pets ("pets") or classic chamfered enamel
+ *  cubes ("arcade"). Toggled at runtime via the renderer's `toggleMode`. */
+export type TetrisMode = "pets" | "arcade";
 
 const BLOCK_SIZE = 0.92;
 /** Pet instances are normalised to a unit cube, so a scale of ~1 fills a cell. */
@@ -144,13 +149,14 @@ async function loadGeometryFromUrl(url: string, key: string): Promise<PetGeometr
     if (!res.ok) {
         throw new Error(`Failed to load geometry from ${url}: ${res.status}`);
     }
-    const data = (await res.json()) as Record<string, { positions: number[]; normals: number[]; uvs: number[]; indices: number[] }>;
+    const data = (await res.json()) as Record<string, { positions: number[]; normals: number[]; uvs: number[]; indices: number[]; colors?: number[] }>;
     const p = data[key]!;
     return {
         positions: new Float32Array(p.positions),
         normals: new Float32Array(p.normals),
         uvs: new Float32Array(p.uvs),
         indices: new Uint32Array(p.indices),
+        colors: new Float32Array(p.colors ?? []),
     };
 }
 
@@ -191,6 +197,12 @@ export interface TetrisRenderer {
      *  events into particle bursts + camera shake, and integrate particles.
      *  `dtMs` is the frame delta in milliseconds. */
     sync(game: GameState, dtMs: number): void;
+    /** Switch the block style. Returns the (possibly unchanged) active mode. */
+    setMode(mode: TetrisMode): TetrisMode;
+    /** Flip between "pets" and "arcade". Returns the new active mode. */
+    toggleMode(): TetrisMode;
+    /** The block style currently being rendered. */
+    readonly mode: TetrisMode;
 }
 
 export async function createTetrisRenderer(engine: EngineContext, scene: SceneContext): Promise<TetrisRenderer> {
@@ -198,7 +210,7 @@ export async function createTetrisRenderer(engine: EngineContext, scene: SceneCo
     // buffers directly each frame. The public `setThinInstances` resets the
     // capacity, and our bundle is recorded once and replayed — so the only way
     // to push per-frame matrix changes is straight to the GPU buffer.
-    const device = (engine as unknown as { device: GPUDevice }).device;
+    const device = (engine as unknown as { _device: GPUDevice })._device;
 
     // ── Camera ────────────────────────────────────────────────────────────
     // Aim at the well's true vertical centre (midpoint of the top and bottom
@@ -371,8 +383,11 @@ export async function createTetrisRenderer(engine: EngineContext, scene: SceneCo
         // illusion). Mid-high roughness keeps them matte, not glassy.
         ormTexture: orm(0.62, 0.0),
         emissiveColor: [0.05, 0.05, 0.05],
-        environmentIntensity: 0.85,
-        directIntensity: 2.6,
+        // Hold the neutral grey studio env well below the direct lights: a strong
+        // env mirror greys-out the bright vertex colours, so keeping it low lets
+        // each pet's hue stay saturated and vivid (matching the arcade blocks).
+        environmentIntensity: 0.45,
+        directIntensity: 3.0,
         reflectance: 0.04,
         enableSpecularAA: true,
         // The Cube Pets meshes are authored double-sided; the face decals (eyes,
@@ -382,24 +397,11 @@ export async function createTetrisRenderer(engine: EngineContext, scene: SceneCo
 
     const MAX_INSTANCES = BOARD_COLS * BOARD_ROWS + 4;
     const GHOST_INSTANCES = 4;
-    const colorMeshes: Mesh[] = [];
-    const matrixBuffers: Float32Array[] = [];
 
-    for (let c = 0; c < PIECE_COLORS.length; c++) {
-        const geo = petGeometries[c] ?? petGeometries[0]!;
-        const mesh = createMeshFromData(engine, `tetris_pet_${c}`, geo.positions, geo.normals, geo.indices, geo.uvs, undefined, undefined, geo.colors);
-        mesh.material = petMaterial;
-        const buf = new Float32Array(16 * MAX_INSTANCES);
-        clearToDegenerate(buf, MAX_INSTANCES);
-        setThinInstances(mesh, buf, MAX_INSTANCES);
-        colorMeshes.push(mesh);
-        matrixBuffers.push(buf);
-        addToScene(scene, mesh);
-    }
-
-    // Ghost piece — a faint, semi-transparent copy of the *active animal*, shown
-    // where the piece will land. One mesh per type; each frame only the active
-    // type is populated so the preview always matches the falling pet.
+    // Ghost piece — a faint, semi-transparent landing preview. In pet mode the
+    // pet meshes carry vertex colours so it reads as a ghostly copy of the active
+    // animal; in arcade mode the boxes have no vertex colours so it reads as a
+    // translucent grey block. Shared by both render sets.
     const ghostMat = createPbrMaterial({
         baseColorTexture: whiteTex,
         ormTexture: orm(0.55, 0.0),
@@ -409,19 +411,101 @@ export async function createTetrisRenderer(engine: EngineContext, scene: SceneCo
         alphaBlend: true,
         doubleSided: true,
     });
-    const ghostMeshes: Mesh[] = [];
-    const ghostBuffers: Float32Array[] = [];
-    for (let c = 0; c < petGeometries.length; c++) {
-        const geo = petGeometries[c] ?? petGeometries[0]!;
-        const gm = createMeshFromData(engine, `tetris_ghost_${c}`, geo.positions, geo.normals, geo.indices, geo.uvs, undefined, undefined, geo.colors);
-        gm.material = ghostMat;
-        const gb = new Float32Array(16 * GHOST_INSTANCES);
-        clearToDegenerate(gb, GHOST_INSTANCES);
-        setThinInstances(gm, gb, GHOST_INSTANCES);
-        ghostMeshes.push(gm);
-        ghostBuffers.push(gb);
-        addToScene(scene, gm);
+
+    // ── Classic "arcade" blocks (chamfered enamel cubes) ─────────────────
+    // The alternative block style: a single chamfered-cube geometry (the bevels
+    // catch a specular glint along every edge, reading as a manufactured plastic
+    // chip) thin-instanced per piece colour, each with its own glossy, lightly
+    // emissive PBR material tinted by PIECE_COLORS so line-clear bursts + the HUD
+    // preview still match. Built alongside the pets and toggled at runtime.
+    const boxData = createChamferedBoxData(1, 0.08);
+    const boxGeo: PetGeometry = {
+        positions: boxData.positions,
+        normals: boxData.normals,
+        uvs: boxData.uvs,
+        indices: boxData.indices,
+        colors: new Float32Array(0),
+    };
+    // Classic-arcade boxes get a vivid palette that mirrors each Cube Pet's hue
+    // (so the two modes feel like the same pieces, just restyled) but cranked up
+    // in saturation — the raw pet body colours are deliberately pastel, so these
+    // are punchy versions in the same I,O,T,S,Z,J,L order:
+    // pig, panda, bunny, crab, chick, cat, caterpillar.
+    const ARCADE_COLORS: readonly [number, number, number][] = [
+        [0.95, 0.24, 0.52], // I — pig (vivid pink)
+        [0.90, 0.90, 0.95], // O — panda (bright white)
+        [0.98, 0.50, 0.24], // T — bunny (warm tan/orange)
+        [0.93, 0.16, 0.14], // S — crab (vivid red)
+        [1.0, 0.80, 0.12], // Z — chick (golden yellow)
+        [0.22, 0.34, 0.95], // J — cat (vivid blue)
+        [0.13, 0.80, 0.38], // L — caterpillar (vivid green)
+    ];
+    const arcadeMaterials = ARCADE_COLORS.map((rgb) =>
+        createPbrMaterial({
+            baseColorTexture: whiteTex,
+            baseColorFactor: [rgb[0], rgb[1], rgb[2], 1],
+            // Glossy plastic chip: low roughness for a crisp specular glint.
+            ormTexture: orm(0.22, 0.0),
+            // A strong slice of the body colour as emissive lifts each chip off
+            // the dark stage and pushes saturated colour through the bloom pass,
+            // so the hue reads vividly instead of being greyed by the IBL.
+            emissiveColor: [rgb[0] * 0.35, rgb[1] * 0.35, rgb[2] * 0.35],
+            // Keep the grey studio env from washing the colour out: lean on the
+            // direct lights for brightness, not the neutral environment mirror.
+            environmentIntensity: 0.45,
+            directIntensity: 2.4,
+            reflectance: 0.08,
+            enableSpecularAA: true,
+        }),
+    );
+
+    interface RenderSet {
+        colorMeshes: Mesh[];
+        matrixBuffers: Float32Array[];
+        ghostMeshes: Mesh[];
+        ghostBuffers: Float32Array[];
+        /** Per-instance uniform scale (pets fill the cell; boxes leave a gap). */
+        scale: number;
     }
+
+    // Build one solid thin-instanced mesh per piece colour plus a matching ghost
+    // mesh per colour, all wired into the scene. `geoFor`/`matFor` supply the
+    // geometry + solid material for colour c; the ghost material is shared.
+    function buildRenderSet(prefix: string, geoFor: (c: number) => PetGeometry, matFor: (c: number) => ReturnType<typeof createPbrMaterial>, scale: number): RenderSet {
+        const colorMeshes: Mesh[] = [];
+        const matrixBuffers: Float32Array[] = [];
+        const ghostMeshes: Mesh[] = [];
+        const ghostBuffers: Float32Array[] = [];
+        for (let c = 0; c < PIECE_COLORS.length; c++) {
+            const geo = geoFor(c);
+            const mesh = createMeshFromData(engine, `${prefix}_${c}`, geo.positions, geo.normals, geo.indices, geo.uvs, undefined, undefined, geo.colors);
+            mesh.material = matFor(c);
+            const buf = new Float32Array(16 * MAX_INSTANCES);
+            clearToDegenerate(buf, MAX_INSTANCES);
+            setThinInstances(mesh, buf, MAX_INSTANCES);
+            colorMeshes.push(mesh);
+            matrixBuffers.push(buf);
+            addToScene(scene, mesh);
+
+            const gm = createMeshFromData(engine, `${prefix}_ghost_${c}`, geo.positions, geo.normals, geo.indices, geo.uvs, undefined, undefined, geo.colors);
+            gm.material = ghostMat;
+            const gb = new Float32Array(16 * GHOST_INSTANCES);
+            clearToDegenerate(gb, GHOST_INSTANCES);
+            setThinInstances(gm, gb, GHOST_INSTANCES);
+            ghostMeshes.push(gm);
+            ghostBuffers.push(gb);
+            addToScene(scene, gm);
+        }
+        return { colorMeshes, matrixBuffers, ghostMeshes, ghostBuffers, scale };
+    }
+
+    const sets: Record<TetrisMode, RenderSet> = {
+        pets: buildRenderSet("tetris_pet", (c) => petGeometries[c] ?? petGeometries[0]!, () => petMaterial, PET_SIZE),
+        arcade: buildRenderSet("tetris_box", () => boxGeo, (c) => arcadeMaterials[c]!, BLOCK_SIZE),
+    };
+    // Both sets start with degenerate (invisible) instances; sync only ever
+    // writes real matrices into the active set, so the inactive set stays hidden.
+    let currentMode: TetrisMode = "pets";
 
     // ── Particle system ──────────────────────────────────────────────────
     const particles = new TetrisParticles(engine, scene);
@@ -437,8 +521,37 @@ export async function createTetrisRenderer(engine: EngineContext, scene: SceneCo
         ti._dirtyMax = instances;
     }
 
+    // Park every instance of a render set off-screen (scale 0) and upload once,
+    // so the set is fully hidden until it becomes active again.
+    function hideSet(set: RenderSet): void {
+        for (let c = 0; c < set.colorMeshes.length; c++) {
+            const buf = set.matrixBuffers[c]!;
+            for (let i = 0; i < MAX_INSTANCES; i++) writeHidden(buf, i);
+            uploadMatrices(set.colorMeshes[c]!, buf, MAX_INSTANCES);
+        }
+        for (let c = 0; c < set.ghostMeshes.length; c++) {
+            const gb = set.ghostBuffers[c]!;
+            for (let i = 0; i < GHOST_INSTANCES; i++) writeHidden(gb, i);
+            uploadMatrices(set.ghostMeshes[c]!, gb, GHOST_INSTANCES);
+        }
+    }
+
+    function setMode(mode: TetrisMode): TetrisMode {
+        if (mode !== currentMode) {
+            hideSet(sets[currentMode]);
+            currentMode = mode;
+        }
+        return currentMode;
+    }
+
+    function toggleMode(): TetrisMode {
+        return setMode(currentMode === "pets" ? "arcade" : "pets");
+    }
+
     function sync(game: GameState, dtMs: number): void {
         const dt = dtMs / 1000;
+        const active = sets[currentMode];
+        const blockScale = active.scale;
 
         // Clamp camera every frame. attachControl writes inertial offsets that
         // the camera applies before render; we clamp the resulting values
@@ -458,7 +571,7 @@ export async function createTetrisRenderer(engine: EngineContext, scene: SceneCo
                 for (let x = 0; x < BOARD_COLS; x++) {
                     const v = colors[x]!;
                     if (v === 0) continue;
-                    const col = PIECE_COLORS[v - 1]!;
+                    const col = (currentMode === "arcade" ? ARCADE_COLORS : PIECE_COLORS)[v - 1]!;
                     particles.burst(cellWorldX(x), cellWorldY(row), 0, col);
                 }
             }
@@ -497,7 +610,7 @@ export async function createTetrisRenderer(engine: EngineContext, scene: SceneCo
                     continue;
                 }
                 const colorIdx = v - 1;
-                writeMatrix(matrixBuffers[colorIdx]!, counts[colorIdx]!, cellWorldX(x), cellWorldY(y), 0, PET_SIZE);
+                writeMatrix(active.matrixBuffers[colorIdx]!, counts[colorIdx]!, cellWorldX(x), cellWorldY(y), 0, blockScale);
                 counts[colorIdx]!++;
             }
         }
@@ -511,22 +624,22 @@ export async function createTetrisRenderer(engine: EngineContext, scene: SceneCo
                 if (cy < 0) {
                     continue;
                 }
-                writeMatrix(matrixBuffers[colorIdx]!, counts[colorIdx]!, cellWorldX(cx), cellWorldY(cy), 0, PET_SIZE);
+                writeMatrix(active.matrixBuffers[colorIdx]!, counts[colorIdx]!, cellWorldX(cx), cellWorldY(cy), 0, blockScale);
                 counts[colorIdx]!++;
             }
         }
 
-        for (let c = 0; c < colorMeshes.length; c++) {
-            const buf = matrixBuffers[c]!;
+        for (let c = 0; c < active.colorMeshes.length; c++) {
+            const buf = active.matrixBuffers[c]!;
             const used = counts[c]!;
             for (let i = used; i < MAX_INSTANCES; i++) {
                 writeHidden(buf, i);
             }
-            uploadMatrices(colorMeshes[c]!, buf, MAX_INSTANCES);
+            uploadMatrices(active.colorMeshes[c]!, buf, MAX_INSTANCES);
         }
 
         const activeType = game.active && !game.over && !game.paused ? game.active.type : -1;
-        for (let c = 0; c < ghostMeshes.length; c++) {
+        for (let c = 0; c < active.ghostMeshes.length; c++) {
             let ghostCount = 0;
             if (c === activeType && game.active) {
                 const gRow = ghostRow(game);
@@ -538,17 +651,24 @@ export async function createTetrisRenderer(engine: EngineContext, scene: SceneCo
                         if (cy < 0) {
                             continue;
                         }
-                        writeMatrix(ghostBuffers[c]!, ghostCount, cellWorldX(cx), cellWorldY(cy), 0, PET_SIZE);
+                        writeMatrix(active.ghostBuffers[c]!, ghostCount, cellWorldX(cx), cellWorldY(cy), 0, blockScale);
                         ghostCount++;
                     }
                 }
             }
             for (let i = ghostCount; i < GHOST_INSTANCES; i++) {
-                writeHidden(ghostBuffers[c]!, i);
+                writeHidden(active.ghostBuffers[c]!, i);
             }
-            uploadMatrices(ghostMeshes[c]!, ghostBuffers[c]!, GHOST_INSTANCES);
+            uploadMatrices(active.ghostMeshes[c]!, active.ghostBuffers[c]!, GHOST_INSTANCES);
         }
     }
 
-    return { sync };
+    return {
+        sync,
+        setMode,
+        toggleMode,
+        get mode() {
+            return currentMode;
+        },
+    };
 }

@@ -89,6 +89,11 @@ async function main(): Promise<void> {
         restartGame(game);
     });
 
+    function toggleMode(): void {
+        hud.setMode(renderer.toggleMode());
+    }
+    hud.onToggleMode(toggleMode);
+
     const left: RepeatState = { keyDown: false, next: 0 };
     const right: RepeatState = { keyDown: false, next: 0 };
     const down: RepeatState = { keyDown: false, next: 0 };
@@ -136,6 +141,10 @@ async function main(): Promise<void> {
                 break;
             case "KeyR":
                 restartGame(game);
+                e.preventDefault();
+                break;
+            case "KeyM":
+                toggleMode();
                 e.preventDefault();
                 break;
         }

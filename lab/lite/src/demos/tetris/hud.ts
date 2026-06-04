@@ -13,6 +13,10 @@ export interface TetrisHud {
     render(game: GameState): void;
     /** Wire up restart-button click; runs `cb()` and clears the overlay. */
     onRestart(cb: () => void): void;
+    /** Wire up the block-style toggle (button click). */
+    onToggleMode(cb: () => void): void;
+    /** Reflect the active block style on the toggle button label. */
+    setMode(mode: "pets" | "arcade"): void;
 }
 
 export function createTetrisHud(root: HTMLElement): TetrisHud {
@@ -94,6 +98,23 @@ export function createTetrisHud(root: HTMLElement): TetrisHud {
         previewCellsEls.push(c);
     }
 
+    // Block-style toggle: switch between cute Cube Pets and classic arcade cubes.
+    const modeBtn = document.createElement("button");
+    modeBtn.style.cssText = [
+        "margin-top:14px",
+        "width:100%",
+        "padding:8px 10px",
+        "font:600 0.8rem/1 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",
+        "letter-spacing:0.08em",
+        "color:#f4ece9",
+        "background:rgba(255,255,255,0.06)",
+        "border:1px solid rgba(255,255,255,0.12)",
+        "border-radius:8px",
+        "cursor:pointer",
+        "pointer-events:auto",
+    ].join(";");
+    panel.appendChild(modeBtn);
+
     const help = document.createElement("div");
     help.style.cssText = [
         "position:absolute",
@@ -114,6 +135,7 @@ export function createTetrisHud(root: HTMLElement): TetrisHud {
         "<div>Z &nbsp;&nbsp; rotate CCW</div>",
         "<div>↓ &nbsp;&nbsp; soft drop</div>",
         "<div>Space &nbsp;&nbsp; hard drop</div>",
+        "<div>M &nbsp;&nbsp; pets / arcade</div>",
         "<div>P &nbsp;&nbsp; pause &nbsp;·&nbsp; R &nbsp;&nbsp; restart</div>",
     ].join("");
     wrap.appendChild(help);
@@ -161,6 +183,18 @@ export function createTetrisHud(root: HTMLElement): TetrisHud {
             restartCb();
         }
     });
+
+    let toggleModeCb: (() => void) | null = null;
+    modeBtn.addEventListener("click", () => {
+        if (toggleModeCb) {
+            toggleModeCb();
+        }
+    });
+
+    function setMode(mode: "pets" | "arcade"): void {
+        modeBtn.textContent = mode === "pets" ? "STYLE: PETS" : "STYLE: ARCADE";
+    }
+    setMode("pets");
 
     let lastVersion = -1;
     let lastOver = false;
@@ -214,5 +248,9 @@ export function createTetrisHud(root: HTMLElement): TetrisHud {
         restartCb = cb;
     }
 
-    return { render, onRestart };
+    function onToggleMode(cb: () => void): void {
+        toggleModeCb = cb;
+    }
+
+    return { render, onRestart, onToggleMode, setMode };
 }
