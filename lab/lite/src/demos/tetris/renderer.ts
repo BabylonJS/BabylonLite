@@ -370,9 +370,9 @@ export async function createTetrisRenderer(engine: EngineContext, scene: SceneCo
         // just mirrors the studio backdrop onto dark bodies and worsens the
         // illusion). Mid-high roughness keeps them matte, not glassy.
         ormTexture: orm(0.62, 0.0),
-        emissiveColor: [0.18, 0.18, 0.18],
-        environmentIntensity: 1.15,
-        directIntensity: 2.2,
+        emissiveColor: [0.05, 0.05, 0.05],
+        environmentIntensity: 0.85,
+        directIntensity: 2.6,
         reflectance: 0.04,
         enableSpecularAA: true,
         // The Cube Pets meshes are authored double-sided; the face decals (eyes,

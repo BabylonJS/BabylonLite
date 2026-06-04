@@ -1,7 +1,7 @@
 {
   "offscreen": {
-    "rawKB": 173.7,
-    "gzipKB": 71.2
+    "rawKB": 89.1,
+    "gzipKB": 34.7
   },
   "torus-states": {
     "rawKB": 24.7,
@@ -28,7 +28,7 @@
     "gzipKB": 38.9
   },
   "mosquito-amber": {
-    "rawKB": 96.6,
-    "gzipKB": 37.6
+    "rawKB": 51.4,
+    "gzipKB": 19.7
   }
 }
