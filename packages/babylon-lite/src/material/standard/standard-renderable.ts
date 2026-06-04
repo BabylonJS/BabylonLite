@@ -192,13 +192,14 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
             }
             const g = mesh._gpu;
             let slot = 0;
-            pass.setVertexBuffer(slot++, g.positionBuffer);
-            pass.setVertexBuffer(slot++, g.normalBuffer);
+            const vb = g._vbLayout;
+            pass.setVertexBuffer(slot++, g.positionBuffer, vb?._p?._offset);
+            pass.setVertexBuffer(slot++, g.normalBuffer, vb?._n?._offset);
             if (needsUV) {
-                pass.setVertexBuffer(slot++, g.uvBuffer);
+                pass.setVertexBuffer(slot++, g.uvBuffer, vb?._u?._offset);
             }
             if (needsUV2 && g.uv2Buffer) {
-                pass.setVertexBuffer(slot++, g.uv2Buffer);
+                pass.setVertexBuffer(slot++, g.uv2Buffer, vb?._u2?._offset);
             }
 
             const ti = hasThinInstances ? mesh.thinInstances : null;

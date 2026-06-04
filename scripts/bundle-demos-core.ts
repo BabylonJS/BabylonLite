@@ -45,6 +45,7 @@ const DOOM_SRC = resolve(labDir, "public/doom");
 const LIBREQUAKE_SRC = resolve(labDir, "public/librequake");
 const MINECRAFT_SRC = resolve(labDir, "public/minecraft");
 const FREECIV_SRC = resolve(labDir, "public/freeciv");
+const LITTLEST_TOKYO_SRC = resolve(labDir, "public/littlest-tokyo");
 const DRACO_FILES = ["draco_decoder.js", "draco_decoder.wasm"];
 
 interface DemoConfigEntry {
@@ -185,6 +186,17 @@ function copyDemoRuntimeAssets(demos: DemoConfigEntry[]): void {
 
     if (demos.some((demo) => demo.slug === "freeciv")) {
         copyRequiredDir(FREECIV_SRC, resolve(demosDir, "freeciv"), "Freeciv");
+    }
+
+    if (demos.some((demo) => demo.slug === "littlest-tokyo")) {
+        copyRequiredDir(LITTLEST_TOKYO_SRC, resolve(demosDir, "littlest-tokyo"), "Littlest Tokyo");
+    }
+
+    if (demos.some((demo) => demo.slug === "bath-day")) {
+        const glb = resolve(labDir, "public", "bath_day.glb");
+        if (existsSync(glb)) {
+            cpSync(glb, resolve(demosDir, "bath_day.glb"));
+        }
     }
 
     for (const file of [...DRACO_FILES, "brdf-lut.png"]) {

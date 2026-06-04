@@ -64,10 +64,18 @@ export interface DecodedPrimitive {
     _indexCount: number;
 }
 
-/** A glTF feature module. Each module implements one or more of the four hooks. */
+/** A glTF feature module. Each module implements one or more of the hooks. */
 export interface GltfFeature {
     /** Diagnostic id, e.g. "KHR_materials_clearcoat" or "_skeleton". */
     id: string;
+    /** Pre-parse hook: runs before any accessor is read. May mutate `json`
+     *  (bufferViews/accessors) and return a REPLACEMENT binary chunk that
+     *  subsequent hooks + the core accessor reader resolve against. Used by
+     *  buffer-level features such as EXT_meshopt_compression (decompresses
+     *  bufferViews) and KHR_mesh_quantization (dequantizes accessors to FLOAT).
+     *  Returning `undefined`/`void` leaves the binary chunk unchanged. Hooks run
+     *  sequentially in registry order so later features see earlier rewrites. */
+    preParse?(json: any, binChunk: DataView): Promise<DataView | void>;
     /** Pre-extract hook: runs before mesh extraction. Returns a map of glTF
      *  primitive objects to pre-decoded attribute/index data. Used by e.g. Draco. */
     preMesh?(json: unknown, binChunk: DataView, baseUrl: string): Promise<Map<unknown, DecodedPrimitive>>;

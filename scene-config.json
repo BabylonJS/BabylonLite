@@ -318,7 +318,7 @@
         "name": "Scene 33 — KHR_lights_punctual",
         "maxMad": 0.07,
         "maxRawKB": 95,
-        "note": "Ceiling raised 93->94 (user-approved) when scene212 added KHR_materials_dispersion: scene33 shares the transmission + dielectric chunks and carries ~0.6 KB of unavoidable dispersion plumbing (the 3-ray WGSL itself ships only in scene212's bundle). Bumped 94->95 (user-approved) after HPM/LWR substrate (#116) adds another ~0.8 KB of shared engine code on top of the dispersion plumbing.",
+        "note": "Ceiling raised 93->94 (user-approved) when scene212 added KHR_materials_dispersion: scene33 shares the transmission + dielectric chunks and carries ~0.6 KB of unavoidable dispersion plumbing (the 3-ray WGSL itself ships only in scene212's bundle). Raised 94->94.5 (user-approved) to absorb shared glTF-core growth from native interleaved-buffer support + EXT_meshopt_compression/KHR_xmp_json_ld/KHR_mesh_quantization registrations (PR #157). Bumped 94.5->95 (user-approved) after HPM/LWR substrate (#116) adds another ~0.8 KB of shared engine code on top of the dispersion plumbing.",
         "description": "LightsPunctualLamp.glb (KHR_lights_punctual point lights + KHR_materials_transmission) with default IBL environment. Matches PG #YG3BBF#54.",
         "tags": ["pbr", "gltf", "env", "lights-punctual", "transmission"],
         "skipPerf": true
@@ -1301,7 +1301,8 @@
         "slug": "scene176-mosquito-amber",
         "name": "Scene 176 - MosquitoInAmber",
         "maxMad": 0.5,
-        "maxRawKB": 95,
+        "maxRawKB": 96,
+        "note": "Ceiling raised 95->96 (user-approved) to absorb shared glTF-core growth (~1.1 KB raw) from native interleaved-buffer support in #157; the de-stride/interleave plumbing lives in mesh core, so every glTF scene grew ~1.1 KB.",
         "description": "KhronosGroup MosquitoInAmber.gltf (KHR_materials_transmission + ior + volume) against the studio.env HDR environment used as IBL and a blurred HDR skybox, with frame-graph scene-texture transmission.",
         "tags": ["pbr", "gltf", "env", "transmission", "volume", "skybox"],
         "skipPerf": true,
@@ -1360,6 +1361,28 @@
         "description": "Same 5×5 grid + pillar as scene 200, but useHighPrecisionMatrix=true and useFloatingOrigin=true. F64 caches + eye-relative upload trick keep GPU-facing translations small; rasterization is crisp.",
         "tags": ["hpm", "lwr", "floating-origin", "precision", "procedural", "std"],
         "skipPerf": true
+    },
+    {
+        "id": 210,
+        "slug": "scene210-xmp-metadata-cube",
+        "name": "Scene 210 — XMP Metadata Cube",
+        "maxMad": 0.2,
+        "maxRawKB": 71,
+        "description": "KhronosGroup XmpMetadataRoundedCube.glb exercising the KHR_xmp_json_ld extension; JSON-LD metadata packets are surfaced on the AssetContainer with zero render impact, rendered in environmentSpecular.env with a skybox.",
+        "tags": ["pbr", "gltf", "xmp", "metadata", "env", "skybox"],
+        "skipPerf": true,
+        "bundleTimeoutMs": 120000
+    },
+    {
+        "id": 211,
+        "slug": "scene211-meshopt-brainstem",
+        "name": "Scene 211 — BrainStem Meshopt",
+        "maxMad": 0.2,
+        "maxRawKB": 86,
+        "description": "KhronosGroup BrainStem (glTF-Meshopt-EXT) exercising EXT_meshopt_compression + KHR_mesh_quantization; skinned and animated, decoded via dynamic-imported loader features so non-meshopt scenes pay nothing. Frozen via seekTime for deterministic parity.",
+        "tags": ["pbr", "gltf", "meshopt", "quantization", "skeleton", "animation"],
+        "skipPerf": true,
+        "bundleTimeoutMs": 120000
     },
     {
         "id": 212,

@@ -217,6 +217,10 @@ babylon-lite/
 │   │   │   ├── gltf-parser.ts     # glTF JSON parsing helpers
 │   │   │   ├── gltf-material.ts   # glTF material → PbrMaterialProps
 │   │   │   ├── gltf-ext-basisu.ts # KHR_texture_basisu dynamic feature
+│   │   │   ├── gltf-interleave.ts # native interleaved VB support (lazy de-stride)
+│   │   │   ├── gltf-feature-meshopt.ts # EXT_meshopt_compression dynamic feature
+│   │   │   ├── gltf-ext-quantization.ts # KHR_mesh_quantization dynamic feature
+│   │   │   ├── gltf-feature-xmp.ts # KHR_xmp_json_ld metadata dynamic feature
 │   │   │   └── gltf-animation.ts  # glTF animation extraction
 │   │   ├── loader-env/
 │   │   │   ├── load-env.ts        # .env parser, RGBD decode, cubemap upload
@@ -1490,6 +1494,10 @@ For production builds, switch to `"./dist/index.js"`.
 | `src/loader-gltf/gltf-parser.ts` | glTF JSON parsing helpers | — |
 | `src/loader-gltf/gltf-material.ts` | glTF material → PbrMaterialProps | — |
 | `src/loader-gltf/gltf-ext-basisu.ts` | `KHR_texture_basisu` dynamic feature | — |
+| `src/loader-gltf/gltf-interleave.ts` | Native interleaved-VB support (lazy CPU de-stride) | — |
+| `src/loader-gltf/gltf-feature-meshopt.ts` | `EXT_meshopt_compression` dynamic feature | — |
+| `src/loader-gltf/gltf-ext-quantization.ts` | `KHR_mesh_quantization` dynamic feature | — |
+| `src/loader-gltf/gltf-feature-xmp.ts` | `KHR_xmp_json_ld` metadata dynamic feature | — |
 | `src/loader-gltf/gltf-animation.ts` | glTF animation extraction | — |
 | `src/loader-env/load-env.ts` | .env parser + RGBD decode | 240 |
 | `src/loader-env/load-dds-env.ts` | DDS environment loading | — |

@@ -349,6 +349,10 @@ feature is tree-shakable: scenes that don't use it pay no bundle cost.
 | `KHR_node_visibility` | ✅ | Auto-detected; per-node visibility flag honoured at render time (Scene 34) |
 | `KHR_animation_pointer` | ✅ | Auto-detected; animates arbitrary JSON pointers (e.g. node visibility, material UBO fields) (Scene 34) |
 | `EXT_mesh_gpu_instancing` | ✅ | Auto-detected; per-node TRS accessors expanded into thin instances (Scene 35) |
+| `EXT_meshopt_compression` | ✅ | Auto-detected; meshopt-decodes vertex/index buffers via a dynamically-imported decoder (Scene 211) |
+| `KHR_mesh_quantization` | ✅ | Auto-detected; normalized/quantized vertex attributes uploaded with native typed formats (Scene 211) |
+| `KHR_xmp_json_ld` | ✅ | Auto-detected; JSON-LD metadata packets surfaced on `AssetContainer.xmpMetadata` with zero render impact (Scene 210) |
+| Interleaved vertex buffers | ✅ | Genuine GPU-level interleave: a strided `bufferView` is uploaded once and bound to each attribute slot via `arrayStride`/offset — no CPU de-interleave or asset rewrite (Scene 210) |
 | Subsurface translucency + thickness | ✅ | `createPbrMaterial({ subsurface: { translucency, thickness } })` |
 | Specular anti-aliasing | ✅ | Auto-on for glTF; manual: `createPbrMaterial({ enableSpecularAA: true })` |
 | Morph targets | ✅ | PBR meshes only (not `StandardMaterial`) |
