@@ -272,9 +272,11 @@ function getUniformBinding(task: PostProcessTaskInternal): number {
 
 function getShaderModule(task: PostProcessTaskInternal, engine: EngineContextInternal): GPUShaderModule {
     const desc = task.outputTexture._descriptor;
-    // Offscreen sources rendered without a projection flip match Babylon.js post-process sources;
-    // compensate when sampling so derivative-dependent scene shading is not altered.
-    const outputFlipY = (desc.flipY ?? desc.resolveToSwapchain !== true) || task.sourceTexture._descriptor.flipY === false;
+    // V-flip the sampling UV only when source and target orientations differ.
+    // Orientation comes from `flipY` override or defaults to `resolveToSwapchain !== true`
+    // (offscreen RTs are projection-flipped; swap RTs are upright).
+    const srcDesc = task.sourceTexture._descriptor;
+    const outputFlipY = (srcDesc.flipY ?? srcDesc.resolveToSwapchain !== true) === (desc.flipY ?? desc.resolveToSwapchain !== true);
     const code = `${fullscreenVertexWGSL(outputFlipY, task._shader.vertexOutputWGSL ?? "", task._shader.vertexMainWGSL ?? "")}\n${SOURCE_WGSL}\n${task._shader.extraTextureWGSL ?? ""}\n${task._shader.uniformWGSL ?? ""}\n${task._shader.fragmentWGSL}\n${task._shader.fragmentWrapperWGSL ?? FRAGMENT_WRAPPER_WGSL}`;
     if (!task._shaderModule || task._shaderModuleCode !== code) {
         task._shaderModuleCode = code;

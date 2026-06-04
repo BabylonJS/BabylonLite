@@ -47,7 +47,13 @@ export interface RenderTargetDescriptor {
      *  time. With sampleCount === 1 the RT owns no color texture (the swap view is the
      *  color attachment directly). */
     resolveToSwapchain?: boolean;
-    /** Override projection Y-flip. Defaults to true for offscreen targets and false for swapchain targets. */
+    /** Override the projection Y-flip for this render target. Defaults to `true` for offscreen
+     *  targets and `false` for swapchain targets, which matches BJS's WebGPU offscreen-RT
+     *  convention and gives sub-pixel parity for scenes that render geometry into offscreen
+     *  RTs. Set to `false` on an offscreen RT when a downstream post-process is directionally
+     *  Y-asymmetric (e.g. chromatic aberration) and would otherwise produce a vertically
+     *  mirrored effect vs. the reference. Set to `true` on a swapchain RT to deliberately
+     *  flip the final swap output. */
     flipY?: boolean;
 }
 

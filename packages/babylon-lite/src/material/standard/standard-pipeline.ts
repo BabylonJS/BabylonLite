@@ -42,7 +42,7 @@ import { MSH_RECEIVE_SHADOWS } from "../mesh-features.js";
 
 /** Compose Standard shader via the generic ShaderComposer.
  *  @param fragments Optional extra fragments (e.g. thin-instance). */
-function composeStandardShader(features: number, _meshFeatures = 0, fragments: ShaderFragment[] = [], esmShadowDepthCode = ""): ComposedShader {
+export function composeStandardShader(features: number, _meshFeatures = 0, fragments: ShaderFragment[] = [], esmShadowDepthCode = ""): ComposedShader {
     const has = (bit: number) => (features & bit) !== 0;
     const template = createStandardTemplate(
         {

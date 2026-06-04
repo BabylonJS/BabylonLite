@@ -4,17 +4,19 @@ import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { BlurPostProcess } from "@babylonjs/core/PostProcesses/blurPostProcess";
-import { ChromaticAberrationPostProcess } from "@babylonjs/core/PostProcesses/chromaticAberrationPostProcess";
 import { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Loading/loadingScreen";
 import "@babylonjs/core/Loading/Plugins/babylonFileLoader";
 import "@babylonjs/loaders";
+import { ChromaticAberrationPostProcess } from "@babylonjs/core/PostProcesses/chromaticAberrationPostProcess";
 
 (async function () {
     const initStart = performance.now();
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
     const engine = new WebGPUEngine(canvas, { antialias: true, adaptToDeviceRatio: true });
     await engine.initAsync();
+
+    engine.useReverseDepthBuffer = true;
 
     const scene = new Scene(engine);
 
@@ -27,12 +29,20 @@ import "@babylonjs/loaders";
     scene.activeCamera = camera;
 
     new BlurPostProcess("scene143-blur-x", new Vector2(1, 0), 16, 1, camera, Texture.BILINEAR_SAMPLINGMODE, engine);
-    // new BlurPostProcess("scene143-blur-y", new Vector2(0, 1), 16, 1, camera, Texture.BILINEAR_SAMPLINGMODE, engine);
-    // const chromatic = new ChromaticAberrationPostProcess("scene143-chromatic-aberration", engine.getRenderWidth(), engine.getRenderHeight(), 1, camera, Texture.BILINEAR_SAMPLINGMODE, engine);
-    // chromatic.aberrationAmount = 45;
-    // chromatic.radialIntensity = 0;
-    // chromatic.direction = new Vector2(0.707, 0.707);
-    // chromatic.centerPosition = new Vector2(0.5, 0.5);
+    new BlurPostProcess("scene143-blur-y", new Vector2(0, 1), 16, 1, camera, Texture.BILINEAR_SAMPLINGMODE, engine);
+    const chromatic = new ChromaticAberrationPostProcess(
+        "scene143-chromatic-aberration",
+        engine.getRenderWidth(),
+        engine.getRenderHeight(),
+        1,
+        camera,
+        Texture.BILINEAR_SAMPLINGMODE,
+        engine
+    );
+    chromatic.aberrationAmount = 45;
+    chromatic.radialIntensity = 0;
+    chromatic.direction = new Vector2(0.707, 0.707);
+    chromatic.centerPosition = new Vector2(0.5, 0.5);
 
     const eng = engine as unknown as { _drawCalls?: { current: number; fetchNewFrame(): void } };
     scene.onBeforeRenderObservable.add(() => {
@@ -45,7 +55,7 @@ import "@babylonjs/loaders";
     engine.runRenderLoop(() => scene.render());
     window.addEventListener("resize", () => engine.resize());
     for (let i = 0; i < 10; i++) {
-        await new Promise<void>((resolve) => scene.onAfterRenderObservable.addOnce(resolve));
+        await new Promise<void>((resolve) => scene.onAfterRenderObservable.addOnce(() => resolve()));
     }
     canvas.dataset.initMs = String(performance.now() - initStart);
     canvas.dataset.ready = "true";

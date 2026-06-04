@@ -54,8 +54,9 @@ export interface RenderTaskConfig {
     rt: RenderTarget;
     /** Background clear color. May be mutated frame-to-frame. */
     clrColor?: GPUColorDict;
-    /** When true, controls color + depth `loadOp` ("clear"). When false, use "load"
-     *  so this pass overlays previous content (UI overlays, second scene, etc.). */
+    /** When true, color `loadOp` is "clear"; when false, "load" (overlays previous
+     *  color content). Depth is always cleared when rt-owned and always loaded when
+     *  supplied via `setRenderTaskDepthOverride`. */
     clr?: boolean;
     /** Per-pass camera override. Null/undefined uses `scene.camera`. */
     cam?: Camera | null;
@@ -86,6 +87,12 @@ export interface RenderTask extends Task {
 
     _renderPassDescriptor: GPURenderPassDescriptor;
     _colorAttachment: GPURenderPassColorAttachment;
+    /** External depth source set by {@link setRenderTaskDepthOverride}. When unset,
+     *  the pass uses `config.rt._depthView`. */
+    _depthSrc?: RenderTarget;
+    /** External depth/stencil `loadOp` set by {@link setRenderTaskDepthOverride}. When
+     *  unset, defaults to `"clear"`. */
+    _depthLoadOp?: GPULoadOp;
 
     /** Per-task scene UBO + bind group. Created eagerly in createRenderTask
      *  so renderables can reference `_sceneBG` at `bind()` time. Written each
@@ -209,6 +216,19 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
     return task;
 }
 
+/** Override the depth/stencil attachment for this task with an externally-supplied
+ *  render target (e.g. one produced by a preceding `GeometryRendererTask`). When set,
+ *  the pass binds `depthRt._depthView` instead of `rt._depthView`, uses
+ *  `depthRt._descriptor.depthStencilFormat` for pipeline signature matching, and uses
+ *  `loadOp: "load"` — the caller owns clearing. The color RT must omit
+ *  `depthStencilFormat` so it allocates no internal depth, and must match the depth
+ *  attachment in size, sample count and Y-flip. Call before the first `record()`. */
+export function setRenderTaskDepthOverride(task: RenderTask, depthRt: RenderTarget): void {
+    task._depthSrc = depthRt;
+    task._depthLoadOp = "load";
+    (task._targetSignature as { _depthStencilFormat?: GPUTextureFormat })._depthStencilFormat = depthRt._descriptor.depthStencilFormat;
+}
+
 /** Remove a mesh from this task's renderable + binding lists. Idempotent. */
 export function removeMeshFromTask(task: RenderTask, mesh: object): void {
     let removed = false;
@@ -239,8 +259,7 @@ function resolvePendingMeshes(task: RenderTask, sc: SceneContextInternal): void 
         return;
     }
     for (const { mesh, material } of task._pendingMeshes) {
-        const buildGroup = material._buildGroup;
-        const rebuild = buildGroup?._rebuildSingle;
+        const rebuild = material._buildGroup?._rebuildSingle;
         if (!rebuild) {
             throw new Error();
         }
@@ -291,26 +310,30 @@ function buildBindings(task: RenderTask, eng: EngineContextInternal, targetSigna
 }
 
 function buildRenderPassDescriptor(task: RenderTask, rt: RenderTarget): void {
-    task._colorAttachment.view = rt._colorView!;
-    task._renderPassDescriptor.colorAttachments = rt._colorView ? [task._colorAttachment] : [];
+    const att = task._colorAttachment;
+    att.view = rt._colorView!;
+    task._renderPassDescriptor.colorAttachments = rt._colorView ? [att] : [];
 
-    const depthView = rt._depthView;
-    let depthAttachment: GPURenderPassDepthStencilAttachment | null = null;
+    const depthSrc = task._depthSrc ?? rt;
+    const depthView = depthSrc._depthView;
+    let depthAttachment: GPURenderPassDepthStencilAttachment | undefined;
     if (depthView) {
+        const dd = depthSrc._descriptor;
+        const loadOp = task._depthLoadOp ?? "clear";
         depthAttachment = {
             view: depthView,
-            depthClearValue: rt._descriptor._depthClearValue ?? 0,
-            depthLoadOp: "clear",
+            depthClearValue: dd._depthClearValue ?? 0,
+            depthLoadOp: loadOp,
             depthStoreOp: "store",
         };
-        if (rt._descriptor.depthStencilFormat?.includes("stencil")) {
+        if (dd.depthStencilFormat?.includes("stencil")) {
             depthAttachment.stencilClearValue = 0;
-            depthAttachment.stencilLoadOp = "clear";
+            depthAttachment.stencilLoadOp = loadOp;
             depthAttachment.stencilStoreOp = "store";
         }
     }
 
-    task._renderPassDescriptor.depthStencilAttachment = depthAttachment ?? undefined;
+    task._renderPassDescriptor.depthStencilAttachment = depthAttachment;
 }
 
 function prepareRenderTaskPass(task: RenderTask, eng: EngineContextInternal, targetSignature: RenderTargetSignature, context: DrawUpdateContext): void {

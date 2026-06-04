@@ -7,7 +7,7 @@ import type { DrawBinding, DrawUpdateContext, Renderable } from "../../packages/
 import { createSceneContext, registerScene } from "../../packages/babylon-lite/src/scene/scene";
 import type { SceneContextInternal } from "../../packages/babylon-lite/src/scene/scene-core";
 import { createRenderTarget } from "../../packages/babylon-lite/src/engine/render-target";
-import { createRenderTask } from "../../packages/babylon-lite/src/frame-graph/render-task";
+import { createRenderTask, setRenderTaskDepthOverride } from "../../packages/babylon-lite/src/frame-graph/render-task";
 import { enableRenderTaskTransmission, enableSceneTransmission } from "../../packages/babylon-lite/src/frame-graph/transmission";
 
 const gpuGlobals = globalThis as typeof globalThis & {
@@ -389,5 +389,113 @@ describe("RenderPassTask transparent sorting", () => {
 
         expect(drawOrder).toEqual(["opaque", "glass-a", "glass-b", "glass-c"]);
         expect(passCount).toBe(2);
+    });
+
+    it("patches color attachments when rendering to a single-sample swapchain target", async () => {
+        // Regression: with sampleCount === 1 + resolveToSwapchain, no MSAA color
+        // texture exists at build time, so the render pass descriptor is created
+        // with `colorAttachments: []`. The swap view must be patched in per frame
+        // (as `view`, not `resolveTarget`) AND the descriptor's colorAttachments
+        // array must be repopulated; otherwise the pass runs with no color targets
+        // while bundles draw into BGRA8 pipelines, producing a black canvas and
+        // WebGPU validation errors.
+        const seenDescriptors: GPURenderPassDescriptor[] = [];
+        const engine = makeMockEngine({
+            msaaSamples: 1,
+            onBeginPass: (descriptor) => {
+                seenDescriptors.push(descriptor);
+            },
+        });
+        const scene = createSceneContext(engine) as SceneContextInternal;
+        scene.camera = makeCamera();
+        await registerScene(engine, scene);
+        scene._record();
+
+        // The default swap render task must have run with a non-empty
+        // colorAttachments array whose `view` is the swapchain view (no
+        // `resolveTarget`, since sampleCount === 1).
+        expect(seenDescriptors.length).toBeGreaterThan(0);
+        const swapDescriptor = seenDescriptors[seenDescriptors.length - 1];
+        const colorAttachments = swapDescriptor.colorAttachments as readonly GPURenderPassColorAttachment[];
+        expect(colorAttachments.length).toBe(1);
+        expect(colorAttachments[0]).toBeTruthy();
+        expect(colorAttachments[0]!.view).toBe(engine._swapchainView);
+        expect(colorAttachments[0]!.resolveTarget).toBeUndefined();
+    });
+
+    it("binds an external depthTexture in place of the color RT's own depth view", async () => {
+        const seenDescriptors: GPURenderPassDescriptor[] = [];
+        const engine = makeMockEngine({ msaaSamples: 1, onBeginPass: (d) => seenDescriptors.push(d) });
+        const scene = createSceneContext(engine, { defaultRenderTask: false }) as SceneContextInternal;
+        scene.camera = makeCamera();
+
+        // Color-only RT (no depthStencilFormat → buildRenderTarget allocates no depth).
+        const colorRt = createRenderTarget({
+            label: "scene-color",
+            colorFormat: "bgra8unorm",
+            sampleCount: 1,
+            size: { width: 16, height: 16 },
+        });
+        // Externally-supplied depth — simulates the output of a preceding GeometryRendererTask.
+        const externalDepth = createRenderTarget({
+            label: "external-depth",
+            depthStencilFormat: "depth32float",
+            sampleCount: 1,
+            size: { width: 16, height: 16 },
+        });
+        // Pre-populate the depth view (the geometry task would do this in record()).
+        const sentinelDepthView = { tag: "external-depth-view" } as unknown as GPUTextureView;
+        externalDepth._depthView = sentinelDepthView;
+        externalDepth._depthTexture = {} as unknown as GPUTexture;
+        externalDepth._width = 16;
+        externalDepth._height = 16;
+        externalDepth._eager = true;
+
+        const task = createRenderTask({ name: "scene", rt: colorRt }, engine, scene);
+        setRenderTaskDepthOverride(task, externalDepth);
+        scene._frameGraph._tasks.push(task);
+
+        await registerScene(engine, scene);
+        scene._record();
+
+        const descriptor = seenDescriptors.find((d) => d.depthStencilAttachment);
+        expect(descriptor).toBeTruthy();
+        const depthAtt = descriptor!.depthStencilAttachment as GPURenderPassDepthStencilAttachment;
+        expect(depthAtt.view).toBe(sentinelDepthView);
+        expect(depthAtt.depthLoadOp).toBe("load");
+        // Color RT has no depth of its own — verifies depthTexture really did override it.
+        expect(colorRt._depthView).toBeNull();
+        // The pipeline's signature must reflect the external depth format so
+        // beginRenderPass validates against pipelines with depthStencil.format = depth32float.
+        expect(task._targetSignature._depthStencilFormat).toBe("depth32float");
+    });
+
+    it("always uses depthLoadOp 'clear' for an rt-owned depth attachment, regardless of clr", async () => {
+        const seenDescriptors: GPURenderPassDescriptor[] = [];
+        const engine = makeMockEngine({ msaaSamples: 1, onBeginPass: (d) => seenDescriptors.push(d) });
+        const scene = createSceneContext(engine, { defaultRenderTask: false }) as SceneContextInternal;
+        scene.camera = makeCamera();
+
+        // Color RT with its own depth — buildRenderTarget will allocate _depthTexture/_depthView.
+        const rt = createRenderTarget({
+            label: "scene",
+            colorFormat: "bgra8unorm",
+            depthStencilFormat: "depth32float",
+            sampleCount: 1,
+            size: { width: 16, height: 16 },
+        });
+
+        // clr=false → color uses "load", but depth must still be "clear" since the RT owns it.
+        const task = createRenderTask({ name: "scene", rt, clr: false }, engine, scene);
+        scene._frameGraph._tasks.push(task);
+
+        await registerScene(engine, scene);
+        scene._record();
+
+        const descriptor = seenDescriptors.find((d) => d.depthStencilAttachment);
+        const depthAtt = descriptor!.depthStencilAttachment as GPURenderPassDepthStencilAttachment;
+        expect(depthAtt.depthLoadOp).toBe("clear");
+        const colorAtt = (descriptor!.colorAttachments as GPURenderPassColorAttachment[])[0]!;
+        expect(colorAtt.loadOp).toBe("load");
     });
 });

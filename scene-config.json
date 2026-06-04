@@ -990,6 +990,16 @@
         "skipPerf": true
     },
     {
+        "id": 145,
+        "slug": "scene145-geometry-renderer",
+        "name": "Scene 145 — Geometry Renderer Task",
+        "maxMad": 0.05,
+        "maxRawKB": 86,
+        "description": "HillValley rendered through the new frame-graph geometry renderer task with six geometry-texture impostors copied along the top edge. Per-material MaterialViews reuse the regular Standard fragment shader so ALBEDO / REFLECTIVITY / VIEW_NORMAL / WORLD_NORMAL all match BJS pixel-for-pixel.",
+        "tags": ["frame-graph", "geometry-renderer", "mrt", "babylon"],
+        "skipPerf": true
+    },
+    {
         "id": 150,
         "slug": "scene150-manual-x-slide",
         "name": "Scene 150 — Manual X Slide Animation",

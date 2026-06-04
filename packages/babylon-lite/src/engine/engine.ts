@@ -126,6 +126,13 @@ export interface EngineOptions {
      * with alpha < 1 will let HTML content underneath show through). Defaults to "opaque".
      */
     alphaMode?: GPUCanvasAlphaMode;
+    /**
+     * Extra WebGPU device limits to request when calling `adapter.requestDevice()`.
+     * Use to raise per-device caps such as `maxColorAttachmentBytesPerSample` (default 32),
+     * which is required when rendering into many MRT attachments. Caller is responsible for
+     * staying within the adapter's reported limits.
+     */
+    requiredLimits?: Record<string, GPUSize64 | undefined>;
 }
 
 /** Create the Babylon Lite engine. Acquires GPU adapter + device, configures swapchain. */
@@ -144,7 +151,7 @@ export async function createEngine(canvas: HTMLCanvasElement, options?: EngineOp
             features.push(f);
         }
     }
-    const device = await adapter.requestDevice({ requiredFeatures: features });
+    const device = await adapter.requestDevice({ requiredFeatures: features, requiredLimits: options?.requiredLimits });
     const context = canvas.getContext("webgpu");
     if (!context) {
         throw new Error("WebGPU context not available");
