@@ -2,10 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <!-- Disable the browser's pinch-to-zoom so two-finger gestures drive the camera (pinch zoom) instead. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Babylon Lite — Demo: Littlest Tokyo</title>
   <style>
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
-    canvas { width: 100%; height: 100%; display: block; }
+    /* touch-action: none lets the canvas receive raw touch gestures (pinch/drag) for camera control
+       instead of the browser consuming them for page scroll/zoom. */
+    canvas { width: 100%; height: 100%; display: block; touch-action: none; }
     .loading-overlay {
       position: fixed; inset: 0; z-index: 10000;
       display: flex; align-items: center; justify-content: center;
