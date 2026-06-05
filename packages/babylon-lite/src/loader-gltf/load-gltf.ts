@@ -29,16 +29,40 @@ function loadInterleave(): Promise<InterleaveModule> {
     return (_interleavePromise ??= import("./gltf-interleave.js"));
 }
 
-/** Repack a tightly-packed VEC4 (RGBA) float color buffer to a tight VEC3 (RGB) buffer.
- *  The PBR/standard vertex pipelines bind vertex color as float32x3 (stride 12); a VEC4
- *  source (stride 16) must be narrowed or every vertex misaligns. Alpha is dropped because
- *  Lite shading multiplies only the rgb of vertex color into the base color. */
-function packVec4ToVec3(src: Float32Array, count: number): Float32Array {
+/** Normalize a glTF COLOR_0 attribute to a tight float32 VEC3 (RGB) buffer.
+ *
+ *  The PBR/standard vertex pipelines bind vertex color as a single format: `float32x3`
+ *  (stride 12). glTF COLOR_0 is far more permissive — it may be VEC3 or VEC4, and its
+ *  component type may be float OR normalized unsigned byte/short. Binding any other layout
+ *  to the stride-12 float pipeline misaligns every vertex (garbage / black colors). So we
+ *  always convert here: integer types are normalized to [0,1] (per the glTF spec, integer
+ *  COLOR_0 is always normalized), VEC4 alpha is dropped (Lite shading multiplies only the
+ *  rgb of vertex color into the base color), and the result is a tight Float32Array RGB.
+ *
+ *  `data` is the resolved accessor view (Float32Array | Uint8Array | Uint16Array), `count`
+ *  the vertex count, and `comps` the component count (3 or 4). */
+function normalizeColorToVec3(data: ArrayBufferView, count: number, comps: number): Float32Array {
     const out = new Float32Array(count * 3);
-    for (let v = 0; v < count; v++) {
-        out[v * 3] = src[v * 4]!;
-        out[v * 3 + 1] = src[v * 4 + 1]!;
-        out[v * 3 + 2] = src[v * 4 + 2]!;
+    if (data instanceof Float32Array) {
+        for (let v = 0; v < count; v++) {
+            out[v * 3] = data[v * comps]!;
+            out[v * 3 + 1] = data[v * comps + 1]!;
+            out[v * 3 + 2] = data[v * comps + 2]!;
+        }
+    } else if (data instanceof Uint16Array) {
+        const inv = 1 / 65535;
+        for (let v = 0; v < count; v++) {
+            out[v * 3] = data[v * comps]! * inv;
+            out[v * 3 + 1] = data[v * comps + 1]! * inv;
+            out[v * 3 + 2] = data[v * comps + 2]! * inv;
+        }
+    } else if (data instanceof Uint8Array) {
+        const inv = 1 / 255;
+        for (let v = 0; v < count; v++) {
+            out[v * 3] = data[v * comps]! * inv;
+            out[v * 3 + 1] = data[v * comps + 1]! * inv;
+            out[v * 3 + 2] = data[v * comps + 2]! * inv;
+        }
     }
     return out;
 }
@@ -361,16 +385,11 @@ async function extractAllMeshes(
             const uv2Data = resolveAttr("TEXCOORD_1");
             const tanData = resolveAttr("TANGENT");
             const colorData = resolveAttr("COLOR_0");
-            // glTF COLOR_0 may be VEC3 or VEC4; the PBR/standard pipelines consume vertex
-            // color as vec3 (float32x3, stride 12). A VEC4 (RGBA) buffer has stride 16, so
-            // binding it to a stride-12 layout misaligns every vertex (garbage colors).
-            // Repack VEC4 float color to a tight VEC3 so the GPU stride matches the layout.
-            // Vertex-color alpha is unused by Lite shading, so dropping it changes no pixels.
-            const colors = colorData
-                ? colorData._componentCount === 4 && colorData._data instanceof Float32Array
-                    ? packVec4ToVec3(colorData._data as Float32Array, colorData._count)
-                    : (colorData._data as Float32Array)
-                : null;
+            // glTF COLOR_0 may be VEC3 or VEC4 with float, normalized ubyte, or normalized
+            // ushort components, but the PBR/standard pipelines bind vertex color as a single
+            // float32x3 layout. Normalize any source to a tight float32 RGB buffer so the GPU
+            // stride matches the layout (otherwise every vertex misaligns -> garbage/black).
+            const colors = colorData ? normalizeColorToVec3(colorData._data, colorData._count, colorData._componentCount) : null;
             const idxData = decoded
                 ? { _data: decoded._indices, _count: decoded._indexCount, _componentCount: 1 }
                 : primitive.indices !== undefined
