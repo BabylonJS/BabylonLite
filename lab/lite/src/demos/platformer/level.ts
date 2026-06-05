@@ -108,10 +108,10 @@ const CAVE_X0 = 140;
 const CAVE_X1 = 195;
 /** Solid ceiling row of the cave. */
 const CAVE_CEIL = 3;
-/** Where the player lands when warping into the cave. */
-const CAVE_ENTRY = { cx: CAVE_X0 + 2, cy: GROUND_TOP - 1 };
-/** Where the player lands when warping back out to the overworld. */
-const OVERWORLD_RETURN = { cx: 48, cy: GROUND_TOP - 1 };
+/** Cave emerge pipe top: where the player rises out after warping into the cave. */
+const CAVE_ENTRY = { cx: CAVE_X0 + 2, cy: GROUND_TOP - 2 };
+/** Overworld emerge target: the player rises back out of the col-50 entry pipe. */
+const OVERWORLD_RETURN = { cx: 50, cy: GROUND_TOP - 2 };
 
 /** Full grid width: the overworld, a void gap, then the cave chamber + margin. */
 const COLS = CAVE_X1 + 3;
@@ -339,7 +339,7 @@ export function buildLevel(): Level {
         }
     });
     // Left entry chamber: a few ground coins to greet the player.
-    for (let c = 3; c <= 11; c += 2) coins.push({ cx: col(c), cy: GROUND_TOP - 1 });
+    for (let c = 5; c <= 11; c += 2) coins.push({ cx: col(c), cy: GROUND_TOP - 1 });
     // Mid chamber raised bonus ledge with reward blocks the player bumps from below.
     for (let c = 24; c <= 30; c++) caveSolid(col(c), GROUND_TOP - 4, "stoneMid");
     caveBlock(col(26), GROUND_TOP - 6, "mushroom-block");
@@ -372,6 +372,11 @@ export function buildLevel(): Level {
     addPipe(50, GROUND_TOP - 2, 2, 2, CAVE_ENTRY.cx, CAVE_ENTRY.cy, true, "1-2");
     // Cave exit pipe on the cave floor near the right wall → back to the overworld.
     addPipe(col(51), GROUND_TOP - 2, 2, 2, OVERWORLD_RETURN.cx, OVERWORLD_RETURN.cy, false, "1-1");
+    // Cave entry emerge pipe (decorative): the player rises up out of it after warping in.
+    for (let x = CAVE_ENTRY.cx; x < CAVE_ENTRY.cx + 2; x++) {
+        for (let y = GROUND_TOP - 2; y <= GROUND_TOP - 1; y++) solid[y * COLS + x] = 1;
+    }
+    pipes.push({ cx: CAVE_ENTRY.cx, cy: GROUND_TOP - 2, w: 2, h: 2, toCx: 0, toCy: 0, toCave: false, worldLabel: "", decorative: true });
 
     // Decorative (non-warp) pipes that house piranha plants. Solid + drawn, but not warps.
     const addPiranhaPipe = (cx: number): void => {

@@ -16,6 +16,24 @@ sprite path).
 
 ---
 
+## 🎯 Definition of Done (committed roadmap)
+
+The owner has committed to these four items — once they land, this demo is
+considered **done**. (A **polish pass** comes first, driven by play-testing, before
+any of these are built.)
+
+1. **Title / attract screen — [#20](#polish).**
+2. **`loadArea` area system — [#3](#3-several-scenes--pipe-warps--sub-areas-).**
+   The real teardown/refill area model (not today's two-region split).
+3. **CRT / scanline post-process — [#17](#tech-showcase--flex).** Needs the engine
+   offscreen-RT hook (ask A) — the collaborative engine piece.
+4. **Castle finale + boss — [#12](#gameplay--content).**
+
+> **Status:** queued. **Next up = a play-test-driven polish pass** (owner plays,
+> calls out issues, we fix) — _then_ the four items above.
+
+---
+
 ## Legend — engine readiness
 
 Each idea is tagged with how much engine support it needs **today**:
@@ -68,9 +86,11 @@ What ships today, so we know what we're building on:
 - **Platforms** — ✅ **DONE.** **One-way** grass ledges (jump up through, land on
   top) and **moving** platforms (a horizontal pit-ferry, a vertical elevator, and a
   cave platform over lava) that carry the player. See [#13](#gameplay--content).
-- **Pipes** — ✅ **DONE.** A green warp pipe in the overworld now teleports the
-  player (duck on top) through an iris-wipe transition to a sealed underground
-  **bonus coin room** (`1-2`), with a return pipe back to `1-1`. See
+- **Pipes** — ✅ **DONE.** A green warp pipe in the overworld teleports the player
+  (duck on top) to the underground cavern (`1-2`) and back. The warp plays a classic
+  **pipe animation**: the player turns to face the camera and slides *down behind*
+  the pipe (occluded by it via draw order on a dedicated layer), a brief iris hides
+  the camera jump, then the player rises *up out of* a pipe at the destination. See
   [#3](#3-several-scenes--pipe-warps--sub-areas-).
 - **Juice** — ✅ **DONE.** Additive sparkle bursts + floating HUD-digit score
   popups on coin/stomp/kill, and a 4-chunk spinning **brick-break debris** spray
@@ -157,7 +177,7 @@ with additive atmosphere. Big visual payoff, tiny code.
 
 ---
 
-### 3. Several "scenes" — pipe warps & sub-areas ✅ DONE
+### 3. Several "scenes" — pipe warps & sub-areas ✅ DONE / ⭐ COMMITTED (full `loadArea`)
 
 > **Shipped.** Implemented across [`level.ts`](level.ts) (a sealed stone cave
 > chamber appended to the same tile grid past a wide void gap, with bonus-coin
@@ -253,7 +273,7 @@ scene graph — and gives the demo real game structure.
 
 - **11. Checkpoints & a tiny world map ✅ (M).** Flag checkpoints mid-level and a
   between-areas map screen — reinforces the multi-area system from #3.
-- **12. More enemy types ✅ DONE.** Added a **flying bee** (sine-bobbing through the
+- **12. More enemy types ✅ DONE / ⭐ COMMITTED (boss).** Added a **flying bee** (sine-bobbing through the
   air, stompable from above) and a **pipe-plant** (the tall green `snakeSlime` that
   rises from / retracts into a decorative pipe on a timed cycle, freezing while the
   player stands over it; contact hurts, fireballs kill it). They reuse the shared
@@ -279,8 +299,8 @@ scene graph — and gives the demo real game structure.
   coins/particles to flaunt WebGPU instancing throughput while staying smooth.
 - **16. Live debug HUD ✅ (S).** Optional overlay: sprite count, draw calls, frame
   time, and the demo's gzip bundle size — makes the "tiny + fast" story explicit.
-- **17. Retro CRT / scanline filter 🔴 (M).** A full-screen scanline + slight
-  barrel/vignette pass for arcade flavour. Needs a **fullscreen post pass**.
+- **17. Retro CRT / scanline filter 🔴 (M) — ⭐ COMMITTED.** A full-screen scanline + slight
+  barrel/vignette pass for arcade flavour. Needs a **fullscreen post pass** (engine ask A).
 - **18. Smooth integer-scale pixel zoom 🔴 (M).** Crisp pixel-art scaling at
   fractional window sizes via **render-to-texture** at integer scale, then blit.
   Needs RTT/framegraph.
@@ -289,7 +309,7 @@ scene graph — and gives the demo real game structure.
 
 - **19. Controller rumble + better touch controls ✅ (S).** Gamepad haptics on
   hit/stomp; larger, nicer on-screen buttons for mobile.
-- **20. Title & attract screen ✅ (S).** A proper start screen with an animated
+- **20. Title & attract screen ✅ (S) — ⭐ COMMITTED.** A proper start screen with an animated
   logo (reuse the star shader) and an idle attract loop.
 - **21. Accessibility ✅ (S).** Reduced-motion mode (calm the parallax/flashing),
   remappable keys, colorblind-friendly power-up shapes.

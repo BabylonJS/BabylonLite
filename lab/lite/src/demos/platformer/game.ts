@@ -334,6 +334,9 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     const lavaShader = createSprite2DCustomShader({ fragment: LAVA_FRAGMENT });
     const lavaLayer = createSprite2DLayer(whiteAtlas, { capacity: Math.max(1, level.lava.length), order: 4.5, customShader: lavaShader, pivot: [0, 0] });
     const terrainLayer = createSprite2DLayer(tiles.atlas, { capacity: level.terrain.length + 4, order: 5, pivot: [0, 0] });
+    // Player sprite while travelling through a pipe: a dedicated layer just BEHIND the
+    // pipe (order 5.5 < pipeLayer's 6) so the player slides in/out occluded by the pipe.
+    const pipeTravelLayer = createSprite2DLayer(players.atlas, { capacity: 1, order: 5.5, pivot: [0.5, 1] });
     const pipeLayer = createSprite2DLayer(pipeAtlas, { capacity: Math.max(1, level.pipes.length), order: 6, pivot: [0, 0] });
     // Moving platforms (kinematic): drawn as bridge tiles, in front of terrain/pipes.
     const moverTileCount = level.movers.reduce((n, m) => n + m.w, 0);
@@ -371,7 +374,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     const irisLayer = createSprite2DLayer(whiteAtlas, { capacity: 1, order: 20, pivot: [0, 0], customShader: irisShader });
 
     const renderer = createSpriteRenderer(engine, {
-        layers: [...parallax.layers, caveBackLayer, lavaLayer, terrainLayer, pipeLayer, moverLayer, blockLayer, itemLayer, shroomLayer, fireFlowerLayer, enemyLayer, torchLayer, trailLayer, playerLayer, fireballLayer, sparkLayer, digitLayer, debrisLayer, lanternLayer, torchGlowLayer, irisLayer],
+        layers: [...parallax.layers, caveBackLayer, lavaLayer, terrainLayer, pipeTravelLayer, pipeLayer, moverLayer, blockLayer, itemLayer, shroomLayer, fireFlowerLayer, enemyLayer, torchLayer, trailLayer, playerLayer, fireballLayer, sparkLayer, digitLayer, debrisLayer, lanternLayer, torchGlowLayer, irisLayer],
         clearValue: SKY,
     });
     registerSpriteRenderer(renderer);
@@ -387,6 +390,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     const torchGlowSlots = level.torches.map(() => addSprite2DIndex(torchGlowLayer, { positionPx: [0, 0], sizePx: [1, 1], color: [1, 0.72, 0.32, 0.9], visible: false }));
     const lavaGlowSlots = level.lava.map(() => addSprite2DIndex(torchGlowLayer, { positionPx: [0, 0], sizePx: [1, 1], color: [1, 0.5, 0.16, 0.85], visible: false }));
     const pipeSlots = level.pipes.map((p) => addSprite2DIndex(pipeLayer, { positionPx: [0, 0], sizePx: [p.w * TILE, p.h * TILE], frame: 0 }));
+    const pipeTravelSlot = addSprite2DIndex(pipeTravelLayer, { positionPx: [0, 0], sizePx: [1, 1], visible: false });
     const irisSlot = addSprite2DIndex(irisLayer, { positionPx: [0, 0], sizePx: [1, 1], visible: false });
 
     // ── Moving platforms (kinematic; carry the player) ────────────────────────
@@ -774,9 +778,16 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     // Warp / area state. `inCave` drives the dark backdrop + flag-goal guard; `warp`
     // runs the iris-wipe transition and teleports the player at its darkest point.
     let inCave = false;
-    const WARP_DUR = 1.0;
-    const WARP_MID = 0.5;
-    const warp = { active: false, t: 0, teleported: false, cooldown: 0, toCx: 0, toCy: 0, toCave: false, label: "1-1" };
+    // Pipe-warp animation timing: slide DOWN behind the source pipe, a brief iris
+    // (the teleport is hidden at its darkest point), then slide UP out of the
+    // destination pipe. The slide distance hides the (small-rendered) player behind
+    // the 2-tile pipe.
+    const WARP_DESCEND = 0.55;
+    const WARP_IRIS = 0.5;
+    const WARP_EMERGE = 0.55;
+    const WARP_TOTAL = WARP_DESCEND + WARP_IRIS + WARP_EMERGE;
+    const WARP_SLIDE = TILE * 1.8;
+    const warp = { active: false, t: 0, teleported: false, cooldown: 0, toCx: 0, toCy: 0, toCave: false, label: "1-1", srcX: 0, srcTopY: 0, dstX: 0, dstTopY: 0 };
 
     const sfx: Sfx = createSfx();
     const input: InputController = createInput(document.body);
@@ -938,9 +949,14 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         warp.toCy = pipe.toCy;
         warp.toCave = pipe.toCave;
         warp.label = pipe.worldLabel;
+        // Source pipe (slide down here) + destination pipe (emerge up there). Both
+        // warp pipes are 2 tiles wide, so the centre is one tile right of `cx`.
+        warp.srcX = (pipe.cx + pipe.w / 2) * TILE;
+        warp.srcTopY = pipe.cy * TILE;
+        warp.dstX = (pipe.toCx + 1) * TILE;
+        warp.dstTopY = pipe.toCy * TILE;
         player.vx = 0;
         player.vy = 0;
-        player.ducking = true;
         sfx.warp();
     };
 
@@ -1592,69 +1608,109 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             });
         }
 
-        // Player
-        const pframes = player.fire ? PLAYER_FIRE_FRAMES : PLAYER_FRAMES;
-        let pf: string = pframes.stand;
-        if (!player.alive) pf = pframes.hit;
-        else if (player.ducking) pf = pframes.duck;
-        else if (!player.onGround) pf = pframes.jump;
-        else if (Math.abs(player.vx) > 20) pf = Math.floor(player.animT * 12) % 2 === 0 ? pframes.walk1 : pframes.walk2;
-        const flashHide = player.invuln > 0 && Math.floor(player.invuln * 16) % 2 === 0;
-
-        // Drive the player's star shader: full dazzle while invincible, blinking between
-        // bright and dim in the final ~2s as a "running out" warning, 0 when not active.
-        let starStrength = 0;
-        if (player.star > 0) starStrength = player.star < 2 && Math.floor(player.star * 8) % 2 === 0 ? 0.35 : 1;
-        setSprite2DShaderParams(playerLayer, [starStrength, 0, 0, 0]);
-
-        const playerCx = player.box.x + player.box.w / 2;
-        const playerFeet = player.box.y + player.box.h;
-        const standH = player.fire ? yellowStandH : greenStandH;
-        const psc = (player.big ? PLAYER_VIS_BIG : PLAYER_VIS_SMALL) / standH;
-        const [pfw, pfh] = players.sizeOf(pf);
-        const playerDrawW = pfw * psc;
-        const playerDrawH = pfh * psc;
-        const playerFrame = players.frameOf(pf);
-        updateSprite2DIndex(playerLayer, playerSlot, {
-            positionPx: [sx(playerCx), sy(playerFeet)],
-            sizePx: [ss(playerDrawW), ss(playerDrawH)],
-            frame: playerFrame,
-            flipX: player.facing < 0,
-            visible: !flashHide,
-        });
-
-        // Star afterimage trail: record this pose, then draw the last few poses as
-        // additive rainbow ghosts fading with age. Cleared the frame star power ends.
-        if (player.star > 0) {
-            trailHist.unshift({ x: playerCx, y: playerFeet, w: playerDrawW, h: playerDrawH, frame: playerFrame, flip: player.facing < 0 });
-            if (trailHist.length > STAR_TRAIL * STAR_TRAIL_GAP) trailHist.length = STAR_TRAIL * STAR_TRAIL_GAP;
-            for (let i = 0; i < STAR_TRAIL; i++) {
-                const pose = trailHist[(i + 1) * STAR_TRAIL_GAP - 1];
-                if (!pose) {
-                    updateSprite2DIndex(trailLayer, trailSlots[i]!, { visible: false });
-                    continue;
-                }
-                const hue = game.flagAnimT * 7 + i * 0.7;
-                const fade = (1 - i / STAR_TRAIL) * 0.5 * starStrength;
-                updateSprite2DIndex(trailLayer, trailSlots[i]!, {
-                    positionPx: [sx(pose.x), sy(pose.y)],
-                    sizePx: [ss(pose.w), ss(pose.h)],
-                    frame: pose.frame,
-                    flipX: pose.flip,
-                    visible: true,
-                    color: [0.55 + 0.45 * Math.sin(hue), 0.55 + 0.45 * Math.sin(hue + 2.0944), 0.55 + 0.45 * Math.sin(hue + 4.1888), fade],
-                });
+        // Player — or, during a pipe warp, a front-facing sprite sliding through the
+        // pipe on pipeTravelLayer (BEHIND the pipe, so the pipe occludes it).
+        if (warp.active) {
+            updateSprite2DIndex(playerLayer, playerSlot, { visible: false });
+            setSprite2DShaderParams(playerLayer, [0, 0, 0, 0]);
+            if (trailHist.length > 0) {
+                trailHist.length = 0;
+                for (let i = 0; i < STAR_TRAIL; i++) updateSprite2DIndex(trailLayer, trailSlots[i]!, { visible: false });
             }
-        } else if (trailHist.length > 0) {
-            trailHist.length = 0;
-            for (let i = 0; i < STAR_TRAIL; i++) updateSprite2DIndex(trailLayer, trailSlots[i]!, { visible: false });
+            const ease = (p: number): number => p * p * (3 - 2 * p);
+            const wf = player.fire ? PLAYER_FIRE_FRAMES.stand : PLAYER_FRAMES.stand;
+            const wStandH = player.fire ? yellowStandH : greenStandH;
+            const wsc = PLAYER_VIS_SMALL / wStandH; // always small so the 2-tile pipe fully hides it
+            const [wfw, wfh] = players.sizeOf(wf);
+            let travelX = warp.srcX;
+            let travelFeet = warp.srcTopY;
+            let travelShow = true;
+            if (warp.t < WARP_DESCEND) {
+                travelX = warp.srcX;
+                travelFeet = warp.srcTopY + ease(warp.t / WARP_DESCEND) * WARP_SLIDE; // sink down
+            } else if (warp.t < WARP_DESCEND + WARP_IRIS) {
+                travelShow = false; // fully sunk + hidden behind the iris during the teleport
+            } else {
+                travelX = warp.dstX;
+                travelFeet = warp.dstTopY + (1 - ease((warp.t - WARP_DESCEND - WARP_IRIS) / WARP_EMERGE)) * WARP_SLIDE; // rise up
+            }
+            updateSprite2DIndex(
+                pipeTravelLayer,
+                pipeTravelSlot,
+                travelShow
+                    ? { positionPx: [sx(travelX), sy(travelFeet)], sizePx: [ss(wfw * wsc), ss(wfh * wsc)], frame: players.frameOf(wf), flipX: false, visible: true }
+                    : { visible: false },
+            );
+        } else {
+            updateSprite2DIndex(pipeTravelLayer, pipeTravelSlot, { visible: false });
+
+            const pframes = player.fire ? PLAYER_FIRE_FRAMES : PLAYER_FRAMES;
+            let pf: string = pframes.stand;
+            if (!player.alive) pf = pframes.hit;
+            else if (player.ducking) pf = pframes.duck;
+            else if (!player.onGround) pf = pframes.jump;
+            else if (Math.abs(player.vx) > 20) pf = Math.floor(player.animT * 12) % 2 === 0 ? pframes.walk1 : pframes.walk2;
+            const flashHide = player.invuln > 0 && Math.floor(player.invuln * 16) % 2 === 0;
+
+            // Drive the player's star shader: full dazzle while invincible, blinking between
+            // bright and dim in the final ~2s as a "running out" warning, 0 when not active.
+            let starStrength = 0;
+            if (player.star > 0) starStrength = player.star < 2 && Math.floor(player.star * 8) % 2 === 0 ? 0.35 : 1;
+            setSprite2DShaderParams(playerLayer, [starStrength, 0, 0, 0]);
+
+            const playerCx = player.box.x + player.box.w / 2;
+            const playerFeet = player.box.y + player.box.h;
+            const standH = player.fire ? yellowStandH : greenStandH;
+            const psc = (player.big ? PLAYER_VIS_BIG : PLAYER_VIS_SMALL) / standH;
+            const [pfw, pfh] = players.sizeOf(pf);
+            const playerDrawW = pfw * psc;
+            const playerDrawH = pfh * psc;
+            const playerFrame = players.frameOf(pf);
+            updateSprite2DIndex(playerLayer, playerSlot, {
+                positionPx: [sx(playerCx), sy(playerFeet)],
+                sizePx: [ss(playerDrawW), ss(playerDrawH)],
+                frame: playerFrame,
+                flipX: player.facing < 0,
+                visible: !flashHide,
+            });
+
+            // Star afterimage trail: record this pose, then draw the last few poses as
+            // additive rainbow ghosts fading with age. Cleared the frame star power ends.
+            if (player.star > 0) {
+                trailHist.unshift({ x: playerCx, y: playerFeet, w: playerDrawW, h: playerDrawH, frame: playerFrame, flip: player.facing < 0 });
+                if (trailHist.length > STAR_TRAIL * STAR_TRAIL_GAP) trailHist.length = STAR_TRAIL * STAR_TRAIL_GAP;
+                for (let i = 0; i < STAR_TRAIL; i++) {
+                    const pose = trailHist[(i + 1) * STAR_TRAIL_GAP - 1];
+                    if (!pose) {
+                        updateSprite2DIndex(trailLayer, trailSlots[i]!, { visible: false });
+                        continue;
+                    }
+                    const hue = game.flagAnimT * 7 + i * 0.7;
+                    const fade = (1 - i / STAR_TRAIL) * 0.5 * starStrength;
+                    updateSprite2DIndex(trailLayer, trailSlots[i]!, {
+                        positionPx: [sx(pose.x), sy(pose.y)],
+                        sizePx: [ss(pose.w), ss(pose.h)],
+                        frame: pose.frame,
+                        flipX: pose.flip,
+                        visible: true,
+                        color: [0.55 + 0.45 * Math.sin(hue), 0.55 + 0.45 * Math.sin(hue + 2.0944), 0.55 + 0.45 * Math.sin(hue + 4.1888), fade],
+                    });
+                }
+            } else if (trailHist.length > 0) {
+                trailHist.length = 0;
+                for (let i = 0; i < STAR_TRAIL; i++) updateSprite2DIndex(trailLayer, trailSlots[i]!, { visible: false });
+            }
         }
 
-        // Iris-wipe transition (fullscreen custom-shader quad) during a pipe warp.
+        // Iris-wipe transition: only darkens during the brief middle of a pipe warp,
+        // covering the camera jump. The slide in/out happens with the iris fully open.
         if (warp.active) {
-            const prog = warp.t / WARP_DUR;
-            const k = prog < WARP_MID ? prog / WARP_MID : (1 - prog) / (1 - WARP_MID);
-            updateSprite2DIndex(irisLayer, irisSlot, { positionPx: [0, 0], sizePx: [cw, ch], visible: true });
+            let k = 0;
+            if (warp.t >= WARP_DESCEND && warp.t < WARP_DESCEND + WARP_IRIS) {
+                const ip = (warp.t - WARP_DESCEND) / WARP_IRIS;
+                k = ip < 0.5 ? ip / 0.5 : (1 - ip) / 0.5;
+            }
+            updateSprite2DIndex(irisLayer, irisSlot, { positionPx: [0, 0], sizePx: [cw, ch], visible: k > 0.001 });
             setSprite2DShaderParams(irisLayer, [1.35 * (1 - k), cw / ch, 0, 0]);
         } else {
             updateSprite2DIndex(irisLayer, irisSlot, { visible: false });
@@ -1684,10 +1740,11 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
                 break;
             case "warping": {
                 warp.t += dt;
-                if (!warp.teleported && warp.t >= WARP_DUR * WARP_MID) {
-                    // Teleport at the iris's darkest point so the camera jump is hidden.
-                    player.box.x = warp.toCx * TILE + (TILE - player.box.w) / 2;
-                    player.box.y = (warp.toCy + 1) * TILE - player.box.h;
+                if (!warp.teleported && warp.t >= WARP_DESCEND + WARP_IRIS * 0.5) {
+                    // Teleport at the iris's darkest point so the camera jump is hidden;
+                    // the player lands standing on the destination pipe's top.
+                    player.box.x = warp.dstX - player.box.w / 2;
+                    player.box.y = warp.dstTopY - player.box.h;
                     player.vx = 0;
                     player.vy = 0;
                     player.onGround = true;
@@ -1695,7 +1752,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
                     game.world = warp.label;
                     warp.teleported = true;
                 }
-                if (warp.t >= WARP_DUR) {
+                if (warp.t >= WARP_TOTAL) {
                     warp.active = false;
                     warp.cooldown = 0.5;
                     game.phase = "playing";
@@ -1712,23 +1769,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
                         game.phase = "gameover";
                         hud.banner("GAME OVER", "Press Enter / tap A to retry");
                     } else {
-                        game.phase = "ready";
-                        game.timer = 1.4;
-                        game.time = START_TIME;
-                        resetPlayer();
-                        inCave = false;
-                        game.world = "1-1";
-                        for (const e of enemyList) respawnEnemy(e);
-                        for (const p of pickups) {
-                            p.active = false;
-                            updateSprite2DIndex(p.layer, p.slot, { visible: false });
-                        }
-                        for (const f of fireballs) killFireball(f);
-                        for (const s of sparks) killSpark(s);
-                        for (const d of debris) killDebris(d);
-                        for (const p of popups) hidePopup(p);
-                        updateSprite2DIndex(playerLayer, playerSlot, { frame: players.frameOf(PLAYER_FRAMES.stand) });
-                        hud.banner("WORLD 1-1", "Get ready!");
+                        resetWorld();
                     }
                 }
                 break;
@@ -1765,13 +1806,15 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         e.phase = src.kind === "fly" ? Math.random() * Math.PI * 2 : 0;
     };
 
-    const restartLevel = (): void => {
-        game.score = 0;
-        game.coins = 0;
-        game.lives = 3;
-        game.time = START_TIME;
+    // Full reset of the LEVEL to its initial state — blocks (incl. broken bricks),
+    // coins, enemies, moving platforms, all particles, and the player at spawn. Does
+    // NOT touch score / coins-collected / lives, so a death restores the world while
+    // keeping the run's totals (classic SMB). Shared by death-respawn + full restart.
+    const resetWorld = (): void => {
         game.phase = "ready";
         game.timer = 1.4;
+        game.time = START_TIME;
+        game.combo = 0;
         resetPlayer();
         inCave = false;
         game.world = "1-1";
@@ -1781,7 +1824,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             b.used = false;
             b.broken = false;
             b.bump = 0;
-            if (b.kind !== "brick") level.solid[b.cy * level.cols + b.cx] = 1;
+            level.solid[b.cy * level.cols + b.cx] = 1; // every block (brick + ?-block) starts solid
             updateSprite2DIndex(blockLayer, b.slot, { frame: blockFrame(b.kind), visible: true });
         }
         for (const c of coins) {
@@ -1789,6 +1832,17 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             updateSprite2DIndex(itemLayer, c.slot, { visible: true });
         }
         for (const e of enemyList) respawnEnemy(e);
+        for (const mp of movers) {
+            if (mp.axis === "x") {
+                mp.box.x = mp.min;
+                mp.dir = 1;
+            } else {
+                mp.box.y = mp.max;
+                mp.dir = -1;
+            }
+            mp.dx = 0;
+            mp.dy = 0;
+        }
         for (const p of pickups) {
             p.active = false;
             updateSprite2DIndex(p.layer, p.slot, { visible: false });
@@ -1799,6 +1853,13 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         for (const p of popups) hidePopup(p);
         updateSprite2DIndex(playerLayer, playerSlot, { frame: players.frameOf(PLAYER_FRAMES.stand) });
         hud.banner("WORLD 1-1", "Get ready!");
+    };
+
+    const restartLevel = (): void => {
+        game.score = 0;
+        game.coins = 0;
+        game.lives = 3;
+        resetWorld();
     };
 
     requestAnimationFrame(tick);
