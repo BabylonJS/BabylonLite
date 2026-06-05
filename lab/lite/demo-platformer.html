@@ -37,8 +37,9 @@
 <body>
   <!--
     This page loads the production-BUNDLED demo (tree-shaken + minified) from
-    /bundle/demos/, NOT the raw TypeScript source. Run `pnpm build:bundle-demos`
-    (also part of `pnpm dev:lab`) to (re)generate the bundle this page references.
+    /lite/bundle/demos/, NOT the raw TypeScript source. Run `pnpm build:bundle-demo
+    platformer` (fast, this demo only) or `pnpm build:bundle-demos` (all demos; also
+    part of `pnpm dev:lab`) to (re)generate the bundle this page references.
 
     Assets are a committed CC0 subset of Kenney's Pixel Platformer pack under
     lab/public/platformer/ — no runtime fetch required.
@@ -74,6 +75,6 @@
       }
     })();
   </script>
-  <script type="module" src="/bundle/demos/platformer.js"></script>
+  <script type="module" src="/lite/bundle/demos/platformer.js"></script>
 </body>
 </html>

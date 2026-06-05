@@ -33,6 +33,8 @@ export const PHYS = {
 
 /** Which alien colour the player uses (all five colours share the same frame suffixes). */
 export const PLAYER = "alienGreen";
+/** Alien colour the player switches to while in the fire power-up state. */
+export const PLAYER_FIRE = "alienYellow";
 
 /** Player animation frame names (suffix-only; the loader prepends nothing). */
 export const PLAYER_FRAMES = {
@@ -43,4 +45,15 @@ export const PLAYER_FRAMES = {
     duck: `${PLAYER}_duck`,
     hit: `${PLAYER}_hit`,
     front: `${PLAYER}_front`,
+} as const;
+
+/** Player frame names for the fire power-up state (yellow alien, same suffixes). */
+export const PLAYER_FIRE_FRAMES = {
+    stand: `${PLAYER_FIRE}_stand`,
+    walk1: `${PLAYER_FIRE}_walk1`,
+    walk2: `${PLAYER_FIRE}_walk2`,
+    jump: `${PLAYER_FIRE}_jump`,
+    duck: `${PLAYER_FIRE}_duck`,
+    hit: `${PLAYER_FIRE}_hit`,
+    front: `${PLAYER_FIRE}_front`,
 } as const;

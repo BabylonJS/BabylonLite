@@ -12,10 +12,13 @@
 import {
     addSprite2DIndex,
     createGridSpriteAtlas,
+    createSprite2DCustomShader,
     createSprite2DLayer,
     createSpriteRenderer,
     loadTexture2D,
     registerSpriteRenderer,
+    setSprite2DShaderParams,
+    spriteBlendAdditive,
     startEngine,
     updateSprite2DIndex,
     type EngineContext,
@@ -23,16 +26,107 @@ import {
 } from "babylon-lite";
 
 import { loadPlatformerSheet, type PlatformerSheet } from "./atlas.js";
-import { PHYS, PLAYER_FRAMES, TILE } from "./frames.js";
+import { PHYS, PLAYER_FIRE_FRAMES, PLAYER_FRAMES, TILE } from "./frames.js";
 import { createInput, type InputController } from "./input.js";
 import { createSfx, type Sfx } from "./audio.js";
 import { createHud, type Hud } from "./hud.js";
-import { buildLevel, type BlockKind, type Level } from "./level.js";
+import { buildLevel, type BlockKind, type Level, type Pipe } from "./level.js";
+import { createParallax } from "./parallax.js";
+import { makeFireballDataUrl, makeFireFlowerDataUrl } from "./fire.js";
+import { IRIS_FRAGMENT, makeCaveBackdropDataUrl, makePipeTextureDataUrl, makeWhiteTextureDataUrl } from "./portal.js";
 import { moveAndCollide, overlaps, type AABB, type CollisionMap } from "./physics.js";
 
 const SKY = { r: 0.38, g: 0.62, b: 0.95, a: 1 } as const;
 const START_TIME = 300;
 const ASSET_BASE = "/platformer";
+
+/** Number of afterimage ghosts in the star-power trail. */
+const STAR_TRAIL = 6;
+/** Frame spacing between consecutive ghosts (larger = longer, sparser trail). */
+const STAR_TRAIL_GAP = 3;
+
+// Visual draw sizes are decoupled from the collision boxes. The Kenney frames
+// carry transparent padding above the character/creature (art sits at the frame
+// bottom), and a tight hitbox feels better than a roomy one — so each sprite is
+// DRAWN larger than its box, scaled to read ~1 tile like the ?-blocks. The
+// bottom-centre pivot keeps the feet grounded as the sprite grows.
+/** Player sprite draw size, small (un-grown) and big (mushroom) states. */
+const PLAYER_DRAW_SMALL = { w: TILE * 0.88, h: TILE * 1.25 };
+const PLAYER_DRAW_BIG = { w: TILE * 1.05, h: TILE * 2.0 };
+/** Enemy sprite draw scale over its collision box (per axis). */
+const ENEMY_DRAW_W_MUL = 1.4;
+const ENEMY_DRAW_H_MUL = 1.95;
+// Items (coins, power-ups) use near-square 128×128 frames, but the art carries
+// generous transparent padding (~50–62% fill), so the DRAWN cell must be larger
+// than the visible item for it to read ~0.85 tile vs the 1-tile ?-blocks. The
+// centre pivot keeps the visible shape centred on the (tighter) collision box.
+/** Floating-coin draw size (cell; coin art fills ~60%). */
+const COIN_DRAW = TILE * 1.4;
+/** Coin collection radius box (half-extent). */
+const COIN_PICK_HALF = TILE * 0.42;
+/** Per-kind pickup DRAW size (square cell), tuned per art fill so each reads ~0.85 tile. */
+const PICKUP_DRAW: Record<PickupState["kind"], number> = {
+    "coin-pop": TILE * 1.4,
+    mushroom: TILE * 1.5,
+    star: TILE * 1.75,
+    "fire-flower": TILE * 1.1,
+};
+/**
+ * For grounded pickups (mushroom, star, fire-flower) the sprite is drawn much larger
+ * than its collision box, so we anchor it by the FEET instead of centring it — otherwise
+ * the oversized centred sprite sinks below the box and clips into the block it emerges
+ * from. Value = `0.5 − padBottom` of the frame (measured alpha bounds): the mushroom
+ * art is flush with its frame bottom (padBottom≈0 → 0.5); the star is centred in its
+ * frame (padBottom≈0.27 → ≈0.23); the fire flower has a short stem (padBottom≈0.1 → 0.4).
+ */
+const PICKUP_FOOT: Partial<Record<PickupState["kind"], number>> = {
+    mushroom: 0.5,
+    star: 0.23,
+    "fire-flower": 0.4,
+};
+
+// Fireball projectiles (fire power-up). Travel along the ground, bounce, and pop
+// enemies on contact; drawn as additive glows.
+const FIREBALL_SPEED = 520;
+const FIREBALL_BOUNCE = 360;
+const FIREBALL_LIFE = 2.4;
+const FIREBALL_MAX = 2;
+const FIRE_COOLDOWN = 0.28;
+const FIREBALL_DRAW = TILE * 0.7;
+
+/**
+ * Player invincibility fragment: an animated rainbow palette-cycle + sparkle pulse,
+ * mixed over the sprite by `fx.params.x` (0 = untouched sprite, 1 = full star dazzle).
+ * At strength 0 it returns exactly the stock `atlas * tint * opacity`, so the same
+ * layer renders the normal player when not invincible. WGSL contract per
+ * `createSprite2DCustomShader`: `in.uv`/`in.tint`, `atlasTex`/`atlasSamp`, `fx.time`/
+ * `fx.params`, and the layer UBO `L.opacityMul`.
+ */
+const STAR_FRAGMENT = `
+let base = textureSample(atlasTex, atlasSamp, in.uv);
+let strength = fx.params.x;
+let phase = fx.time * 7.0 + in.uv.y * 6.0 - in.uv.x * 3.0;
+let rainbow = vec3<f32>(
+    0.55 + 0.45 * sin(phase),
+    0.55 + 0.45 * sin(phase + 2.0944),
+    0.55 + 0.45 * sin(phase + 4.1888)
+);
+let lum = dot(base.rgb, vec3<f32>(0.299, 0.587, 0.114));
+let starRgb = mix(vec3<f32>(lum), rainbow, 0.85) * (0.45 + 0.7 * lum);
+let pulse = 0.5 + 0.5 * sin(fx.time * 22.0);
+let rgb = mix(base.rgb, starRgb, strength) + rainbow * (pulse * 0.3 * strength);
+return vec4<f32>(rgb, base.a) * in.tint * L.opacityMul;
+`;
+
+/** One recorded player pose sampled by the star afterimage trail. */
+interface TrailPose {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    frame: number;
+    flip: boolean;
+}
 
 interface BlockState {
     cx: number;
@@ -62,7 +156,7 @@ interface EnemyState {
 }
 
 interface PickupState {
-    kind: "coin-pop" | "mushroom" | "star";
+    kind: "coin-pop" | "mushroom" | "star" | "fire-flower";
     box: AABB;
     vx: number;
     vy: number;
@@ -74,7 +168,17 @@ interface PickupState {
     layer: Sprite2DLayer;
 }
 
-type Phase = "ready" | "playing" | "dying" | "complete" | "gameover";
+/** A fire-power projectile: bounces along the ground, pops enemies, drawn additive. */
+interface Fireball {
+    box: AABB;
+    vx: number;
+    vy: number;
+    life: number;
+    active: boolean;
+    slot: number;
+}
+
+type Phase = "ready" | "playing" | "warping" | "dying" | "complete" | "gameover";
 
 export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext): Promise<void> {
     const level = buildLevel();
@@ -82,7 +186,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     const worldH = level.rows * TILE;
 
     // ── Load art (one cohesive CC0 Kenney set) ────────────────────────────────
-    const [players, enemies, items, tiles, ground, bgTex] = await Promise.all([
+    const [players, enemies, items, tiles, ground] = await Promise.all([
         loadPlatformerSheet(engine, `${ASSET_BASE}/players`),
         loadPlatformerSheet(engine, `${ASSET_BASE}/enemies`),
         loadPlatformerSheet(engine, `${ASSET_BASE}/items`),
@@ -90,38 +194,64 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         // linear bleeds a dark fringe at frame edges → thin black seams.
         loadPlatformerSheet(engine, `${ASSET_BASE}/tiles`, { filter: "nearest" }),
         loadPlatformerSheet(engine, `${ASSET_BASE}/ground`, { filter: "nearest" }),
-        loadTexture2D(engine, `${ASSET_BASE}/backgrounds/colored_grass.png`, {
-            invertY: false,
-            addressModeU: "clamp-to-edge",
-            addressModeV: "clamp-to-edge",
-            mipMaps: false,
-            minFilter: "linear",
-            magFilter: "linear",
-        }),
     ]);
 
-    // ── Layers (back → front) ─────────────────────────────────────────────────
+    // ── Parallax background (multi-band, uvScroll) ────────────────────────────
+    // Replaces the single tiled backdrop: a static sky gradient, drifting clouds,
+    // and two rows of rolling hills, each scrolling at its own depth rate. Bands
+    // occupy draw orders 0..3, behind every gameplay layer.
+    const parallax = await createParallax(engine, 0);
+
+    // ── Portal textures (warp pipe, cave backdrop, iris-wipe quad) ────────────
+    const [pipeTex, caveTex, whiteTex, fireFlowerTex, fireballTex] = await Promise.all([
+        loadTexture2D(engine, makePipeTextureDataUrl(), { invertY: false, addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", mipMaps: false, minFilter: "linear", magFilter: "linear" }),
+        loadTexture2D(engine, makeCaveBackdropDataUrl(), { invertY: false, addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", mipMaps: false, minFilter: "linear", magFilter: "linear" }),
+        loadTexture2D(engine, makeWhiteTextureDataUrl(), { invertY: false, mipMaps: false }),
+        loadTexture2D(engine, makeFireFlowerDataUrl(), { invertY: false, addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", mipMaps: false, minFilter: "linear", magFilter: "linear" }),
+        loadTexture2D(engine, makeFireballDataUrl(), { invertY: false, addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", mipMaps: false, minFilter: "linear", magFilter: "linear" }),
+    ]);
+    const pipeAtlas = createGridSpriteAtlas(pipeTex, { cellWidthPx: pipeTex.width, cellHeightPx: pipeTex.height });
+    const caveAtlas = createGridSpriteAtlas(caveTex, { cellWidthPx: caveTex.width, cellHeightPx: caveTex.height });
+    const whiteAtlas = createGridSpriteAtlas(whiteTex, { cellWidthPx: whiteTex.width, cellHeightPx: whiteTex.height });
+    const fireFlowerAtlas = createGridSpriteAtlas(fireFlowerTex, { cellWidthPx: fireFlowerTex.width, cellHeightPx: fireFlowerTex.height });
+    const fireballAtlas = createGridSpriteAtlas(fireballTex, { cellWidthPx: fireballTex.width, cellHeightPx: fireballTex.height });
+
+    // ── Gameplay layers (back → front) ────────────────────────────────────────
     // Frame indices are atlas-specific, so each sheet needs its own layer(s).
-    const bgAtlas = createGridSpriteAtlas(bgTex, { cellWidthPx: bgTex.width, cellHeightPx: bgTex.height });
-    const bgLayer = createSprite2DLayer(bgAtlas, { capacity: 12, order: 0, pivot: [0, 0] });
-    const terrainLayer = createSprite2DLayer(ground.atlas, { capacity: level.terrain.length + 4, order: 1, pivot: [0, 0] });
-    const blockLayer = createSprite2DLayer(tiles.atlas, { capacity: level.blocks.length + 32, order: 2, pivot: [0, 0] });
-    const itemLayer = createSprite2DLayer(items.atlas, { capacity: level.coins.length + 40, order: 3, pivot: [0.5, 0.5] });
+    // Dark cave backdrop: full-screen panel shown only underground, behind terrain.
+    const caveBackLayer = createSprite2DLayer(caveAtlas, { capacity: 1, order: 4, pivot: [0, 0] });
+    const terrainLayer = createSprite2DLayer(ground.atlas, { capacity: level.terrain.length + 4, order: 5, pivot: [0, 0] });
+    const pipeLayer = createSprite2DLayer(pipeAtlas, { capacity: Math.max(1, level.pipes.length), order: 6, pivot: [0, 0] });
+    const blockLayer = createSprite2DLayer(tiles.atlas, { capacity: level.blocks.length + 32, order: 7, pivot: [0, 0] });
+    const itemLayer = createSprite2DLayer(items.atlas, { capacity: level.coins.length + 40, order: 8, pivot: [0.5, 0.5] });
     // Mushrooms come from the *tiles* sheet, so they need a centre-pivot tiles layer.
-    const shroomLayer = createSprite2DLayer(tiles.atlas, { capacity: 8, order: 4, pivot: [0.5, 0.5] });
-    const enemyLayer = createSprite2DLayer(enemies.atlas, { capacity: level.enemies.length + 4, order: 5, pivot: [0.5, 1] });
-    const playerLayer = createSprite2DLayer(players.atlas, { capacity: 2, order: 6, pivot: [0.5, 1] });
+    const shroomLayer = createSprite2DLayer(tiles.atlas, { capacity: 8, order: 9, pivot: [0.5, 0.5] });
+    // Fire flowers (procedural texture) get their own centre-pivot layer.
+    const fireFlowerLayer = createSprite2DLayer(fireFlowerAtlas, { capacity: 4, order: 9, pivot: [0.5, 0.5] });
+    const enemyLayer = createSprite2DLayer(enemies.atlas, { capacity: level.enemies.length + 4, order: 10, pivot: [0.5, 1] });
+    // Star-power afterimage trail: additive ghosts of the player (glow stacks), drawn
+    // just behind the player and hidden unless invincible.
+    const trailLayer = createSprite2DLayer(players.atlas, { capacity: STAR_TRAIL, order: 11, blendMode: spriteBlendAdditive, pivot: [0.5, 1] });
+    // The player's invincibility look is a per-layer custom fragment shader (rainbow
+    // palette-cycle + sparkle), its intensity driven each frame via setSprite2DShaderParams.
+    const starShader = createSprite2DCustomShader({ fragment: STAR_FRAGMENT });
+    const playerLayer = createSprite2DLayer(players.atlas, { capacity: 2, order: 12, customShader: starShader, pivot: [0.5, 1] });
+    // Fireball projectiles: additive glow layer, in front of the player.
+    const fireballLayer = createSprite2DLayer(fireballAtlas, { capacity: FIREBALL_MAX + 1, order: 13, blendMode: spriteBlendAdditive, pivot: [0.5, 0.5] });
+    // Fullscreen iris-wipe transition (custom-shader quad), on top of everything.
+    const irisShader = createSprite2DCustomShader({ fragment: IRIS_FRAGMENT });
+    const irisLayer = createSprite2DLayer(whiteAtlas, { capacity: 1, order: 20, pivot: [0, 0], customShader: irisShader });
 
     const renderer = createSpriteRenderer(engine, {
-        layers: [bgLayer, terrainLayer, blockLayer, itemLayer, shroomLayer, enemyLayer, playerLayer],
+        layers: [...parallax.layers, caveBackLayer, terrainLayer, pipeLayer, blockLayer, itemLayer, shroomLayer, fireFlowerLayer, enemyLayer, trailLayer, playerLayer, fireballLayer, irisLayer],
         clearValue: SKY,
     });
     registerSpriteRenderer(renderer);
 
-    // ── Background: horizontally tiled copies for parallax wrap (filled in
-    //    `project` so they always cover the full canvas width) ────────────────
-    const bgSlots: number[] = [];
-    for (let i = 0; i < 12; i++) bgSlots.push(addSprite2DIndex(bgLayer, { positionPx: [0, 0], sizePx: [10, 10], visible: false }));
+    // Cave backdrop, warp-pipe, and iris sprite slots.
+    const caveBackSlot = addSprite2DIndex(caveBackLayer, { positionPx: [0, 0], sizePx: [1, 1], visible: false });
+    const pipeSlots = level.pipes.map((p) => addSprite2DIndex(pipeLayer, { positionPx: [0, 0], sizePx: [p.w * TILE, p.h * TILE], frame: 0 }));
+    const irisSlot = addSprite2DIndex(irisLayer, { positionPx: [0, 0], sizePx: [1, 1], visible: false });
 
     // ── Static terrain sprites (frame fixed; position re-projected each frame) ─
     const terrainSlots = level.terrain.map((t) =>
@@ -160,7 +290,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         x: c.cx * TILE + TILE / 2,
         y: c.cy * TILE + TILE / 2,
         collected: false,
-        slot: addSprite2DIndex(itemLayer, { positionPx: [0, 0], sizePx: [TILE * 0.6, TILE * 0.6], frame: coinFrame, visible: false }),
+        slot: addSprite2DIndex(itemLayer, { positionPx: [0, 0], sizePx: [COIN_DRAW, COIN_DRAW], frame: coinFrame, visible: false }),
     }));
 
     // Flag (animated) on the items layer.
@@ -186,6 +316,21 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     makePool(8, "coin-pop", itemLayer, coinFrame);
     makePool(4, "mushroom", shroomLayer, tiles.frameOf("mushroomRed"));
     makePool(4, "star", itemLayer, items.frameOf("star"));
+    makePool(2, "fire-flower", fireFlowerLayer, 0);
+
+    // Fireball projectile pool (additive glow layer).
+    const fireballs: Fireball[] = [];
+    for (let i = 0; i < FIREBALL_MAX + 1; i++) {
+        fireballs.push({
+            box: { x: 0, y: 0, w: TILE * 0.4, h: TILE * 0.4 },
+            vx: 0,
+            vy: 0,
+            life: 0,
+            active: false,
+            slot: addSprite2DIndex(fireballLayer, { positionPx: [0, 0], sizePx: [FIREBALL_DRAW, FIREBALL_DRAW], frame: 0, visible: false }),
+        });
+    }
+    let fireCooldown = 0;
 
     const spawnPickup = (kind: PickupState["kind"], cx: number, cy: number): void => {
         const p = pickups.find((q) => !q.active && q.kind === kind);
@@ -199,26 +344,38 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             p.vx = 0;
             p.vy = -640;
             p.life = 0.5;
-            updateSprite2DIndex(p.layer, p.slot, { sizePx: [p.box.w, p.box.h], visible: true });
+            updateSprite2DIndex(p.layer, p.slot, { sizePx: [PICKUP_DRAW[kind], PICKUP_DRAW[kind]], visible: true });
         } else if (kind === "mushroom") {
             p.box.w = p.box.h = TILE * 0.8;
             p.box.x = cx * TILE + (TILE - p.box.w) / 2;
             p.vx = PHYS.enemySpeed * 1.6;
             p.vy = -260;
-            updateSprite2DIndex(p.layer, p.slot, { sizePx: [p.box.w, p.box.h], visible: true });
-        } else {
+            updateSprite2DIndex(p.layer, p.slot, { sizePx: [PICKUP_DRAW[kind], PICKUP_DRAW[kind]], visible: true });
+        } else if (kind === "star") {
             p.box.w = p.box.h = TILE * 0.8;
             p.box.x = cx * TILE + (TILE - p.box.w) / 2;
             p.vx = PHYS.enemySpeed * 1.4;
             p.vy = -420;
-            updateSprite2DIndex(p.layer, p.slot, { sizePx: [p.box.w, p.box.h], visible: true });
+            updateSprite2DIndex(p.layer, p.slot, { sizePx: [PICKUP_DRAW[kind], PICKUP_DRAW[kind]], visible: true });
+        } else {
+            // Fire flower: emerges and sits still on its block (classic, does not walk).
+            p.box.w = p.box.h = TILE * 0.8;
+            p.box.x = cx * TILE + (TILE - p.box.w) / 2;
+            p.vx = 0;
+            p.vy = -260;
+            updateSprite2DIndex(p.layer, p.slot, { sizePx: [PICKUP_DRAW[kind], PICKUP_DRAW[kind]], visible: true });
         }
     };
 
     // ── Enemies ───────────────────────────────────────────────────────────────
+    // Collision-box dims per enemy kind (kept tight); the drawn sprite is scaled up
+    // from these by ENEMY_DRAW_* so enemies read ~1 tile like the ?-blocks.
+    const enemyBoxDims = (kind: EnemyState["kind"]): { w: number; h: number } => ({
+        w: TILE * 0.82,
+        h: kind === "snail" ? TILE * 0.66 : TILE * 0.58,
+    });
     const enemyList: EnemyState[] = level.enemies.map((e) => {
-        const w = TILE * 0.72;
-        const h = e.kind === "snail" ? TILE * 0.62 : TILE * 0.56;
+        const { w, h } = enemyBoxDims(e.kind);
         const slot = addSprite2DIndex(enemyLayer, { positionPx: [0, 0], sizePx: [w, h], frame: enemies.frameOf(e.kind === "snail" ? "snail_move" : "slimeGreen_move"), visible: false });
         return {
             kind: e.kind,
@@ -236,8 +393,8 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     });
 
     // ── Player ────────────────────────────────────────────────────────────────
-    const smallSize = { w: TILE * 0.56, h: TILE * 0.82 };
-    const bigSize = { w: TILE * 0.62, h: TILE * 1.42 };
+    const smallSize = { w: TILE * 0.62, h: TILE * 0.92 };
+    const bigSize = { w: TILE * 0.68, h: TILE * 1.7 };
     const player = {
         box: { x: 0, y: 0, w: smallSize.w, h: smallSize.h } as AABB,
         vx: 0,
@@ -248,12 +405,18 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         ducking: false,
         invuln: 0,
         star: 0,
+        fire: false,
         coyote: 0,
         jumpBuf: 0,
         animT: 0,
         alive: true,
     };
-    const playerSlot = addSprite2DIndex(playerLayer, { positionPx: [0, 0], sizePx: [smallSize.w, smallSize.h], frame: players.frameOf(PLAYER_FRAMES.stand) });
+    const playerSlot = addSprite2DIndex(playerLayer, { positionPx: [0, 0], sizePx: [PLAYER_DRAW_SMALL.w, PLAYER_DRAW_SMALL.h], frame: players.frameOf(PLAYER_FRAMES.stand) });
+
+    // Star afterimage slots (hidden until invincible) + the rolling pose history they sample.
+    const trailSlots: number[] = [];
+    for (let i = 0; i < STAR_TRAIL; i++) trailSlots.push(addSprite2DIndex(trailLayer, { positionPx: [0, 0], sizePx: [1, 1], visible: false }));
+    const trailHist: TrailPose[] = [];
 
     const resetPlayer = (): void => {
         player.big = false;
@@ -265,6 +428,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         player.vy = 0;
         player.invuln = 0;
         player.star = 0;
+        player.fire = false;
         player.alive = true;
         player.facing = 1;
     };
@@ -279,7 +443,14 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     const collision: CollisionMap = { cols: level.cols, rows: level.rows, isSolid };
 
     // ── Run-state ─────────────────────────────────────────────────────────────
-    const game = { phase: "ready" as Phase, score: 0, coins: 0, lives: 3, time: START_TIME, timer: 1.6, flagAnimT: 0 };
+    const game = { phase: "ready" as Phase, score: 0, coins: 0, lives: 3, time: START_TIME, timer: 1.6, flagAnimT: 0, world: "1-1" };
+
+    // Warp / area state. `inCave` drives the dark backdrop + flag-goal guard; `warp`
+    // runs the iris-wipe transition and teleports the player at its darkest point.
+    let inCave = false;
+    const WARP_DUR = 1.0;
+    const WARP_MID = 0.5;
+    const warp = { active: false, t: 0, teleported: false, cooldown: 0, toCx: 0, toCy: 0, toCave: false, label: "1-1" };
 
     const sfx: Sfx = createSfx();
     const input: InputController = createInput(document.body);
@@ -308,7 +479,12 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
 
     const hurtPlayer = (): void => {
         if (player.invuln > 0 || player.star > 0 || game.phase !== "playing") return;
-        if (player.big) {
+        if (player.fire) {
+            // Fire → big (lose the fire power but keep size), like classic SMB.
+            player.fire = false;
+            player.invuln = 1.6;
+            sfx.powerDown();
+        } else if (player.big) {
             player.big = false;
             const feet = player.box.y + player.box.h;
             player.box.w = smallSize.w;
@@ -342,6 +518,87 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         }
     };
 
+    // Fire flower: grow if small (no extra grow-score), then grant the fire power.
+    const giveFire = (): void => {
+        if (!player.big) {
+            const feet = player.box.y + player.box.h;
+            player.big = true;
+            player.box.w = bigSize.w;
+            player.box.h = bigSize.h;
+            player.box.y = feet - player.box.h;
+        }
+        player.fire = true;
+        sfx.powerUp();
+    };
+
+    // Fire a fireball in the facing direction (capped at FIREBALL_MAX live at once).
+    const shootFireball = (): void => {
+        let live = 0;
+        for (const f of fireballs) if (f.active) live++;
+        if (live >= FIREBALL_MAX) return;
+        const f = fireballs.find((q) => !q.active);
+        if (!f) return;
+        f.active = true;
+        f.life = FIREBALL_LIFE;
+        f.box.x = player.box.x + player.box.w / 2 - f.box.w / 2;
+        f.box.y = player.box.y + player.box.h * 0.35;
+        f.vx = player.facing * FIREBALL_SPEED;
+        f.vy = 140;
+        sfx.fireball();
+        updateSprite2DIndex(fireballLayer, f.slot, { visible: true });
+    };
+
+    const killFireball = (f: Fireball): void => {
+        f.active = false;
+        updateSprite2DIndex(fireballLayer, f.slot, { visible: false });
+    };
+
+    const updateFireball = (f: Fireball, dt: number): void => {
+        f.life -= dt;
+        if (f.life <= 0) {
+            killFireball(f);
+            return;
+        }
+        f.vy += PHYS.gravity * dt;
+        if (f.vy > PHYS.maxFall) f.vy = PHYS.maxFall;
+        const res = moveAndCollide(f.box, f.vx, f.vy, dt, collision);
+        if (res.onGround) f.vy = -FIREBALL_BOUNCE; // bounce along the ground
+        if (res.hitWall !== 0) {
+            killFireball(f);
+            return;
+        }
+        for (const e of enemyList) {
+            if (!e.alive || e.dying > 0) continue;
+            if (overlaps(f.box, e.box)) {
+                e.dying = 0.4;
+                e.vy = -360;
+                updateSprite2DIndex(enemyLayer, e.slot, { frame: enemies.frameOf(e.kind === "snail" ? "snail_move" : "slimeGreen_dead"), flipY: true });
+                addScore(200);
+                sfx.kick();
+                killFireball(f);
+                return;
+            }
+        }
+        if (f.box.y > worldH + TILE) killFireball(f);
+    };
+
+    // Begin a pipe warp: freeze the player and run the iris transition; the teleport
+    // itself happens at the darkest point (see the "warping" phase in the tick).
+    const startWarp = (pipe: Pipe): void => {
+        game.phase = "warping";
+        warp.active = true;
+        warp.t = 0;
+        warp.teleported = false;
+        warp.toCx = pipe.toCx;
+        warp.toCy = pipe.toCy;
+        warp.toCave = pipe.toCave;
+        warp.label = pipe.worldLabel;
+        player.vx = 0;
+        player.vy = 0;
+        player.ducking = true;
+        sfx.warp();
+    };
+
     // Bump a block from below: return contents, flip to used/broken.
     const bumpBlock = (cx: number, cy: number): void => {
         const b = blocks.find((q) => q.cx === cx && q.cy === cy && !q.broken);
@@ -369,7 +626,9 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             spawnPickup("coin-pop", cx, cy - 1);
             gainCoin();
         } else if (b.kind === "mushroom-block") {
-            spawnPickup("mushroom", cx, cy - 1);
+            // Mushroom when small (grow first); a fire flower once already big — classic progression.
+            if (!player.big) spawnPickup("mushroom", cx, cy - 1);
+            else spawnPickup("fire-flower", cx, cy - 1);
             sfx.powerUp();
         } else {
             spawnPickup("star", cx, cy - 1);
@@ -389,6 +648,14 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         }
         if (player.invuln > 0) player.invuln -= dt;
         if (player.star > 0) player.star -= dt;
+        if (warp.cooldown > 0) warp.cooldown -= dt;
+
+        // Fire power: shoot a fireball on the fire button (run / B), rate-limited.
+        if (fireCooldown > 0) fireCooldown -= dt;
+        if (player.fire && s.firePressed && fireCooldown <= 0) {
+            shootFireball();
+            fireCooldown = FIRE_COOLDOWN;
+        }
 
         // Horizontal input
         const wantRun = s.run;
@@ -445,6 +712,20 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             return;
         }
 
+        // Pipe warp: duck while standing on a pipe's top edge.
+        if (warp.cooldown <= 0 && player.onGround && s.down) {
+            const cxw = player.box.x + player.box.w / 2;
+            const feet = player.box.y + player.box.h;
+            for (const pipe of level.pipes) {
+                const left = pipe.cx * TILE;
+                const right = (pipe.cx + pipe.w) * TILE;
+                if (cxw >= left && cxw <= right && Math.abs(feet - pipe.cy * TILE) < TILE * 0.5) {
+                    startWarp(pipe);
+                    return;
+                }
+            }
+        }
+
         // Enemies
         for (const e of enemyList) {
             if (!e.alive) continue;
@@ -458,10 +739,16 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             updatePickup(p, dt);
         }
 
+        // Fireballs
+        for (const f of fireballs) {
+            if (!f.active) continue;
+            updateFireball(f, dt);
+        }
+
         // Coins
         for (const c of coins) {
             if (c.collected) continue;
-            const cb: AABB = { x: c.x - TILE * 0.3, y: c.y - TILE * 0.3, w: TILE * 0.6, h: TILE * 0.6 };
+            const cb: AABB = { x: c.x - COIN_PICK_HALF, y: c.y - COIN_PICK_HALF, w: COIN_PICK_HALF * 2, h: COIN_PICK_HALF * 2 };
             if (overlaps(player.box, cb)) {
                 c.collected = true;
                 updateSprite2DIndex(itemLayer, c.slot, { visible: false });
@@ -469,8 +756,8 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             }
         }
 
-        // Goal: reach the flag column
-        if (player.box.x + player.box.w * 0.5 >= flagX * TILE) {
+        // Goal: reach the flag column (overworld only — the cave reuses far-right columns).
+        if (!inCave && player.box.x + player.box.w * 0.5 >= flagX * TILE) {
             game.phase = "complete";
             game.timer = 3.5;
             sfx.complete();
@@ -612,6 +899,9 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             if (p.kind === "mushroom") {
                 growPlayer();
                 addScore(1000);
+            } else if (p.kind === "fire-flower") {
+                giveFire();
+                addScore(1000);
             } else {
                 player.star = 8;
                 sfx.powerUp();
@@ -648,19 +938,20 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             return { pos: [x0, y0], size: [x1 - x0, y1 - y0] };
         };
 
-        // Background parallax: tile enough copies to span the whole canvas.
-        const bgW = ch * (bgTex.width / bgTex.height);
-        const scroll = cam.x * 0.35;
-        const first = Math.floor(scroll / bgW);
-        const needed = Math.ceil(cw / bgW) + 2;
-        for (let i = 0; i < bgSlots.length; i++) {
-            if (i < needed) {
-                const x = (first + i) * bgW - scroll;
-                // +1px width overlap hides any sub-pixel seam between copies.
-                updateSprite2DIndex(bgLayer, bgSlots[i]!, { positionPx: [x, 0], sizePx: [bgW + 1, ch], visible: true });
-            } else {
-                updateSprite2DIndex(bgLayer, bgSlots[i]!, { visible: false });
-            }
+        // Multi-band parallax background (sky, clouds, two hill rows) via uvScroll.
+        parallax.update(cam.x, game.flagAnimT, cw, ch);
+
+        // Cave backdrop: full-screen dark panel, shown only while underground.
+        updateSprite2DIndex(caveBackLayer, caveBackSlot, inCave ? { positionPx: [0, 0], sizePx: [cw, ch], visible: true } : { visible: false });
+
+        // Warp pipes (world-space; naturally off-screen when their area isn't in view).
+        for (let i = 0; i < level.pipes.length; i++) {
+            const pp = level.pipes[i]!;
+            const x0 = Math.round(sx(pp.cx * TILE));
+            const x1 = Math.round(sx((pp.cx + pp.w) * TILE));
+            const y0 = Math.round(sy(pp.cy * TILE));
+            const y1 = Math.round(sy((pp.cy + pp.h) * TILE));
+            updateSprite2DIndex(pipeLayer, pipeSlots[i]!, { positionPx: [x0, y0], sizePx: [x1 - x0, y1 - y0] });
         }
 
         // Terrain
@@ -688,7 +979,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         const bob = Math.sin(game.flagAnimT * 6) * TILE * 0.06;
         for (const c of coins) {
             if (c.collected) continue;
-            updateSprite2DIndex(itemLayer, c.slot, { positionPx: [sx(c.x), sy(c.y + bob)], sizePx: [ss(TILE * 0.6), ss(TILE * 0.6)], visible: true });
+            updateSprite2DIndex(itemLayer, c.slot, { positionPx: [sx(c.x), sy(c.y + bob)], sizePx: [ss(COIN_DRAW), ss(COIN_DRAW)], visible: true });
         }
         // Flag wave. The flag sprite's pole runs up its far-left edge (centre at
         // ~0.07 of the sprite width), so with a centre pivot we shift right by
@@ -703,9 +994,25 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         // Pickups
         for (const p of pickups) {
             if (!p.active) continue;
+            const draw = PICKUP_DRAW[p.kind];
+            const foot = PICKUP_FOOT[p.kind];
+            // Grounded pickups (mushroom/star/fire-flower) anchor by the feet so the big
+            // sprite sits on the ground / emerges cleanly from its block; coin-pop stays centred.
+            const cy = foot !== undefined ? p.box.y + p.box.h - draw * foot : p.box.y + p.box.h / 2;
             updateSprite2DIndex(p.layer, p.slot, {
-                positionPx: [sx(p.box.x + p.box.w / 2), sy(p.box.y + p.box.h / 2)],
-                sizePx: [ss(p.box.w), ss(p.box.h)],
+                positionPx: [sx(p.box.x + p.box.w / 2), sy(cy)],
+                sizePx: [ss(draw), ss(draw)],
+            });
+        }
+
+        // Fireballs (additive glow, gently flickering).
+        for (const f of fireballs) {
+            if (!f.active) continue;
+            const flicker = 0.85 + 0.15 * Math.sin(game.flagAnimT * 40 + f.box.x);
+            updateSprite2DIndex(fireballLayer, f.slot, {
+                positionPx: [sx(f.box.x + f.box.w / 2), sy(f.box.y + f.box.h / 2)],
+                sizePx: [ss(FIREBALL_DRAW * flicker), ss(FIREBALL_DRAW * flicker)],
+                visible: true,
             });
         }
 
@@ -718,7 +1025,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             else frame = enemies.frameOf(Math.floor(e.animT * 6) % 2 === 0 ? "slimeGreen_move" : "slimeGreen");
             updateSprite2DIndex(enemyLayer, e.slot, {
                 positionPx: [sx(e.box.x + e.box.w / 2), sy(e.box.y + e.box.h)],
-                sizePx: [ss(e.box.w), ss(e.box.h)],
+                sizePx: [ss(e.box.w * ENEMY_DRAW_W_MUL), ss(e.box.h * ENEMY_DRAW_H_MUL)],
                 frame,
                 visible: true,
                 flipX: e.dir > 0,
@@ -726,22 +1033,70 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         }
 
         // Player
-        let pf: string = PLAYER_FRAMES.stand;
-        if (!player.alive) pf = PLAYER_FRAMES.hit;
-        else if (player.ducking) pf = PLAYER_FRAMES.duck;
-        else if (!player.onGround) pf = PLAYER_FRAMES.jump;
-        else if (Math.abs(player.vx) > 20) pf = Math.floor(player.animT * 12) % 2 === 0 ? PLAYER_FRAMES.walk1 : PLAYER_FRAMES.walk2;
+        const pframes = player.fire ? PLAYER_FIRE_FRAMES : PLAYER_FRAMES;
+        let pf: string = pframes.stand;
+        if (!player.alive) pf = pframes.hit;
+        else if (player.ducking) pf = pframes.duck;
+        else if (!player.onGround) pf = pframes.jump;
+        else if (Math.abs(player.vx) > 20) pf = Math.floor(player.animT * 12) % 2 === 0 ? pframes.walk1 : pframes.walk2;
         const flashHide = player.invuln > 0 && Math.floor(player.invuln * 16) % 2 === 0;
-        const starTint: [number, number, number, number] | undefined =
-            player.star > 0 ? [1, 0.6 + 0.4 * Math.sin(game.flagAnimT * 20), 0.4, 1] : undefined;
+
+        // Drive the player's star shader: full dazzle while invincible, blinking between
+        // bright and dim in the final ~2s as a "running out" warning, 0 when not active.
+        let starStrength = 0;
+        if (player.star > 0) starStrength = player.star < 2 && Math.floor(player.star * 8) % 2 === 0 ? 0.35 : 1;
+        setSprite2DShaderParams(playerLayer, [starStrength, 0, 0, 0]);
+
+        const playerCx = player.box.x + player.box.w / 2;
+        const playerFeet = player.box.y + player.box.h;
+        const pdraw = player.big ? PLAYER_DRAW_BIG : PLAYER_DRAW_SMALL;
+        const playerDrawW = pdraw.w;
+        const playerDrawH = pdraw.h;
+        const playerFrame = players.frameOf(pf);
         updateSprite2DIndex(playerLayer, playerSlot, {
-            positionPx: [sx(player.box.x + player.box.w / 2), sy(player.box.y + player.box.h)],
-            sizePx: [ss(player.box.w * 1.12), ss(player.box.h)],
-            frame: players.frameOf(pf),
+            positionPx: [sx(playerCx), sy(playerFeet)],
+            sizePx: [ss(playerDrawW), ss(playerDrawH)],
+            frame: playerFrame,
             flipX: player.facing < 0,
             visible: !flashHide,
-            color: starTint ?? [1, 1, 1, 1],
         });
+
+        // Star afterimage trail: record this pose, then draw the last few poses as
+        // additive rainbow ghosts fading with age. Cleared the frame star power ends.
+        if (player.star > 0) {
+            trailHist.unshift({ x: playerCx, y: playerFeet, w: playerDrawW, h: playerDrawH, frame: playerFrame, flip: player.facing < 0 });
+            if (trailHist.length > STAR_TRAIL * STAR_TRAIL_GAP) trailHist.length = STAR_TRAIL * STAR_TRAIL_GAP;
+            for (let i = 0; i < STAR_TRAIL; i++) {
+                const pose = trailHist[(i + 1) * STAR_TRAIL_GAP - 1];
+                if (!pose) {
+                    updateSprite2DIndex(trailLayer, trailSlots[i]!, { visible: false });
+                    continue;
+                }
+                const hue = game.flagAnimT * 7 + i * 0.7;
+                const fade = (1 - i / STAR_TRAIL) * 0.5 * starStrength;
+                updateSprite2DIndex(trailLayer, trailSlots[i]!, {
+                    positionPx: [sx(pose.x), sy(pose.y)],
+                    sizePx: [ss(pose.w), ss(pose.h)],
+                    frame: pose.frame,
+                    flipX: pose.flip,
+                    visible: true,
+                    color: [0.55 + 0.45 * Math.sin(hue), 0.55 + 0.45 * Math.sin(hue + 2.0944), 0.55 + 0.45 * Math.sin(hue + 4.1888), fade],
+                });
+            }
+        } else if (trailHist.length > 0) {
+            trailHist.length = 0;
+            for (let i = 0; i < STAR_TRAIL; i++) updateSprite2DIndex(trailLayer, trailSlots[i]!, { visible: false });
+        }
+
+        // Iris-wipe transition (fullscreen custom-shader quad) during a pipe warp.
+        if (warp.active) {
+            const prog = warp.t / WARP_DUR;
+            const k = prog < WARP_MID ? prog / WARP_MID : (1 - prog) / (1 - WARP_MID);
+            updateSprite2DIndex(irisLayer, irisSlot, { positionPx: [0, 0], sizePx: [cw, ch], visible: true });
+            setSprite2DShaderParams(irisLayer, [1.35 * (1 - k), cw / ch, 0, 0]);
+        } else {
+            updateSprite2DIndex(irisLayer, irisSlot, { visible: false });
+        }
     };
 
     // ── Main loop ─────────────────────────────────────────────────────────────
@@ -765,6 +1120,26 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             case "playing":
                 updatePlaying(dt);
                 break;
+            case "warping": {
+                warp.t += dt;
+                if (!warp.teleported && warp.t >= WARP_DUR * WARP_MID) {
+                    // Teleport at the iris's darkest point so the camera jump is hidden.
+                    player.box.x = warp.toCx * TILE + (TILE - player.box.w) / 2;
+                    player.box.y = (warp.toCy + 1) * TILE - player.box.h;
+                    player.vx = 0;
+                    player.vy = 0;
+                    player.onGround = true;
+                    inCave = warp.toCave;
+                    game.world = warp.label;
+                    warp.teleported = true;
+                }
+                if (warp.t >= WARP_DUR) {
+                    warp.active = false;
+                    warp.cooldown = 0.5;
+                    game.phase = "playing";
+                }
+                break;
+            }
             case "dying":
                 player.vy += PHYS.gravity * dt;
                 player.box.y += player.vy * dt;
@@ -779,11 +1154,14 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
                         game.timer = 1.4;
                         game.time = START_TIME;
                         resetPlayer();
+                        inCave = false;
+                        game.world = "1-1";
                         for (const e of enemyList) respawnEnemy(e);
                         for (const p of pickups) {
                             p.active = false;
                             updateSprite2DIndex(p.layer, p.slot, { visible: false });
                         }
+                        for (const f of fireballs) killFireball(f);
                         updateSprite2DIndex(playerLayer, playerSlot, { frame: players.frameOf(PLAYER_FRAMES.stand) });
                         hud.banner("WORLD 1-1", "Get ready!");
                     }
@@ -799,7 +1177,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         }
 
         project();
-        hud.update({ score: game.score, coins: game.coins, lives: game.lives, time: game.time, world: "1-1" });
+        hud.update({ score: game.score, coins: game.coins, lives: game.lives, time: game.time, world: game.world });
         input.endFrame();
         requestAnimationFrame(tick);
     };
@@ -807,8 +1185,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     const respawnEnemy = (e: EnemyState): void => {
         const src = level.enemies.find((_, i) => enemyList[i] === e);
         if (!src) return;
-        const w = TILE * 0.72;
-        const h = src.kind === "snail" ? TILE * 0.62 : TILE * 0.56;
+        const { w, h } = enemyBoxDims(src.kind);
         e.box = { x: src.cx * TILE + (TILE - w) / 2, y: (src.cy + 1) * TILE - h, w, h };
         e.alive = true;
         e.shell = false;
@@ -827,6 +1204,10 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         game.phase = "ready";
         game.timer = 1.4;
         resetPlayer();
+        inCave = false;
+        game.world = "1-1";
+        warp.active = false;
+        warp.cooldown = 0;
         for (const b of blocks) {
             b.used = false;
             b.broken = false;
@@ -843,6 +1224,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             p.active = false;
             updateSprite2DIndex(p.layer, p.slot, { visible: false });
         }
+        for (const f of fireballs) killFireball(f);
         updateSprite2DIndex(playerLayer, playerSlot, { frame: players.frameOf(PLAYER_FRAMES.stand) });
         hud.banner("WORLD 1-1", "Get ready!");
     };

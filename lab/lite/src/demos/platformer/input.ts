@@ -14,6 +14,8 @@ export interface InputState {
     /** True for exactly one poll after a fresh jump press (edge), then auto-cleared. */
     jumpPressed: boolean;
     run: boolean;
+    /** Edge-triggered: set once when a fire control (run key / B) is freshly pressed. */
+    firePressed: boolean;
     /** Edge-triggered: set once when the player presses a "start / restart" key. */
     startPressed: boolean;
 }
@@ -44,6 +46,7 @@ export function createInput(touchHost?: HTMLElement): InputController {
         jumpHeld: false,
         jumpPressed: false,
         run: false,
+        firePressed: false,
         startPressed: false,
     };
 
@@ -56,8 +59,10 @@ export function createInput(touchHost?: HTMLElement): InputController {
         else if (JUMP_KEYS.has(c)) {
             if (down && !state.jumpHeld) state.jumpPressed = true;
             state.jumpHeld = down;
-        } else if (RUN_KEYS.has(c)) state.run = down;
-        else if (START_KEYS.has(c)) {
+        } else if (RUN_KEYS.has(c)) {
+            if (down && !state.run) state.firePressed = true;
+            state.run = down;
+        } else if (START_KEYS.has(c)) {
             if (down) state.startPressed = true;
         } else handled = false;
         if (handled) ev.preventDefault();
@@ -77,6 +82,7 @@ export function createInput(touchHost?: HTMLElement): InputController {
         state,
         endFrame(): void {
             state.jumpPressed = false;
+            state.firePressed = false;
             state.startPressed = false;
         },
         dispose(): void {
@@ -132,7 +138,10 @@ function buildTouchControls(host: HTMLElement, state: InputState, cleanup: Array
         makeBtn("\u25BC", (v) => (state.down = v)),
     );
     actions.appendChild(
-        makeBtn("B", (v) => (state.run = v)),
+        makeBtn("B", (v) => {
+            if (v && !state.run) state.firePressed = true;
+            state.run = v;
+        }),
     );
     actions.appendChild(
         makeBtn("A", (v) => {

@@ -21,6 +21,10 @@ export interface Sfx {
     die: () => void;
     oneUp: () => void;
     complete: () => void;
+    /** Pipe-warp whoosh (descending blip) played when entering a pipe. */
+    warp: () => void;
+    /** Short "pew" when throwing a fireball. */
+    fireball: () => void;
     /** Resume the context after a user gesture; safe to call repeatedly. */
     resume: () => void;
     dispose: () => void;
@@ -134,6 +138,19 @@ export function createSfx(): Sfx {
             const t = now();
             const mel = [523, 659, 784, 1047, 784, 1047, 1319];
             mel.forEach((f, i) => tone(f, 0.18, "square", t + i * 0.16, 0.55));
+        },
+        warp(): void {
+            if (!ensure()) return;
+            const t = now();
+            // Descending "down the pipe" whoosh plus a soft noise puff.
+            tone(880, 0.28, "sine", t, 0.5, 160);
+            tone(440, 0.22, "square", t + 0.04, 0.3, 110);
+            noise(0.18, t, 0.18);
+        },
+        fireball(): void {
+            if (!ensure()) return;
+            // Quick upward "pew".
+            tone(620, 0.09, "square", now(), 0.4, 1040);
         },
         dispose(): void {
             if (ctx) void ctx.close();
