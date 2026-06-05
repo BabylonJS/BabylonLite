@@ -1089,6 +1089,17 @@
         "skipPerf": true
     },
     {
+        "id": 146,
+        "slug": "scene146-pbr-geometry-renderer",
+        "name": "Scene 146 — PBR Geometry Renderer (Sponza)",
+        "maxMad": 15,
+        "maxRawKB": 200,
+        "description": "Khronos Sponza glTF rendered through the frame-graph geometry renderer task with the same eleven geometry-texture impostors as Scene 145. Sponza is fully PBR so this exercises the PBR geometry-output path. Camera is positioned inside the model.",
+        "tags": ["frame-graph", "geometry-renderer", "mrt", "pbr", "gltf"],
+        "skipPerf": true,
+        "skipParity": true
+    },
+    {
         "id": 150,
         "slug": "scene150-manual-x-slide",
         "name": "Scene 150 — Manual X Slide Animation",
