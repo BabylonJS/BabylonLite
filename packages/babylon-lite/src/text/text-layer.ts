@@ -25,6 +25,7 @@ export interface TextLayerOptions {
 
 /** Pure-data 2D text layer. Mutate fields directly between frames. */
 export interface TextLayer {
+    /** @internal */
     readonly _kind: "text-layer";
     readonly data: TextData;
     positionPx: { x: number; y: number };

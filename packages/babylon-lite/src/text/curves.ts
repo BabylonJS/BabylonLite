@@ -2,8 +2,7 @@
 
 import { getGlyphPath } from "text-shaper";
 import type { GlyphBounds, GlyphCurves, QuadCurve } from "./public-types.js";
-import { getCurvesCacheForFont, type Font } from "./internal.js";
-import { getRawFont } from "./font.js";
+import type { Font } from "./internal.js";
 
 /** Approximate a cubic Bézier with two quadratics using the "3/4 rule" (matches Slug reference).
  *  Exposed as a public helper so callers that ingest cubic outlines from their own font sources
@@ -22,7 +21,7 @@ export function cubicToQuadratics(p0x: number, p0y: number, c1x: number, c1y: nu
 }
 
 function extractOne(font: Font, glyphId: number): GlyphCurves | null {
-    const path = getGlyphPath(getRawFont(font), glyphId);
+    const path = getGlyphPath(font._font, glyphId);
     if (!path || !path.bounds) {
         return null;
     }
@@ -93,7 +92,7 @@ function extractOne(font: Font, glyphId: number): GlyphCurves | null {
  *  Skips ids already present in `target`. Glyphs with no outline are silently skipped.
  *  Mutates `target` directly — no allocation when no new glyphs appear. */
 export function extractGlyphCurves(font: Font, glyphIds: ReadonlySet<number>, target: Map<number, GlyphCurves>): void {
-    const cache = getCurvesCacheForFont(font);
+    const cache = (font._curvesCache ??= new Map());
     for (const id of glyphIds) {
         if (target.has(id)) {
             continue;

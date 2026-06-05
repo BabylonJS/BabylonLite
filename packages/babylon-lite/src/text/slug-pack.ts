@@ -146,6 +146,6 @@ export function createSharedAtlas(): SharedAtlas {
         glyphSlots: new Map(),
         version: 0,
         refCount: 0,
-        _gpu: null,
+        gpu: null,
     };
 }

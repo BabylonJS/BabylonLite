@@ -6,8 +6,7 @@ import { getRenderTargetSize, registerRenderingContext, unregisterRenderingConte
 import type { EngineContext, RenderingContext } from "../engine/engine.js";
 import { createEmptyUniformBuffer } from "../resource/gpu-buffers.js";
 import type { TextLayer } from "./text-layer.js";
-import { getTextDataInternalsOrThrow, TEXT_INSTANCE_BYTES } from "./text-data.js";
-import type { TextDataInternals } from "./internal.js";
+import { TEXT_INSTANCE_BYTES } from "./text-data.js";
 import { ensureSharedAtlasGpu } from "./_gpu/slug-textures.js";
 import { getOrCreateTextPipeline } from "./_gpu/slug-pipeline.js";
 
@@ -25,8 +24,18 @@ export interface TextRendererOptions {
 }
 
 export interface TextRenderer extends RenderingContext {
+    /** @internal */
     readonly _kind: typeof KIND;
     readonly layers: readonly TextLayer[];
+    /** @internal Mutable alias of {@link layers} (same array reference). */
+    _layers: TextLayer[];
+    /** @internal */ readonly _engine: EngineContext;
+    /** @internal Per-layer GPU resources, keyed by layer. */
+    _layerGpu: Map<TextLayer, LayerGpu>;
+    /** @internal */ _targetWidth: number;
+    /** @internal */ _targetHeight: number;
+    /** @internal */ _disposed: boolean;
+    /** @internal */ _clear: boolean;
 }
 
 /** @internal Per-layer GPU resources owned by the renderer. */
@@ -45,16 +54,6 @@ interface LayerGpu {
     /** Snapshot of (posX, posY, rot, scale, W, H) to skip mvp upload when unchanged. */
     lastMvpInputs: Float32Array;
     mvpUploaded: boolean;
-}
-
-interface TextRendererInternal extends TextRenderer {
-    _engine: EngineContext;
-    _layerGpu: Map<TextLayer, LayerGpu>;
-    layers: TextLayer[];
-    _targetWidth: number;
-    _targetHeight: number;
-    _disposed: boolean;
-    _clear: boolean;
 }
 
 const _mvpScratch = new Float32Array(16);
@@ -81,14 +80,13 @@ function buildLayerMvp(layer: TextLayer, targetW: number, targetH: number, out: 
     out[15] = 1;
 }
 
-function ensureLayerGpu(rr: TextRendererInternal, layer: TextLayer): LayerGpu {
+function ensureLayerGpu(rr: TextRenderer, layer: TextLayer): LayerGpu {
     let lg = rr._layerGpu.get(layer);
     if (lg) {
         return lg;
     }
     const device = rr._engine._device;
-    const internals = getTextDataInternalsOrThrow(layer.data);
-    const cap = Math.max(internals.instanceCount, 8);
+    const cap = Math.max(layer.data._instanceCount, 8);
     lg = {
         layer,
         textU: createEmptyUniformBuffer(rr._engine, TEXT_UBO_BYTES, "text-layer-ubo"),
@@ -129,14 +127,14 @@ function ensureInstanceCapacity(device: GPUDevice, lg: LayerGpu, needed: number)
     lg.uploadedDataVersion = -1;
 }
 
-function uploadLayer(rr: TextRendererInternal, lg: LayerGpu, bindGroupLayout: GPUBindGroupLayout): void {
+function uploadLayer(rr: TextRenderer, lg: LayerGpu, bindGroupLayout: GPUBindGroupLayout): void {
     const device = rr._engine._device;
     const layer = lg.layer;
-    const internals = getTextDataInternalsOrThrow(layer.data);
+    const data = layer.data;
 
     // Atlas + bind groups per draw group.
-    for (let i = 0; i < internals.groups.length; i++) {
-        const g = internals.groups[i]!;
+    for (let i = 0; i < data._groups.length; i++) {
+        const g = data._groups[i]!;
         const { rebuilt, gpu: atlasGpu } = ensureSharedAtlasGpu(device, g.atlas);
         const current = lg.bindGroups[i];
         const currentVer = lg.bindGroupAtlasVersions[i] ?? -1;
@@ -153,27 +151,27 @@ function uploadLayer(rr: TextRendererInternal, lg: LayerGpu, bindGroupLayout: GP
             lg.bindGroupAtlasVersions[i] = atlasGpu.uploadedVersion;
         }
     }
-    if (lg.bindGroups.length > internals.groups.length) {
-        lg.bindGroups.length = internals.groups.length;
-        lg.bindGroupAtlasVersions.length = internals.groups.length;
+    if (lg.bindGroups.length > data._groups.length) {
+        lg.bindGroups.length = data._groups.length;
+        lg.bindGroupAtlasVersions.length = data._groups.length;
     }
 
     // Instance buffer.
-    ensureInstanceCapacity(device, lg, internals.instanceCount);
-    if (lg.uploadedDataVersion !== internals.version && internals.instanceCount > 0) {
-        const dirtyValid = lg.uploadedDataVersion !== -1 && internals.dirtyEnd > internals.dirtyStart;
+    ensureInstanceCapacity(device, lg, data._instanceCount);
+    if (lg.uploadedDataVersion !== data._version && data._instanceCount > 0) {
+        const dirtyValid = lg.uploadedDataVersion !== -1 && data._dirtyEnd > data._dirtyStart;
         if (dirtyValid) {
-            const startFloats = internals.dirtyStart * (TEXT_INSTANCE_BYTES / 4);
-            const endFloats = internals.dirtyEnd * (TEXT_INSTANCE_BYTES / 4);
-            const view = internals.instances.subarray(startFloats, endFloats);
-            device.queue.writeBuffer(lg.instanceBuf, internals.dirtyStart * TEXT_INSTANCE_BYTES, view.buffer as ArrayBuffer, view.byteOffset, view.byteLength);
+            const startFloats = data._dirtyStart * (TEXT_INSTANCE_BYTES / 4);
+            const endFloats = data._dirtyEnd * (TEXT_INSTANCE_BYTES / 4);
+            const view = data._instances.subarray(startFloats, endFloats);
+            device.queue.writeBuffer(lg.instanceBuf, data._dirtyStart * TEXT_INSTANCE_BYTES, view.buffer as ArrayBuffer, view.byteOffset, view.byteLength);
         } else {
-            const view = internals.instances.subarray(0, internals.instanceCount * (TEXT_INSTANCE_BYTES / 4));
+            const view = data._instances.subarray(0, data._instanceCount * (TEXT_INSTANCE_BYTES / 4));
             device.queue.writeBuffer(lg.instanceBuf, 0, view.buffer as ArrayBuffer, view.byteOffset, view.byteLength);
         }
-        lg.uploadedDataVersion = internals.version;
-        internals.dirtyStart = 0;
-        internals.dirtyEnd = 0;
+        lg.uploadedDataVersion = data._version;
+        data._dirtyStart = 0;
+        data._dirtyEnd = 0;
     }
 
     // MVP — skip upload when nothing relevant changed.
@@ -217,8 +215,9 @@ function compareLayers(a: TextLayer, b: TextLayer): number {
 
 export function createTextRenderer(engine: EngineContext, opts: TextRendererOptions): TextRenderer {
     const targetSize = getRenderTargetSize(engine);
+    const layers = opts.layers.slice();
 
-    const rr: TextRendererInternal = {
+    const rr: TextRenderer = {
         _kind: KIND,
         _engine: engine,
         _layerGpu: new Map(),
@@ -226,7 +225,8 @@ export function createTextRenderer(engine: EngineContext, opts: TextRendererOpti
         _targetHeight: targetSize.height,
         _disposed: false,
         _clear: opts.clear ?? true,
-        layers: opts.layers.slice(),
+        layers,
+        _layers: layers,
         clearColor: opts.clearValue ?? { r: 0, g: 0, b: 0, a: 1 },
         _drawCallsPre: 0,
         _update(): void {
@@ -239,7 +239,7 @@ export function createTextRenderer(engine: EngineContext, opts: TextRendererOpti
     return rr;
 }
 
-function textRendererUpdate(rr: TextRendererInternal): void {
+function textRendererUpdate(rr: TextRenderer): void {
     if (rr._disposed) {
         return;
     }
@@ -247,14 +247,14 @@ function textRendererUpdate(rr: TextRendererInternal): void {
     rr._targetWidth = size.width;
     rr._targetHeight = size.height;
 
-    if (rr.layers.length > 1) {
-        rr.layers.sort(compareLayers);
+    if (rr._layers.length > 1) {
+        rr._layers.sort(compareLayers);
     }
 
     // Pipeline: depth-less, sampleCount=1, swapchain format. (One cached pipeline for the renderer.)
     const { cache } = getOrCreateTextPipeline(rr._engine, rr._engine.format, 1, null, false, false);
 
-    for (const layer of rr.layers) {
+    for (const layer of rr._layers) {
         if (!layer.visible) {
             continue;
         }
@@ -270,7 +270,7 @@ function textRendererUpdate(rr: TextRendererInternal): void {
     }
 }
 
-function textRendererRecord(rr: TextRendererInternal): number {
+function textRendererRecord(rr: TextRenderer): number {
     if (rr._disposed) {
         return 0;
     }
@@ -295,7 +295,7 @@ function textRendererRecord(rr: TextRendererInternal): number {
     const quadVertex = cache.quadVertexBuffer;
     pass.setVertexBuffer(0, quadVertex);
 
-    for (const layer of rr.layers) {
+    for (const layer of rr._layers) {
         if (!layer.visible) {
             continue;
         }
@@ -303,8 +303,8 @@ function textRendererRecord(rr: TextRendererInternal): number {
         if (!lg || !lg.pipeline) {
             continue;
         }
-        const internals = getTextDataInternalsOrThrow(layer.data) as TextDataInternals;
-        if (internals.instanceCount === 0) {
+        const data = layer.data;
+        if (data._instanceCount === 0) {
             continue;
         }
         if (lastPipeline !== lg.pipeline) {
@@ -312,8 +312,8 @@ function textRendererRecord(rr: TextRendererInternal): number {
             lastPipeline = lg.pipeline;
         }
         pass.setVertexBuffer(1, lg.instanceBuf);
-        for (let i = 0; i < internals.groups.length; i++) {
-            const g = internals.groups[i]!;
+        for (let i = 0; i < data._groups.length; i++) {
+            const g = data._groups[i]!;
             const bg = lg.bindGroups[i];
             if (g.slotCount === 0 || !bg) {
                 continue;
@@ -329,49 +329,46 @@ function textRendererRecord(rr: TextRendererInternal): number {
 }
 
 export function addTextRendererLayer(tr: TextRenderer, layer: TextLayer): void {
-    const rr = tr as TextRendererInternal;
-    if (rr._disposed) {
+    if (tr._disposed) {
         throw new Error("TextRenderer has been disposed.");
     }
-    if (rr.layers.includes(layer)) {
+    if (tr._layers.includes(layer)) {
         return;
     }
-    rr.layers.push(layer);
+    tr._layers.push(layer);
 }
 
 export function removeTextRendererLayer(tr: TextRenderer, layer: TextLayer): boolean {
-    const rr = tr as TextRendererInternal;
-    const i = rr.layers.indexOf(layer);
+    const i = tr._layers.indexOf(layer);
     if (i < 0) {
         return false;
     }
-    rr.layers.splice(i, 1);
-    const lg = rr._layerGpu.get(layer);
+    tr._layers.splice(i, 1);
+    const lg = tr._layerGpu.get(layer);
     if (lg) {
         disposeLayerGpu(lg);
-        rr._layerGpu.delete(layer);
+        tr._layerGpu.delete(layer);
     }
     return true;
 }
 
 export function registerTextRenderer(tr: TextRenderer): void {
-    registerRenderingContext((tr as TextRendererInternal)._engine, tr);
+    registerRenderingContext(tr._engine, tr);
 }
 
 export function unregisterTextRenderer(tr: TextRenderer): void {
-    unregisterRenderingContext((tr as TextRendererInternal)._engine, tr);
+    unregisterRenderingContext(tr._engine, tr);
 }
 
 export function disposeTextRenderer(tr: TextRenderer): void {
-    const rr = tr as TextRendererInternal;
-    if (rr._disposed) {
+    if (tr._disposed) {
         return;
     }
-    unregisterTextRenderer(rr);
-    rr._disposed = true;
-    for (const lg of rr._layerGpu.values()) {
+    unregisterTextRenderer(tr);
+    tr._disposed = true;
+    for (const lg of tr._layerGpu.values()) {
         disposeLayerGpu(lg);
     }
-    rr._layerGpu.clear();
-    rr.layers.length = 0;
+    tr._layerGpu.clear();
+    tr._layers.length = 0;
 }

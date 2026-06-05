@@ -47,10 +47,10 @@ function uploadAll(device: GPUDevice, tex: GPUTexture, cpuData: Float32Array, te
     void bytes;
 }
 
-/** Ensure `atlas._gpu` matches the current device and has enough rows for all used texels.
+/** Ensure `atlas.gpu` matches the current device and has enough rows for all used texels.
  *  Returns true when textures were (re)created — caller must rebuild any bind groups. */
 export function ensureSharedAtlasGpu(device: GPUDevice, atlas: SharedAtlas): { rebuilt: boolean; gpu: SharedAtlasGpu } {
-    let gpu = atlas._gpu;
+    let gpu = atlas.gpu;
     const curveRowsNeeded = rowsForTexels(atlas.curveTexelsUsed);
     const bandRowsNeeded = rowsForTexels(atlas.bandTexelsUsed);
 
@@ -72,7 +72,7 @@ export function ensureSharedAtlasGpu(device: GPUDevice, atlas: SharedAtlas): { r
             bandTexRows: bandRows,
             uploadedVersion: -1,
         };
-        atlas._gpu = gpu;
+        atlas.gpu = gpu;
         rebuilt = true;
     } else {
         if (curveRowsNeeded > gpu.curveTexRows) {
@@ -100,15 +100,15 @@ export function ensureSharedAtlasGpu(device: GPUDevice, atlas: SharedAtlas): { r
     return { rebuilt, gpu };
 }
 
-/** Destroy an atlas's GPU textures and clear `_gpu`. The CPU staging (curve/band data and
+/** Destroy an atlas's GPU textures and clear `gpu`. The CPU staging (curve/band data and
  *  glyph slots) is left intact so the textures can be lazily rebuilt by `ensureSharedAtlasGpu`
  *  if the atlas is referenced again. Safe to call when no GPU resources exist. */
 export function disposeSharedAtlasGpu(atlas: SharedAtlas): void {
-    const gpu = atlas._gpu;
+    const gpu = atlas.gpu;
     if (!gpu) {
         return;
     }
     gpu.curveTex.destroy();
     gpu.bandTex.destroy();
-    atlas._gpu = null;
+    atlas.gpu = null;
 }

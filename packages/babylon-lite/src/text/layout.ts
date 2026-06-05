@@ -2,7 +2,6 @@
 
 import { UnicodeBuffer, shape } from "text-shaper";
 import type { Font } from "./internal.js";
-import { getRawFont } from "./font.js";
 import type { PlacedGlyph, TextLayoutOptions } from "./public-types.js";
 
 interface ShapedEntry {
@@ -27,7 +26,7 @@ interface LayoutGlyph {
 /** @internal Default LTR + word-wrap + align layout. Returns placed glyphs, the layout scale,
  *  and the run's pixel-space bounding size. Caller wraps into a `GlyphRun` with the appropriate `curveSet`. */
 export function layoutText(font: Font, text: string, fontSizePx: number, options?: TextLayoutOptions) {
-    const rawFont = getRawFont(font);
+    const rawFont = font._font;
     const maxWidth = options?.maxWidth ?? Infinity;
     const lineHeightMult = options?.lineHeight ?? 1.2;
     const textAlign = options?.align ?? "left";

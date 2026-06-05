@@ -1,10 +1,8 @@
 /** Default convenience TextData: shapes text + extracts curves into a fresh map. */
 
 import type { DefaultTextData, Font } from "./internal.js";
-import { setDefaultTextDataInternals, getDefaultTextDataInternals } from "./internal.js";
 import type { CurveSetId, GlyphCurves, GlyphRun, TextLayoutOptions } from "./public-types.js";
 import { extractGlyphCurves } from "./curves.js";
-import { getRawFont } from "./font.js";
 import { layoutText } from "./layout.js";
 import { createTextData, updateTextData } from "./text-data.js";
 import { getFontFamily } from "text-shaper";
@@ -12,8 +10,7 @@ import { getFontFamily } from "text-shaper";
 /** Derive the curve-set id from the font's family name (e.g. "Inter", "Roboto"). Falls back
  *  to `"font"` for fonts that lack a usable name table. */
 function familyCurveSetId(font: Font): CurveSetId {
-    const raw = getRawFont(font);
-    return (raw.name && getFontFamily(raw.name)) || "font";
+    return (font._font.name && getFontFamily(font._font.name)) || "font";
 }
 
 /** Shape `text` with the default layout, extract glyph curves, and bundle into a
@@ -41,36 +38,34 @@ export function createDefaultTextData(
         pixelsPerFontUnit: laid.pixelsPerFontUnit,
         defaultColor: textColor,
     };
-    const data = Object.assign(createTextData({ runs: [run], curves }), {
+    return Object.assign(createTextData({ runs: [run], curves }), {
         width: laid.width,
         height: laid.height,
+        _font: font,
+        _fontSizePx: fontSizePx,
+        _options: options,
+        _curveSetId: curveSetId,
     }) as DefaultTextData;
-    setDefaultTextDataInternals(data, { font, fontSizePx, options, curveSetId });
-    return data;
 }
 
 /** Re-shape `text` and apply the new run via `updateTextData(replaceRun)`. When `textColor`
  *  is omitted, the live run's existing `defaultColor` is preserved (so any caller-driven
  *  color override survives a text re-shape). */
 export function updateDefaultTextData(data: DefaultTextData, text: string, textColor?: readonly [number, number, number, number]): void {
-    const state = getDefaultTextDataInternals(data);
-    if (!state) {
-        throw new Error("updateDefaultTextData: invalid DefaultTextData (was it produced by createDefaultTextData?).");
-    }
-    const laid = layoutText(state.font, text, state.fontSizePx, state.options);
+    const laid = layoutText(data._font, text, data._fontSizePx, data._options);
     // Grow the curves map in place; addCurves is a no-op for already-cached glyph ids.
     const innerCurves = new Map<number, GlyphCurves>();
     const ids = new Set<number>();
     for (const g of laid.glyphs) {
         ids.add(g.glyphId);
     }
-    extractGlyphCurves(state.font, ids, innerCurves);
-    updateTextData(data, { update: "addCurves", curveSetId: state.curveSetId, curves: innerCurves });
+    extractGlyphCurves(data._font, ids, innerCurves);
+    updateTextData(data, { update: "addCurves", curveSetId: data._curveSetId, curves: innerCurves });
     // Always use the current `data.runs[0]` as the previous reference; a DefaultTextData
     // owns exactly one run and the caller may have swapped it out via their own ops.
     const previousRun = data.runs[0]!;
     const newRun: GlyphRun = {
-        curveSet: state.curveSetId,
+        curveSet: data._curveSetId,
         glyphs: laid.glyphs,
         pixelsPerFontUnit: laid.pixelsPerFontUnit,
         defaultColor: textColor ?? previousRun.defaultColor,

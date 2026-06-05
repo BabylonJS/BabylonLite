@@ -18,8 +18,7 @@ import type { Mat4, Mat4Storage, Vec3 } from "../math/types.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
 import { getViewProjectionMatrix, getEffectiveAspectRatio } from "../camera/camera.js";
 import type { TextData } from "./internal.js";
-import type { TextDataInternals } from "./internal.js";
-import { getTextDataInternalsOrThrow, TEXT_INSTANCE_BYTES } from "./text-data.js";
+import { TEXT_INSTANCE_BYTES } from "./text-data.js";
 import { ensureSharedAtlasGpu } from "./_gpu/slug-textures.js";
 import { getOrCreateTextPipeline } from "./_gpu/slug-pipeline.js";
 
@@ -35,6 +34,7 @@ export interface TextRenderableOptions {
 }
 
 export interface TextRenderable extends Renderable {
+    /** @internal */
     readonly _entityType: "text";
     readonly position: ObservableVec3;
     readonly rotation: EulerProxy;
@@ -133,8 +133,7 @@ function ensureGpu(r: TextRenderable, engine: EngineContext, target: RenderTarge
     }
     if (!gpu || gpu.targetKey !== key || gpu.pipeline !== pipeline) {
         if (!gpu) {
-            const internals = getTextDataInternalsOrThrow(r._data);
-            const cap = Math.max(internals.instanceCount, 8);
+            const cap = Math.max(r._data._instanceCount, 8);
             gpu = {
                 device,
                 textU: createEmptyUniformBuffer(engine, TEXT_UBO_BYTES, "text-renderable-ubo"),
@@ -157,10 +156,9 @@ function ensureGpu(r: TextRenderable, engine: EngineContext, target: RenderTarge
             gpu.pipeline = pipeline;
             gpu.targetKey = key;
             // Pipeline change — per-group bind groups must be rebuilt against the new bindGroupLayout.
-            const internals = getTextDataInternalsOrThrow(r._data);
-            for (const g of internals.groups) {
-                g._bindGroup = null;
-                g._bindGroupVersion = -1;
+            for (const g of r._data._groups) {
+                g.bindGroup = null;
+                g.bindGroupVersion = -1;
             }
         }
     }
@@ -187,7 +185,6 @@ function ensureInstanceCapacity(device: GPUDevice, gpu: TextRenderableGpu, neede
 
 function bindTextRenderable(r: TextRenderable, engine: EngineContext, target: RenderTargetSignature): DrawBinding {
     const gpu = ensureGpu(r, engine, target);
-    const internals = getTextDataInternalsOrThrow(r._data);
     const { cache } = getOrCreateTextPipeline(
         engine,
         target._colorFormat!,
@@ -203,29 +200,23 @@ function bindTextRenderable(r: TextRenderable, engine: EngineContext, target: Re
         renderable: r,
         pipeline: gpu.pipeline,
         update(context: DrawUpdateContext): void {
-            updateTextRenderable(r, engine, gpu, internals, bindGroupLayout, context);
+            updateTextRenderable(r, engine, gpu, bindGroupLayout, context);
         },
         draw(pass): number {
-            return drawTextRenderable(gpu, internals, quadVertex, pass);
+            return drawTextRenderable(gpu, r._data, quadVertex, pass);
         },
     };
 }
 
-function updateTextRenderable(
-    r: TextRenderable,
-    engine: EngineContext,
-    gpu: TextRenderableGpu,
-    internals: TextDataInternals,
-    bindGroupLayout: GPUBindGroupLayout,
-    context: DrawUpdateContext
-): void {
+function updateTextRenderable(r: TextRenderable, engine: EngineContext, gpu: TextRenderableGpu, bindGroupLayout: GPUBindGroupLayout, context: DrawUpdateContext): void {
     const device = engine._device;
+    const data = r._data;
 
     // Sync every group's atlas to the GPU; track which need bind-group rebuild.
-    for (const g of internals.groups) {
+    for (const g of data._groups) {
         const { rebuilt, gpu: atlasGpu } = ensureSharedAtlasGpu(device, g.atlas);
-        if (rebuilt || !g._bindGroup || g._bindGroupVersion !== atlasGpu.uploadedVersion) {
-            g._bindGroup = device.createBindGroup({
+        if (rebuilt || !g.bindGroup || g.bindGroupVersion !== atlasGpu.uploadedVersion) {
+            g.bindGroup = device.createBindGroup({
                 label: "text-bg0-" + g.curveSetId,
                 layout: bindGroupLayout,
                 entries: [
@@ -234,30 +225,30 @@ function updateTextRenderable(
                     { binding: 2, resource: atlasGpu.bandTex.createView() },
                 ],
             });
-            g._bindGroupVersion = atlasGpu.uploadedVersion;
+            g.bindGroupVersion = atlasGpu.uploadedVersion;
         }
     }
 
     // Sync instance buffer if data changed.
-    ensureInstanceCapacity(device, gpu, internals.instanceCount);
-    if (gpu.uploadedDataVersion !== internals.version) {
-        if (internals.instanceCount > 0) {
+    ensureInstanceCapacity(device, gpu, data._instanceCount);
+    if (gpu.uploadedDataVersion !== data._version) {
+        if (data._instanceCount > 0) {
             // Partial upload when only a sub-range is dirty; full upload after grow/reset (when
             // uploadedDataVersion is -1 we don't trust the dirty range).
-            const dirtyValid = gpu.uploadedDataVersion !== -1 && internals.dirtyEnd > internals.dirtyStart;
+            const dirtyValid = gpu.uploadedDataVersion !== -1 && data._dirtyEnd > data._dirtyStart;
             if (dirtyValid) {
-                const startFloats = internals.dirtyStart * (TEXT_INSTANCE_BYTES / 4);
-                const endFloats = internals.dirtyEnd * (TEXT_INSTANCE_BYTES / 4);
-                const view = internals.instances.subarray(startFloats, endFloats);
-                device.queue.writeBuffer(gpu.instanceBuf, internals.dirtyStart * TEXT_INSTANCE_BYTES, view.buffer as ArrayBuffer, view.byteOffset, view.byteLength);
+                const startFloats = data._dirtyStart * (TEXT_INSTANCE_BYTES / 4);
+                const endFloats = data._dirtyEnd * (TEXT_INSTANCE_BYTES / 4);
+                const view = data._instances.subarray(startFloats, endFloats);
+                device.queue.writeBuffer(gpu.instanceBuf, data._dirtyStart * TEXT_INSTANCE_BYTES, view.buffer as ArrayBuffer, view.byteOffset, view.byteLength);
             } else {
-                const view = internals.instances.subarray(0, internals.instanceCount * (TEXT_INSTANCE_BYTES / 4));
+                const view = data._instances.subarray(0, data._instanceCount * (TEXT_INSTANCE_BYTES / 4));
                 device.queue.writeBuffer(gpu.instanceBuf, 0, view.buffer as ArrayBuffer, view.byteOffset, view.byteLength);
             }
         }
-        gpu.uploadedDataVersion = internals.version;
-        internals.dirtyStart = 0;
-        internals.dirtyEnd = 0;
+        gpu.uploadedDataVersion = data._version;
+        data._dirtyStart = 0;
+        data._dirtyEnd = 0;
     }
 
     // Sync text UBO: mvp (vp * world) + viewport + color. The scene UBO is no longer
@@ -287,18 +278,18 @@ function updateTextRenderable(
     }
 }
 
-function drawTextRenderable(gpu: TextRenderableGpu, internals: TextDataInternals, quadVertex: GPUBuffer, pass: GPURenderPassEncoder | GPURenderBundleEncoder): number {
-    if (internals.instanceCount === 0) {
+function drawTextRenderable(gpu: TextRenderableGpu, data: TextData, quadVertex: GPUBuffer, pass: GPURenderPassEncoder | GPURenderBundleEncoder): number {
+    if (data._instanceCount === 0) {
         return 0;
     }
     pass.setVertexBuffer(0, quadVertex);
     pass.setVertexBuffer(1, gpu.instanceBuf);
     let draws = 0;
-    for (const g of internals.groups) {
-        if (g.slotCount === 0 || !g._bindGroup) {
+    for (const g of data._groups) {
+        if (g.slotCount === 0 || !g.bindGroup) {
             continue;
         }
-        pass.setBindGroup(0, g._bindGroup);
+        pass.setBindGroup(0, g.bindGroup);
         pass.draw(6, g.slotCount, 0, g.slotStart);
         draws++;
     }

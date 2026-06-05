@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { GlyphCurves } from "../../packages/babylon-lite/src/text/public-types";
-import { createTextData, TEXT_INSTANCE_FLOATS } from "../../packages/babylon-lite/src/text/text-data";
-import { getTextDataInternals } from "../../packages/babylon-lite/src/text/internal";
+import type { GlyphCurves } from "../../../packages/babylon-lite/src/text/public-types";
+import { createTextData, TEXT_INSTANCE_FLOATS } from "../../../packages/babylon-lite/src/text/text-data";
 
 function makeGlyph(glyphId: number): GlyphCurves {
     return {
@@ -19,10 +18,9 @@ const COLOR_OFFSET = 16;
 
 /** Read the packed RGBA color of instance `i` from a TextData's instance buffer. */
 function instanceColor(data: ReturnType<typeof createTextData>, i: number): [number, number, number, number] {
-    const internals = getTextDataInternals(data)!;
     const base = i * TEXT_INSTANCE_FLOATS + COLOR_OFFSET;
-    const a = internals.instances;
-    return [a[base], a[base + 1], a[base + 2], a[base + 3]];
+    const a = data._instances;
+    return [a[base]!, a[base + 1]!, a[base + 2]!, a[base + 3]!];
 }
 
 describe("text per-glyph color", () => {

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { GlyphCurves } from "../../packages/babylon-lite/src/text/public-types";
-import { createTextData, disposeTextData, updateTextData } from "../../packages/babylon-lite/src/text/text-data";
-import { getSharedAtlasForCurves } from "../../packages/babylon-lite/src/text/internal";
-import type { SharedAtlas, SharedAtlasGpu } from "../../packages/babylon-lite/src/text/internal";
+import type { GlyphCurves } from "../../../packages/babylon-lite/src/text/public-types";
+import { createTextData, disposeTextData, updateTextData } from "../../../packages/babylon-lite/src/text/text-data";
+import { getSharedAtlasForCurves } from "../../../packages/babylon-lite/src/text/internal";
+import type { SharedAtlas, SharedAtlasGpu } from "../../../packages/babylon-lite/src/text/internal";
 
 function makeGlyph(glyphId: number): GlyphCurves {
     return {
@@ -27,7 +27,7 @@ function makeInitial(inner: Map<number, GlyphCurves>) {
 function stubAtlasGpu(atlas: SharedAtlas): { curveDestroy: ReturnType<typeof vi.fn>; bandDestroy: ReturnType<typeof vi.fn> } {
     const curveDestroy = vi.fn();
     const bandDestroy = vi.fn();
-    atlas._gpu = {
+    atlas.gpu = {
         device: {} as GPUDevice,
         curveTex: { destroy: curveDestroy } as unknown as GPUTexture,
         bandTex: { destroy: bandDestroy } as unknown as GPUTexture,
@@ -56,13 +56,13 @@ describe("text atlas reclamation", () => {
 
         disposeTextData(td1);
         expect(atlas!.refCount).toBe(1);
-        expect(atlas!._gpu).not.toBeNull();
+        expect(atlas!.gpu).not.toBeNull();
         expect(curveDestroy).not.toHaveBeenCalled();
         expect(bandDestroy).not.toHaveBeenCalled();
 
         disposeTextData(td2);
         expect(atlas!.refCount).toBe(0);
-        expect(atlas!._gpu).toBeNull();
+        expect(atlas!.gpu).toBeNull();
         expect(curveDestroy).toHaveBeenCalledTimes(1);
         expect(bandDestroy).toHaveBeenCalledTimes(1);
     });

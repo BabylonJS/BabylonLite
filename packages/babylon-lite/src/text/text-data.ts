@@ -13,8 +13,8 @@
  */
 
 import type { CurveSetId, GlyphCurves, GlyphRun, TextDataUpdate } from "./public-types.js";
-import type { RunRecord, SharedAtlas, TextData, TextDataDrawGroup, TextDataInternals } from "./internal.js";
-import { getSharedAtlasForCurves, setSharedAtlasForCurves, getTextDataInternals, setTextDataInternals } from "./internal.js";
+import type { RunRecord, SharedAtlas, TextData, TextDataDrawGroup } from "./internal.js";
+import { getSharedAtlasForCurves, setSharedAtlasForCurves } from "./internal.js";
 import { createSharedAtlas, packAppendGlyph } from "./slug-pack.js";
 import { disposeSharedAtlasGpu } from "./_gpu/slug-textures.js";
 
@@ -52,10 +52,10 @@ function releaseAtlasRef(atlas: SharedAtlas): void {
     }
 }
 
-function acquireAtlasRef(internals: TextDataInternals, atlas: SharedAtlas): void {
-    if (!internals.refdAtlases.has(atlas)) {
+function acquireAtlasRef(data: TextData, atlas: SharedAtlas): void {
+    if (!data._refdAtlases.has(atlas)) {
         atlas.refCount++;
-        internals.refdAtlases.add(atlas);
+        data._refdAtlases.add(atlas);
     }
 }
 
@@ -118,38 +118,38 @@ function markSlotDead(out: Float32Array, slot: number): void {
 
 // ─── Buffer + dirty-range helpers ──────────────────────────────────────────
 
-function ensureInstanceCapacity(internals: TextDataInternals, requiredInstances: number): void {
+function ensureInstanceCapacity(data: TextData, requiredInstances: number): void {
     const requiredFloats = requiredInstances * TEXT_INSTANCE_FLOATS;
-    if (internals.instances.length >= requiredFloats) {
+    if (data._instances.length >= requiredFloats) {
         return;
     }
-    let newLen = Math.max(internals.instances.length * 2, TEXT_INSTANCE_FLOATS);
+    let newLen = Math.max(data._instances.length * 2, TEXT_INSTANCE_FLOATS);
     while (newLen < requiredFloats) {
         newLen *= 2;
     }
     const grown = new Float32Array(newLen);
-    grown.set(internals.instances.subarray(0, internals.instanceCount * TEXT_INSTANCE_FLOATS));
-    internals.instances = grown;
-    internals.dirtyStart = 0;
-    internals.dirtyEnd = internals.instanceCount;
+    grown.set(data._instances.subarray(0, data._instanceCount * TEXT_INSTANCE_FLOATS));
+    data._instances = grown;
+    data._dirtyStart = 0;
+    data._dirtyEnd = data._instanceCount;
 }
 
-function markDirty(internals: TextDataInternals, startInstance: number, endInstance: number): void {
+function markDirty(data: TextData, startInstance: number, endInstance: number): void {
     if (endInstance <= startInstance) {
         return;
     }
-    if (internals.dirtyStart === internals.dirtyEnd) {
-        internals.dirtyStart = startInstance;
-        internals.dirtyEnd = endInstance;
+    if (data._dirtyStart === data._dirtyEnd) {
+        data._dirtyStart = startInstance;
+        data._dirtyEnd = endInstance;
     } else {
-        if (startInstance < internals.dirtyStart) {
-            internals.dirtyStart = startInstance;
+        if (startInstance < data._dirtyStart) {
+            data._dirtyStart = startInstance;
         }
-        if (endInstance > internals.dirtyEnd) {
-            internals.dirtyEnd = endInstance;
+        if (endInstance > data._dirtyEnd) {
+            data._dirtyEnd = endInstance;
         }
     }
-    internals.version++;
+    data._version++;
 }
 
 // ─── Slot allocator ────────────────────────────────────────────────────────
@@ -162,20 +162,20 @@ function popFreeSlot(group: TextDataDrawGroup): number {
 /** Grow `group` by `extraSlots`. Returns the absolute index of the first newly-added
  *  slot. Shifts later groups' slot ranges right by `extraSlots` and rewrites any run
  *  slot indices that fall in the shifted range. Marks the shifted region dirty. */
-function growGroup(internals: TextDataInternals, group: TextDataDrawGroup, extraSlots: number): number {
+function growGroup(data: TextData, group: TextDataDrawGroup, extraSlots: number): number {
     const insertAt = group.slotStart + group.slotCount;
     if (extraSlots <= 0) {
         return insertAt;
     }
-    ensureInstanceCapacity(internals, internals.instanceCount + extraSlots);
+    ensureInstanceCapacity(data, data._instanceCount + extraSlots);
     const floatDelta = extraSlots * TEXT_INSTANCE_FLOATS;
     const moveStartFloat = insertAt * TEXT_INSTANCE_FLOATS;
-    const moveEndFloat = internals.instanceCount * TEXT_INSTANCE_FLOATS;
+    const moveEndFloat = data._instanceCount * TEXT_INSTANCE_FLOATS;
     if (moveEndFloat > moveStartFloat) {
-        internals.instances.copyWithin(moveStartFloat + floatDelta, moveStartFloat, moveEndFloat);
+        data._instances.copyWithin(moveStartFloat + floatDelta, moveStartFloat, moveEndFloat);
     }
     // Shift later groups + their freeSlots arrays.
-    for (const g of internals.groups) {
+    for (const g of data._groups) {
         if (g !== group && g.slotStart >= insertAt) {
             g.slotStart += extraSlots;
             for (let i = 0; i < g.freeSlots.length; i++) {
@@ -184,7 +184,7 @@ function growGroup(internals: TextDataInternals, group: TextDataDrawGroup, extra
         }
     }
     // Shift any run records whose slots fall inside the shifted region.
-    for (const rec of internals.runRecords.values()) {
+    for (const rec of data._runRecords.values()) {
         const slots = rec.slots;
         for (let i = 0; i < slots.length; i++) {
             if (slots[i]! >= insertAt) {
@@ -192,16 +192,16 @@ function growGroup(internals: TextDataInternals, group: TextDataDrawGroup, extra
             }
         }
     }
-    internals.instanceCount += extraSlots;
+    data._instanceCount += extraSlots;
     group.slotCount += extraSlots;
     // Newly-added slots and the shifted region are dirty.
-    markDirty(internals, insertAt, internals.instanceCount);
+    markDirty(data, insertAt, data._instanceCount);
     return insertAt;
 }
 
 /** Allocate `count` slots for `group`. Reuses free slots first, then extends. Returns
  *  the array of absolute slot indices in the order they were allocated. */
-function allocateSlots(internals: TextDataInternals, group: TextDataDrawGroup, count: number): number[] {
+function allocateSlots(data: TextData, group: TextDataDrawGroup, count: number): number[] {
     const out: number[] = new Array(count);
     let extendNeeded = 0;
     for (let i = 0; i < count; i++) {
@@ -214,7 +214,7 @@ function allocateSlots(internals: TextDataInternals, group: TextDataDrawGroup, c
         }
     }
     if (extendNeeded > 0) {
-        const firstNewSlot = growGroup(internals, group, extendNeeded);
+        const firstNewSlot = growGroup(data, group, extendNeeded);
         let n = firstNewSlot;
         for (let i = 0; i < count; i++) {
             if (out[i] === -1) {
@@ -226,24 +226,28 @@ function allocateSlots(internals: TextDataInternals, group: TextDataDrawGroup, c
 }
 
 /** Release `slots` back to `group.freeSlots`, marking each dead in the buffer. */
-function freeSlots(internals: TextDataInternals, group: TextDataDrawGroup, slots: number[]): void {
+function freeSlots(data: TextData, group: TextDataDrawGroup, slots: number[]): void {
     let minSlot = Number.POSITIVE_INFINITY;
     let maxSlot = -1;
     for (const s of slots) {
-        markSlotDead(internals.instances, s);
+        markSlotDead(data._instances, s);
         group.freeSlots.push(s);
-        if (s < minSlot) minSlot = s;
-        if (s > maxSlot) maxSlot = s;
+        if (s < minSlot) {
+            minSlot = s;
+        }
+        if (s > maxSlot) {
+            maxSlot = s;
+        }
     }
     if (maxSlot >= 0) {
-        markDirty(internals, minSlot, maxSlot + 1);
+        markDirty(data, minSlot, maxSlot + 1);
     }
 }
 
 // ─── Draw-group helpers ────────────────────────────────────────────────────
 
-function findGroup(internals: TextDataInternals, curveSetId: CurveSetId): TextDataDrawGroup | undefined {
-    for (const g of internals.groups) {
+function findGroup(data: TextData, curveSetId: CurveSetId): TextDataDrawGroup | undefined {
+    for (const g of data._groups) {
         if (g.curveSetId === curveSetId) {
             return g;
         }
@@ -251,36 +255,36 @@ function findGroup(internals: TextDataInternals, curveSetId: CurveSetId): TextDa
     return undefined;
 }
 
-function ensureGroup(internals: TextDataInternals, curveSetId: CurveSetId): TextDataDrawGroup {
-    const existing = findGroup(internals, curveSetId);
+function ensureGroup(data: TextData, curveSetId: CurveSetId): TextDataDrawGroup {
+    const existing = findGroup(data, curveSetId);
     if (existing) {
         return existing;
     }
-    const curves = internals.curves.get(curveSetId);
+    const curves = data._curves.get(curveSetId);
     if (!curves) {
         throw new Error(`updateTextData: addRun references unknown curveSet "${curveSetId}" — call addCurves (or reset) for this curve set first.`);
     }
     const atlas = getOrCreateAtlas(curves);
     syncAtlasGlyphs(atlas, curves);
-    acquireAtlasRef(internals, atlas);
+    acquireAtlasRef(data, atlas);
     const group: TextDataDrawGroup = {
         curveSetId,
         curves,
         atlas,
-        slotStart: internals.instanceCount,
+        slotStart: data._instanceCount,
         slotCount: 0,
         liveCount: 0,
         freeSlots: [],
-        _bindGroup: null,
-        _bindGroupVersion: -1,
+        bindGroup: null,
+        bindGroupVersion: -1,
     };
-    internals.groups.push(group);
+    data._groups.push(group);
     return group;
 }
 
 /** Write a run's glyphs into the given (already-allocated) slots. Returns the subset of
  *  slots that actually received live glyphs (skipped glyphs leave their slot dead). */
-function writeRunToSlots(internals: TextDataInternals, group: TextDataDrawGroup, run: GlyphRun, slots: number[]): number[] {
+function writeRunToSlots(data: TextData, group: TextDataDrawGroup, run: GlyphRun, slots: number[]): number[] {
     const ratio = run.pixelsPerFontUnit;
     const invScale = ratio !== 0 ? 1 / ratio : 0;
     const runColor = run.defaultColor ?? WHITE_COLOR;
@@ -291,46 +295,50 @@ function writeRunToSlots(internals: TextDataInternals, group: TextDataDrawGroup,
         const pg = run.glyphs[i]!;
         const slot = slots[i]!;
         const color = pg.color ?? runColor;
-        const ok = packGlyphAtSlot(internals.instances, slot, group.atlas, group.curves, pg.glyphId, pg.x, pg.y, invScale, color);
+        const ok = packGlyphAtSlot(data._instances, slot, group.atlas, group.curves, pg.glyphId, pg.x, pg.y, invScale, color);
         if (ok) {
             liveSlots.push(slot);
         } else {
-            markSlotDead(internals.instances, slot);
+            markSlotDead(data._instances, slot);
             group.freeSlots.push(slot);
         }
-        if (slot < minSlot) minSlot = slot;
-        if (slot > maxSlot) maxSlot = slot;
+        if (slot < minSlot) {
+            minSlot = slot;
+        }
+        if (slot > maxSlot) {
+            maxSlot = slot;
+        }
     }
     if (maxSlot >= 0) {
-        markDirty(internals, minSlot, maxSlot + 1);
+        markDirty(data, minSlot, maxSlot + 1);
     }
     return liveSlots;
 }
 
 // ─── reset (also serves as compaction) ─────────────────────────────────────
 
-function applyReset(internals: TextDataInternals, runs: GlyphRun[], curves: Map<CurveSetId, Map<number, GlyphCurves>>): void {
+function applyReset(data: TextData, runs: GlyphRun[], curves: Map<CurveSetId, Map<number, GlyphCurves>>): void {
     // Pre-reserve capacity for total glyphs across all runs.
     let totalGlyphs = 0;
     for (const run of runs) {
         totalGlyphs += run.glyphs.length;
     }
     const required = totalGlyphs * TEXT_INSTANCE_FLOATS;
-    if (internals.instances.length < required) {
-        let newLen = Math.max(internals.instances.length * 2, TEXT_INSTANCE_FLOATS);
+    if (data._instances.length < required) {
+        let newLen = Math.max(data._instances.length * 2, TEXT_INSTANCE_FLOATS);
         while (newLen < required) {
             newLen *= 2;
         }
-        internals.instances = new Float32Array(newLen);
+        data._instances = new Float32Array(newLen);
     }
 
     // Preserve previous groups for bind-group/atlas reuse.
     const prevGroupByCurveSet = new Map<CurveSetId, TextDataDrawGroup>();
-    for (const g of internals.groups) {
+    for (const g of data._groups) {
         prevGroupByCurveSet.set(g.curveSetId, g);
     }
 
-    internals.curves = curves;
+    data._curves = curves;
 
     // Group runs by curveSet so each group's slots are contiguous initially.
     const runsByCurveSet = new Map<CurveSetId, GlyphRun[]>();
@@ -366,14 +374,14 @@ function applyReset(internals: TextDataInternals, runs: GlyphRun[], curves: Map<
                 slotCount: 0,
                 liveCount: 0,
                 freeSlots: [],
-                _bindGroup: null,
-                _bindGroupVersion: -1,
+                bindGroup: null,
+                bindGroupVersion: -1,
             } as TextDataDrawGroup);
         group.curves = groupCurves;
         if (group.atlas !== atlas) {
             group.atlas = atlas;
-            group._bindGroup = null;
-            group._bindGroupVersion = -1;
+            group.bindGroup = null;
+            group.bindGroupVersion = -1;
         }
         group.slotStart = writeSlot;
         group.freeSlots = [];
@@ -385,7 +393,7 @@ function applyReset(internals: TextDataInternals, runs: GlyphRun[], curves: Map<
             for (let i = 0; i < run.glyphs.length; i++) {
                 slots[i] = writeSlot++;
             }
-            const live = writeRunToSlots(internals, group, run, slots);
+            const live = writeRunToSlots(data, group, run, slots);
             liveInGroup += live.length;
             newRunRecords.set(run, { run, groupIdx, slots: live });
         }
@@ -394,13 +402,13 @@ function applyReset(internals: TextDataInternals, runs: GlyphRun[], curves: Map<
         newGroups.push(group);
     }
 
-    internals.instanceCount = writeSlot;
-    internals.groups = newGroups;
-    internals.runs.length = 0;
+    data._instanceCount = writeSlot;
+    data._groups = newGroups;
+    data._runs.length = 0;
     for (const r of runs) {
-        internals.runs.push(r);
+        data._runs.push(r);
     }
-    internals.runRecords = newRunRecords;
+    data._runRecords = newRunRecords;
 
     // Reconcile atlas refs.
     const newAtlases = new Set<SharedAtlas>();
@@ -408,26 +416,26 @@ function applyReset(internals: TextDataInternals, runs: GlyphRun[], curves: Map<
         newAtlases.add(g.atlas);
     }
     for (const atlas of newAtlases) {
-        if (!internals.refdAtlases.has(atlas)) {
+        if (!data._refdAtlases.has(atlas)) {
             atlas.refCount++;
         }
     }
-    for (const atlas of internals.refdAtlases) {
+    for (const atlas of data._refdAtlases) {
         if (!newAtlases.has(atlas)) {
             releaseAtlasRef(atlas);
         }
     }
-    internals.refdAtlases = newAtlases;
+    data._refdAtlases = newAtlases;
 
-    internals.dirtyStart = 0;
-    internals.dirtyEnd = writeSlot;
-    internals.version++;
+    data._dirtyStart = 0;
+    data._dirtyEnd = writeSlot;
+    data._version++;
 }
 
 // ─── addCurves ─────────────────────────────────────────────────────────────
 
-function applyAddCurves(internals: TextDataInternals, curveSetId: CurveSetId, curves: Map<number, GlyphCurves>): void {
-    const existing = internals.curves.get(curveSetId);
+function applyAddCurves(data: TextData, curveSetId: CurveSetId, curves: Map<number, GlyphCurves>): void {
+    const existing = data._curves.get(curveSetId);
     if (existing && existing !== curves) {
         for (const [glyphId, glyph] of curves) {
             if (!existing.has(glyphId)) {
@@ -439,70 +447,70 @@ function applyAddCurves(internals: TextDataInternals, curveSetId: CurveSetId, cu
         return;
     }
     if (!existing) {
-        internals.curves.set(curveSetId, curves);
+        data._curves.set(curveSetId, curves);
     }
-    const atlas = getOrCreateAtlas(internals.curves.get(curveSetId)!);
-    syncAtlasGlyphs(atlas, internals.curves.get(curveSetId)!);
+    const atlas = getOrCreateAtlas(data._curves.get(curveSetId)!);
+    syncAtlasGlyphs(atlas, data._curves.get(curveSetId)!);
 }
 
 // ─── addRun / removeRun / replaceRun ───────────────────────────────────────
 
-function resolveRun(internals: TextDataInternals, ref: GlyphRun | number): GlyphRun {
+function resolveRun(data: TextData, ref: GlyphRun | number): GlyphRun {
     if (typeof ref === "number") {
-        const r = internals.runs[ref];
+        const r = data._runs[ref];
         if (!r) {
-            throw new Error(`updateTextData: run index ${ref} out of range (0..${internals.runs.length - 1}).`);
+            throw new Error(`updateTextData: run index ${ref} out of range (0..${data._runs.length - 1}).`);
         }
         return r;
     }
     return ref;
 }
 
-function applyAddRun(internals: TextDataInternals, run: GlyphRun, insertBefore?: number): void {
-    if (internals.runRecords.has(run)) {
+function applyAddRun(data: TextData, run: GlyphRun, insertBefore?: number): void {
+    if (data._runRecords.has(run)) {
         throw new Error("updateTextData addRun: GlyphRun reference is already in this TextData.");
     }
-    const group = ensureGroup(internals, run.curveSet);
-    const groupIdx = internals.groups.indexOf(group);
-    const slots = allocateSlots(internals, group, run.glyphs.length);
-    const live = writeRunToSlots(internals, group, run, slots);
+    const group = ensureGroup(data, run.curveSet);
+    const groupIdx = data._groups.indexOf(group);
+    const slots = allocateSlots(data, group, run.glyphs.length);
+    const live = writeRunToSlots(data, group, run, slots);
     group.liveCount += live.length;
-    internals.runRecords.set(run, { run, groupIdx, slots: live });
-    const at = insertBefore ?? internals.runs.length;
-    internals.runs.splice(at, 0, run);
+    data._runRecords.set(run, { run, groupIdx, slots: live });
+    const at = insertBefore ?? data._runs.length;
+    data._runs.splice(at, 0, run);
 }
 
-function applyRemoveRun(internals: TextDataInternals, ref: GlyphRun | number): void {
-    const run = resolveRun(internals, ref);
-    const rec = internals.runRecords.get(run);
+function applyRemoveRun(data: TextData, ref: GlyphRun | number): void {
+    const run = resolveRun(data, ref);
+    const rec = data._runRecords.get(run);
     if (!rec) {
         throw new Error("updateTextData removeRun: GlyphRun reference is not in this TextData.");
     }
-    const group = internals.groups[rec.groupIdx]!;
-    freeSlots(internals, group, rec.slots);
+    const group = data._groups[rec.groupIdx]!;
+    freeSlots(data, group, rec.slots);
     group.liveCount -= rec.slots.length;
-    internals.runRecords.delete(run);
-    const runIdx = internals.runs.indexOf(run);
+    data._runRecords.delete(run);
+    const runIdx = data._runs.indexOf(run);
     if (runIdx >= 0) {
-        internals.runs.splice(runIdx, 1);
+        data._runs.splice(runIdx, 1);
     }
     // If the group has no live instances left, drop it entirely and shrink the buffer tail.
     if (group.liveCount === 0) {
-        dropEmptyGroup(internals, group);
+        dropEmptyGroup(data, group);
     }
 }
 
 /** Remove a group with no live instances. Shifts later groups left over the vacated range. */
-function dropEmptyGroup(internals: TextDataInternals, group: TextDataDrawGroup): void {
-    const idx = internals.groups.indexOf(group);
+function dropEmptyGroup(data: TextData, group: TextDataDrawGroup): void {
+    const idx = data._groups.indexOf(group);
     if (idx < 0) {
         return;
     }
     const removedStart = group.slotStart;
     const removedCount = group.slotCount;
-    internals.groups.splice(idx, 1);
+    data._groups.splice(idx, 1);
     // Re-index groupIdx for runs in later groups.
-    for (const r of internals.runRecords.values()) {
+    for (const r of data._runRecords.values()) {
         if (r.groupIdx > idx) {
             r.groupIdx--;
         }
@@ -510,11 +518,11 @@ function dropEmptyGroup(internals: TextDataInternals, group: TextDataDrawGroup):
     if (removedCount > 0) {
         const floatDelta = removedCount * TEXT_INSTANCE_FLOATS;
         const moveStartFloat = (removedStart + removedCount) * TEXT_INSTANCE_FLOATS;
-        const moveEndFloat = internals.instanceCount * TEXT_INSTANCE_FLOATS;
+        const moveEndFloat = data._instanceCount * TEXT_INSTANCE_FLOATS;
         if (moveEndFloat > moveStartFloat) {
-            internals.instances.copyWithin(moveStartFloat - floatDelta, moveStartFloat, moveEndFloat);
+            data._instances.copyWithin(moveStartFloat - floatDelta, moveStartFloat, moveEndFloat);
         }
-        for (const g of internals.groups) {
+        for (const g of data._groups) {
             if (g.slotStart >= removedStart) {
                 g.slotStart -= removedCount;
                 for (let i = 0; i < g.freeSlots.length; i++) {
@@ -522,7 +530,7 @@ function dropEmptyGroup(internals: TextDataInternals, group: TextDataDrawGroup):
                 }
             }
         }
-        for (const r of internals.runRecords.values()) {
+        for (const r of data._runRecords.values()) {
             const slots = r.slots;
             for (let i = 0; i < slots.length; i++) {
                 if (slots[i]! >= removedStart) {
@@ -530,146 +538,122 @@ function dropEmptyGroup(internals: TextDataInternals, group: TextDataDrawGroup):
                 }
             }
         }
-        internals.instanceCount -= removedCount;
-        markDirty(internals, removedStart, internals.instanceCount);
+        data._instanceCount -= removedCount;
+        markDirty(data, removedStart, data._instanceCount);
     }
     // Drop atlas ref if no remaining group uses it.
     let stillReferenced = false;
-    for (const g of internals.groups) {
+    for (const g of data._groups) {
         if (g.atlas === group.atlas) {
             stillReferenced = true;
             break;
         }
     }
     if (!stillReferenced) {
-        internals.refdAtlases.delete(group.atlas);
+        data._refdAtlases.delete(group.atlas);
         releaseAtlasRef(group.atlas);
     }
 }
 
-function applyReplaceRun(internals: TextDataInternals, prevRef: GlyphRun | number, newRun: GlyphRun): void {
-    const prev = resolveRun(internals, prevRef);
-    const rec = internals.runRecords.get(prev);
+function applyReplaceRun(data: TextData, prevRef: GlyphRun | number, newRun: GlyphRun): void {
+    const prev = resolveRun(data, prevRef);
+    const rec = data._runRecords.get(prev);
     if (!rec) {
         throw new Error("updateTextData replaceRun: previous GlyphRun reference is not in this TextData.");
     }
-    if (prev !== newRun && internals.runRecords.has(newRun)) {
+    if (prev !== newRun && data._runRecords.has(newRun)) {
         throw new Error("updateTextData replaceRun: new GlyphRun reference is already in this TextData.");
     }
-    const group = internals.groups[rec.groupIdx]!;
+    const group = data._groups[rec.groupIdx]!;
     const sameGroup = newRun.curveSet === group.curveSetId;
     if (sameGroup && newRun.glyphs.length === rec.slots.length) {
         // In-place rewrite over the existing slots.
-        const live = writeRunToSlots(internals, group, newRun, rec.slots);
+        const live = writeRunToSlots(data, group, newRun, rec.slots);
         if (live.length === rec.slots.length) {
             // All glyphs succeeded; reuse same slot list.
-            internals.runRecords.delete(prev);
-            internals.runRecords.set(newRun, { run: newRun, groupIdx: rec.groupIdx, slots: live });
-            const runIdx = internals.runs.indexOf(prev);
+            data._runRecords.delete(prev);
+            data._runRecords.set(newRun, { run: newRun, groupIdx: rec.groupIdx, slots: live });
+            const runIdx = data._runs.indexOf(prev);
             if (runIdx >= 0) {
-                internals.runs[runIdx] = newRun;
+                data._runs[runIdx] = newRun;
             }
             return;
         }
         // Some glyphs missed atlas — writeRunToSlots already pushed the missed slots to
         // freeSlots. Update bookkeeping.
         group.liveCount -= rec.slots.length - live.length;
-        internals.runRecords.delete(prev);
-        internals.runRecords.set(newRun, { run: newRun, groupIdx: rec.groupIdx, slots: live });
-        const runIdx = internals.runs.indexOf(prev);
+        data._runRecords.delete(prev);
+        data._runRecords.set(newRun, { run: newRun, groupIdx: rec.groupIdx, slots: live });
+        const runIdx = data._runs.indexOf(prev);
         if (runIdx >= 0) {
-            internals.runs[runIdx] = newRun;
+            data._runs[runIdx] = newRun;
         }
         return;
     }
     // Different size or different group → remove + add at the same position.
-    const insertPos = internals.runs.indexOf(prev);
-    applyRemoveRun(internals, prev);
-    applyAddRun(internals, newRun, insertPos >= 0 ? insertPos : undefined);
+    const insertPos = data._runs.indexOf(prev);
+    applyRemoveRun(data, prev);
+    applyAddRun(data, newRun, insertPos >= 0 ? insertPos : undefined);
 }
 
 // ─── Public API ────────────────────────────────────────────────────────────
 
 export function createTextData(initial?: { runs: GlyphRun[]; curves: Map<CurveSetId, Map<number, GlyphCurves>> }): TextData {
     const runs: GlyphRun[] = [];
-    const data = { runs } as unknown as TextData;
-    const internals: TextDataInternals = {
-        groups: [],
+    const data = {
         runs,
-        runRecords: new Map(),
-        instances: new Float32Array(TEXT_INSTANCE_FLOATS),
-        instanceCount: 0,
-        curves: new Map(),
-        refdAtlases: new Set(),
-        version: 1,
-        dirtyStart: 0,
-        dirtyEnd: 0,
+        _runs: runs,
+        _groups: [],
+        _runRecords: new Map(),
+        _instances: new Float32Array(TEXT_INSTANCE_FLOATS),
+        _instanceCount: 0,
+        _curves: new Map(),
+        _refdAtlases: new Set(),
+        _version: 1,
+        _dirtyStart: 0,
+        _dirtyEnd: 0,
         _gpu: null,
-    };
-    setTextDataInternals(data, internals);
+    } as unknown as TextData;
     if (initial) {
-        applyReset(internals, initial.runs, initial.curves);
+        applyReset(data, initial.runs, initial.curves);
     }
     return data;
 }
 
 export function updateTextData(data: TextData, update: TextDataUpdate): void {
-    const internals = getTextDataInternals(data);
-    if (!internals) {
-        throw new Error("updateTextData: invalid TextData (was it produced by createTextData?).");
-    }
     switch (update.update) {
         case "reset":
-            applyReset(internals, update.runs, update.curves);
+            applyReset(data, update.runs, update.curves);
             return;
         case "addCurves":
-            applyAddCurves(internals, update.curveSetId, update.curves);
+            applyAddCurves(data, update.curveSetId, update.curves);
             return;
         case "addRun":
-            applyAddRun(internals, update.run, update.insertBefore);
+            applyAddRun(data, update.run, update.insertBefore);
             return;
         case "removeRun":
-            applyRemoveRun(internals, update.run);
+            applyRemoveRun(data, update.run);
             return;
         case "replaceRun":
-            applyReplaceRun(internals, update.previous, update.run);
+            applyReplaceRun(data, update.previous, update.run);
             return;
     }
 }
 
 export function disposeTextData(data: TextData): void {
-    const internals = getTextDataInternals(data);
-    if (!internals) {
-        return;
+    if (data._gpu) {
+        data._gpu.instanceBuf.destroy();
+        data._gpu = null;
     }
-    if (internals._gpu) {
-        internals._gpu.instanceBuf.destroy();
-        internals._gpu = null;
+    for (const g of data._groups) {
+        g.bindGroup = null;
     }
-    for (const g of internals.groups) {
-        g._bindGroup = null;
-    }
-    internals.groups = [];
-    internals.instanceCount = 0;
-    internals.runs.length = 0;
-    internals.runRecords.clear();
-    for (const atlas of internals.refdAtlases) {
+    data._groups = [];
+    data._instanceCount = 0;
+    data._runs.length = 0;
+    data._runRecords.clear();
+    for (const atlas of data._refdAtlases) {
         releaseAtlasRef(atlas);
     }
-    internals.refdAtlases.clear();
-}
-
-/** @internal Read TextData internals from a renderable. */
-export function getTextDataInternalsOrThrow(data: TextData): TextDataInternals {
-    const i = getTextDataInternals(data);
-    if (!i) {
-        throw new Error("Text: TextData has no internals (invalid handle).");
-    }
-    return i;
-}
-
-/** @internal Reset dirty range to empty after a renderer has uploaded its bytes. */
-export function clearTextDataDirtyRange(internals: TextDataInternals): void {
-    internals.dirtyStart = 0;
-    internals.dirtyEnd = 0;
+    data._refdAtlases.clear();
 }
