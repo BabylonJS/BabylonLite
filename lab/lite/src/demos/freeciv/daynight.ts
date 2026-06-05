@@ -159,26 +159,20 @@ export function createDayNight(engine: EngineContext, sr: SpriteRenderer, world:
             else if (level > target) level = Math.max(target, level - step);
             const sun = Math.cos(level * Math.PI); // +1 day (level 0) … -1 night (level 1)
             day = clamp01(sun); // 1 in full daylight, 0 once the sun is below the horizon
-            const night = Math.max(0, -sun); // 0 by day, →1 at midnight
-            // Warmth peaks as the sun crosses the horizon (dusk/dawn).
-            const horizon = Math.max(0, 1 - Math.abs(sun) / 0.35);
 
-            // Night overlay (alpha "over"): a cool dark-blue wash that fades in after
-            // sunset, tinted warm/orange while the sun is near the horizon. Alpha ramps
-            // with `night` so noon is fully clear.
-            const wash = night * 0.62; // peak overlay strength at midnight
-            const orange = horizon * 0.5; // dusk/dawn warmth, mixed into the wash
-            const or = 0.04 + 0.55 * orange;
-            const og = 0.06 + 0.28 * orange;
-            const ob = 0.18 + 0.05 * orange;
-            // The overlay must darken MONOTONICALLY across the whole transition. `wash` (the night
-            // darkening) is 0 on the day side and only climbs after the sun crosses the horizon,
-            // while the dusk warmth is a bump that peaks at the horizon and then falls. Summing
-            // them keeps the total rising the whole way (the dusk coefficient is capped at ≤0.217
-            // so the falling warmth can never out-pace the rising wash). The previous
-            // `max(wash, orange * 0.45)` instead dipped at the crossover between the two curves,
-            // so the scene briefly RE-BRIGHTENED between dusk and full night (and vice-versa).
-            const alpha = wash + horizon * 0.2;
+            // Night overlay (alpha "over"): a cool dark-blue wash whose OPACITY ramps strictly
+            // linearly with `level` (which itself eases linearly in time), so scene brightness
+            // changes at a constant rate. The overlay COLOUR is constant, so every channel is a
+            // straight-line blend toward the night blue — provably monotonic, no pulse.
+            //
+            // The previous version mixed in a warm dusk tint that PEAKED at the horizon crossing.
+            // Even once its alpha was made monotonic, that warm bump still lifted the red channel
+            // of the blended scene mid-transition and back down — the subtle brighten-then-darken
+            // "pulse" (in both directions) the user saw. A constant colour removes it entirely.
+            const or = 0.04;
+            const og = 0.06;
+            const ob = 0.18;
+            const alpha = level * 0.62; // 0 at full day → 0.62 at midnight, linear in time
             updateSprite2DIndex(gradeLayer, gradeIndex, {
                 positionPx: [(engine.canvas.width || 1) / 2, (engine.canvas.height || 1) / 2],
                 sizePx: [engine.canvas.width || 1, engine.canvas.height || 1],

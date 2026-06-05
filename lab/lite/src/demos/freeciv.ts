@@ -22,8 +22,10 @@ import { createDayNight } from "./freeciv/daynight.js";
 import { createVignette } from "./freeciv/vignette.js";
 import { generateWorld, type GameMap } from "./freeciv/worldgen.js";
 import { buildTilemap, type Bounds, type TileLayers, type TileSheets } from "./freeciv/tilemap.js";
-import { createCoastFoam } from "./freeciv/coastfoam.js";
+import { createCommandFx, type CommandFx } from "./freeciv/commandfx.js";
+import { createDust } from "./freeciv/dust.js";
 import { createFog } from "./freeciv/fog.js";
+import { createGlints } from "./freeciv/glints.js";
 import { createLiveSim } from "./freeciv/live.js";
 import { createPicker } from "./freeciv/pick.js";
 import { createMinimap } from "./freeciv/minimap.js";
@@ -72,7 +74,6 @@ async function main(): Promise<void> {
         city: createSprite2DLayer(cities.grid("grid_main").atlas, { capacity: 64, order: 10, pivot: [0.5, 1.0] }),
         unit: createSprite2DLayer(units.grid("grid_main").atlas, { capacity: 64, order: 11, pivot: [0.5, 1.0] }),
         animals: createSprite2DLayer(animals.grid("grid_main").atlas, { capacity: 64, order: 12, pivot: [0.5, 1.0] }),
-        selection: createSprite2DLayer(select.grid("grid_main").atlas, { capacity: 4, order: 14 }),
     };
     // Tile-hover highlight: a cyan-tinted selection bracket on its own top layer.
     // We use the `select` sheet's corner-bracket frame (white-filled, so a colour
@@ -96,7 +97,6 @@ async function main(): Promise<void> {
         tileLayers.city,
         tileLayers.unit,
         tileLayers.animals,
-        tileLayers.selection,
         highlightLayer,
     ];
 
@@ -118,11 +118,16 @@ async function main(): Promise<void> {
         "font:600 12px system-ui,-apple-system,'Segoe UI',sans-serif;pointer-events:none;display:none;";
     document.body.appendChild(hint);
     let unitSelected = false;
+    // The tile the scout is currently marching to (for the marching-ants marker); cleared
+    // when it arrives or is deselected. The command-FX layer is created after the renderer,
+    // so it is held in a forward `let` that the click handler closes over.
+    let scoutDest: [number, number] | null = null;
+    let commandFx: CommandFx | null = null;
     const setArmed = (on: boolean): void => {
         unitSelected = on;
         hint.style.display = on ? "block" : "none";
         canvas.style.cursor = on ? "crosshair" : "";
-        sim.setScoutSelected(on);
+        sim.setScoutSelected(on); // selected scout sprite pulses
     };
     const onMapClick = (tx: number, ty: number): void => {
         const [stx, sty] = sim.scoutTile();
@@ -137,6 +142,8 @@ async function main(): Promise<void> {
         const path = findPath(world, stx, sty, tx, ty);
         if (path && path.length > 0) {
             sim.commandScout(path);
+            scoutDest = [tx, ty];
+            commandFx?.ping(tx, ty); // acknowledge the order with a ripple
             setArmed(false);
         }
         // Unreachable target (ocean / off-map): stay armed so the player can retry.
@@ -179,10 +186,18 @@ async function main(): Promise<void> {
     // frontier reads as smooth drifting mist with no isometric silhouette.
     const fog = createFog(engine, sr, world);
 
-    // Breaking surf along every shoreline: a fullscreen field quad that samples a
-    // static land/ocean mask (its 0.5 contour is the coastline) and paints animated
-    // foam in a band on the ocean side — same continuous-field trick as the fog.
-    const coastFoam = createCoastFoam(engine, sr, world);
+    // Sun-glints: bright specular sparkles twinkling on the open sea, gated by the
+    // day/night `daylight()` so they catch the sun by day and vanish at night.
+    const glints = createGlints(engine, sr, world);
+
+    // Dust kicked up under the scout as it walks — a small CPU particle trail that
+    // fades behind the moving unit (below the unit/city sprites, above terrain).
+    const dust = createDust(engine, sr);
+
+    // Command feedback FX: a pulsing glow selection ring on the scout, a marching-ants
+    // marker on its destination tile, and a click-ping ripple. Assigned to the forward
+    // `commandFx` declared above so the click handler can fire pings.
+    commandFx = createCommandFx(engine, sr);
 
     // Slow day/night cycle: a full-screen multiply grade plus warm additive city
     // lights that bloom after sunset. Above the clouds, below the vignette/HUD.
@@ -219,8 +234,16 @@ async function main(): Promise<void> {
         sim.step(dt);
         const [scoutX, scoutY] = sim.scoutTile();
         fog.update(view, scoutX, scoutY);
-        coastFoam.update(view);
         dayNight.update(view);
+        glints.update(view, dayNight.daylight());
+        const [scoutWx, scoutWy] = sim.scoutWorld();
+        dust.update(view, scoutWx, scoutWy, sim.scoutMoving(), dt);
+        // Clear the marching-ants destination once the scout reaches it (idle again).
+        if (scoutDest && !sim.scoutMoving()) {
+            const [stx, sty] = sim.scoutTile();
+            if (stx === scoutDest[0] && sty === scoutDest[1]) scoutDest = null;
+        }
+        commandFx?.update(view, { dest: scoutDest }, dt);
         atmosphere.update(view, dayNight.daylight());
         vignette.update();
         waterFx.update();
