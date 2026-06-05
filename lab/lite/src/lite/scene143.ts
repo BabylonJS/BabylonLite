@@ -43,7 +43,6 @@ async function main(): Promise<void> {
         depthStencilFormat: "depth24plus-stencil8",
         sampleCount: 1,
         size: "canvas",
-        flipY: false,
     });
     const sourceTask = createRenderTask(
         {
@@ -87,7 +86,7 @@ async function main(): Promise<void> {
             sourceSamplingMode: "linear",
             aberrationAmount: 45,
             radialIntensity: 0,
-            direction: { x: 0.707, y: 0.707 },
+            direction: { x: 0.707, y: -0.707 },
             centerPosition: { x: 0.5, y: 0.5 },
         },
         engine,

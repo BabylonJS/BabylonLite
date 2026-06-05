@@ -202,7 +202,7 @@ export function getOrCreateStandardPipeline(engine: EngineContext, sig: RenderTa
               }
             : {}),
         multisample: { count: sig._sampleCount },
-        primitive: { topology: "triangle-list", cullMode: features & DOUBLE_SIDED ? "none" : "back", frontFace: sig._flipY ? "cw" : "ccw" },
+        primitive: { topology: "triangle-list", cullMode: features & DOUBLE_SIDED ? "none" : "back", frontFace: "ccw" },
     });
 
     bindings._pipelines.set(key, pipeline);

@@ -405,8 +405,8 @@ function _getOrCreateGeometryPipeline(
             : undefined,
         multisample: { count: sig._sampleCount },
         // Geometry MRT renders to offscreen targets, so it needs the same
-        // Y-flip discipline as RTT — front face is "cw" when sig._flipY.
-        primitive: { topology: "triangle-list", cullMode, frontFace: sig._flipY ? "cw" : "ccw" },
+        // Render upright — front face is always "ccw".
+        primitive: { topology: "triangle-list", cullMode, frontFace: "ccw" },
     });
     res._pipelines.set(key, pipeline);
     return pipeline;

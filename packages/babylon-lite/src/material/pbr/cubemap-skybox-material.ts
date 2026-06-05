@@ -72,7 +72,6 @@ export function createCubemapSkyboxMaterial(label: string, vertCode: string, fra
                     _depthCompare: sig._depthCompare,
                     _msaaSamples: sig._sampleCount,
                     _depthWriteEnabled: false,
-                    _flipY: sig._flipY,
                 })
             );
             _cmPipelines.set(key, pipeline);

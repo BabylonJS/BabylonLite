@@ -49,7 +49,7 @@ describe("reverse-Z depth", () => {
 
         expect(rt._descriptor._depthClearValue).toBeUndefined();
         expect(rt._descriptor._depthCompare).toBeUndefined();
-        expect(targetSignatureKey({ _colorFormat: "bgra8unorm", _depthStencilFormat: "depth24plus-stencil8", _sampleCount: 1 })).toBe("bgra8unorm|depth24plus-stencil8||1|");
+        expect(targetSignatureKey({ _colorFormat: "bgra8unorm", _depthStencilFormat: "depth24plus-stencil8", _sampleCount: 1 })).toBe("bgra8unorm|depth24plus-stencil8||1");
     });
 
     it("allows internal shadow targets to keep standard-Z depth maps", () => {

@@ -88,12 +88,10 @@ export interface PipelineDescriptorOpts {
     _cullMode?: GPUCullMode;
     /** @internal */
     _blend?: GPUBlendState;
-    /** @internal When true, build with `frontFace: "cw"` (offscreen RTT with Y-flipped projection). */
-    _flipY?: boolean;
 }
 
 /** Build a render pipeline descriptor with the engine's default reverse-Z state:
- *  depth24plus-stencil8, greater-equal, triangle-list, ccw front face (cw if flipY). */
+ *  depth24plus-stencil8, greater-equal, triangle-list, ccw front face. */
 export function createDefaultPipelineDescriptor(opts: PipelineDescriptorOpts): GPURenderPipelineDescriptor {
     const target: GPUColorTargetState = opts._blend ? { format: opts._format, blend: opts._blend } : { format: opts._format };
     return {
@@ -107,6 +105,6 @@ export function createDefaultPipelineDescriptor(opts: PipelineDescriptorOpts): G
             depthWriteEnabled: opts._depthWriteEnabled ?? true,
         },
         multisample: { count: opts._msaaSamples },
-        primitive: { topology: "triangle-list", cullMode: opts._cullMode ?? "back", frontFace: opts._flipY ? "cw" : "ccw" },
+        primitive: { topology: "triangle-list", cullMode: opts._cullMode ?? "back", frontFace: "ccw" },
     };
 }

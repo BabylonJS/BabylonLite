@@ -71,12 +71,8 @@ interface PostProcessTaskInternal extends PostProcessTask {
     _colorAttachment: GPURenderPassColorAttachment;
 }
 
-const fullscreenVertexWGSL = (
-    outputFlipY: boolean,
-    extraOutput: string,
-    extraMain: string
-) => `struct PostProcessVertexOutput{@builtin(position) position:vec4f,@location(0) uv:vec2f${extraOutput}}
-@vertex fn postProcessVertex(@builtin(vertex_index) vertexIndex:u32)->PostProcessVertexOutput{var positions=array<vec2f,3>(vec2f(-1,-1),vec2f(3,-1),vec2f(-1,3));let p=positions[vertexIndex];var out:PostProcessVertexOutput;out.position=vec4f(p,0,1);out.uv=vec2f(p.x*0.5+0.5,${outputFlipY ? "0.5-p.y*0.5" : "p.y*0.5+0.5"});${extraMain}return out;}`;
+const fullscreenVertexWGSL = (extraOutput: string, extraMain: string) => `struct PostProcessVertexOutput{@builtin(position) position:vec4f,@location(0) uv:vec2f${extraOutput}}
+@vertex fn postProcessVertex(@builtin(vertex_index) vertexIndex:u32)->PostProcessVertexOutput{var positions=array<vec2f,3>(vec2f(-1,-1),vec2f(3,-1),vec2f(-1,3));let p=positions[vertexIndex];var out:PostProcessVertexOutput;out.position=vec4f(p,0,1);out.uv=vec2f(p.x*0.5+0.5,0.5-p.y*0.5);${extraMain}return out;}`;
 
 const SOURCE_WGSL = `@group(0) @binding(0) var sourceSampler:sampler;
 @group(0) @binding(1) var sourceTextureSampler:texture_2d<f32>;
@@ -276,13 +272,7 @@ function getUniformBinding(task: PostProcessTaskInternal): number {
 }
 
 function getShaderModule(task: PostProcessTaskInternal, engine: EngineContext): GPUShaderModule {
-    const desc = task.outputTexture._descriptor;
-    // V-flip the sampling UV only when source and target orientations differ.
-    // Orientation comes from `flipY` override or defaults to `resolveToSwapchain !== true`
-    // (offscreen RTs are projection-flipped; swap RTs are upright).
-    const srcDesc = task.sourceTexture._descriptor;
-    const outputFlipY = (srcDesc.flipY ?? srcDesc.resolveToSwapchain !== true) === (desc.flipY ?? desc.resolveToSwapchain !== true);
-    const code = `${fullscreenVertexWGSL(outputFlipY, task._shader.vertexOutputWGSL ?? "", task._shader.vertexMainWGSL ?? "")}\n${SOURCE_WGSL}\n${task._shader.extraTextureWGSL ?? ""}\n${task._shader.uniformWGSL ?? ""}\n${task._shader.fragmentWGSL}\n${task._shader.fragmentWrapperWGSL ?? FRAGMENT_WRAPPER_WGSL}`;
+    const code = `${fullscreenVertexWGSL(task._shader.vertexOutputWGSL ?? "", task._shader.vertexMainWGSL ?? "")}\n${SOURCE_WGSL}\n${task._shader.extraTextureWGSL ?? ""}\n${task._shader.uniformWGSL ?? ""}\n${task._shader.fragmentWGSL}\n${task._shader.fragmentWrapperWGSL ?? FRAGMENT_WRAPPER_WGSL}`;
     if (!task._shaderModule || task._shaderModuleCode !== code) {
         task._shaderModuleCode = code;
         task._shaderModule = engine._device.createShaderModule({

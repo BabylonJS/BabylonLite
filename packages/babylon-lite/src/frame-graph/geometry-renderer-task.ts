@@ -191,7 +191,7 @@ interface GeometryRendererTaskInternal extends GeometryRendererTask {
      *  `_colorFormat` holds the joined format list so the shared pipeline cache key includes
      *  every MRT slot, while `_colorFormats` is the array the geometry renderable consumes
      *  to build `fragment.targets`. */
-    _signature: { _colorFormat: string; _colorFormats: GPUTextureFormat[]; _depthStencilFormat?: GPUTextureFormat; _depthCompare?: GPUCompareFunction; _sampleCount: number; _flipY?: boolean };
+    _signature: { _colorFormat: string; _colorFormats: GPUTextureFormat[]; _depthStencilFormat?: GPUTextureFormat; _depthCompare?: GPUCompareFunction; _sampleCount: number };
 }
 
 // ─── Factory ───────────────────────────────────────────────────────────────
@@ -314,7 +314,6 @@ export function createGeometryRendererTask(config: GeometryRendererTaskConfig, e
         _depthStencilFormat: (config.depthTexture ?? outputTarget)._descriptor.depthStencilFormat ?? "depth32float",
         _depthCompare: "greater-equal" as GPUCompareFunction,
         _sampleCount: samples,
-        _flipY: true,
     };
 
     const task: GeometryRendererTaskInternal = {
@@ -520,7 +519,7 @@ function executeTask(task: GeometryRendererTaskInternal, eng: EngineContext, sc:
         return 0;
     }
     const aspect = mrt._width / mrt._height;
-    writeSceneUBO(task, eng, camera, aspect, true);
+    writeSceneUBO(task, eng, camera, aspect);
     if (task._needsParams) {
         writeParamsUBO(task, eng, camera);
     }
@@ -561,18 +560,12 @@ function executeTask(task: GeometryRendererTaskInternal, eng: EngineContext, sc:
     return draws;
 }
 
-function writeSceneUBO(task: GeometryRendererTaskInternal, eng: EngineContext, camera: Camera, aspect: number, flipY: boolean): void {
+function writeSceneUBO(task: GeometryRendererTaskInternal, eng: EngineContext, camera: Camera, aspect: number): void {
     const data = task._sceneData;
     data.fill(0);
     const viewProj = getViewProjectionMatrix(camera, aspect);
     const viewMat = getViewMatrix(camera);
     packMat4IntoF32(data, viewProj, 0);
-    if (flipY) {
-        data[1] = -data[1]!;
-        data[5] = -data[5]!;
-        data[9] = -data[9]!;
-        data[13] = -data[13]!;
-    }
     packMat4IntoF32(data, viewMat, 16);
     const wm = camera.worldMatrix;
     data[32] = wm[12]!;

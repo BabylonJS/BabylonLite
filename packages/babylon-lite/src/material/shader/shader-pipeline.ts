@@ -102,7 +102,7 @@ export function getOrCreateShaderPipeline(engine: EngineContext, sig: RenderTarg
               }
             : {}),
         multisample: { count: sig._sampleCount },
-        primitive: { topology: "triangle-list", cullMode: material.backFaceCulling ? "back" : "none", frontFace: sig._flipY ? "cw" : "ccw" },
+        primitive: { topology: "triangle-list", cullMode: material.backFaceCulling ? "back" : "none", frontFace: "ccw" },
     });
     bindings.pipelines.set(key, pipeline);
     return pipeline;

@@ -156,12 +156,14 @@ describe("CopyToTextureTask", () => {
         expect(capture.copies).toHaveLength(0);
         expect(capture.descriptors).toHaveLength(1);
         expect(capture.draws).toBe(1);
-        // Offscreen target (default flipY=true, RTT projection-flipped): viewport y is NOT flipped.
+        // All RTs render upright (row 0 = top of scene), so the BJS-space viewport
+        // (y=0 = bottom of target) is converted to pixel-y-top for both offscreen
+        // and swapchain targets:
         // x = floor(0.25*64) = 16; yTop = floor(0.75*32) = 24;
         // w = floor(0.50*64) - 16 = 16; h = floor(1.00*32) - 24 = 8;
-        // y = yTop = 24.
-        expect(capture.viewports[0]).toEqual({ x: 16, y: 24, w: 16, h: 8 });
-        expect(capture.scissors[0]).toEqual({ x: 16, y: 24, w: 16, h: 8 });
+        // y = h - yTop - vh = 32 - 24 - 8 = 0.
+        expect(capture.viewports[0]).toEqual({ x: 16, y: 0, w: 16, h: 8 });
+        expect(capture.scissors[0]).toEqual({ x: 16, y: 0, w: 16, h: 8 });
     });
 
     it("falls back to the blit path when format or size differ", () => {

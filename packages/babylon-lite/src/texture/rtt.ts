@@ -45,7 +45,7 @@ export function createRenderTargetTexture(engine: EngineContext, descriptor: Ren
         sampler: getBilinearSampler(engine),
         width: descriptor.size.width,
         height: descriptor.size.height,
-        invertY: false,
+        invertY: true,
     };
     return { rt, texture };
 }

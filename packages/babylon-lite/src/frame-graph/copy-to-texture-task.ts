@@ -38,7 +38,7 @@
 
 import type { NormalizedViewport } from "../camera/camera.js";
 import type { EngineContext } from "../engine/engine.js";
-import type { RenderTarget, RenderTargetDescriptor } from "../engine/render-target.js";
+import type { RenderTarget } from "../engine/render-target.js";
 import { buildRenderTarget } from "../engine/render-target.js";
 import { getBilinearSampler, getTrilinearSampler } from "../resource/samplers.js";
 import type { SceneContext } from "../scene/scene-core.js";
@@ -119,20 +119,11 @@ interface CopyToTextureTaskInternal extends CopyToTextureTask {
     _renderPassDescriptor: GPURenderPassDescriptor;
 }
 
-// VERTEX_WGSL_FLIP: sample the source upside-down — used when source and target
-// have different `flipY` orientations (e.g. offscreen MRT → swapchain) so the
-// visible result stays upright on screen. Maps framebuffer Y=0 (top) to source
-// v=1 (bottom row).
-const VERTEX_WGSL_FLIP = `struct V{@builtin(position)p:vec4f,@location(0)u:vec2f};
-@vertex fn vs(@builtin(vertex_index)i:u32)->V{
-var pos=array<vec2f,3>(vec2f(-1,-1),vec2f(3,-1),vec2f(-1,3));
-var uv=array<vec2f,3>(vec2f(0,0),vec2f(2,0),vec2f(0,2));
-return V(vec4f(pos[i],0,1),uv[i]);}`;
-
-// VERTEX_WGSL_NOFLIP: identity sampling — used when source and target share the
-// same orientation (offscreen → offscreen, swapchain → swapchain). Maps
-// framebuffer Y=0 (top) to source v=0 (top row).
-const VERTEX_WGSL_NOFLIP = `struct V{@builtin(position)p:vec4f,@location(0)u:vec2f};
+// VERTEX_WGSL: identity sampling. Maps framebuffer Y=0 (top) to source v=0 (top
+// row). Since every RT now renders upright (row 0 = top of scene), the same
+// shader handles offscreen↔offscreen, swap↔swap, and the offscreen↔swap blits
+// without any V flip.
+const VERTEX_WGSL = `struct V{@builtin(position)p:vec4f,@location(0)u:vec2f};
 @vertex fn vs(@builtin(vertex_index)i:u32)->V{
 var pos=array<vec2f,3>(vec2f(-1,-1),vec2f(3,-1),vec2f(-1,3));
 var uv=array<vec2f,3>(vec2f(0,1),vec2f(2,1),vec2f(0,-1));
@@ -375,8 +366,7 @@ function buildBlitPath(task: CopyToTextureTaskInternal, source: RenderTarget, ta
     const targetFormat = effectiveTargetFormat(target, engine);
     const targetSamples = target._descriptor.sampleCount ?? 1;
     const multisampledSource = (source._descriptor.sampleCount ?? 1) > 1;
-    const flipY = shouldFlipY(source._descriptor, target._descriptor);
-    const pipeline = getOrCreateCopyPipeline(engine, targetFormat, targetSamples, multisampledSource, task.lodLevel, flipY);
+    const pipeline = getOrCreateCopyPipeline(engine, targetFormat, targetSamples, multisampledSource, task.lodLevel);
     const bgl = multisampledSource ? _bglMsaa! : _bglFiltering!;
     const entries: GPUBindGroupEntry[] = multisampledSource
         ? [{ binding: 0, resource: source._colorView! }]
@@ -444,13 +434,10 @@ function buildBlitPath(task: CopyToTextureTaskInternal, source: RenderTarget, ta
         const vw = Math.floor((v.x + v.width) * w) - x;
         const yTop = Math.floor(v.y * h);
         const vh = Math.floor((v.y + v.height) * h) - yTop;
-        // Y-flip the viewport only when target.flipY=false (swapchain / GL-y-down
-        // pixel orientation) — matches BJS engine behavior which Y-flips for
-        // backbuffer but not for RTTs. For flipY=true offscreen targets, the
-        // viewport's pre-flip pixel-y is used as-is so that a downstream flip-blit
-        // (offscreen→swap) lands the result back at the BJS-space y position.
-        const targetFlipY = target._descriptor.flipY ?? target._descriptor.resolveToSwapchain !== true;
-        viewportRect = { x, y: targetFlipY ? yTop : h - yTop - vh, w: vw, h: vh };
+        // Convert BJS-space viewport (y=0 = bottom of target) to pixel-y-top.
+        // All RTs render upright (row 0 = top of scene), so the conversion is
+        // identical for offscreen and swapchain targets.
+        viewportRect = { x, y: h - yTop - vh, w: vw, h: vh };
     }
 
     task._blit = {
@@ -462,26 +449,18 @@ function buildBlitPath(task: CopyToTextureTaskInternal, source: RenderTarget, ta
     };
 }
 
-function getOrCreateCopyPipeline(
-    engine: EngineContext,
-    targetFormat: GPUTextureFormat,
-    targetSamples: number,
-    multisampledSource: boolean,
-    lodLevel: number,
-    flipY: boolean
-): GPURenderPipeline {
+function getOrCreateCopyPipeline(engine: EngineContext, targetFormat: GPUTextureFormat, targetSamples: number, multisampledSource: boolean, lodLevel: number): GPURenderPipeline {
     const device = engine._device;
-    const pipelineKey = `${targetFormat}|t${targetSamples}|${multisampledSource ? "m" : "s"}|l${lodLevel}|${flipY ? "f" : "n"}`;
+    const pipelineKey = `${targetFormat}|t${targetSamples}|${multisampledSource ? "m" : "s"}|l${lodLevel}`;
     let pipeline = _pipelines!.get(pipelineKey);
     if (pipeline) {
         return pipeline;
     }
-    const moduleKey = `${multisampledSource ? "msaa" : `s|l${lodLevel}`}|${flipY ? "f" : "n"}`;
+    const moduleKey = multisampledSource ? "msaa" : `s|l${lodLevel}`;
     let shaderModule = _shaderModules!.get(moduleKey);
     if (!shaderModule) {
-        const vertex = flipY ? VERTEX_WGSL_FLIP : VERTEX_WGSL_NOFLIP;
         const fragment = multisampledSource ? FRAGMENT_MSAA_WGSL : fragmentForSingle(lodLevel);
-        shaderModule = device.createShaderModule({ code: `${vertex}\n${fragment}`, label: `copy-to-texture-${moduleKey}` });
+        shaderModule = device.createShaderModule({ code: `${VERTEX_WGSL}\n${fragment}`, label: `copy-to-texture-${moduleKey}` });
         _shaderModules!.set(moduleKey, shaderModule);
     }
     let bgl: GPUBindGroupLayout;
@@ -522,13 +501,4 @@ function effectiveTargetFormat(target: RenderTarget, engine: EngineContext): GPU
         throw new Error("CopyToTextureTask: targetTexture has no color format.");
     }
     return fmt;
-}
-
-function shouldFlipY(sourceDesc: RenderTargetDescriptor, targetDesc: RenderTargetDescriptor): boolean {
-    // Default: offscreen RTTs render with a Y-flipped projection (`flipY = true`),
-    // swapchain targets render upright (`flipY = false`). When the two orientations
-    // differ, the blit must flip Y so visual orientation matches.
-    const sf = sourceDesc.flipY ?? sourceDesc.resolveToSwapchain !== true;
-    const tf = targetDesc.flipY ?? targetDesc.resolveToSwapchain !== true;
-    return sf !== tf;
 }

@@ -109,7 +109,6 @@ function createSkyboxMaterial(): SkyboxMaterial {
                     _depthCompare: sig._depthCompare,
                     _msaaSamples: sig._sampleCount,
                     _depthWriteEnabled: false,
-                    _flipY: sig._flipY,
                 })
             );
             _skyPipelines.set(key, pipeline);

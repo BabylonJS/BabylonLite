@@ -82,7 +82,6 @@ export function buildSkyboxCubeMapGPU(engine: EngineContext, worldMatrix: Float3
                     _depthCompare: sig._depthCompare,
                     _msaaSamples: sig._sampleCount,
                     _cullMode: "none",
-                    _flipY: sig._flipY,
                 })
             );
             gpu.pipelines.set(key, pipeline);

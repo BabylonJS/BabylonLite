@@ -178,7 +178,7 @@ function createGroundMaterial(enableNoise: boolean, fragCode: string): GroundMat
                     depthWriteEnabled: false,
                 },
                 multisample: { count: sig._sampleCount },
-                primitive: { topology: "triangle-list", cullMode: "back", frontFace: sig._flipY ? "cw" : "ccw" },
+                primitive: { topology: "triangle-list", cullMode: "back", frontFace: "ccw" },
             });
             _gndPipelines.set(key, pipeline);
             return pipeline;

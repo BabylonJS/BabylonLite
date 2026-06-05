@@ -148,7 +148,7 @@ async function main(): Promise<void> {
             sourceTexture: sourceTarget,
             targetTexture: outputTarget,
             sourceSamplingMode: "linear",
-            direction: { x: 1, y: 1 },
+            direction: { x: 1, y: -1 },
             kernel: 128,
             viewport: { x: 0, y: 0, width: 0.5, height: 0.5 },
             clear: false,

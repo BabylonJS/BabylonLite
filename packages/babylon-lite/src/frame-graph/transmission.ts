@@ -92,7 +92,6 @@ function retargetRenderTaskToLinearOffscreen(task: RenderTask, engine: EngineCon
     if (desc.resolveToSwapchain) {
         desc.resolveToSwapchain = false;
         desc.colorFormat = "rgba16float";
-        desc.flipY = false;
         task._opaqueBundles.length = 0;
         task._lastVersion = -1;
     } else if (!desc.colorFormat) {
@@ -104,13 +103,11 @@ function retargetRenderTaskToLinearOffscreen(task: RenderTask, engine: EngineCon
         _depthStencilFormat?: GPUTextureFormat;
         _depthCompare?: GPUCompareFunction;
         _sampleCount: number;
-        _flipY?: boolean;
     };
     sig._colorFormat = desc.colorFormat;
     sig._depthStencilFormat = desc.depthStencilFormat;
     sig._depthCompare = desc._depthCompare;
     sig._sampleCount = desc.sampleCount;
-    sig._flipY = desc.flipY ?? true;
 }
 
 function executeRenderTaskLinear(scene: SceneContext, execute: () => number): number {

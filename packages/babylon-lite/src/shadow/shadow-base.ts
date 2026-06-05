@@ -96,7 +96,6 @@ export function createShadowRenderTarget(sg: ShadowGenerator, colorTexture: GPUT
             _depthClearValue: 1,
             _depthCompare: "less-equal",
             sampleCount: 1,
-            flipY: false,
         },
         _colorTexture: colorTexture,
         _colorView: colorTexture?.createView() ?? null,

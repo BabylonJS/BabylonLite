@@ -155,15 +155,14 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
     config.clrColor ??= { r: 0.2, g: 0.2, b: 0.3, a: 1.0 };
     config.clr ??= true;
     const desc = rt._descriptor;
-    // Offscreen RTTs usually need a Y-flipped projection so the result texture
-    // samples upright when sourced by a downstream pass. Depth-only shadow maps
-    // can override this to preserve shadow-sampler UV conventions.
+    // Render upright: row 0 of the GPU texture is the top of the scene. Every
+    // RT (offscreen or swapchain) renders without a projection Y-flip; pipelines
+    // use the default ccw front face; downstream samplers see upright pixels.
     const targetSignature = {
         _colorFormat: desc.colorFormat,
         _depthStencilFormat: desc.depthStencilFormat,
         _depthCompare: desc._depthCompare,
         _sampleCount: desc.sampleCount ?? 1,
-        _flipY: desc.flipY ?? desc.resolveToSwapchain !== true,
     };
 
     const sceneBGL = getSceneBindGroupLayout(engine);
@@ -377,7 +376,7 @@ function prepareRenderTaskPass(task: RenderTask, eng: EngineContext, targetSigna
     refreshTaskSceneBindGroup(task, eng);
     const camera = task._config.cam ?? sc.camera;
     sc._clusteredLightUpdater?.(camera, context.targetWidth, context.targetHeight);
-    writePassSceneUBO(task, eng, sc, camera, targetSignature._flipY);
+    writePassSceneUBO(task, eng, sc, camera);
     refreshSceneLightsUBO(eng, sc);
     // Expose the active camera to per-binding `update()` calls. Some renderables
     // (e.g. transparent billboard systems) need it to compute view-space sort
@@ -492,7 +491,7 @@ function refreshTaskSceneBindGroup(task: RenderTask, eng: EngineContext): void {
 
 /** Write the canonical SceneUniforms struct to the task-owned scene UBO.
  *  Bails before touching scratch/GPU when all inputs are unchanged. */
-function writePassSceneUBO(task: RenderTask, eng: EngineContext, scene: SceneContext, camera: Camera | null, flipY?: boolean): void {
+function writePassSceneUBO(task: RenderTask, eng: EngineContext, scene: SceneContext, camera: Camera | null): void {
     if (!camera) {
         return;
     }
@@ -530,14 +529,6 @@ function writePassSceneUBO(task: RenderTask, eng: EngineContext, scene: SceneCon
     //   contrast        = 77   lodGenerationScale = 78 vFogInfos       = 80
     //   vFogColor       = 84   clipPlane        = 88
     packMat4IntoF32(data, viewProj, 0);
-    // Y-flip for offscreen passes — negate row 1 of the projection (the multiplied
-    // view*proj matrix). Row 1 of a column-major mat4 lives at indices 1,5,9,13.
-    if (flipY) {
-        data[1] = -data[1]!;
-        data[5] = -data[5]!;
-        data[9] = -data[9]!;
-        data[13] = -data[13]!;
-    }
     packMat4IntoF32(data, viewMat, 16);
     // vEyePosition uniform — the world-space camera position. For LWR-on
     // scenes the camera is at the origin in the eye-relative frame (the
