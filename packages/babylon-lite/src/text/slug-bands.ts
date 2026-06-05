@@ -1,7 +1,6 @@
 /** Spatial-band partitioning for a glyph's curves. Memoized per `GlyphCurves`. */
 
 import type { GlyphCurves, QuadCurve } from "./public-types.js";
-import { getBandsCache } from "./internal.js";
 
 export type BandEntry = { curveIndices: number[] };
 export type GlyphBands = {
@@ -82,11 +81,5 @@ function buildBandsInternal(g: GlyphCurves): GlyphBands {
 
 /** Get (and memoize) the band partitioning for a glyph's curves. */
 export function buildGlyphBands(g: GlyphCurves): GlyphBands {
-    const cache = getBandsCache();
-    let bands = cache.get(g);
-    if (!bands) {
-        bands = buildBandsInternal(g);
-        cache.set(g, bands);
-    }
-    return bands;
+    return (g._bands ??= buildBandsInternal(g));
 }

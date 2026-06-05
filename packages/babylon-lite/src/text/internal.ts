@@ -3,7 +3,6 @@
 
 import type { Font as TextShaperFont } from "text-shaper";
 import type { CurveSetId, GlyphCurves, GlyphRun, TextLayoutOptions } from "./public-types.js";
-import type { GlyphBands } from "./slug-bands.js";
 
 // ─── Brand symbols (nominal-typing only — never instantiated at runtime) ───
 declare const fontBrand: unique symbol;
@@ -167,12 +166,12 @@ export type TextDataGpu = {
 };
 
 // ─── Process-wide caches ──────────────────────────────────────────────────
-// These are NOT per-handle state (Font / TextData carry their own). They're
-// global by-content caches keyed by external objects (curves Maps and GlyphCurves
-// references). Lazy-init to keep the module side-effect-free.
+// `_atlasByCurves` is NOT per-handle state (Font / TextData carry their own).
+// It's a global by-content cache keyed by the external `curves` Map identity so
+// multiple TextDatas referencing the same inner-map share one atlas. Lazy-init
+// to keep the module side-effect-free.
 
 let _atlasByCurves: WeakMap<ReadonlyMap<number, GlyphCurves>, SharedAtlas> | null = null;
-let _bandsCache: WeakMap<GlyphCurves, GlyphBands> | null = null;
 
 /** @internal */
 export function getSharedAtlasForCurves(curves: ReadonlyMap<number, GlyphCurves>): SharedAtlas | undefined {
@@ -181,11 +180,6 @@ export function getSharedAtlasForCurves(curves: ReadonlyMap<number, GlyphCurves>
 /** @internal */
 export function setSharedAtlasForCurves(curves: ReadonlyMap<number, GlyphCurves>, atlas: SharedAtlas): void {
     (_atlasByCurves ??= new WeakMap()).set(curves, atlas);
-}
-
-/** @internal */
-export function getBandsCache(): WeakMap<GlyphCurves, GlyphBands> {
-    return (_bandsCache ??= new WeakMap());
 }
 
 /** @internal */

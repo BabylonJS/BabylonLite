@@ -1,5 +1,7 @@
 /** Public, structural types for the text feature. Re-exported from `src/index.ts`. */
 
+import type { GlyphBands } from "./slug-bands.js";
+
 export type QuadCurve = {
     readonly p0x: number;
     readonly p0y: number;
@@ -20,6 +22,8 @@ export type GlyphCurves = {
     readonly glyphId: number;
     readonly curves: readonly QuadCurve[];
     readonly bounds: GlyphBounds;
+    /** @internal Lazily-computed band partitioning (memoized by `buildGlyphBands`). */
+    _bands?: GlyphBands;
 };
 
 export type PlacedGlyph = {
