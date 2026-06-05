@@ -12,9 +12,9 @@
 import { build, type Plugin } from "vite";
 import { execFileSync } from "child_process";
 import { resolve, dirname, join, extname } from "path";
-import { rmSync, readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from "fs";
+import { rmSync, readdirSync, readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, statSync } from "fs";
 import { initialize as initMiniray, minify as minifyWgslMiniray } from "miniray";
-import { minify as terserMinify } from "terser";
+import { minify as terserMinify, type ECMA, type SourceMapOptions } from "terser";
 import { bytesToRoundedKB, IGNORED_BUNDLE_MODULE_PATTERN, summarizeRuntimeBundle, type RuntimeJsPayload } from "./bundle-size-accounting";
 
 /**
@@ -47,7 +47,7 @@ export function wgslMinifyPlugin(opts: { mangle?: boolean } = {}): Plugin {
         name: "wgsl-minify",
         enforce: "pre",
         async buildStart() {
-            await initMiniray();
+            await initMiniray({});
         },
         transform(code: string, id: string) {
             if (!id.includes(".wgsl")) return null;
@@ -66,10 +66,17 @@ export function wgslMinifyPlugin(opts: { mangle?: boolean } = {}): Plugin {
             const compact = isGs ? mangleGaussianSplattingWgsl(minified) : minified;
             return { code: `export default ${JSON.stringify(compact)}`, map: null };
         },
-        renderChunk(code: string, chunk) {
+        renderChunk(code: string) {
+            // NOTE: the NME inline WGSL mangler (mangleInlineWgsl) was removed. It ran
+            // per-chunk only on "pbr-metallic-roughness-block" chunks, but NME PBR helper
+            // functions / shared bindings (nme_pbr_fresSchlick, nmeBrdfLUT, ...) live in
+            // sibling chunks (pbr-mr-helper-*, iridescence-block) that escaped the filter,
+            // so their definitions stayed unmangled while call sites were mangled — the
+            // assembled shader then failed with "unresolved call target". Renaming across
+            // code-split chunks cannot be done safely per-chunk, so we no longer mangle
+            // these identifiers at all (a small bundle-size cost on NME scenes only).
             const minified = minifyTemplateWgsl(code, mangle);
-            const isPbrChunk = chunk.fileName?.includes("pbr-metallic-roughness-block") || chunk.name?.includes("pbr-metallic-roughness-block");
-            return { code: mangle && isPbrChunk ? mangleInlineWgsl(minified) : minified, map: null };
+            return { code: minified, map: null };
         },
     };
 }
@@ -123,92 +130,6 @@ function mangleGaussianSplattingWgsl(code: string): string {
         ["minorAxis", "mi"],
         ["vCenter", "vc2"],
     ]);
-}
-
-function mangleInlineWgsl(code: string): string {
-    const replacements: [string, string][] = [
-        ["nme_pbr_transmittanceBurley", "pTB"],
-        ["nme_pbr_anisoBentNormal", "pAB"],
-        ["nme_pbr_anisoRoughness", "pAR"],
-        ["nme_pbr_colorAtDistance", "pCD"],
-        ["nme_pbr_visAnisoSmith", "pVS"],
-        ["nme_pbr_diffuseEON", "pDE"],
-        ["nme_pbr_cocaLambert", "pCL"],
-        ["nme_pbr_burleyAnisoD", "pBD"],
-        ["nme_pbr_fresSchlick", "pFS"],
-        ["nme_pbr_ccSchlick", "pCC"],
-        ["nme_pbr_charlieD", "pCH"],
-        ["nme_pbr_distGGX", "pDG"],
-        ["nme_pbr_geomGGX", "pGG"],
-        ["refractionSpecEnvReflectance", "rser"],
-        ["ccDirectAbsorption_h", "cdah"],
-        ["ccDirectAbsorption", "cda"],
-        ["ccAbsorptionColor", "cac"],
-        ["ccNdotLRefract_h", "cnlrh"],
-        ["ccNdotVRefract", "cnvr"],
-        ["ccNdotLRefract", "cnlr"],
-        ["ccTintThickness", "ctt"],
-        ["ccSpecEnvReflRaw", "cserr"],
-        ["ccSpecEnvRefl", "cse"],
-        ["ccFresnelIBL", "cfi"],
-        ["ccBrdfSample", "cbs"],
-        ["directDiffuseTranslucencyScale", "ddts"],
-        ["diffuseTransmissionAcc", "dta"],
-        ["ssRefractionIrradiance", "sri"],
-        ["finalSpecularScaledDirect", "fsd"],
-        ["colorSpecEnvReflectance", "cser"],
-        ["baseSpecEnvReflectance", "bser"],
-        ["ccEnergyConservation", "cec"],
-        ["finalRadianceScaled", "frs"],
-        ["environmentIrradiance", "eir"],
-        ["environmentRadiance", "era"],
-        ["translucencyIntensity", "tri"],
-        ["baseLayerAbsorption", "bla"],
-        ["NdotLUnclamped", "nlu"],
-        ["NdotVUnclamped", "nvu"],
-        ["ccDirectSpecAcc", "cdsa"],
-        ["ccRoughnessIn", "cri"],
-        ["ccIntensityIn", "cii"],
-        ["ccBumpColor", "cbc"],
-        ["ccBumpUv", "cbu"],
-        ["ccNormalW", "cnw"],
-        ["ccVRefract", "cvr"],
-        ["ccAlphaG", "cag"],
-        ["ccIorInv", "cii2"],
-        ["ccF0_raw", "cfrw"],
-        ["ccNdotH_h", "cnhh"],
-        ["ccVdotH_h", "cvhh"],
-        ["NdotH_h", "nhh"],
-        ["VdotH_h", "vhh"],
-        ["ccRough", "crg"],
-        ["finalIrradiance", "fir"],
-        ["finalRefractionRaw", "frr"],
-        ["baseLayerAtten", "blt"],
-        ["shAlbedoScaling", "sas"],
-        ["surfaceAlbedo", "sal"],
-        ["refractionOpacity", "rop"],
-        ["finalRefraction", "fre"],
-        ["ccFinalRadiance", "cfr"],
-        ["shadowFactors", "sfs"],
-        ["directSpecR0", "dsr"],
-        ["lumOverAlpha", "loa"],
-        ["geometricNormal", "gnm"],
-        ["ccAbsorption", "cab"],
-        ["shFinalIbl", "sfi"],
-        ["worldNormal", "wnm"],
-        ["diffuseAcc", "dac"],
-        ["specAcc", "sac"],
-        ["worldPos", "wpo"],
-        ["cameraPos", "cpo"],
-        ["NmePbrMrResult", "PMR"],
-        ["NME_PBR_PI", "PI"],
-    ];
-    const out = replaceWgslIdentifiers(code, replacements);
-    return out
-        .replace(/\b0\.0\b/g, "0.")
-        .replace(/\b1\.0\b/g, "1.")
-        .replace(/\b0\.0000001\b/g, "1e-7")
-        .replace(/\b0\.0005\b/g, "5e-4");
 }
 
 /** Strip spaces around WGSL operators inside template literal content.
@@ -424,8 +345,6 @@ function mangleWgslIdentifiers(code: string): string {
         ["getBillboardBasis", "gbb"],
         ["billboards", "bb"],
         ["opacityMul", "om"],
-        ["atlasTex", "atx"],
-        ["atlasSamp", "asp"],
         ["cameraRight", "cr"],
         ["cameraUp", "cu"],
         ["lockAxis", "la"],
@@ -439,7 +358,16 @@ function mangleWgslIdentifiers(code: string): string {
         ["cosRot", "cr2"],
         ["sinRot", "sr2"],
         ["rotated", "rot"],
-        ["worldPos", "wp"],
+        // NOTE: Do NOT add WGSL struct-varying member names (e.g. "worldPos",
+        // "worldNormal", "worldTangent", ...) to this list. Their struct is
+        // assembled at runtime from JS string literals (e.g. {Z:"worldPos"})
+        // which this mangler deliberately never touches (it only rewrites bare
+        // identifiers inside backtick WGSL template literals). Mangling the
+        // hardcoded `out.worldPos`/`input.worldPos` usages while leaving the
+        // string-built struct member as `worldPos` produces invalid WGSL
+        // ("struct member wp not found"), especially when usages and the struct
+        // declaration land in different code-split chunks. Only chunk-local
+        // temporaries like `worldPos4` (mangled to `wp4` above) are safe here.
         ["iUvMin", "ium"],
         ["iUvMax", "iux"],
         ["iPivot", "ip"],
@@ -474,12 +402,13 @@ export function terserPropertyManglePlugin(): Plugin {
                 const wasmReserved: string[] = [];
                 const wasmObjMatch = chunk.code.match(/\{(_abort_js:[^}]+)\}/);
                 if (wasmObjMatch) {
-                    const keys = wasmObjMatch[1].match(/\b(_\w+)\s*:/g);
+                    const keys = wasmObjMatch[1]!.match(/\b(_\w+)\s*:/g);
                     if (keys) wasmReserved.push(...keys.map((k) => k.replace(/\s*:/, "")));
                 }
 
                 const result = await terserMinify(chunk.code, {
-                    ecma: 2022,
+                    // terser's published ECMA union stops at 2020 but accepts 2022 at runtime
+                    ecma: 2022 as unknown as ECMA,
                     module: true,
                     compress: {
                         passes: 2,
@@ -488,7 +417,12 @@ export function terserPropertyManglePlugin(): Plugin {
                         unsafe_methods: true,
                         pure_getters: true,
                         toplevel: true,
-                        booleans_as_integers: true,
+                        // NOTE: booleans_as_integers is intentionally NOT enabled.
+                        // It folds boolean literals `true`/`false` to `1`/`0`, which
+                        // silently breaks runtime `typeof x === "boolean"` checks — e.g.
+                        // ShaderMaterial defines (boolean vs number) emit `const X: bool`
+                        // vs `f32`, producing invalid WGSL. The byte savings are tiny and
+                        // not worth the silent correctness hazard.
                     },
                     mangle: {
                         toplevel: true,
@@ -517,7 +451,7 @@ export function terserPropertyManglePlugin(): Plugin {
                         },
                     },
                     nameCache,
-                    sourceMap: chunk.map ? { content: chunk.map as object, asObject: true } : false,
+                    sourceMap: chunk.map ? ({ content: chunk.map as object, asObject: true } as SourceMapOptions) : false,
                 });
 
                 if (result.code) {
@@ -539,6 +473,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
 
 export const labDir = resolve(ROOT, "lab");
+export const liteLabDir = resolve(labDir, "lite");
 export const outDir = resolve(labDir, "public/bundle");
 export const bundleInfoDir = resolve(outDir, "bundle-info");
 export const srcDir = resolve(ROOT, "packages/babylon-lite/src");
@@ -564,6 +499,39 @@ interface BundleManifestEntry {
 
 type BundleManifest = Record<string, BundleManifestEntry>;
 
+const sceneConfig: SceneConfigEntry[] = JSON.parse(readFileSync(resolve(ROOT, "scene-config.json"), "utf-8"));
+const sceneConfigByName = new Map(sceneConfig.map((s) => [`scene${s.id}`, s]));
+const ALL_SCENES = sceneConfig.map((s) => `scene${s.id}`);
+
+function firstExistingPath(paths: string[]): string {
+    return paths.find((p) => existsSync(p)) ?? paths[0]!;
+}
+
+function liteSceneEntry(scene: string, sourceLabDir = labDir): string {
+    return firstExistingPath([resolve(sourceLabDir, `lite/src/lite/${scene}.ts`), resolve(sourceLabDir, `src/lite/${scene}.ts`)]);
+}
+
+function bjsSceneEntry(scene: string, sourceLabDir = labDir): string {
+    const liteScene = scene.startsWith("bjs-") ? scene.slice(4) : scene;
+    return firstExistingPath([resolve(sourceLabDir, `lite/src/bjs/${liteScene}.ts`), resolve(sourceLabDir, `src/bjs/${liteScene}.ts`)]);
+}
+
+function liteHtmlPath(file: string): string {
+    return firstExistingPath([resolve(liteLabDir, file), resolve(labDir, file)]);
+}
+
+function orderBundleManifest(manifest: BundleManifest): BundleManifest {
+    const ordered: BundleManifest = {};
+    for (const scene of ALL_SCENES) {
+        const entry = manifest[scene];
+        if (entry) ordered[scene] = entry;
+    }
+    for (const [scene, entry] of Object.entries(manifest)) {
+        if (!ordered[scene]) ordered[scene] = entry;
+    }
+    return ordered;
+}
+
 function readMasterBundleManifest(refs = ["upstream/master", "origin/master", "master"]): { ref: string; manifest: BundleManifest } | null {
     const errors: string[] = [];
     for (const ref of refs) {
@@ -587,7 +555,7 @@ export function writeMasterBundleManifest(refs?: string[]): void {
         return;
     }
 
-    writeFileSync(masterManifestPath, JSON.stringify(baseline.manifest, null, 2));
+    writeFileSync(masterManifestPath, JSON.stringify(orderBundleManifest(baseline.manifest), null, 2));
     console.log(`✓ Bundle master baseline manifest (${baseline.ref}) written to ${masterManifestPath}`);
 }
 
@@ -886,9 +854,6 @@ export function writeBundleInfo(scene: string, result: unknown): void {
     writeBundleInfoToDir(scene, result, bundleInfoDir, ROOT);
 }
 
-const sceneConfig: SceneConfigEntry[] = JSON.parse(readFileSync(resolve(ROOT, "scene-config.json"), "utf-8"));
-const sceneConfigByName = new Map(sceneConfig.map((s) => [`scene${s.id}`, s]));
-const ALL_SCENES = sceneConfig.map((s) => `scene${s.id}`);
 const SCENES = process.env.BUNDLE_SCENES ? process.env.BUNDLE_SCENES.split(",") : ALL_SCENES;
 const BJS_SCENES = process.env.SKIP_BJS ? [] : SCENES.map((s) => `bjs-${s}`);
 
@@ -907,6 +872,8 @@ const MIME: Record<string, string> = {
     ".js": "application/javascript",
     ".json": "application/json",
     ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
     ".css": "text/css",
     ".wasm": "application/wasm",
 };
@@ -918,7 +885,13 @@ export function startStaticServer(root: string): Promise<{ server: Server; port:
             const url = (req.url ?? "/").split("?")[0]!;
             // Try root first (HTML pages), then public/ (bundle JS, assets)
             let filePath = join(root, url === "/" ? "index.html" : url);
-            if (!existsSync(filePath)) filePath = join(publicDir, url);
+            if (!existsSync(filePath)) {
+                const publicUrl = url.startsWith("/lite/bundle/") || url.startsWith("/lite/thumbnails/") ? url.slice("/lite".length) : url;
+                filePath = join(publicDir, publicUrl);
+            }
+            if (!existsSync(filePath) && url.startsWith("/lite/reference/lite/")) {
+                filePath = resolve(root, "..", url.slice("/lite/".length));
+            }
             if (existsSync(filePath) && !filePath.includes("..")) {
                 resp.writeHead(200, { "Content-Type": MIME[extname(filePath)] ?? "application/octet-stream" });
                 resp.end(readFileSync(filePath));
@@ -936,6 +909,21 @@ export function startStaticServer(root: string): Promise<{ server: Server; port:
 
 function elapsed(startMs: number): string {
     return `${((performance.now() - startMs) / 1000).toFixed(1)}s`;
+}
+
+/** Strip the no-op `__vitePreload(() => import("chunk"), [])` wrappers that Vite
+ *  injects around every dynamic import down to a bare `import("chunk")`.
+ *
+ *  These Lite bundles disable module preload, and the preload helper itself is a
+ *  pure passthrough (`baseModule => baseModule()`), so the wrapper and its empty
+ *  deps array are semantically dead weight. The helper lives in a separate chunk,
+ *  so esbuild can't inline it across the chunk boundary — hence ~6 bytes of
+ *  wrapper survive per dynamic import in every chunk. Removing them shrinks every
+ *  code-split scene (feature-rich glTF assets carry dozens of these). Applied to
+ *  the finalized on-disk output in {@link buildScene} because Vite resolves the
+ *  preload form too late for a renderChunk/generateBundle hook to see it. */
+function stripNoopPreloadWrappers(code: string): string {
+    return code.replace(/[\w$]+\(\s*\(\s*\)\s*=>\s*(import\([^()]*\))\s*,\s*\[\s*\]\s*\)/g, "$1");
 }
 
 function minimalVitePreloadPlugin(): Plugin {
@@ -1036,7 +1024,7 @@ export function isLiteBundleExternal(id: string): boolean {
 
 function readLiteSceneSource(scene: string): string {
     try {
-        return readFileSync(resolve(labDir, `src/lite/${scene}.ts`), "utf-8");
+        return readFileSync(liteSceneEntry(scene), "utf-8");
     } catch {
         return "";
     }
@@ -1052,7 +1040,7 @@ function getLiteSceneVendorRuntimes(scene: string): VendorRuntime[] {
 function ensureBundleHtmlImportMap(scene: string): void {
     const runtimes = getLiteSceneVendorRuntimes(scene);
     if (runtimes.length === 0) return;
-    const htmlPath = resolve(labDir, `bundle-${scene}.html`);
+    const htmlPath = liteHtmlPath(`bundle-${scene}.html`);
     if (!existsSync(htmlPath)) return;
 
     const imports = Object.assign({}, ...runtimes.map((runtime) => runtime.imports)) as Record<string, string>;
@@ -1090,7 +1078,7 @@ export async function buildLiteSceneBundleInfo(scene: string, sourceRoot: string
         base: "./",
         publicDir: false,
         logLevel: "warn",
-        plugins: [wgslMinifyPlugin(), terserPropertyManglePlugin(), minimalVitePreloadPlugin()],
+        plugins: [wgslMinifyPlugin({ mangle: false }), terserPropertyManglePlugin(), minimalVitePreloadPlugin()],
         resolve: {
             alias: {
                 "babylon-lite": sourceSrcDir,
@@ -1103,9 +1091,9 @@ export async function buildLiteSceneBundleInfo(scene: string, sourceRoot: string
             target: LITE_BUNDLE_TARGET,
             minify: "esbuild",
             sourcemap: "hidden",
-            modulePreload: { polyfill: false, resolveDependencies: () => [] },
+            modulePreload: false,
             rollupOptions: {
-                input: { [scene]: resolve(sourceLabDir, `src/lite/${scene}.ts`) },
+                input: { [scene]: liteSceneEntry(scene, sourceLabDir) },
                 external: isLiteBundleExternal,
                 output: {
                     format: "es",
@@ -1189,7 +1177,7 @@ export async function buildBundleScenes(): Promise<void> {
             base: "./",
             publicDir: false,
             logLevel: "warn",
-            plugins: isBjs ? [bjsSideEffectsFalsePlugin()] : [wgslMinifyPlugin(), terserPropertyManglePlugin(), minimalVitePreloadPlugin()],
+            plugins: isBjs ? [bjsSideEffectsFalsePlugin()] : [wgslMinifyPlugin({ mangle: false }), terserPropertyManglePlugin(), minimalVitePreloadPlugin()],
             resolve: {
                 // Point babylon-lite directly at TS source directory so the bundle always
                 // picks up the current code (no stale node_modules build).
@@ -1206,9 +1194,9 @@ export async function buildBundleScenes(): Promise<void> {
                 ...(!isBjs && { target: LITE_BUNDLE_TARGET }),
                 minify: "esbuild",
                 sourcemap: "hidden",
-                modulePreload: { polyfill: false, resolveDependencies: () => [] },
+                modulePreload: false,
                 rollupOptions: {
-                    input: { [scene]: resolve(labDir, isBjs ? `src/bjs/${scene.slice(4)}.ts` : `src/lite/${scene}.ts`) },
+                    input: { [scene]: isBjs ? bjsSceneEntry(scene) : liteSceneEntry(scene) },
                     // Exclude third-party WASM runtimes from Lite bundles so the
                     // bundle-size metric reflects only first-party Lite engine code.
                     ...(!isBjs && { external: isLiteBundleExternal }),
@@ -1243,7 +1231,16 @@ export async function buildBundleScenes(): Promise<void> {
             newNames.add(name);
             const dest = resolve(outDir, name);
             mkdirSync(dirname(dest), { recursive: true });
-            writeFileSync(dest, readFileSync(f));
+            if (!isBjs && name.endsWith(".js")) {
+                // Vite wraps every dynamic import in a no-op `__vitePreload(()=>import(x),[])`
+                // helper. With modulePreload disabled the wrapper does nothing, so strip it
+                // back to a bare `import(x)` to shave ~6 bytes per dynamic import across all
+                // chunks. Done on the finalized on-disk output (Vite resolves the preload
+                // form too late for a renderChunk/generateBundle hook to see it).
+                writeFileSync(dest, stripNoopPreloadWrappers(readFileSync(f, "utf-8")), "utf-8");
+            } else {
+                writeFileSync(dest, readFileSync(f));
+            }
         }
         // Remove stale files from a previous build of this scene (chunk hash may differ).
         for (const existing of readdirSync(outDir)) {
@@ -1272,7 +1269,7 @@ export async function buildBundleScenes(): Promise<void> {
         if (cached?.bjsRawKB == null) {
             return true;
         }
-        const sourcePath = resolve(labDir, `src/bjs/${liteScene}.ts`);
+        const sourcePath = bjsSceneEntry(liteScene);
         const bundlePath = resolve(outDir, `${bjsScene}.js`);
         if (!existsSync(bundlePath)) {
             return true;
@@ -1356,7 +1353,28 @@ async function measureLiveSizes(): Promise<BundleManifest> {
     }
 
     function flush(): void {
-        writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+        // The lab UI may fetch manifest.json mid-build, so a plain writeFileSync (which truncates
+        // the live file) can collide with a concurrent reader and surface as a transient Windows
+        // file-lock error (errno -4094 UNKNOWN / EBUSY). Write a sibling temp file and rename it
+        // into place — rename is atomic and never truncates the file readers hold open. Retry a few
+        // times to ride out any residual lock (e.g. AV scanning the freshly written file).
+        const json = JSON.stringify(orderBundleManifest(manifest), null, 2);
+        const tmpPath = `${manifestPath}.tmp`;
+        for (let attempt = 0; ; attempt++) {
+            try {
+                writeFileSync(tmpPath, json);
+                renameSync(tmpPath, manifestPath);
+                return;
+            } catch (err) {
+                if (attempt >= 5) {
+                    throw err;
+                }
+                const wait = Date.now() + 50 * (attempt + 1);
+                while (Date.now() < wait) {
+                    /* brief synchronous backoff before retrying the atomic write */
+                }
+            }
+        }
     }
 
     try {
@@ -1369,7 +1387,7 @@ async function measureLiveSizes(): Promise<BundleManifest> {
         for (const scene of SCENES) {
             const tPage = performance.now();
             const masterIgnoredRawKB = masterManifest[scene]?.ignoredRawKB;
-            const { rawKB, gzipKB, ignoredRawKB, chunks } = await measurePage(browser, port, scene, `bundle-${scene}.html`, "/bundle/", masterIgnoredRawKB);
+            const { rawKB, gzipKB, ignoredRawKB, chunks } = await measurePage(browser, port, scene, `lite/bundle-${scene}.html`, "/bundle/", masterIgnoredRawKB);
             manifest[scene] = { ...manifest[scene], rawKB, gzipKB, ignoredRawKB, runtimeChunks: chunks };
             flush();
             const ignored = ignoredRawKB > 0 ? `, ignored ${ignoredRawKB} KB raw ${IGNORED_BUNDLE_MODULE_PATTERN}` : "";
@@ -1387,7 +1405,7 @@ async function measureLiveSizes(): Promise<BundleManifest> {
             let rawKB: number;
             let gzipKB: number;
             try {
-                ({ rawKB, gzipKB } = await measurePage(browser, port, bjsScene, `bundle-${bjsScene}.html`, "/bundle/"));
+                ({ rawKB, gzipKB } = await measurePage(browser, port, bjsScene, `lite/bundle-${bjsScene}.html`, "/bundle/"));
             } catch (err) {
                 console.warn(`  ${bjsScene}: skipped BJS measurement (${err instanceof Error ? err.message : String(err)})`);
                 break;

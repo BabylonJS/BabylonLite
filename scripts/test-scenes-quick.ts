@@ -11,6 +11,7 @@ const publicDir = join(labDir, 'public');
 const MIME: Record<string, string> = {
   '.html': 'text/html', '.js': 'application/javascript',
   '.json': 'application/json', '.png': 'image/png',
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
 };
 
 function startServer(): Promise<{ server: Server; port: number }> {
@@ -48,7 +49,7 @@ async function main() {
     page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
 
     try {
-      await page.goto(`http://localhost:${port}/bundle-${scene}.html`);
+      await page.goto(`http://localhost:${port}/lite/bundle-${scene}.html`);
       await page.waitForFunction(
         () => document.querySelector('canvas')?.dataset.ready === 'true',
         { timeout: 10_000 },

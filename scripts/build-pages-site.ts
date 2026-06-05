@@ -9,7 +9,7 @@
  *   - demo-<slug>.html ...... each demo page (script src made relative)
  *   - bundle/demos/*.js ..... production demo bundles (doom WAD fetch made relative)
  *   - doom/* ................ Freedoom IWAD + license files (DOOM demo data)
- *   - thumbnails/*.png ...... demo card thumbnails
+ *   - thumbnails/*.jpg ...... demo card thumbnails
  *   - babylon-logo.svg ...... brand logo (dimmed page background + header)
  *
  * Cards are generated from demos-config.json; size badges from the committed
@@ -70,7 +70,7 @@ function renderCard(demo: DemoConfigEntry, size: DemoSize | undefined): string {
     return [
         `<a class="card" href="./demo-${demo.slug}.html" data-tags="${escapeHtml(tagList.join(" "))}" data-mobile="${demo.mobile === false ? "false" : "true"}">`,
         `<div class="card-image">`,
-        `<img src="thumbnails/demo-${demo.slug}.png" alt="${escapeHtml(demo.name)} thumbnail" loading="lazy" decoding="async" onerror="this.remove()" />`,
+        `<img src="thumbnails/demo-${demo.slug}.jpg" alt="${escapeHtml(demo.name)} thumbnail" loading="lazy" decoding="async" onerror="this.remove()" />`,
         `</div>`,
         `<div class="card-body">`,
         `<h2>${escapeHtml(demo.name)}</h2>`,
@@ -210,6 +210,15 @@ async function main(): Promise<void> {
         cpSync(FREECIV_SRC, resolve(SITE, "freeciv"), { recursive: true });
     }
 
+    // 4e-bis. Bath Day demo's vendored glTF model. Committed at
+    //     lab/public/bath_day.glb; the demo loads it relative to the page via
+    //     demoAssetUrl("./bath_day.glb"), which resolves to /bundle/demos/, so
+    //     copy it alongside the demo bundles.
+    if (demos.some((d) => d.slug === "bath-day")) {
+        const glb = resolve(LAB, "public", "bath_day.glb");
+        if (existsSync(glb)) cpSync(glb, resolve(SITE, "bundle/demos/bath_day.glb"));
+    }
+
     // 4e. Draco decoder (JS glue + WASM) and the PBR BRDF LUT. glTF/PBR demos load
     //     these relative to the page (Draco only on KHR_draco_mesh_compression
     //     assets); the bundle ships rewritten relative references, so place the
@@ -223,15 +232,15 @@ async function main(): Promise<void> {
     const thumbsOut = resolve(SITE, "thumbnails");
     mkdirSync(thumbsOut, { recursive: true });
     for (const demo of demos) {
-        const thumb = resolve(THUMBS_SRC, `demo-${demo.slug}.png`);
+        const thumb = resolve(THUMBS_SRC, `demo-${demo.slug}.jpg`);
         if (existsSync(thumb)) {
-            cpSync(thumb, resolve(thumbsOut, `demo-${demo.slug}.png`));
+            cpSync(thumb, resolve(thumbsOut, `demo-${demo.slug}.jpg`));
         }
     }
 
     // 6. Demo HTML pages (rewritten to relative bundle paths).
     for (const demo of demos) {
-        const src = resolve(LAB, `demo-${demo.slug}.html`);
+        const src = resolve(LAB, "lite", `demo-${demo.slug}.html`);
         if (!existsSync(src)) {
             throw new Error(`Missing demo page: ${src}`);
         }

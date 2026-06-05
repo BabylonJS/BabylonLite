@@ -12,9 +12,9 @@
 
 import type { Texture2D } from "./texture-2d.js";
 import type { EngineContext } from "../engine/engine.js";
-import type { EngineContextInternal } from "../engine/engine.js";
 import { acquireTexture, getOrCreateSampler } from "../resource/gpu-pool.js";
 
+/** Sampler and format overrides for `createTexture2DFromPixels()`. */
 export interface PixelsTexture2DOptions {
     /** Address mode U. Default 'clamp-to-edge'. */
     addressModeU?: GPUAddressMode;
@@ -32,11 +32,11 @@ export interface PixelsTexture2DOptions {
 /**
  * Create a `Texture2D` from a tightly-packed RGBA8 byte buffer.
  *
- * @param engine Engine context.
- * @param data   `width * height * 4` bytes, row-major, top-to-bottom, straight alpha.
- * @param width  Texture width in pixels (>= 1).
- * @param height Texture height in pixels (>= 1).
- * @param options Sampler / format overrides.
+ * @param engine - Engine context.
+ * @param data - `width * height * 4` bytes, row-major, top-to-bottom, straight alpha.
+ * @param width - Texture width in pixels (\>= 1).
+ * @param height - Texture height in pixels (\>= 1).
+ * @param options - Sampler / format overrides.
  */
 export function createTexture2DFromPixels(engine: EngineContext, data: Uint8Array, width: number, height: number, options: PixelsTexture2DOptions = {}): Texture2D {
     if (width < 1 || height < 1) {
@@ -47,8 +47,7 @@ export function createTexture2DFromPixels(engine: EngineContext, data: Uint8Arra
         throw new Error(`createTexture2DFromPixels: data too short — need ${expected} bytes for ${width}x${height} RGBA, got ${data.length}`);
     }
 
-    const eng = engine as EngineContextInternal;
-    const device = eng.device;
+    const device = engine._device;
     const format: GPUTextureFormat = options.srgb ? "rgba8unorm-srgb" : "rgba8unorm";
 
     const texture = device.createTexture({
@@ -59,7 +58,7 @@ export function createTexture2DFromPixels(engine: EngineContext, data: Uint8Arra
 
     device.queue.writeTexture({ texture }, data as Uint8Array<ArrayBuffer>, { bytesPerRow: width * 4, rowsPerImage: height }, { width, height });
 
-    const sampler = getOrCreateSampler(eng, {
+    const sampler = getOrCreateSampler(engine, {
         addressModeU: options.addressModeU ?? "clamp-to-edge",
         addressModeV: options.addressModeV ?? "clamp-to-edge",
         minFilter: options.minFilter ?? "nearest",
