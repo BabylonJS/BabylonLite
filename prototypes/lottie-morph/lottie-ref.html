@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>lottie-web reference</title>
+        <style>
+            html,
+            body {
+                margin: 0;
+                height: 100%;
+                background: #2a2a2e;
+            }
+            #stage {
+                width: 100vw;
+                height: 100vh;
+                display: grid;
+                place-items: center;
+            }
+            #anim {
+                width: min(90vmin, 720px);
+                height: min(90vmin, 720px);
+            }
+        </style>
+        <!-- Reference renderer: the canonical lottie-web (SVG renderer). -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
+    </head>
+    <body>
+        <div id="stage"><div id="anim"></div></div>
+        <script>
+            const params = new URLSearchParams(location.search);
+            const file = params.get("file") ?? "fre.json";
+            const anim = lottie.loadAnimation({
+                container: document.getElementById("anim"),
+                renderer: "svg",
+                loop: true,
+                autoplay: true,
+                path: "/" + file,
+            });
+            // Expose a seek hook so the test harness can freeze a given frame.
+            window.__seek = (f) => {
+                anim.goToAndStop(f, true);
+            };
+            anim.addEventListener("DOMLoaded", () => {
+                window.__loaded = true;
+            });
+        </script>
+    </body>
+</html>

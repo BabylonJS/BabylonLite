@@ -1,0 +1,18 @@
+{
+    "name": "@proto/lottie-morph",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "description": "Throwaway prototype: tiny function-based Lottie player rendering morphing vector paths via Babylon Lite (stencil-then-cover GPU fill).",
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build"
+    },
+    "dependencies": {
+        "babylon-lite": "workspace:*"
+    },
+    "devDependencies": {
+        "@webgpu/types": "^0.1.52",
+        "vite": "^6.0.0"
+    }
+}
