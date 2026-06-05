@@ -1,6 +1,7 @@
 /** Public, structural types for the text feature. Re-exported from `src/index.ts`. */
 
 import type { GlyphBands } from "./slug-bands.js";
+import type { GlyphStorage } from "./internal.js";
 
 export type QuadCurve = {
     readonly p0x: number;
@@ -59,24 +60,18 @@ export type GlyphRun = {
  *  and must not be read or mutated by the caller afterward. */
 export type TextDataUpdate =
     | {
-          /** Replace all runs and curves wholesale. Invalidates any previously-passed
-           *  `GlyphRun` references. Also used internally as the compaction path. */
+          /** Rebuild runs and/or swap to a different storage. Both `runs` and `storage`
+           *  are optional; missing fields default to the TextData's current value, so
+           *  `{ update: "reset" }` with neither performs a pure compaction pass that
+           *  re-lays-out the slot allocator without dead slots or gaps.
+           *  Invalidates any previously-passed `GlyphRun` references when `runs` is set. */
           update: "reset";
-          runs: GlyphRun[];
-          curves: Map<CurveSetId, Map<number, GlyphCurves>>;
-      }
-    | {
-          /** Add or extend the glyph outlines for one curve set. Idempotent for glyph ids
-           *  already in the atlas. Must be called before adding a run that references new
-           *  glyph ids belonging to this curve set. */
-          update: "addCurves";
-          curveSetId: CurveSetId;
-          curves: Map<number, GlyphCurves>;
+          runs?: GlyphRun[];
+          storage?: GlyphStorage;
       }
     | {
           /** Append a new run to the live runs list, or insert it before the run currently at
-           *  `insertBefore`. The run's `curveSet` must already exist (via prior `reset` or
-           *  `addCurves`). */
+           *  `insertBefore`. The run's `curveSet` must already exist in the bound storage. */
           update: "addRun";
           run: GlyphRun;
           /** Index in `data.runs` to insert before. Default = append at end. */

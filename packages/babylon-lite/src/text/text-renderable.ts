@@ -214,7 +214,7 @@ function updateTextRenderable(r: TextRenderable, engine: EngineContext, gpu: Tex
 
     // Sync every group's atlas to the GPU; track which need bind-group rebuild.
     for (const g of data._groups) {
-        const { rebuilt, gpu: atlasGpu } = ensureSharedAtlasGpu(device, g.atlas);
+        const { rebuilt, gpu: atlasGpu } = ensureSharedAtlasGpu(device, g.curveSet.atlas);
         if (rebuilt || !g.bindGroup || g.bindGroupVersion !== atlasGpu.uploadedVersion) {
             g.bindGroup = device.createBindGroup({
                 label: "text-bg0-" + g.curveSetId,

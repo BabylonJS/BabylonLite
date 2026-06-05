@@ -145,7 +145,6 @@ export function createSharedAtlas(): SharedAtlas {
         bandTexelsUsed: 0,
         glyphSlots: new Map(),
         version: 0,
-        refCount: 0,
         gpu: null,
     };
 }

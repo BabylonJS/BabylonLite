@@ -135,7 +135,7 @@ function uploadLayer(rr: TextRenderer, lg: LayerGpu, bindGroupLayout: GPUBindGro
     // Atlas + bind groups per draw group.
     for (let i = 0; i < data._groups.length; i++) {
         const g = data._groups[i]!;
-        const { rebuilt, gpu: atlasGpu } = ensureSharedAtlasGpu(device, g.atlas);
+        const { rebuilt, gpu: atlasGpu } = ensureSharedAtlasGpu(device, g.curveSet.atlas);
         const current = lg.bindGroups[i];
         const currentVer = lg.bindGroupAtlasVersions[i] ?? -1;
         if (!current || rebuilt || currentVer !== atlasGpu.uploadedVersion) {

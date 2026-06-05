@@ -8,15 +8,16 @@
  *  group's range (shifting later *groups* — never other runs in the same group).
  *  `removeRun` writes the sentinel into its slots and returns them to the free-list.
  *
+ *  Each TextData is bound to one `GlyphStorage` for its glyph catalog. The storage is
+ *  borrowed — caller owns its lifetime. `disposeTextData` releases the per-block
+ *  instance buffer + bind groups only.
+ *
  *  Cost per edit: O(touched glyphs) in the common single-font case, with an extra
  *  O(later-group slot count) shift only when the touched group must grow.
  */
 
-import type { CurveSetId, GlyphCurves, GlyphRun, TextDataUpdate } from "./public-types.js";
-import type { RunRecord, SharedAtlas, TextData, TextDataDrawGroup } from "./internal.js";
-import { getSharedAtlasForCurves, setSharedAtlasForCurves } from "./internal.js";
-import { createSharedAtlas, packAppendGlyph } from "./slug-pack.js";
-import { disposeSharedAtlasGpu } from "./_gpu/slug-textures.js";
+import type { CurveSetId, GlyphRun, TextDataUpdate } from "./public-types.js";
+import type { GlyphStorage, GlyphStorageCurveSet, RunRecord, TextData, TextDataDrawGroup } from "./internal.js";
 
 /** Bytes per instance: 5 vec4 attributes (slugBounds, slugAnchor, slugAtlas, slugBand, slugColor). */
 export const TEXT_INSTANCE_FLOATS = 20;
@@ -24,56 +25,20 @@ export const TEXT_INSTANCE_BYTES = TEXT_INSTANCE_FLOATS * 4;
 
 const WHITE_COLOR: readonly [number, number, number, number] = [1, 1, 1, 1];
 
-// ─── Atlas helpers ─────────────────────────────────────────────────────────
-
-function getOrCreateAtlas(curves: ReadonlyMap<number, GlyphCurves>): SharedAtlas {
-    let atlas = getSharedAtlasForCurves(curves);
-    if (!atlas) {
-        atlas = createSharedAtlas();
-        setSharedAtlasForCurves(curves, atlas);
-    }
-    return atlas;
-}
-
-function syncAtlasGlyphs(atlas: SharedAtlas, curves: ReadonlyMap<number, GlyphCurves>): void {
-    for (const [glyphId, glyph] of curves) {
-        if (!atlas.glyphSlots.has(glyphId)) {
-            atlas.glyphSlots.set(glyphId, packAppendGlyph(atlas, glyph));
-        }
-    }
-}
-
-function releaseAtlasRef(atlas: SharedAtlas): void {
-    if (atlas.refCount > 0) {
-        atlas.refCount--;
-    }
-    if (atlas.refCount === 0) {
-        disposeSharedAtlasGpu(atlas);
-    }
-}
-
-function acquireAtlasRef(data: TextData, atlas: SharedAtlas): void {
-    if (!data._refdAtlases.has(atlas)) {
-        atlas.refCount++;
-        data._refdAtlases.add(atlas);
-    }
-}
-
 // ─── Per-slot packing ──────────────────────────────────────────────────────
 
 function packGlyphAtSlot(
     out: Float32Array,
     slot: number,
-    atlas: SharedAtlas,
-    curves: ReadonlyMap<number, GlyphCurves>,
+    curveSet: GlyphStorageCurveSet,
     glyphId: number,
     x: number,
     y: number,
     invScale: number,
     color: readonly [number, number, number, number]
 ): boolean {
-    const glyph = curves.get(glyphId);
-    const atlasSlot = atlas.glyphSlots.get(glyphId);
+    const glyph = curveSet.curves.get(glyphId);
+    const atlasSlot = curveSet.atlas.glyphSlots.get(glyphId);
     if (!glyph || !atlasSlot) {
         return false;
     }
@@ -255,22 +220,23 @@ function findGroup(data: TextData, curveSetId: CurveSetId): TextDataDrawGroup | 
     return undefined;
 }
 
+function lookupCurveSet(storage: GlyphStorage, curveSetId: CurveSetId, op: string): GlyphStorageCurveSet {
+    const cs = storage._curveSets.get(curveSetId);
+    if (!cs) {
+        throw new Error(`updateTextData ${op}: storage does not contain curveSet "${curveSetId}" — add it via updateGlyphStorage first.`);
+    }
+    return cs;
+}
+
 function ensureGroup(data: TextData, curveSetId: CurveSetId): TextDataDrawGroup {
     const existing = findGroup(data, curveSetId);
     if (existing) {
         return existing;
     }
-    const curves = data._curves.get(curveSetId);
-    if (!curves) {
-        throw new Error(`updateTextData: addRun references unknown curveSet "${curveSetId}" — call addCurves (or reset) for this curve set first.`);
-    }
-    const atlas = getOrCreateAtlas(curves);
-    syncAtlasGlyphs(atlas, curves);
-    acquireAtlasRef(data, atlas);
+    const curveSet = lookupCurveSet(data._storage, curveSetId, "addRun");
     const group: TextDataDrawGroup = {
         curveSetId,
-        curves,
-        atlas,
+        curveSet,
         slotStart: data._instanceCount,
         slotCount: 0,
         liveCount: 0,
@@ -295,7 +261,7 @@ function writeRunToSlots(data: TextData, group: TextDataDrawGroup, run: GlyphRun
         const pg = run.glyphs[i]!;
         const slot = slots[i]!;
         const color = pg.color ?? runColor;
-        const ok = packGlyphAtSlot(data._instances, slot, group.atlas, group.curves, pg.glyphId, pg.x, pg.y, invScale, color);
+        const ok = packGlyphAtSlot(data._instances, slot, group.curveSet, pg.glyphId, pg.x, pg.y, invScale, color);
         if (ok) {
             liveSlots.push(slot);
         } else {
@@ -317,7 +283,7 @@ function writeRunToSlots(data: TextData, group: TextDataDrawGroup, run: GlyphRun
 
 // ─── reset (also serves as compaction) ─────────────────────────────────────
 
-function applyReset(data: TextData, runs: GlyphRun[], curves: Map<CurveSetId, Map<number, GlyphCurves>>): void {
+function applyReset(data: TextData, runs: readonly GlyphRun[], storage: GlyphStorage): void {
     // Pre-reserve capacity for total glyphs across all runs.
     let totalGlyphs = 0;
     for (const run of runs) {
@@ -332,13 +298,13 @@ function applyReset(data: TextData, runs: GlyphRun[], curves: Map<CurveSetId, Ma
         data._instances = new Float32Array(newLen);
     }
 
-    // Preserve previous groups for bind-group/atlas reuse.
+    // Preserve previous groups for bind-group reuse when curveSet identity matches.
     const prevGroupByCurveSet = new Map<CurveSetId, TextDataDrawGroup>();
     for (const g of data._groups) {
         prevGroupByCurveSet.set(g.curveSetId, g);
     }
 
-    data._curves = curves;
+    data._storage = storage;
 
     // Group runs by curveSet so each group's slots are contiguous initially.
     const runsByCurveSet = new Map<CurveSetId, GlyphRun[]>();
@@ -356,20 +322,14 @@ function applyReset(data: TextData, runs: GlyphRun[], curves: Map<CurveSetId, Ma
     let writeSlot = 0;
 
     for (const [curveSetId, groupRuns] of runsByCurveSet) {
-        const groupCurves = curves.get(curveSetId);
-        if (!groupCurves) {
-            throw new Error(`updateTextData reset: run references unknown curveSet "${curveSetId}" (not in curves map).`);
-        }
-        const atlas = getOrCreateAtlas(groupCurves);
-        syncAtlasGlyphs(atlas, groupCurves);
+        const curveSet = lookupCurveSet(storage, curveSetId, "reset");
 
         const existing = prevGroupByCurveSet.get(curveSetId);
         const group: TextDataDrawGroup =
             existing ??
             ({
                 curveSetId,
-                curves: groupCurves,
-                atlas,
+                curveSet,
                 slotStart: writeSlot,
                 slotCount: 0,
                 liveCount: 0,
@@ -377,9 +337,10 @@ function applyReset(data: TextData, runs: GlyphRun[], curves: Map<CurveSetId, Ma
                 bindGroup: null,
                 bindGroupVersion: -1,
             } as TextDataDrawGroup);
-        group.curves = groupCurves;
-        if (group.atlas !== atlas) {
-            group.atlas = atlas;
+        // Re-point cached curveSet at the (possibly new) storage's entry; invalidate
+        // bind group when the underlying GlyphStorageCurveSet identity changed.
+        if (group.curveSet !== curveSet) {
+            group.curveSet = curveSet;
             group.bindGroup = null;
             group.bindGroupVersion = -1;
         }
@@ -410,47 +371,9 @@ function applyReset(data: TextData, runs: GlyphRun[], curves: Map<CurveSetId, Ma
     }
     data._runRecords = newRunRecords;
 
-    // Reconcile atlas refs.
-    const newAtlases = new Set<SharedAtlas>();
-    for (const g of newGroups) {
-        newAtlases.add(g.atlas);
-    }
-    for (const atlas of newAtlases) {
-        if (!data._refdAtlases.has(atlas)) {
-            atlas.refCount++;
-        }
-    }
-    for (const atlas of data._refdAtlases) {
-        if (!newAtlases.has(atlas)) {
-            releaseAtlasRef(atlas);
-        }
-    }
-    data._refdAtlases = newAtlases;
-
     data._dirtyStart = 0;
     data._dirtyEnd = writeSlot;
     data._version++;
-}
-
-// ─── addCurves ─────────────────────────────────────────────────────────────
-
-function applyAddCurves(data: TextData, curveSetId: CurveSetId, curves: Map<number, GlyphCurves>): void {
-    const existing = data._curves.get(curveSetId);
-    if (existing && existing !== curves) {
-        for (const [glyphId, glyph] of curves) {
-            if (!existing.has(glyphId)) {
-                existing.set(glyphId, glyph);
-            }
-        }
-        const atlas = getOrCreateAtlas(existing);
-        syncAtlasGlyphs(atlas, existing);
-        return;
-    }
-    if (!existing) {
-        data._curves.set(curveSetId, curves);
-    }
-    const atlas = getOrCreateAtlas(data._curves.get(curveSetId)!);
-    syncAtlasGlyphs(atlas, data._curves.get(curveSetId)!);
 }
 
 // ─── addRun / removeRun / replaceRun ───────────────────────────────────────
@@ -500,7 +423,8 @@ function applyRemoveRun(data: TextData, ref: GlyphRun | number): void {
     }
 }
 
-/** Remove a group with no live instances. Shifts later groups left over the vacated range. */
+/** Remove a group with no live instances. Shifts later groups left over the vacated range.
+ *  The group's borrowed curveSet is left intact — caller owns the GlyphStorage lifetime. */
 function dropEmptyGroup(data: TextData, group: TextDataDrawGroup): void {
     const idx = data._groups.indexOf(group);
     if (idx < 0) {
@@ -540,18 +464,6 @@ function dropEmptyGroup(data: TextData, group: TextDataDrawGroup): void {
         }
         data._instanceCount -= removedCount;
         markDirty(data, removedStart, data._instanceCount);
-    }
-    // Drop atlas ref if no remaining group uses it.
-    let stillReferenced = false;
-    for (const g of data._groups) {
-        if (g.atlas === group.atlas) {
-            stillReferenced = true;
-            break;
-        }
-    }
-    if (!stillReferenced) {
-        data._refdAtlases.delete(group.atlas);
-        releaseAtlasRef(group.atlas);
     }
 }
 
@@ -598,36 +510,39 @@ function applyReplaceRun(data: TextData, prevRef: GlyphRun | number, newRun: Gly
 
 // ─── Public API ────────────────────────────────────────────────────────────
 
-export function createTextData(initial?: { runs: GlyphRun[]; curves: Map<CurveSetId, Map<number, GlyphCurves>> }): TextData {
-    const runs: GlyphRun[] = [];
+/** Create a TextData bound to `storage`. If `runs` is omitted the TextData starts empty;
+ *  runs can be appended later via `updateTextData({ update: "addRun", … })`. */
+export function createTextData(storage: GlyphStorage, runs?: readonly GlyphRun[]): TextData {
+    const runsArray: GlyphRun[] = [];
     const data = {
-        runs,
-        _runs: runs,
+        runs: runsArray,
+        _runs: runsArray,
         _groups: [],
         _runRecords: new Map(),
         _instances: new Float32Array(TEXT_INSTANCE_FLOATS),
         _instanceCount: 0,
-        _curves: new Map(),
-        _refdAtlases: new Set(),
+        _storage: storage,
         _version: 1,
         _dirtyStart: 0,
         _dirtyEnd: 0,
         _gpu: null,
     } as unknown as TextData;
-    if (initial) {
-        applyReset(data, initial.runs, initial.curves);
+    if (runs && runs.length > 0) {
+        applyReset(data, runs, storage);
     }
     return data;
 }
 
 export function updateTextData(data: TextData, update: TextDataUpdate): void {
     switch (update.update) {
-        case "reset":
-            applyReset(data, update.runs, update.curves);
+        case "reset": {
+            // Defaults for compaction: keep current runs (defensive copy — applyReset
+            // mutates data._runs in place) and current storage.
+            const runs = update.runs ?? data._runs.slice();
+            const storage = update.storage ?? data._storage;
+            applyReset(data, runs, storage);
             return;
-        case "addCurves":
-            applyAddCurves(data, update.curveSetId, update.curves);
-            return;
+        }
         case "addRun":
             applyAddRun(data, update.run, update.insertBefore);
             return;
@@ -640,6 +555,9 @@ export function updateTextData(data: TextData, update: TextDataUpdate): void {
     }
 }
 
+/** Release per-block GPU resources owned by `data`. Does NOT dispose the bound
+ *  `GlyphStorage` — caller owns its lifetime and must dispose it separately via
+ *  `disposeGlyphStorage` once no `TextData` references it. */
 export function disposeTextData(data: TextData): void {
     if (data._gpu) {
         data._gpu.instanceBuf.destroy();
@@ -652,8 +570,4 @@ export function disposeTextData(data: TextData): void {
     data._instanceCount = 0;
     data._runs.length = 0;
     data._runRecords.clear();
-    for (const atlas of data._refdAtlases) {
-        releaseAtlasRef(atlas);
-    }
-    data._refdAtlases.clear();
 }

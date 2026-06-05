@@ -1,5 +1,4 @@
-/** @internal Shared interface types and process-wide caches for the text feature.
- *  Not re-exported from `src/index.ts`. */
+/** @internal Shared interface types for the text feature. Not re-exported from `src/index.ts`. */
 
 import type { Font as TextShaperFont } from "text-shaper";
 import type { CurveSetId, GlyphCurves, GlyphRun, TextLayoutOptions } from "./public-types.js";
@@ -8,6 +7,7 @@ import type { CurveSetId, GlyphCurves, GlyphRun, TextLayoutOptions } from "./pub
 declare const fontBrand: unique symbol;
 declare const textDataBrand: unique symbol;
 declare const defaultTextDataBrand: unique symbol;
+declare const glyphStorageBrand: unique symbol;
 
 // ─── Branded public types ───
 // Each carries its internal state directly on the object via `_`-prefixed `@internal`
@@ -21,6 +21,28 @@ export interface Font {
     /** @internal Lazily-allocated per-font glyph-curves cache. */
     _curvesCache: Map<number, GlyphCurves> | null;
 }
+
+/** Opaque bundle of glyph outlines (organized by curve-set) and the GPU atlases packed
+ *  from them. Holds an arbitrary number of curve-sets — each curve-set gets its own atlas.
+ *  Shared by reference across any number of `TextData`s that need the same glyph catalog.
+ *
+ *  Lifetime is caller-owned (matches `Texture2D` semantics):
+ *    - `createGlyphStorage(initial?)` allocates a fresh storage, optionally seeded.
+ *    - `updateGlyphStorage(storage, curveSetId, curves)` adds glyphs to a curve-set
+ *      (creating the curve-set if it doesn't exist yet).
+ *    - `disposeGlyphStorage(storage)` releases every atlas. The caller must ensure no
+ *      `TextData` is still using the storage at this point. */
+export interface GlyphStorage {
+    readonly [glyphStorageBrand]: true;
+    /** @internal Per-curve-set glyph outlines + the SharedAtlas they're packed into. */
+    _curveSets: Map<CurveSetId, GlyphStorageCurveSet>;
+}
+
+/** @internal Per-curve-set entry within a GlyphStorage. */
+export type GlyphStorageCurveSet = {
+    curves: Map<number, GlyphCurves>;
+    atlas: SharedAtlas;
+};
 
 export interface TextData {
     readonly [textDataBrand]: true;
@@ -37,10 +59,8 @@ export interface TextData {
     _instances: Float32Array;
     /** @internal Total *capacity* used (live + dead slots across all groups). */
     _instanceCount: number;
-    /** @internal Per-curveSet curves maps (the live state). */
-    _curves: Map<CurveSetId, Map<number, GlyphCurves>>;
-    /** @internal Atlases this `TextData` currently holds a reference on. */
-    _refdAtlases: Set<SharedAtlas>;
+    /** @internal GlyphStorage backing this TextData. Borrowed reference — caller owns it. */
+    _storage: GlyphStorage;
     /** @internal Monotonic version bumped whenever instance data changes. */
     _version: number;
     /** @internal Inclusive-exclusive dirty range of instances awaiting upload. */
@@ -64,6 +84,8 @@ export interface DefaultTextData extends TextData {
     readonly _options: TextLayoutOptions | undefined;
     /** @internal Curve-set id derived from the font's family name. */
     readonly _curveSetId: CurveSetId;
+    /** @internal GlyphStorage owned by this DefaultTextData. Disposed by `disposeDefaultTextData`. */
+    readonly _storage: GlyphStorage;
 }
 
 // ─── Internal supporting types ───
@@ -85,7 +107,8 @@ export type AtlasSlot = {
     hBandCount: number;
 };
 
-/** @internal CPU + (lazy) GPU staging shared by every TextData built from the same curves map. */
+/** @internal CPU + (lazy) GPU staging packed from a `GlyphStorage`'s glyph outlines.
+ *  One `SharedAtlas` per `GlyphStorage`; lifetime is bound to the storage. */
 export type SharedAtlas = {
     /** Pooled curve texel staging (rgba32float, width 4096). */
     curveTexData: Float32Array;
@@ -99,9 +122,6 @@ export type SharedAtlas = {
     glyphSlots: Map<number, AtlasSlot>;
     /** Monotonic version bumped whenever a new glyph is appended. */
     version: number;
-    /** Number of live `TextData`s currently referencing this atlas. When it drops to zero the
-     *  GPU textures are destroyed (CPU staging stays warm in the WeakMap for lazy rebuild). */
-    refCount: number;
     /** Lazy GPU resources (one set per SharedAtlas; recreated only on capacity grow). */
     gpu: SharedAtlasGpu | null;
 };
@@ -121,13 +141,12 @@ export type SharedAtlasGpu = {
  *  slots intermix within that range. The vertex shader emits a degenerate quad for dead slots
  *  so they cost only a vertex-shader invocation. */
 export type TextDataDrawGroup = {
-    /** Curve-set id (matches the live curves dictionary key). */
+    /** Curve-set id (matches the key inside the parent storage's `_curveSets` map). */
     curveSetId: CurveSetId;
-    /** Inner curves map this group is bound to. Used to detect when the caller passes a new
-     *  inner-map reference (e.g. via `reset`) and to drive atlas sharing. */
-    curves: ReadonlyMap<number, GlyphCurves>;
-    /** Shared atlas for this curve set. May be reused across `TextData`s referencing the same inner map. */
-    atlas: SharedAtlas;
+    /** Cached pointer to the curve-set entry within the parent TextData's `_storage`.
+     *  Refreshed whenever `_storage` swaps in `applyReset`; identity-compared to invalidate
+     *  the cached `bindGroup`. */
+    curveSet: GlyphStorageCurveSet;
     /** First slot index (in instances, not bytes) owned by this group. */
     slotStart: number;
     /** Number of slots reserved by this group (live + dead). The draw call covers
@@ -164,23 +183,6 @@ export type TextDataGpu = {
     instanceBufCapacity: number;
     uploadedVersion: number;
 };
-
-// ─── Process-wide caches ──────────────────────────────────────────────────
-// `_atlasByCurves` is NOT per-handle state (Font / TextData carry their own).
-// It's a global by-content cache keyed by the external `curves` Map identity so
-// multiple TextDatas referencing the same inner-map share one atlas. Lazy-init
-// to keep the module side-effect-free.
-
-let _atlasByCurves: WeakMap<ReadonlyMap<number, GlyphCurves>, SharedAtlas> | null = null;
-
-/** @internal */
-export function getSharedAtlasForCurves(curves: ReadonlyMap<number, GlyphCurves>): SharedAtlas | undefined {
-    return _atlasByCurves?.get(curves);
-}
-/** @internal */
-export function setSharedAtlasForCurves(curves: ReadonlyMap<number, GlyphCurves>, atlas: SharedAtlas): void {
-    (_atlasByCurves ??= new WeakMap()).set(curves, atlas);
-}
 
 /** @internal */
 export const TEX_WIDTH = 4096;
