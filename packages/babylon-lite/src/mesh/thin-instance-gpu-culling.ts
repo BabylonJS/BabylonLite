@@ -9,6 +9,7 @@ import type { Camera } from "../camera/camera.js";
 import { getViewProjectionMatrix } from "../camera/camera.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { DrawUpdateContext } from "../render/renderable.js";
+import type { Mat4 } from "../math/types.js";
 import type { Mesh, MeshGPU } from "./mesh.js";
 import type { ThinInstanceData } from "./thin-instance.js";
 import { syncThinInstanceGpuData } from "./thin-instance-gpu.js";
@@ -296,7 +297,7 @@ function writeCullParams(engine: EngineContext, state: ThinInstanceGpuCullState,
     engine._device.queue.writeBuffer(state._paramsBuffer!, 0, state._paramsBytes);
 }
 
-function writeFrustumPlanes(out: Float32Array, m: Float32Array): void {
+function writeFrustumPlanes(out: Float32Array, m: Mat4): void {
     writePlane(out, 0, m[3]! + m[0]!, m[7]! + m[4]!, m[11]! + m[8]!, m[15]! + m[12]!);
     writePlane(out, 4, m[3]! - m[0]!, m[7]! - m[4]!, m[11]! - m[8]!, m[15]! - m[12]!);
     writePlane(out, 8, m[3]! + m[1]!, m[7]! + m[5]!, m[11]! + m[9]!, m[15]! + m[13]!);

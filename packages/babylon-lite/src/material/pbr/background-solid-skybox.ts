@@ -46,8 +46,8 @@ function createSkyboxBuffers(engine: EngineContext, S: number): { posBuffer: GPU
     };
 }
 
-function buildSkyboxWorldMatrix(rootPosition: [number, number, number]): Mat4 {
-    const world = new Float32Array(16) as Mat4;
+function buildSkyboxWorldMatrix(rootPosition: [number, number, number]): Float32Array {
+    const world = new Float32Array(16);
     world[0] = 1;
     world[5] = 1;
     world[10] = 1;
@@ -140,7 +140,7 @@ export function buildSolidSkyboxRenderable(
 
     const skyMat = createSkyboxMaterial();
     const skyOutputColor: [number, number, number] = [cc.r, cc.g, cc.b];
-    const skyUBO = createSkyMeshUBO(engine, skyboxWorld, primaryColor, skyOutputColor);
+    const skyUBO = createSkyMeshUBO(engine, skyboxWorld as unknown as Mat4, primaryColor, skyOutputColor);
     const skyBG = skyMat.createBindGroup(engine, skyUBO, envTextures);
 
     const r: Renderable = {

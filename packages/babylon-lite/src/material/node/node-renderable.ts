@@ -18,6 +18,7 @@ import { compileNodePipeline } from "./node-pipeline.js";
 import { NODE_ESM_SHADOW_OUTPUT, NODE_NO_COLOR_OUTPUT } from "./node-flags.js";
 import { writeMeshLightSelection } from "../../render/lights-ubo.js";
 import { MAX_LIGHTS } from "../../light/types.js";
+import { packMat4IntoF32 } from "../../math/pack-mat4-into-f32.js";
 
 // Per-engine cached no-op morph target: a 1×1 rgba32float texture + a UBO with
 // count=0 + sensible texWidth/rowsPerBand. Meshes without their own morph
@@ -99,6 +100,12 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[], ma
                   _esmShadowOutput: esmShadowOutput,
                   _esmShadowDepthCode: esmShadowOutput ? material._esmShadowDepthCode : undefined,
                   _alphaMode: esmShadowOutput ? 0 : undefined,
+                  // The shared fragment body still references env IBL/BRDF samplers
+                  // (e.g. nmeBrdfLUT) even in the no-color shadow-depth variant, so we
+                  // must emit the env decls + BGL entries here too; otherwise WGSL fails
+                  // to resolve those identifiers. _envEmitter is undefined for non-env
+                  // materials (state.usesEnv === false), leaving them unaffected.
+                  _envEmitter: material._envHelpers?.emitEnv,
               })
             : material._compile;
         const meshBGL = compile._meshBGL;
@@ -111,13 +118,14 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[], ma
             material._nodeUBO = nodeUBO;
         }
 
+        const _packMeshWorld = engine._makePackMeshWorld?.(scene as SceneContext) ?? packMat4IntoF32;
         const packets: NodePacket[] = [];
         for (const _mesh of matMeshes) {
             // Mesh UBO layout: world (64B) + receivesShadow (vec4, 16B) + lightCount/indices.
             const meshUboBytes = 96 + 16 * Math.ceil(MAX_LIGHTS / 4);
             const _meshUBO = device.createBuffer({ label: "node-mesh-ubo", size: (meshUboBytes + 15) & ~15, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             const _meshScratch = new Float32Array(((meshUboBytes + 15) & ~15) / 4);
-            _meshScratch.set(_mesh.worldMatrix as unknown as Float32Array, 0);
+            _packMeshWorld(_meshScratch, _mesh.worldMatrix, 0, 0);
             const recv = _mesh.receiveShadows ? 1 : 0;
             _meshScratch[16] = recv;
             if (compile._usesMeshAttributeFlags) {
@@ -188,7 +196,7 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[], ma
             const recvChanged = recv !== pkt._lastReceivesShadow;
             const lightsChanged = scene.lights.length !== pkt._lastLightsCount;
             if (worldChanged || recvChanged || lightsChanged) {
-                pkt._meshScratch.set(pkt._mesh.worldMatrix as unknown as Float32Array, 0);
+                _packMeshWorld(pkt._meshScratch, pkt._mesh.worldMatrix, 0, 0);
                 pkt._meshScratch[16] = recv;
                 if (compile._usesMeshAttributeFlags) {
                     writeAttributeFlags(pkt._mesh, pkt._meshScratch);
@@ -230,7 +238,7 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[], ma
                 const cy = pkt._mesh.position?.y ?? wm[13]!;
                 const cz = pkt._mesh.position?.z ?? wm[14]!;
                 const sortCenter: [number, number, number] = [cx, cy, cz];
-                const update = (): void => {
+                const _baseUpdate = (): void => {
                     updatePacketUBO(pkt);
                     updateNodeUBO();
                     // Update world center for sorting.
@@ -239,6 +247,10 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[], ma
                     sortCenter[1] = m[13]!;
                     sortCenter[2] = m[14]!;
                 };
+                const _invalidate = (): void => {
+                    pkt._lastWorldVersion = -1;
+                };
+                const update = engine._wrapRenderableForFO?.(_baseUpdate, scene as SceneContext, _invalidate) ?? _baseUpdate;
                 const draw = (pass: NodeRenderPass): number => {
                     drawPacket(pass, pkt);
                     return 1;
@@ -256,12 +268,18 @@ export function buildNodeMeshRenderables(scene: SceneContext, meshes: Mesh[], ma
             }
         } else {
             // Opaque: batch all meshes into one renderable for state efficiency.
-            const update = (): void => {
+            const _baseUpdate = (): void => {
                 for (const pkt of packets) {
                     updatePacketUBO(pkt);
                 }
                 updateNodeUBO();
             };
+            const _invalidate = (): void => {
+                for (const pkt of packets) {
+                    pkt._lastWorldVersion = -1;
+                }
+            };
+            const update = engine._wrapRenderableForFO?.(_baseUpdate, scene as SceneContext, _invalidate) ?? _baseUpdate;
             const draw = (pass: NodeRenderPass): number => {
                 let draws = 0;
                 for (const pkt of packets) {

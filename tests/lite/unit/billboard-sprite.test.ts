@@ -63,6 +63,8 @@ function makeMockEngine(): EngineContext {
         msaaSamples: 4,
         drawCallCount: 0,
         maxDevicePixelRatio: Infinity,
+        useHighPrecisionMatrix: false,
+        useFloatingOrigin: false,
         _device: device,
         _context: {} as GPUCanvasContext,
         format: "bgra8unorm",
@@ -111,7 +113,7 @@ function makeIdentityViewMatrix(): Mat4 {
     matrix[5] = 1;
     matrix[10] = 1;
     matrix[15] = 1;
-    return matrix as Mat4;
+    return matrix as unknown as Mat4;
 }
 
 function makeIdentityCamera(worldMatrixVersion = 7): Camera {
@@ -123,6 +125,9 @@ function makeIdentityCamera(worldMatrixVersion = 7): Camera {
         children: [],
         worldMatrix,
         worldMatrixVersion,
+        _viewCache: new Float32Array(16),
+        _projCache: new Float32Array(16),
+        _vpCache: new Float32Array(16),
     } as Camera;
 }
 

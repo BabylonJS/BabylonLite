@@ -39,6 +39,7 @@ import { writeMeshLightSelection } from "../../render/lights-ubo.js";
 import type { PbrLightMode } from "./pbr-compose.js";
 import type { Material, MaterialRenderFeatures } from "../material.js";
 import { _computeMeshFeatures, MSH_HAS_INSTANCE_COLOR, MSH_HAS_THIN_INSTANCES, MSH_HAS_UV2, MSH_HAS_VERTEX_COLOR } from "../mesh-features.js";
+import { packMat4IntoF32 } from "../../math/pack-mat4-into-f32.js";
 
 type SingleLightType = "hemispheric" | "directional" | "spot" | "point";
 interface SingleLightWgslModule {
@@ -292,7 +293,8 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
 
         // Mesh UBO (world matrix at offset 0; spec.totalBytes covers any extra fields).
         const meshUboData = new Float32Array(composed._meshUboSpec._totalBytes / 4);
-        meshUboData.set(mesh.worldMatrix, 0);
+        const _packMeshWorld = engine._makePackMeshWorld?.(s as SceneContext) ?? packMat4IntoF32;
+        _packMeshWorld(meshUboData, mesh.worldMatrix, 0, 0);
         writeMeshLightSelection(mesh, s.lights, meshUboData);
         const meshUBO = createUniformBuffer(engine, meshUboData);
 
@@ -350,10 +352,10 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         const hasTI = (meshFeatures & MSH_HAS_THIN_INSTANCES) !== 0;
         const hasTIColor = (meshFeatures & MSH_HAS_INSTANCE_COLOR) !== 0;
 
-        let _lastWorldVersion = -1;
+        let _lastWorldVersion = mesh.worldMatrixVersion;
         let _lastLightsCount = s.lights.length;
         const sortCenter = isTransparent || needsTaskRefraction ? ([mesh.worldMatrix[12]!, mesh.worldMatrix[13]!, mesh.worldMatrix[14]!] as [number, number, number]) : null;
-        const update = (): void => {
+        const _baseUpdate = (): void => {
             const worldVersion = mesh.worldMatrixVersion;
             if (worldVersion !== _lastWorldVersion || s.lights.length !== _lastLightsCount) {
                 if (sortCenter) {
@@ -361,7 +363,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
                     sortCenter[1] = mesh.worldMatrix[13]!;
                     sortCenter[2] = mesh.worldMatrix[14]!;
                 }
-                meshUboData.set(mesh.worldMatrix, 0);
+                _packMeshWorld(meshUboData, mesh.worldMatrix, 0, 0);
                 writeMeshLightSelection(mesh, s.lights, meshUboData);
                 device.queue.writeBuffer(meshUBO, 0, meshUboData as Float32Array<ArrayBuffer>);
                 _lastWorldVersion = worldVersion;
@@ -381,6 +383,12 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
                 device.queue.writeBuffer(materialUBO, 0, data.buffer, 0, data.byteLength);
             }
         };
+        // FO-version wrapper applied only when the engine has floating-origin
+        // on (see standard-renderable for the rationale).
+        const _invalidate = (): void => {
+            _lastWorldVersion = -1;
+        };
+        const update = engine._wrapRenderableForFO?.(_baseUpdate, s as SceneContext, _invalidate) ?? _baseUpdate;
 
         const drawWith = (pass: GPURenderPassEncoder | GPURenderBundleEncoder, materialBindGroup: GPUBindGroup): number => {
             if (!isOverride && mesh.material !== materialInput) {

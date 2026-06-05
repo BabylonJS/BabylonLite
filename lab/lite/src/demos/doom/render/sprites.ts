@@ -15,7 +15,7 @@
 //
 // Implemented from public Doom format documentation; no GPL Doom source is used.
 
-import { createTexture2DFromPixels, type EngineContext, type Texture2D } from "babylon-lite";
+import { createTexture2DFromPixels, type EngineContext, type SpriteAtlas, type SpriteFrame, type Texture2D } from "babylon-lite";
 import type { Wad } from "../wad/wad-file.js";
 import { getLump } from "../wad/wad-file.js";
 import { decodePatch } from "../wad/graphics.js";
@@ -32,10 +32,12 @@ export interface SpriteImage {
     topOffset: number;
     /** When true the image must be sampled horizontally flipped. */
     mirror: boolean;
+    /** Index of this image's frame in the shared {@link SpriteAtlas} (assigned at pack time). */
+    frameIndex: number;
 }
 
 /** All rotations for one animation frame of one sprite. */
-interface SpriteFrame {
+interface DoomSpriteFrame {
     /** True when the frame has 8 distinct rotations; false when a single image is used. */
     rotated: boolean;
     /** Index 0..7 for rotations 1..8 (or [0] only when not rotated). */
@@ -52,13 +54,14 @@ interface RawRot {
 const ATLAS_WIDTH = 1024;
 
 export class SpriteStore {
-    /** spriteName -> frame index -> SpriteFrame. */
-    private readonly frames = new Map<string, SpriteFrame[]>();
+    /** spriteName -> frame index -> DoomSpriteFrame. */
+    private readonly frames = new Map<string, DoomSpriteFrame[]>();
     /** Raw rotation records discovered in the S namespace, keyed by sprite name. */
     private readonly raw = new Map<string, RawRot[]>();
     private _atlas: Texture2D | null = null;
     private _atlasW = 0;
     private _atlasH = 0;
+    private _spriteAtlas: SpriteAtlas | null = null;
 
     constructor(
         private readonly engine: EngineContext,
@@ -75,6 +78,11 @@ export class SpriteStore {
     }
     get atlasHeight(): number {
         return this._atlasH;
+    }
+
+    /** The packed atlas as a `SpriteAtlas` (one frame per `SpriteImage`), or null before `build()`. */
+    get spriteAtlas(): SpriteAtlas | null {
+        return this._spriteAtlas;
     }
 
     /** Discovers every sprite lump in the S_START..S_END namespace (no decode yet). */
@@ -138,7 +146,7 @@ export class SpriteStore {
         for (const sprite of spriteNames) {
             const records = this.raw.get(sprite);
             if (!records || this.frames.has(sprite)) continue;
-            const frameList: SpriteFrame[] = [];
+            const frameList: DoomSpriteFrame[] = [];
             this.frames.set(sprite, frameList);
 
             // Decode each unique lump once, then assign to the rotation slots it serves.
@@ -166,7 +174,7 @@ export class SpriteStore {
                     frame.rots = [null, null, null, null, null, null, null, null];
                 }
                 const slot = rec.rot === 0 ? 0 : rec.rot - 1;
-                const image: SpriteImage = { ax: 0, ay: 0, aw: d.w, ah: d.h, leftOffset: d.left, topOffset: d.top, mirror: rec.mirror };
+                const image: SpriteImage = { ax: 0, ay: 0, aw: d.w, ah: d.h, leftOffset: d.left, topOffset: d.top, mirror: rec.mirror, frameIndex: -1 };
                 frame.rots[slot] = image;
                 pending.push({ sprite, frame: rec.frame, rotSlot: slot, rotated: frame.rotated, img: image, pixels: d });
             }
@@ -225,6 +233,25 @@ export class SpriteStore {
         });
         this._atlasW = atlasW;
         this._atlasH = atlasH;
+
+        // Build the billboard-facing SpriteAtlas: one frame per packed image. The DOOM patch
+        // pivot (leftOffset/topOffset) and mirror flag are folded into the frame pivot so the
+        // billboard quad anchors exactly where the hand-built mesh used to. Mirrored images keep
+        // the source UVs (flip is applied per-instance via `flipX`) but mirror the pivot X.
+        const frames: SpriteFrame[] = [];
+        for (const it of items) {
+            const img = it.img;
+            const pivotX = img.mirror ? (img.aw - img.leftOffset) / img.aw : img.leftOffset / img.aw;
+            const pivotY = img.topOffset / img.ah;
+            img.frameIndex = frames.length;
+            frames.push({
+                uvMin: [img.ax / atlasW, img.ay / atlasH],
+                uvMax: [(img.ax + img.aw) / atlasW, (img.ay + img.ah) / atlasH],
+                sourceSizePx: [img.aw, img.ah],
+                pivot: [pivotX, pivotY],
+            });
+        }
+        this._spriteAtlas = { texture: this._atlas, textureSizePx: [atlasW, atlasH], frames, premultipliedAlpha: false };
     }
 
     /**

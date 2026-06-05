@@ -18,6 +18,7 @@ export {
     unregisterScene,
 } from "./scene/scene.js";
 export type { SceneContextOptions } from "./scene/scene.js";
+export { getFloatingOriginOffset } from "./large-world/floating-origin.js";
 
 // Subtree visibility toggle (used to hide a node before deferring its disposal,
 // e.g. streaming voxel chunks). Standalone module — bundled only when used.
@@ -70,7 +71,8 @@ export type { BloomPostProcessTask, BloomPostProcessTaskConfig } from "./post-pr
 
 // ─── Camera ──────────────────────────────────────────────────────────
 export { createArcRotateCamera } from "./camera/arc-rotate.js";
-export { attachControl } from "./camera/arc-rotate-controls.js";
+export { attachControl, setCameraLimits } from "./camera/arc-rotate-controls.js";
+export type { ArcRotateCameraLimits } from "./camera/arc-rotate-controls.js";
 export { createFreeCamera } from "./camera/free-camera.js";
 export { attachFreeControl } from "./camera/free-camera-controls.js";
 
@@ -300,6 +302,8 @@ export type { RenderTargetSignature } from "./engine/render-target.js";
 // ─── Sprites (2D) ────────────────────────────────────────────────────
 export type { SpriteAtlas, SpriteFrame, SpriteSampling, GridAtlasOptions, LoadAtlasOptions } from "./sprite/shared/sprite-atlas.js";
 export { createGridSpriteAtlas, loadSpriteAtlas } from "./sprite/shared/sprite-atlas.js";
+export type { SpriteAtlasFrameSource, SpriteAtlasPackOptions } from "./sprite/shared/sprite-atlas-packer.js";
+export { createSpriteAtlasFromFrames } from "./sprite/shared/sprite-atlas-packer.js";
 export type { Sprite2DLayer, Sprite2DLayerOptions, Sprite2DProps, Sprite2DView, Sprite2DDepthMode, SpriteBlendMode } from "./sprite/sprite-2d.js";
 export type { SpriteBlendDescriptor } from "./sprite/sprite-blend.js";
 export { spriteBlendAlpha, spriteBlendPremultiplied, spriteBlendAdditive, spriteBlendMultiply } from "./sprite/sprite-blend.js";

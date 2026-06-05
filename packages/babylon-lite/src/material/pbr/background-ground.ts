@@ -58,7 +58,7 @@ export async function buildGroundRenderable(
     // Column-major for WGSL: ground quad in XY plane, normal +Z → world +Y
     // Offset Y by -0.01 to prevent z-fighting with scene floor geometry.
     const eps = 2.220446049250313e-16;
-    const groundWorld = new Float32Array(16) as Mat4;
+    const groundWorld = new Float32Array(16);
     groundWorld[0] = 1;
     groundWorld[5] = eps;
     groundWorld[6] = -1;
@@ -70,7 +70,7 @@ export async function buildGroundRenderable(
     groundWorld[15] = 1;
 
     const gndBufs = createGroundBuffers(engine, groundSize);
-    const gndUBO = createBgMeshUBO(engine, groundWorld, primaryColor);
+    const gndUBO = createBgMeshUBO(engine, groundWorld as unknown as Mat4, primaryColor);
 
     const groundTex = await loadGroundTexture(engine, groundTextureUrl, groundImagePromise);
     const groundTexView = groundTex.createView();

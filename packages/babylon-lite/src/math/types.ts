@@ -34,9 +34,17 @@ export interface Color4 {
     a: number;
 }
 
-/** 4x4 column-major matrix stored as a flat Float32Array (16 elements).
- *  Layout matches WebGPU/WGSL mat4x4<f32> memory order. */
-export type Mat4 = Float32Array & { readonly __brand: "Mat4" };
+/** 4x4 column-major matrix (16 elements).
+ *  Layout matches WebGPU/WGSL mat4x4<f32> memory order. Opaque-by-convention:
+ *  callers MUST NOT depend on the underlying storage (Float32Array vs
+ *  Float64Array). Internal kernels and uploaders use the `Mat4Storage` view
+ *  defined below to access the concrete typed array behind the brand. */
+export interface Mat4 {
+    /** @internal */
+    readonly __brand: "Mat4";
+    readonly length: 16;
+    readonly [index: number]: number;
+}
 
 /** Quaternion rotation */
 export interface Quat {
@@ -45,3 +53,11 @@ export interface Quat {
     z: number;
     w: number;
 }
+
+/** @internal Storage view used by kernels, allocators, and the upload packer.
+ *  Raw typed-array union (no brand) so callers can pass `new Float32Array(16)`
+ *  directly to kernels without laundering through the `Mat4` brand. The brand
+ *  on `Mat4` exists to prevent users from spoofing matrices into the engine;
+ *  internal kernels operate on `Mat4Storage` precisely because they don't
+ *  need the brand check. Not re-exported from `index.ts`. */
+export type Mat4Storage = Float32Array | Float64Array;

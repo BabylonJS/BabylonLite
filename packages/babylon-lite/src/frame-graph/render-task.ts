@@ -41,6 +41,7 @@ import type { RenderTarget } from "../engine/render-target.js";
 import { buildRenderTarget, disposeRenderTarget } from "../engine/render-target.js";
 import { getViewProjectionMatrix, getViewMatrix } from "../camera/camera.js";
 import { getSceneBindGroupLayout } from "../render/scene-helpers.js";
+import { packMat4IntoF32 } from "../math/pack-mat4-into-f32.js";
 import { createEmptyUniformBuffer } from "../resource/gpu-buffers.js";
 import { SCENE_UBO_BYTES } from "../shader/scene-uniforms-size.js";
 import { ensureSceneLightState, refreshSceneLightsUBO } from "../render/lights-ubo.js";
@@ -504,7 +505,7 @@ function writePassSceneUBO(task: RenderTask, eng: EngineContext, scene: SceneCon
     //   envRotationY    = 36   vSphericalL00    = 40   exposureLinear  = 76
     //   contrast        = 77   lodGenerationScale = 78 vFogInfos       = 80
     //   vFogColor       = 84   clipPlane        = 88
-    data.set(viewProj, 0);
+    packMat4IntoF32(data, viewProj, 0);
     // Y-flip for offscreen passes — negate row 1 of the projection (the multiplied
     // view*proj matrix). Row 1 of a column-major mat4 lives at indices 1,5,9,13.
     if (flipY) {
@@ -513,10 +514,23 @@ function writePassSceneUBO(task: RenderTask, eng: EngineContext, scene: SceneCon
         data[9] = -data[9]!;
         data[13] = -data[13]!;
     }
-    data.set(viewMat, 16);
-    data[32] = wm[12]!;
-    data[33] = wm[13]!;
-    data[34] = wm[14]!;
+    packMat4IntoF32(data, viewMat, 16);
+    // vEyePosition uniform — the world-space camera position. For LWR-on
+    // scenes the camera is at the origin in the eye-relative frame (the
+    // mesh-world pack and the view matrix translation both already encode
+    // the offset subtraction), so the uniform is mathematically zero.
+    // For non-LWR scenes it's the camera world translation. Shader code
+    // that does `vEyePosition - input.worldPos` produces the eye-relative
+    // vector at full precision in both cases.
+    if (eng.useFloatingOrigin) {
+        data[32] = 0;
+        data[33] = 0;
+        data[34] = 0;
+    } else {
+        data[32] = wm[12]!;
+        data[33] = wm[13]!;
+        data[34] = wm[14]!;
+    }
 
     if (fog) {
         data[80] = fog.mode;

@@ -104,6 +104,8 @@ function makeMockEngine(): { engine: EngineContext; counters: MockCounters } {
         canvas: {} as HTMLCanvasElement,
         msaaSamples: 4,
         drawCallCount: 0,
+        useHighPrecisionMatrix: false,
+        useFloatingOrigin: false,
         maxDevicePixelRatio: Infinity,
         _device: device,
         _context: {} as GPUCanvasContext,

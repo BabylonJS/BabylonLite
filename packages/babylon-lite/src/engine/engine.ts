@@ -1,5 +1,6 @@
 import type { Mesh } from "../mesh/mesh.js";
 import type { Texture2D, Texture2DOptions } from "../texture/texture-2d.js";
+import { _setHpmAllocator } from "../math/_matrix-allocator.js";
 
 /** Babylon Lite version string. */
 export const VERSION = "0.1.0";
@@ -37,6 +38,24 @@ export interface EngineContext {
     /** Number of GPU draw calls in the last rendered frame. */
     drawCallCount: number;
 
+    /**
+     * When true, world matrices are computed using Float64 intermediate precision
+     * and downcast to Float32 at GPU upload time. Defaults to false.
+     */
+    useHighPrecisionMatrix: boolean;
+
+    /**
+     * When true, every scene on this engine uses the floating-origin (eye-relative
+     * upload) trick to render large-world coordinates without F32 jitter. Requires
+     * `useHighPrecisionMatrix: true`. Defaults to false.
+     *
+     * LWR is engine-wide: all scenes created against this engine inherit the
+     * mode. The LWR runtime module (`large-world/floating-origin.js`) is
+     * dynamically imported during `createEngine` only when this flag is true,
+     * so non-LWR engines never pull the module into their bundle.
+     */
+    useFloatingOrigin: boolean;
+
     /** Clamps the effective device pixel ratio used for the swapchain backing store.
      *  The backing store is sized at `min(devicePixelRatio, maxDevicePixelRatio) * cssPixels`.
      *  `maxDevicePixelRatio = 1` renders at native CSS-pixel resolution (no DPR upscaling);
@@ -69,6 +88,41 @@ export interface EngineContext {
     _currentDelta: number;
     /** @internal */
     _cbs: GPUCommandBuffer[];
+
+    /** @internal Per-frame floating-origin offset updater. Set when the engine
+     *  was created with `useFloatingOrigin: true` (which requires
+     *  `useHighPrecisionMatrix: true`). Undefined when FO is off — scene
+     *  `_update` does `eng._updateFOOffset?.(scene)` so FO-off engines never
+     *  pull the LWR module (`large-world/floating-origin.js`) into their
+     *  bundle. The function reads `scene.camera.worldMatrix` and writes the
+     *  resulting world position into `scene._floatingOriginOffset`, bumping
+     *  `scene._floatingOriginVersion` whenever the value changes. */
+    _updateFOOffset?: (scene: import("../scene/scene-core.js").SceneContext) => void;
+
+    /** @internal Per-renderable update closure wrapper. Set when the engine
+     *  was created with `useFloatingOrigin: true`. Wraps a renderable's bare
+     *  `update` closure so that when `scene._floatingOriginVersion` changes,
+     *  the wrapper calls `invalidate()` (which resets the renderable's
+     *  `_lastWorldVersion` to -1) before invoking the inner update — forcing
+     *  the next mesh-UBO re-pack to pick up the new FO offset. Undefined when
+     *  FO is off, so non-LWR renderables skip FO version tracking entirely
+     *  and stay in the slim shared closure (~80-150 bytes lighter per bundle
+     *  for FO-off scenes). */
+    _wrapRenderableForFO?: (inner: () => void, scene: import("../scene/scene-core.js").SceneContext, invalidate: () => void) => () => void;
+
+    /** @internal Factory that produces a mesh-world UBO packer with the
+     *  scene's floating-origin offset captured. Set when the engine was
+     *  created with `useFloatingOrigin: true`. Renderables resolve their
+     *  packer once at construction with
+     *  `engine._makePackMeshWorld?.(scene) ?? packMat4IntoF32`; non-LWR
+     *  engines leave it undefined and renderables fall through to the bare
+     *  precision-only packer. Splitting the offset-subtracting variant out
+     *  of the always-bundled packer (BJS-style "method override when LWR is
+     *  on") keeps the 3 subtraction lines + the `_foOffset` captures out of
+     *  non-LWR bundles (~140 bytes saved per FO-off bundle). */
+    _makePackMeshWorld?: (
+        scene: import("../scene/scene-core.js").SceneContext
+    ) => (view: Float32Array, mat: import("../math/types.js").Mat4 | Float32Array | Float64Array, offsetFloats: number, srcOffsetFloats: number) => void;
 }
 
 /**
@@ -153,6 +207,21 @@ export interface EngineOptions {
      */
     alphaMode?: GPUCanvasAlphaMode;
     /**
+     * Enable Float64 intermediate precision for world matrix computations. Defaults to false.
+     */
+    useHighPrecisionMatrix?: boolean;
+    /**
+     * Enable floating-origin (Large World Rendering) for every scene on this engine.
+     * Requires `useHighPrecisionMatrix: true` — throws synchronously if set without it.
+     * Defaults to false.
+     *
+     * When true, `createEngine` dynamically imports the LWR runtime
+     * (`large-world/floating-origin.js`) so engines without LWR never pull the
+     * module into their bundle (tree-shaken via the dynamic-import gate, same
+     * pattern as the F64 storage module).
+     */
+    useFloatingOrigin?: boolean;
+    /**
      * Clamps the effective device pixel ratio used for the swapchain backing store.
      * The backing store is sized at `min(devicePixelRatio, maxDevicePixelRatio) * cssPixels`.
      * `maxDevicePixelRatio: 1` renders at native CSS-pixel resolution (no DPR upscaling) —
@@ -199,6 +268,44 @@ export async function createEngine(canvas: RenderCanvas, options?: EngineOptions
 
     const msaaSamples: 1 | 4 = options?.msaaSamples === 1 ? 1 : 4;
 
+    const useHpm = options?.useHighPrecisionMatrix === true;
+    const useFO = options?.useFloatingOrigin === true;
+    if (useFO && !useHpm) {
+        throw new Error("Babylon Lite: useFloatingOrigin requires useHighPrecisionMatrix on the engine.");
+    }
+    // Dynamic `await import` keeps the F64 backing module out of HPM-off
+    // bundles entirely: bundlers cannot prove the truthy branch of a runtime
+    // ternary is dead, so a static import of `_mat4-storage-f64.js` was
+    // retained in every bundle even with `sideEffects: false`. Splitting it
+    // behind `if (useHpm)` lets HPM-off builds drop the module; HPM-on builds
+    // load it as a side chunk on demand and install the F64 allocator into
+    // the process-global lazy singleton in `_matrix-allocator.ts`. The
+    // allocator module itself is statically imported above — it's the
+    // F64-specific module that we gate dynamically.
+    // **Constraint:** allocator is process-global — mixing HPM and non-HPM
+    // engines on the same page is unsupported (see
+    // `docs/architecture/33-high-precision-matrix.md`).
+    if (useHpm) {
+        const { allocateF64Mat4 } = await import("../math/_mat4-storage-f64.js");
+        _setHpmAllocator(allocateF64Mat4);
+    }
+
+    // Same dynamic-import trick for the LWR runtime. When `useFloatingOrigin` is
+    // false (the default) the `floating-origin.js` module is never referenced
+    // statically anywhere in the package — scene `_update` does
+    // `eng._updateFOOffset?.(scene)` which is a no-op when the field is
+    // undefined. Tree-shakers drop the module from non-LWR bundles.
+    let _wrapRenderableForFO: EngineContext["_wrapRenderableForFO"];
+    let _makePackMeshWorld: EngineContext["_makePackMeshWorld"];
+    if (useFO) {
+        const [{ wrapRenderableForFO }, { makePackMeshWorld }] = await Promise.all([
+            import("../large-world/floating-origin.js"),
+            import("../large-world/pack-mat4-with-offset.js"),
+        ]);
+        _wrapRenderableForFO = wrapRenderableForFO;
+        _makePackMeshWorld = makePackMeshWorld;
+    }
+
     const engine: EngineContext = {
         _device: device,
         _context: context,
@@ -207,6 +314,8 @@ export async function createEngine(canvas: RenderCanvas, options?: EngineOptions
         canvas,
         msaaSamples,
         drawCallCount: 0,
+        useHighPrecisionMatrix: useHpm,
+        useFloatingOrigin: useFO,
         maxDevicePixelRatio: options?.maxDevicePixelRatio ?? Infinity,
         _animFrameId: 0,
         _renderFn: null,
@@ -215,6 +324,8 @@ export async function createEngine(canvas: RenderCanvas, options?: EngineOptions
         _swapchainView: undefined!,
         _currentDelta: 0,
         _cbs: [],
+        _wrapRenderableForFO,
+        _makePackMeshWorld,
     };
 
     resizeEngine(engine);

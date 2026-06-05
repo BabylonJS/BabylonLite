@@ -15,9 +15,9 @@ const gpuGlobals = globalThis as Omit<typeof globalThis, "GPUBufferUsage" | "GPU
     GPUTextureUsage?: { RENDER_ATTACHMENT: number; TEXTURE_BINDING: number; COPY_SRC: number; COPY_DST: number };
 };
 
-gpuGlobals.GPUBufferUsage ??= { UNIFORM: 0x40, COPY_DST: 0x8 };
-gpuGlobals.GPUShaderStage ??= { VERTEX: 0x1, FRAGMENT: 0x2 };
-gpuGlobals.GPUTextureUsage ??= { RENDER_ATTACHMENT: 0x10, TEXTURE_BINDING: 0x4, COPY_SRC: 0x1, COPY_DST: 0x2 };
+gpuGlobals.GPUBufferUsage ??= { UNIFORM: 0x40, COPY_DST: 0x8 } as unknown as GPUBufferUsage;
+gpuGlobals.GPUShaderStage ??= { VERTEX: 0x1, FRAGMENT: 0x2 } as unknown as GPUShaderStage;
+gpuGlobals.GPUTextureUsage ??= { RENDER_ATTACHMENT: 0x10, TEXTURE_BINDING: 0x4, COPY_SRC: 0x1, COPY_DST: 0x2 } as unknown as GPUTextureUsage;
 
 function makeIdentityMatrix(z = 0): Mat4 {
     const matrix = new Float32Array(16);
@@ -28,7 +28,7 @@ function makeIdentityMatrix(z = 0): Mat4 {
     matrix[13] = 0;
     matrix[14] = z;
     matrix[15] = 1;
-    return matrix as Mat4;
+    return matrix as unknown as Mat4;
 }
 
 function makeCamera(): Camera {
@@ -39,6 +39,9 @@ function makeCamera(): Camera {
         children: [],
         worldMatrix: makeIdentityMatrix(),
         worldMatrixVersion: 1,
+        _viewCache: new Float32Array(16),
+        _projCache: new Float32Array(16),
+        _vpCache: new Float32Array(16),
     };
 }
 
@@ -107,6 +110,8 @@ function makeMockEngine(options?: {
         msaaSamples: options?.msaaSamples ?? 4,
         drawCallCount: 0,
         maxDevicePixelRatio: Infinity,
+        useHighPrecisionMatrix: false,
+        useFloatingOrigin: false,
         _device: device,
         _context: { configure: () => undefined } as unknown as GPUCanvasContext,
         format: "bgra8unorm",

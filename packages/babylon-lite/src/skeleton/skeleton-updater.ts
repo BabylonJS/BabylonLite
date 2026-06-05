@@ -8,6 +8,7 @@ import { PATH_TRANSLATION, PATH_ROTATION, PATH_SCALE, PATH_WEIGHTS, PATH_POINTER
 import { evaluateSampler } from "../animation/evaluate.js";
 import { mat4ComposeInto } from "../math/mat4-compose-into.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
+import type { Mat4Storage } from "../math/types.js";
 
 // Scratch 4x4 used during bone-matrix composition; reused across frames + bones.
 const _boneTmp = new Float32Array(16);
@@ -290,7 +291,7 @@ export function createAnimationController(
                               const jointIdx = skel.jointNodes[bi]!;
                               const ibmOff = bi * 16;
                               // boneMatrix = invMeshWorld * jointWorld * IBM
-                              mat4MultiplyInto(_boneTmp, 0, skel.invMeshWorld, 0, worldMat, jointIdx * 16);
+                              mat4MultiplyInto(_boneTmp, 0, skel.invMeshWorld as unknown as Mat4Storage, 0, worldMat, jointIdx * 16);
                               mat4MultiplyInto(boneData, bi * 16, _boneTmp, 0, skel.inverseBindMatrices, ibmOff);
                           }
 
