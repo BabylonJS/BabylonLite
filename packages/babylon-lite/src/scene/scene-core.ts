@@ -124,6 +124,10 @@ export interface SceneContext extends RenderingContext {
 /** Options passed to the scene-context factory. */
 export interface SceneContextOptions {
     defaultRenderTask?: boolean;
+    /** @internal Depth compare function for the default render task's RT.
+     *  Defaults to reverse-Z `"greater-equal"`.  Set to `"always"` to disable
+     *  depth occlusion (e.g. overlay/UI scenes that render on top of others). */
+    _defaultRenderTaskDepthCompare?: GPUCompareFunction;
 }
 
 /** Queue a mesh for renderable (re)build on the next frame's material-swap drain.
@@ -233,6 +237,7 @@ export function createSceneContext(engine: EngineContext, options?: SceneContext
             label: "scene-swapchain",
             colorFormat: eng.format,
             depthStencilFormat: "depth24plus-stencil8",
+            _depthCompare: options?._defaultRenderTaskDepthCompare,
             sampleCount: eng.msaaSamples,
             size: "canvas",
             resolveToSwapchain: true,

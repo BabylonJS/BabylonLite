@@ -2412,5 +2412,53 @@
       "scene213-shader-renderable-XFYrlSxQ.js",
       "scene213.js"
     ]
+  },
+  "scene221": {
+    "rawKB": 83.9,
+    "gzipKB": 31.4,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene221-shader-renderable-BBTJ5XIl.js",
+      "scene221-standard-renderable-CqbB0w1W.js",
+      "scene221-swapchain-overlay-DDEHaTMc.js",
+      "scene221-ubo-layout-CnrP4RZD.js",
+      "scene221-wgsl-helpers-WTsokIfK.js",
+      "scene221.js"
+    ]
+  },
+  "scene222": {
+    "rawKB": 89.3,
+    "gzipKB": 32.6,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene222-shader-renderable-STnHQe9r.js",
+      "scene222-standard-renderable-DITOdb_U.js",
+      "scene222-swapchain-overlay-DDEHaTMc.js",
+      "scene222-ubo-layout-BI29qxEu.js",
+      "scene222-wgsl-helpers-WTsokIfK.js",
+      "scene222.js"
+    ]
+  },
+  "scene223": {
+    "rawKB": 60.3,
+    "gzipKB": 22.7,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene223-standard-renderable-D9i9emqG.js",
+      "scene223-swapchain-overlay-DDEHaTMc.js",
+      "scene223-wgsl-helpers-WTsokIfK.js",
+      "scene223.js"
+    ]
+  },
+  "scene224": {
+    "rawKB": 68.8,
+    "gzipKB": 25.9,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene224-standard-renderable-kewZSUmK.js",
+      "scene224-swapchain-overlay-DDEHaTMc.js",
+      "scene224-wgsl-helpers-WTsokIfK.js",
+      "scene224.js"
+    ]
   }
 }

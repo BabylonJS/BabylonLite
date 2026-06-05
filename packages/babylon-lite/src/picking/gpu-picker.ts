@@ -186,6 +186,15 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
     const tempBuffers: GPUBuffer[] = [];
     for (let mi = 0; mi < meshCount; mi++) {
         const mesh = meshes[mi]!;
+        // Skip meshes explicitly marked non-pickable.  Mirrors BJS
+        // `isPickable = false` — lets gizmos toggle display-only helpers
+        // (e.g. the rotation-sector display plane) out of the picker without
+        // affecting their rendering or hiding them from picks via `visible`.
+        if (mesh.pickable === false) {
+            const ti = mesh.thinInstances;
+            nextId += ti && ti.count > 0 ? ti.count : 1;
+            continue;
+        }
         const gpu = mesh._gpu;
         const ti = mesh.thinInstances;
 
