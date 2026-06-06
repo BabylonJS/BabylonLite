@@ -74,7 +74,9 @@ export const GEOMETRY_TEXTURE_DESCRIPTIONS: readonly GeometryTextureDescription[
     { name: "Reflectivity", defaultFormat: "rgba8unorm", clearValue: ZERO },
     { name: "ViewDepth", defaultFormat: "r32float", clearValue: "maxViewZ" },
     { name: "NormalizedViewDepth", defaultFormat: "r16float", clearValue: ONE },
-    { name: "ScreenspaceDepth", defaultFormat: "r16float", clearValue: ONE },
+    // Reverse-Z: clip-space Z maps far→0, near→1, so the background (no geometry)
+    // clears to 0 (far). BJS clears this to 1, which is incorrect under reverse-Z.
+    { name: "ScreenspaceDepth", defaultFormat: "r16float", clearValue: ZERO },
     { name: "ViewNormal", defaultFormat: "rgba16float", clearValue: ZERO },
     { name: "WorldNormal", defaultFormat: "rgba16float", clearValue: ZERO },
     { name: "Albedo", defaultFormat: "rgba8unorm", clearValue: ZERO },
