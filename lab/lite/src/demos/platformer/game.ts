@@ -70,6 +70,16 @@ const FLY_FREQ = 2.2;
 /** Piranha-plant emerge/retract cycle (seconds) and how far it rises (px). */
 const PIRANHA_CYCLE = 3.4;
 const PIRANHA_RISE = TILE * 1.45;
+/** Castle boss tuning. */
+const BOSS_MAX_HP = 3;
+const BOSS_W = TILE * 2.4; // collision box (close to the drawn size)
+const BOSS_H = TILE * 1.7;
+const BOSS_VIS_SCALE = 3.2; // boss sprite draw scale over its natural frame size
+const BOSS_SPEED = TILE * 1.6; // base pace speed (px/s); scales up per phase
+const BOSS_HURT_TIME = 1.0; // invulnerable-flash window after a hit (s)
+const BOSS_PROJ_MAX = 4;
+const BOSS_PROJ_SPEED = TILE * 5.5;
+const BOSS_PROJ_DRAW = TILE * 0.7;
 /** Piranha emergence 0..1 (hidden → rising → up → retracting) from its cycle phase (s). */
 function piranhaEmerge(phase: number): number {
     const t = (((phase % PIRANHA_CYCLE) + PIRANHA_CYCLE) % PIRANHA_CYCLE) / PIRANHA_CYCLE;
@@ -220,6 +230,32 @@ interface MovingPlatform {
     slots: number[];
 }
 
+/** The castle boss: a big spider that paces, lobs projectiles, and takes 3 hits. */
+interface BossState {
+    active: boolean;
+    box: AABB;
+    hp: number;
+    dir: -1 | 1;
+    vy: number;
+    /** Counts down after a hit: invulnerable + flashing while > 0. */
+    hurt: number;
+    /** Death animation countdown (> 0 = dying), then defeated. */
+    dying: number;
+    /** Seconds until the next projectile lob. */
+    attackT: number;
+    animT: number;
+    slot: number;
+}
+
+/** A boss projectile: an arcing additive orb that hurts the player on contact. */
+interface BossProjectile {
+    box: AABB;
+    vx: number;
+    vy: number;
+    active: boolean;
+    slot: number;
+}
+
 interface PickupState {
     kind: "coin-pop" | "mushroom" | "star" | "fire-flower";
     box: AABB;
@@ -281,7 +317,7 @@ interface Debris {
     slot: number;
 }
 
-type Phase = "title" | "ready" | "playing" | "warping" | "dying" | "complete" | "gameover";
+type Phase = "title" | "ready" | "playing" | "warping" | "dying" | "complete" | "won" | "gameover";
 
 export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext): Promise<void> {
     const world: World = buildWorld();
@@ -355,6 +391,9 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     // Fire flowers (procedural texture) get their own centre-pivot layer.
     const fireFlowerLayer = createSprite2DLayer(fireFlowerAtlas, { capacity: 4, order: 9, pivot: [0.5, 0.5] });
     const enemyLayer = createSprite2DLayer(enemies.atlas, { capacity: maxOf((a) => a.enemies.length) + 2, order: 10, pivot: [0.5, 1] });
+    // Castle boss: a big enemy-atlas sprite (one slot) + its arcing projectiles (additive).
+    const bossLayer = createSprite2DLayer(enemies.atlas, { capacity: 1, order: 10.2, pivot: [0.5, 1] });
+    const bossProjLayer = createSprite2DLayer(fireballAtlas, { capacity: BOSS_PROJ_MAX, order: 13, blendMode: spriteBlendAdditive, pivot: [0.5, 0.5] });
     // Star-power afterimage trail: additive ghosts of the player (glow stacks), drawn
     // just behind the player and hidden unless invincible.
     const trailLayer = createSprite2DLayer(players.atlas, { capacity: STAR_TRAIL, order: 11, blendMode: spriteBlendAdditive, pivot: [0.5, 1] });
@@ -381,7 +420,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     const irisLayer = createSprite2DLayer(whiteAtlas, { capacity: 1, order: 20, pivot: [0, 0], customShader: irisShader });
 
     const renderer = createSpriteRenderer(engine, {
-        layers: [...parallax.layers, caveBackLayer, lavaLayer, terrainLayer, pipeTravelLayer, pipeLayer, moverLayer, blockLayer, coinLayer, itemLayer, shroomLayer, fireFlowerLayer, enemyLayer, torchLayer, trailLayer, playerLayer, fireballLayer, sparkLayer, digitLayer, debrisLayer, lanternLayer, torchGlowLayer, irisLayer],
+        layers: [...parallax.layers, caveBackLayer, lavaLayer, terrainLayer, pipeTravelLayer, pipeLayer, moverLayer, blockLayer, coinLayer, itemLayer, shroomLayer, fireFlowerLayer, enemyLayer, bossLayer, torchLayer, trailLayer, playerLayer, fireballLayer, bossProjLayer, sparkLayer, digitLayer, debrisLayer, lanternLayer, torchGlowLayer, irisLayer],
         clearValue: SKY,
     });
     registerSpriteRenderer(renderer);
@@ -666,6 +705,30 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     // Refilled by loadArea() from the current area's enemy spawns (mutated in place).
     const enemyList: EnemyState[] = [];
 
+    // ── Castle boss + its projectiles ─────────────────────────────────────────
+    const boss: BossState = {
+        active: false,
+        box: { x: 0, y: 0, w: BOSS_W, h: BOSS_H },
+        hp: BOSS_MAX_HP,
+        dir: -1,
+        vy: 0,
+        hurt: 0,
+        dying: 0,
+        attackT: 1.5,
+        animT: 0,
+        slot: addSprite2DIndex(bossLayer, { positionPx: [0, 0], sizePx: [BOSS_W, BOSS_H], frame: enemies.frameOf("spider"), visible: false }),
+    };
+    const bossProjectiles: BossProjectile[] = [];
+    for (let i = 0; i < BOSS_PROJ_MAX; i++) {
+        bossProjectiles.push({
+            box: { x: 0, y: 0, w: TILE * 0.5, h: TILE * 0.5 },
+            vx: 0,
+            vy: 0,
+            active: false,
+            slot: addSprite2DIndex(bossProjLayer, { positionPx: [0, 0], sizePx: [BOSS_PROJ_DRAW, BOSS_PROJ_DRAW], frame: 0, color: [0.7, 1, 0.5, 1], visible: false }),
+        });
+    }
+
     // ── Player ────────────────────────────────────────────────────────────────
     const smallSize = { w: TILE * 0.62, h: TILE * 0.92 };
     const bigSize = { w: TILE * 0.68, h: TILE * 1.5 };
@@ -763,7 +826,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     const loadArea = (areaId: AreaId, entryName: string): void => {
         level = world.areas[areaId];
         worldW = level.cols * TILE;
-        inCave = level.theme === "cave";
+        inCave = level.theme !== "overworld"; // dark backdrop + lantern for cave AND castle
         game.world = level.worldLabel;
 
         // Tear down per-area layers (persistent overlay layers are untouched).
@@ -850,6 +913,32 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             const boxY = (e.cy + 1) * TILE - h;
             const slot = addSprite2DIndex(enemyLayer, { positionPx: [0, 0], sizePx: [w, h], frame: enemies.frameOf(enemyStartFrame(e.kind)), visible: false });
             enemyList.push({ kind: e.kind, box: { x: e.cx * TILE + (TILE - w) / 2, y: boxY, w, h }, vx: -PHYS.enemySpeed, vy: 0, dir: -1, alive: true, shell: false, shellDir: 0, dying: 0, slot, animT: 0, homeY: boxY, phase: Math.random() * Math.PI * 2 });
+        }
+
+        // Boss (castle only). Stand it on its spawn cell; reset hp/state, hide projectiles.
+        if (level.bossSpawn) {
+            boss.active = true;
+            boss.hp = BOSS_MAX_HP;
+            boss.dir = -1;
+            boss.vy = 0;
+            boss.hurt = 0;
+            boss.dying = 0;
+            boss.attackT = 1.8;
+            boss.animT = 0;
+            boss.box.w = BOSS_W;
+            boss.box.h = BOSS_H;
+            boss.box.x = level.bossSpawn.cx * TILE + (TILE - BOSS_W) / 2;
+            boss.box.y = (level.bossSpawn.cy + 1) * TILE - BOSS_H;
+            updateSprite2DIndex(bossLayer, boss.slot, { visible: false }); // shown by project()
+            hud.boss(boss.hp, BOSS_MAX_HP);
+        } else {
+            boss.active = false;
+            updateSprite2DIndex(bossLayer, boss.slot, { visible: false });
+            hud.boss(0, 0);
+        }
+        for (const bp of bossProjectiles) {
+            bp.active = false;
+            updateSprite2DIndex(bossProjLayer, bp.slot, { visible: false });
         }
 
         // Stand the player on the named entry cell (occupies-cell convention: centre at
@@ -1000,6 +1089,12 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
                 killFireball(f);
                 return;
             }
+        }
+        // Fireballs also damage the castle boss.
+        if (boss.active && boss.dying <= 0 && boss.hurt <= 0 && overlaps(f.box, boss.box)) {
+            damageBoss();
+            killFireball(f);
+            return;
         }
         if (f.box.y > worldH + TILE) killFireball(f);
     };
@@ -1215,6 +1310,10 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             resolveEnemyVsPlayer(e);
         }
 
+        // Castle boss + its projectiles.
+        updateBoss(dt);
+        updateBossProjectiles(dt);
+
         // Pickups
         for (const p of pickups) {
             if (!p.active) continue;
@@ -1239,15 +1338,17 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             }
         }
 
-        // Goal: reach the flag column (only areas with a flag goal).
-        if (hasFlag && player.box.x + player.box.w * 0.5 >= flagX * TILE) {
+        // Goal: reach the flag column (only areas with a flag goal) → on to the castle.
+        // The flag sits on a solid pedestal, so trigger when the player reaches its base
+        // (right edge at the flag column) rather than requiring the centre to pass it.
+        if (hasFlag && player.box.x + player.box.w >= flagX * TILE) {
             game.phase = "complete";
-            game.timer = 3.5;
+            game.timer = 3.0;
             // End-of-area tally: convert remaining time into bonus points.
             const bonus = Math.floor(game.time) * 50;
             addScore(bonus);
             sfx.complete();
-            hud.banner("LEVEL COMPLETE", `TIME BONUS  ${bonus}`);
+            hud.banner("STAGE CLEAR!", `TIME BONUS  ${bonus}  ·  TO THE CASTLE`);
         }
     };
 
@@ -1392,6 +1493,123 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         hurtPlayer();
     };
 
+    // ── Castle boss ───────────────────────────────────────────────────────────
+    /** Win: clear the castle, tally a big bonus, celebrate, then drop back to the title. */
+    const winGame = (): void => {
+        if (game.phase === "won") return;
+        game.phase = "won";
+        game.timer = 6;
+        addScore(5000 + Math.floor(game.time) * 50);
+        sfx.complete();
+        burstSparks(player.box.x + player.box.w / 2, player.box.y, SPARK_GOLD, 16);
+        hud.banner("YOU WIN!", "CASTLE CLEARED — thanks for playing!");
+        hud.boss(0, 0); // hide the boss health bar
+    };
+    /** Deal one hit to the boss: flash + knockback, or start its death on the last hit. */
+    const damageBoss = (): void => {
+        if (!boss.active || boss.dying > 0 || boss.hurt > 0) return;
+        boss.hp -= 1;
+        boss.hurt = BOSS_HURT_TIME;
+        boss.vy = -340; // little hop
+        boss.dir = (player.box.x < boss.box.x ? 1 : -1) as -1 | 1; // recoil away from the player
+        juicePop(boss.box.x + boss.box.w / 2, boss.box.y, 1000, SPARK_WHITE);
+        burstSparks(boss.box.x + boss.box.w / 2, boss.box.y + boss.box.h / 2, SPARK_WHITE, 8);
+        addScore(1000);
+        hud.boss(Math.max(0, boss.hp), BOSS_MAX_HP);
+        if (boss.hp <= 0) {
+            boss.dying = 1.3;
+            boss.vy = -420;
+            sfx.kick();
+            updateSprite2DIndex(bossLayer, boss.slot, { frame: enemies.frameOf("spider_dead"), flipY: true });
+        } else {
+            sfx.stomp();
+        }
+    };
+    /** Lob an arcing projectile from the boss toward the player's current position. */
+    const lobBossProjectile = (): void => {
+        const bp = bossProjectiles.find((q) => !q.active);
+        if (!bp) return;
+        bp.active = true;
+        bp.box.x = boss.box.x + boss.box.w / 2 - bp.box.w / 2;
+        bp.box.y = boss.box.y - bp.box.h;
+        const toward = player.box.x + player.box.w / 2 - (boss.box.x + boss.box.w / 2);
+        bp.vx = Math.sign(toward || 1) * BOSS_PROJ_SPEED * 0.46;
+        bp.vy = -BOSS_PROJ_SPEED * 0.72; // arc up; gravity brings it down toward the player
+        updateSprite2DIndex(bossProjLayer, bp.slot, { visible: true });
+        sfx.fireball();
+    };
+    const updateBoss = (dt: number): void => {
+        if (!boss.active) return;
+        boss.animT += dt;
+        if (boss.dying > 0) {
+            boss.dying -= dt;
+            boss.vy += PHYS.gravity * dt;
+            boss.box.y += boss.vy * dt;
+            if (boss.dying <= 0) {
+                boss.active = false;
+                updateSprite2DIndex(bossLayer, boss.slot, { visible: false });
+                winGame();
+            }
+            return;
+        }
+        if (boss.hurt > 0) boss.hurt -= dt;
+        // Phase ramps with damage: faster pacing + more frequent lobs as hp drops.
+        const tier = BOSS_MAX_HP - boss.hp; // 0,1,2
+        const speedMul = 1 + tier * 0.4;
+        const attackInterval = Math.max(1.1, 2.6 - tier * 0.55);
+        // Pace along the floor, reversing at walls; gravity keeps it grounded.
+        boss.vy += PHYS.gravity * dt;
+        if (boss.vy > PHYS.maxFall) boss.vy = PHYS.maxFall;
+        const res = moveAndCollide(boss.box, boss.dir * BOSS_SPEED * speedMul, boss.vy, dt, collision);
+        boss.vy = res.vy;
+        if (res.hitWall !== 0) boss.dir = (-boss.dir) as -1 | 1;
+        // Attack timer.
+        boss.attackT -= dt;
+        if (boss.attackT <= 0) {
+            lobBossProjectile();
+            boss.attackT = attackInterval;
+        }
+        resolveBossVsPlayer();
+    };
+    const resolveBossVsPlayer = (): void => {
+        if (!boss.active || boss.dying > 0 || !player.alive) return;
+        if (!overlaps(player.box, boss.box)) return;
+        // Stomp = descending and the player's feet are in the boss's upper third.
+        const feet = player.box.y + player.box.h;
+        const stomping = player.vy > 0 && feet - boss.box.y < boss.box.h * 0.55;
+        if (player.star > 0) {
+            player.vy = -PHYS.stompBounce;
+            damageBoss();
+            return;
+        }
+        if (stomping) {
+            player.vy = -PHYS.stompBounce;
+            player.box.y = boss.box.y - player.box.h;
+            damageBoss();
+            return;
+        }
+        // Side/again-after-hit contact only hurts when the boss isn't flashing.
+        if (boss.hurt <= 0) hurtPlayer();
+    };
+    const updateBossProjectiles = (dt: number): void => {
+        for (const bp of bossProjectiles) {
+            if (!bp.active) continue;
+            bp.vy += PHYS.gravity * 0.7 * dt;
+            bp.box.x += bp.vx * dt;
+            bp.box.y += bp.vy * dt;
+            if (player.alive && overlaps(bp.box, player.box)) {
+                bp.active = false;
+                updateSprite2DIndex(bossProjLayer, bp.slot, { visible: false });
+                hurtPlayer();
+                continue;
+            }
+            if (bp.box.y > worldH + TILE || bp.box.x < 0 || bp.box.x > worldW) {
+                bp.active = false;
+                updateSprite2DIndex(bossProjLayer, bp.slot, { visible: false });
+            }
+        }
+    };
+
     const updatePickup = (p: PickupState, dt: number): void => {
         if (p.kind === "coin-pop") {
             p.box.y += p.vy * dt;
@@ -1511,11 +1729,13 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
                 visible: true,
             });
         }
-        // Lantern: a multiply-darkness pool centred on the player.
+        // Lantern: a multiply-darkness pool centred on the player. The castle keeps a
+        // brighter ambient + wider pool than the cave so the boss fight reads clearly.
         if (inCave) {
+            const castle = level.theme === "castle";
             const lpx = sx(player.box.x + player.box.w / 2) / cw;
             const lpy = sy(player.box.y + player.box.h * 0.4) / ch;
-            setSprite2DShaderParams(lanternLayer, [lpx, lpy, 0.46, 0.2]);
+            setSprite2DShaderParams(lanternLayer, [lpx, lpy, castle ? 0.72 : 0.46, castle ? 0.66 : 0.2]);
             updateSprite2DIndex(lanternLayer, lanternSlot, { positionPx: [0, 0], sizePx: [cw, ch], color: [cw / ch, 0, 0, 1], visible: true });
         } else {
             updateSprite2DIndex(lanternLayer, lanternSlot, { visible: false });
@@ -1683,6 +1903,35 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
                 visible: true,
                 flipX: e.kind !== "piranha" && e.dir > 0,
                 flipY: e.dying > 0,
+            });
+        }
+
+        // Castle boss + its projectiles.
+        if (boss.active) {
+            const bFlap = Math.floor(boss.animT * 6) % 2 === 0;
+            const bName = boss.dying > 0 ? "spider_dead" : boss.hurt > 0 ? "spider_hit" : bFlap ? "spider_walk1" : "spider_walk2";
+            const [bfw, bfh] = enemies.sizeOf(bName);
+            // Flash (blink) while in the post-hit invulnerability window.
+            const flashHidden = boss.hurt > 0 && Math.floor(boss.hurt * 12) % 2 === 0;
+            updateSprite2DIndex(bossLayer, boss.slot, {
+                positionPx: [sx(boss.box.x + boss.box.w / 2), sy(boss.box.y + boss.box.h)],
+                sizePx: [ss(bfw * BOSS_VIS_SCALE), ss(bfh * BOSS_VIS_SCALE)],
+                frame: enemies.frameOf(bName),
+                visible: !flashHidden,
+                flipX: boss.dir > 0,
+                flipY: boss.dying > 0,
+            });
+        } else {
+            updateSprite2DIndex(bossLayer, boss.slot, { visible: false });
+        }
+        for (const bp of bossProjectiles) {
+            if (!bp.active) continue;
+            const flick = 0.8 + 0.2 * Math.sin(game.flagAnimT * 30 + bp.box.x);
+            updateSprite2DIndex(bossProjLayer, bp.slot, {
+                positionPx: [sx(bp.box.x + bp.box.w / 2), sy(bp.box.y + bp.box.h / 2)],
+                sizePx: [ss(BOSS_PROJ_DRAW), ss(BOSS_PROJ_DRAW)],
+                color: [0.7 * flick, 1.0 * flick, 0.45 * flick, 1],
+                visible: true,
             });
         }
 
@@ -1864,7 +2113,30 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
                 break;
             case "complete":
                 game.timer -= dt;
-                player.box.x += 120 * dt; // stroll off
+                player.box.x += 120 * dt; // stroll off toward the castle
+                if (game.timer <= 0) {
+                    // Cut to the castle finale (keep the run going: score, coins, lives, time).
+                    loadArea("castle", "start");
+                    game.phase = "ready";
+                    game.timer = 1.6;
+                    hud.banner("CASTLE", "Defeat the boss!");
+                }
+                break;
+            case "won":
+                game.timer -= dt;
+                // Victory fireworks: periodic sparkle bursts across the top of the view.
+                if (Math.floor(game.timer * 2) !== Math.floor((game.timer + dt) * 2)) {
+                    burstSparks(cam.x + (0.2 + Math.random() * 0.6) * (canvas.width / (canvas.height / worldH)), (0.2 + Math.random() * 0.3) * worldH, Math.random() < 0.5 ? SPARK_GOLD : SPARK_WHITE, 10);
+                }
+                if (game.timer <= 0) {
+                    // Back to the attract screen with a fresh run.
+                    restartLevel();
+                    game.phase = "title";
+                    hud.banner(null);
+                    hud.boss(0, 0);
+                    hud.title(true);
+                    titleT = 0;
+                }
                 break;
             case "gameover":
                 if (input.state.startPressed) {

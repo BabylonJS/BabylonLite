@@ -15,7 +15,7 @@
 
 export type BlockKind = "brick" | "coin-block" | "mushroom-block" | "star-block";
 export type EnemyKind = "slime" | "snail" | "fly" | "piranha";
-export type AreaId = "overworld" | "cave";
+export type AreaId = "overworld" | "cave" | "castle";
 export type AreaTheme = "overworld" | "cave" | "castle";
 
 export interface Cell {
@@ -92,6 +92,8 @@ export interface LevelArea {
     playerSpawn: Cell;
     /** Flag goal cell, or null for areas with no flag (cave). */
     flag: Cell | null;
+    /** Boss spawn cell, or null for areas with no boss (overworld, cave). */
+    bossSpawn: Cell | null;
     /** HUD world label shown while in this area. */
     worldLabel: string;
     /** Falling past this row (rows+1) kills the player. */
@@ -344,6 +346,52 @@ function buildCave(): LevelArea {
     return finishArea(b, "cave", "cave", "1-2", entries, null);
 }
 
+// ── Castle (World 1-3, the boss finale) ───────────────────────────────────────
+
+const CASTLE_COLS = 30;
+const CASTLE_CEIL = 2;
+
+function buildCastle(): LevelArea {
+    const b = makeBuild(CASTLE_COLS);
+    const W = CASTLE_COLS - 1;
+    const put = (cx: number, cy: number, name: string): void => {
+        b.solid[cy * b.cols + cx] = 1;
+        b.terrain.push({ cx, cy, name });
+    };
+    // Floor (rows 12-13) + a solid ceiling (row 2) the boss arena sits under.
+    for (let c = 0; c <= W; c++) {
+        put(c, GROUND_TOP, "castleMid");
+        put(c, GROUND_TOP + 1, "castleCenter");
+        put(c, CASTLE_CEIL, "castleCenter");
+    }
+    // Left + right walls (full height) so the arena is sealed.
+    for (let cy = CASTLE_CEIL + 1; cy <= GROUND_TOP + 1; cy++) {
+        put(0, cy, "castleCenter");
+        put(W, cy, "castleCenter");
+    }
+    // A couple of castle ledges for the player to use against the boss.
+    for (let c = 6; c <= 8; c++) put(c, GROUND_TOP - 4, "castleHalfMid");
+    b.terrain.push({ cx: 5, cy: GROUND_TOP - 4, name: "castleHalfLeft" });
+    b.oneway[(GROUND_TOP - 4) * b.cols + 5] = 1;
+    b.terrain.push({ cx: 9, cy: GROUND_TOP - 4, name: "castleHalfRight" });
+    b.oneway[(GROUND_TOP - 4) * b.cols + 9] = 1;
+    for (let c = 5; c <= 9; c++) b.oneway[(GROUND_TOP - 4) * b.cols + c] = 1;
+    // Reward coins above the ledge.
+    for (let c = 5; c <= 9; c++) b.coins.push({ cx: c, cy: GROUND_TOP - 6 });
+    // Atmosphere: wall torches.
+    b.torches.push({ cx: 2, cy: GROUND_TOP - 1 });
+    b.torches.push({ cx: W - 2, cy: GROUND_TOP - 1 });
+    b.torches.push({ cx: 14, cy: CASTLE_CEIL + 2 });
+    // A decorative door at the far right (the way "out", flavour only).
+    b.terrain.push({ cx: W - 1, cy: GROUND_TOP - 2, name: "door_closedTop" });
+    b.terrain.push({ cx: W - 1, cy: GROUND_TOP - 1, name: "door_closedMid" });
+
+    const entries: Record<string, Cell> = {
+        start: { cx: 3, cy: GROUND_TOP - 1 }, // player enters on the left floor
+    };
+    return finishArea(b, "castle", "castle", "1-3", entries, null, { cx: 22, cy: GROUND_TOP - 1 });
+}
+
 // ── Shared assembly helpers ───────────────────────────────────────────────────
 
 /** Add a pipe (solid footprint + sprite). Warp pipes pass `toArea`/`toEntry`. */
@@ -431,7 +479,7 @@ function compileGrid(b: AreaBuild, grid: Glyph[][], theme: AreaTheme): { spawn: 
 }
 
 /** Freeze an accumulator into a LevelArea. */
-function finishArea(b: AreaBuild, id: AreaId, theme: AreaTheme, worldLabel: string, entries: Record<string, Cell>, flag: Cell | null): LevelArea {
+function finishArea(b: AreaBuild, id: AreaId, theme: AreaTheme, worldLabel: string, entries: Record<string, Cell>, flag: Cell | null, bossSpawn: Cell | null = null): LevelArea {
     return {
         id,
         theme,
@@ -451,6 +499,7 @@ function finishArea(b: AreaBuild, id: AreaId, theme: AreaTheme, worldLabel: stri
         entries,
         playerSpawn: entries.start ?? { cx: 3, cy: GROUND_TOP - 1 },
         flag,
+        bossSpawn,
         worldLabel,
         deathRow: ROWS + 1,
     };
@@ -462,6 +511,7 @@ export function buildWorld(): World {
         areas: {
             overworld: buildOverworld(),
             cave: buildCave(),
+            castle: buildCastle(),
         },
         start: "overworld",
     };

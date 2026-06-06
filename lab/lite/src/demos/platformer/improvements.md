@@ -27,10 +27,10 @@ any of these are built.)
    Real discrete-area teardown/refill (overworld + cave today; castle next).
 3. **CRT / scanline post-process — [#17](#tech-showcase--flex).** Needs the engine
    offscreen-RT hook (ask A) — the collaborative engine piece.
-4. **Castle finale + boss — [#12](#gameplay--content).**
+4. **Castle finale + boss — [#12](#gameplay--content).** ✅ **DONE.**
 
-> **Status:** title ✅ + `loadArea` ✅ done; **castle/boss (#12)** and **CRT (#17)**
-> remaining. Also done: full **world reset on death**.
+> **Status:** title ✅ + `loadArea` ✅ + castle/boss ✅ done; **CRT (#17)** remaining
+> (the engine offscreen-RT hook). Also done: full **world reset on death**.
 
 ---
 
@@ -270,13 +270,16 @@ scene graph — and gives the demo real game structure.
 
 - **11. Checkpoints & a tiny world map ✅ (M).** Flag checkpoints mid-level and a
   between-areas map screen — reinforces the multi-area system from #3.
-- **12. More enemy types ✅ DONE / ⭐ COMMITTED (boss).** Added a **flying bee** (sine-bobbing through the
+- **12. More enemy types ✅ DONE (incl. boss).** Added a **flying bee** (sine-bobbing through the
   air, stompable from above) and a **pipe-plant** (the tall green `snakeSlime` that
   rises from / retracts into a decorative pipe on a timed cycle, freezing while the
   player stands over it; contact hurts, fireballs kill it). They reuse the shared
   enemy update/stomp/fireball paths — flyers stomp like slimes, the plant can't be
-  stomped. Joins the existing slimes + shell-kicking snails. (A castle boss is still
-  open.)
+  stomped. Joins the existing slimes + shell-kicking snails. The **castle boss** (a
+  big spider in the `castle` finale area) paces, ramps speed + lobs arcing
+  projectiles per phase, takes **3 hits** (stomp / fireball / star) shown on a DOM
+  **health-pip bar**, flashes invulnerable between hits, and on defeat triggers the
+  **YOU WIN!** sequence (big bonus + fireworks → back to the title).
 - **13. Moving & one-way platforms ✅ DONE.** **One-way platforms** (thin grass
   ledges) you jump up *through* and land on top of — a `isOneWay` oracle in the
   swept-AABB collider only blocks a downward move whose feet were above the platform.

@@ -19,6 +19,8 @@ export interface Hud {
     banner: (text: string | null, sub?: string) => void;
     /** Show/hide the title (attract) screen; hides the score bar while visible. */
     title: (visible: boolean) => void;
+    /** Show the boss health bar with `hp` of `maxHp` pips; `maxHp <= 0` hides it. */
+    boss: (hp: number, maxHp: number) => void;
     dispose: () => void;
 }
 
@@ -90,7 +92,19 @@ export function createHud(host: HTMLElement): Hud {
         "text-shadow:0 2px 0 #000;animation:pf-blink 1.1s steps(1,end) infinite;";
     titleEl.append(titleLogo, titleSub, titlePrompt);
 
-    host.append(bar, bannerEl, titleEl);
+    // ── Boss health bar (shown only during the castle boss fight) ─────────────
+    const bossBar = document.createElement("div");
+    bossBar.style.cssText =
+        "position:absolute;top:64px;left:0;right:0;display:none;justify-content:center;align-items:center;gap:10px;" +
+        "z-index:22;pointer-events:none;";
+    const bossLabel = document.createElement("span");
+    bossLabel.textContent = "BOSS";
+    bossLabel.style.cssText = "font:800 13px system-ui,sans-serif;letter-spacing:.18em;color:#ff7d7d;text-shadow:0 2px 0 #000;";
+    const bossPips = document.createElement("div");
+    bossPips.style.cssText = "display:flex;gap:6px;";
+    bossBar.append(bossLabel, bossPips);
+
+    host.append(bar, bannerEl, titleEl, bossBar);
 
     return {
         update(m: HudModel): void {
@@ -113,10 +127,27 @@ export function createHud(host: HTMLElement): Hud {
             titleEl.style.display = visible ? "flex" : "none";
             bar.style.display = visible ? "none" : "flex";
         },
+        boss(hp: number, maxHp: number): void {
+            if (maxHp <= 0) {
+                bossBar.style.display = "none";
+                return;
+            }
+            bossPips.replaceChildren();
+            for (let i = 0; i < maxHp; i++) {
+                const pip = document.createElement("span");
+                const lit = i < hp;
+                pip.style.cssText =
+                    "width:22px;height:22px;border-radius:5px;border:2px solid rgba(0,0,0,.55);" +
+                    (lit ? "background:linear-gradient(#ff8a5d,#ff4d4d);box-shadow:0 0 8px rgba(255,90,70,.7);" : "background:rgba(40,40,48,.7);");
+                bossPips.appendChild(pip);
+            }
+            bossBar.style.display = "flex";
+        },
         dispose(): void {
             bar.remove();
             bannerEl.remove();
             titleEl.remove();
+            bossBar.remove();
             style.remove();
         },
     };
