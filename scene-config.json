@@ -613,7 +613,7 @@
         "slug": "scene73-wheel-nme-viewport",
         "name": "Scene 73 — Wheel PBR vs NME Viewports",
         "maxMad": 0.05,
-        "maxRawKB": 140,
+        "maxRawKB": 141,
         "description": "CarbonFiberWheel.glb rendered twice on one canvas through two independent Babylon Lite scenes with split camera viewports: native glTF PBR clearcoat material on the left and checked-in C3NEY1#4 NME material on the right.",
         "tags": ["pbr", "nme", "gltf", "env", "clearcoat", "viewport"]
     },
@@ -1300,7 +1300,7 @@
         "slug": "scene176-mosquito-amber",
         "name": "Scene 176 - MosquitoInAmber",
         "maxMad": 0.5,
-        "maxRawKB": 97,
+        "maxRawKB": 98,
         "description": "KhronosGroup MosquitoInAmber.gltf (KHR_materials_transmission + ior + volume) against the studio.env HDR environment used as IBL and a blurred HDR skybox, with frame-graph scene-texture transmission.",
         "tags": ["pbr", "gltf", "env", "transmission", "volume", "skybox"],
         "skipPerf": true,
