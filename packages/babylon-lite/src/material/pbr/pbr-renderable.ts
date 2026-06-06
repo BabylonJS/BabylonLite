@@ -54,13 +54,11 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     // Per-size scratch buffers for material UBO re-writes (zero allocation per frame).
     const materialScratch = new Map<number, Float32Array>();
     const hasEnv = !!envTextures;
-    const shadowLights: { lightIndex: number; shadowType: "esm" | "pcf"; gen: ShadowGenerator }[] = [];
+    const shadowLights: { lightIndex: number; shadowType: "esm" | "pcf" | "csm"; gen: ShadowGenerator }[] = [];
     for (let i = 0; i < scene.lights.length; i++) {
         const sg = scene.lights[i]!.shadowGenerator;
         if (sg) {
-            // v1: CSM is a Standard-material-only receiver. PBR never has a CSM light in any current
-            // scene, so the cast is safe and keeps this always-bundled loop byte-identical to baseline.
-            shadowLights.push({ lightIndex: i, shadowType: sg._shadowType as "esm" | "pcf", gen: sg });
+            shadowLights.push({ lightIndex: i, shadowType: sg._shadowType, gen: sg });
         }
     }
     const hasSomeShadows = shadowLights.length > 0;

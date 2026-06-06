@@ -24,15 +24,33 @@ export interface CsmShadowLightSlot {
 }
 
 /**
+ * Family-specific knobs for the CSM receiver. Defaults match the Standard
+ * material so the Standard path (and its emitted bytes) is unchanged.
+ */
+export interface CsmShadowFragmentOptions {
+    /** WGSL expression yielding the fragment world position (vec3). Default `input.vp` (Standard). */
+    worldPosExpr?: string;
+    /** WGSL expression yielding the camera view-space z used for cascade selection. Default `input.vf.z` (Standard). */
+    viewZExpr?: string;
+    /** Fragment slot to emit the per-light shadow code into. Default `AD` (Standard). */
+    outputSlot?: "AD" | "AS";
+}
+
+/**
  * Create a per-light CSM shadow fragment.
  * The shadow factor for each light is stored in `shadowFactors[lightIndex]`.
  *
- * The receiver reuses the base varyings `vp` (world position) and `vf`
- * (camera view-space position) instead of emitting per-cascade light-space
- * varyings: `vf.z` selects the cascade and `vp` is transformed by the selected
- * cascade matrix in the fragment shader.
+ * The receiver reuses base varyings for world position and camera view-space z
+ * (instead of emitting per-cascade light-space varyings): the view-space z
+ * selects the cascade and the world position is transformed by the selected
+ * cascade matrix in the fragment shader. The exact varying expressions and the
+ * output slot are supplied per material family via {@link CsmShadowFragmentOptions}
+ * (defaults match Standard: `input.vp` / `input.vf.z` / slot `AD`).
  */
-export function createCsmShadowFragment(id: string, shadowLights: CsmShadowLightSlot[]): ShaderFragment {
+export function createCsmShadowFragment(id: string, shadowLights: CsmShadowLightSlot[], opts: CsmShadowFragmentOptions = {}): ShaderFragment {
+    const worldPosExpr = opts.worldPosExpr ?? "input.vp";
+    const viewZExpr = opts.viewZExpr ?? "input.vf.z";
+    const outputSlot = opts.outputSlot ?? "AD";
     const varyings: Varying[] = [];
     const bindings: BindingDecl[] = [];
     const fragmentLines: string[] = [];
@@ -104,7 +122,7 @@ shadow = mix(nextShadow, shadow, diffRatio);
 return shadow;
 }`);
 
-        fragmentLines.push(`shadowFactors[${li}] = computeShadowCSM${suffix}(vec4<f32>(input.vp, 1.0), input.vf.z);`);
+        fragmentLines.push(`shadowFactors[${li}] = computeShadowCSM${suffix}(vec4<f32>(${worldPosExpr}, 1.0), ${viewZExpr});`);
     }
 
     return {
@@ -113,7 +131,7 @@ return shadow;
         _bindings: bindings,
         _helperFunctions: helperParts.join("\n"),
         _fragmentSlots: {
-            AD: fragmentLines.join("\n"),
+            [outputSlot]: fragmentLines.join("\n"),
         },
     };
 }

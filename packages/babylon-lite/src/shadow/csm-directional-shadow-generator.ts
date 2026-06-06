@@ -19,8 +19,9 @@ import type { ShadowGenerator } from "./shadow-generator.js";
 import { createShadowParamsUBO } from "./shadow-base.js";
 import { createUniformBuffer } from "../resource/gpu-buffers.js";
 import { ensureCsmShadowTaskState, preloadCsmShadowTaskState, renderCsmShadowMap, type CsmConfig, type CsmTaskState } from "./csm-shadow-task-hooks.js";
-import { setCsmStdReceiverFactory } from "./csm-receiver-registry.js";
+import { setCsmStdReceiverFactory, setCsmPbrReceiverFactory } from "./csm-receiver-registry.js";
 import { createStdCsmShadowFragment } from "../material/standard/fragments/std-csm-shadow-fragment.js";
+import { createPbrCsmShadowFragment } from "../material/pbr/fragments/pbr-csm-shadow-fragment.js";
 
 /** Configuration for a directional-light cascaded shadow generator. */
 export interface CsmDirectionalShadowGeneratorConfig {
@@ -61,9 +62,10 @@ export interface CsmDirectionalShadowGeneratorConfig {
  * @returns A `ShadowGenerator` wired to the CSM render path.
  */
 export function createCsmDirectionalShadowGenerator(engine: EngineContext, _light: DirectionalLight, cfg: CsmDirectionalShadowGeneratorConfig = {}): ShadowGenerator {
-    // Register the Standard-material CSM receiver fragment lazily — only scenes that
+    // Register the material-family CSM receiver fragments lazily — only scenes that
     // create a CSM generator pull the cascade-receiver WGSL into their bundle.
     setCsmStdReceiverFactory(createStdCsmShadowFragment);
+    setCsmPbrReceiverFactory(createPbrCsmShadowFragment);
 
     const device = engine._device;
     const mapSize = cfg.mapSize ?? 1024;

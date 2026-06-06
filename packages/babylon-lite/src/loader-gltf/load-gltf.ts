@@ -29,14 +29,6 @@ function loadInterleave(): Promise<InterleaveModule> {
     return (_interleavePromise ??= import("./gltf-interleave.js"));
 }
 
-/** Dynamically-imported COLOR_0 normalization module — loaded only when an asset
- *  actually contains a COLOR_0 vertex attribute, so colorless scenes pay zero cost. */
-type ColorNormalizeModule = typeof import("./gltf-color-normalize.js");
-let _colorNormalizePromise: Promise<ColorNormalizeModule> | undefined;
-function loadColorNormalize(): Promise<ColorNormalizeModule> {
-    return (_colorNormalizePromise ??= import("./gltf-color-normalize.js"));
-}
-
 /** Parsed mesh data ready for GPU upload. */
 export interface GltfMeshData {
     /** @internal Tight CPU positions, or null when sourced from an interleaved
@@ -359,8 +351,9 @@ async function extractAllMeshes(
             // ushort components, but the PBR/standard pipelines bind vertex color as a single
             // float32x3 layout. Normalize any source to a tight float32 RGB buffer so the GPU
             // stride matches the layout (otherwise every vertex misaligns -> garbage/black).
-            // The normalizer is imported lazily on first need — colorless assets never fetch it.
-            const colors = colorData ? (await loadColorNormalize()).normalizeColorToVec3(colorData._data, colorData._count, colorData._componentCount) : null;
+            // The normalizer is imported lazily on first need — colorless assets never fetch it
+            // (the runtime caches the module, so the per-primitive import() resolves instantly).
+            const colors = colorData ? (await import("./gltf-color-normalize.js")).normalizeColorToVec3(colorData._data, colorData._count, colorData._componentCount) : null;
             const idxData = decoded
                 ? { _data: decoded._indices, _count: decoded._indexCount, _componentCount: 1 }
                 : primitive.indices !== undefined

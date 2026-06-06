@@ -1411,5 +1411,15 @@
         "description": "A deterministic field of 200 green torus-knot casters (playground #KY0N7T#84) drops shadows onto a large Standard ground receiver, lit by a single DirectionalLight with a 4-cascade CascadedShadowGenerator (PCF5). Caster transforms come from a seeded PRNG so Lite and the Babylon.js CSM oracle place every knot identically; cascade Z bounds auto-fit the caster AABB (autoCalcShadowZBounds).",
         "tags": ["shadows", "csm", "standard", "directional"],
         "skipPerf": true
+    },
+    {
+        "id": 215,
+        "slug": "scene215-cascaded-shadows-pbr",
+        "name": "Scene 215 — Cascaded Shadow Maps (PBR)",
+        "maxMad": 0.4,
+        "maxRawKB": 78,
+        "description": "PBR counterpart of scene214: a deterministic field of 200 green PBR torus-knot casters drops cascaded shadows onto a large PBR ground receiver, lit by a single DirectionalLight with a 4-cascade CascadedShadowGenerator (PCF5). Proves CSM works on PBR-material receivers, not just Standard. Caster transforms come from a seeded PRNG so Lite and the Babylon.js CSM oracle place every knot identically; cascade Z bounds auto-fit the caster AABB (autoCalcShadowZBounds).",
+        "tags": ["shadows", "csm", "pbr", "directional"],
+        "skipPerf": true
     }
 ]

@@ -26,3 +26,17 @@ export function setCsmStdReceiverFactory(f: StdCsmReceiverFactory): void {
 export function getCsmStdReceiverFactory(): StdCsmReceiverFactory | null {
     return _stdFactory;
 }
+
+type PbrCsmReceiverFactory = (slots: { lightIndex: number }[]) => ShaderFragment;
+
+let _pbrFactory: PbrCsmReceiverFactory | null = null;
+
+/** Register the PBR-material CSM receiver fragment factory. Called by the CSM generator. */
+export function setCsmPbrReceiverFactory(f: PbrCsmReceiverFactory): void {
+    _pbrFactory = f;
+}
+
+/** Get the registered PBR-material CSM receiver fragment factory, or `null` if no CSM generator was created. */
+export function getCsmPbrReceiverFactory(): PbrCsmReceiverFactory | null {
+    return _pbrFactory;
+}
