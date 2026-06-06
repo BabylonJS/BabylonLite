@@ -58,7 +58,9 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     for (let i = 0; i < scene.lights.length; i++) {
         const sg = scene.lights[i]!.shadowGenerator;
         if (sg) {
-            shadowLights.push({ lightIndex: i, shadowType: sg._shadowType, gen: sg });
+            // v1: CSM is a Standard-material-only receiver. PBR never has a CSM light in any current
+            // scene, so the cast is safe and keeps this always-bundled loop byte-identical to baseline.
+            shadowLights.push({ lightIndex: i, shadowType: sg._shadowType as "esm" | "pcf", gen: sg });
         }
     }
     const hasSomeShadows = shadowLights.length > 0;

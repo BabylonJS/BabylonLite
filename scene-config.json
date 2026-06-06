@@ -1401,5 +1401,15 @@
         "description": "Four meshes shaded by the procedural unlit GridMaterial — an opaque anti-aliased teal ground, a useMaxLine orange sphere whose object-space grid wraps the curved surface, a transparent alpha-blended cyan box (opacity 0.6), and a hard-cutoff antialias:false pink box — validated against a Babylon.js @babylonjs/materials GridMaterial oracle with identical per-mesh grid params, camera, and 4x MSAA.",
         "tags": ["materials", "grid", "procedural"],
         "skipPerf": true
+    },
+    {
+        "id": 214,
+        "slug": "scene214-cascaded-shadows",
+        "name": "Scene 214 — Cascaded Shadow Maps",
+        "maxMad": 0.4,
+        "maxRawKB": 67,
+        "description": "A deterministic field of 200 green torus-knot casters (playground #KY0N7T#84) drops shadows onto a large Standard ground receiver, lit by a single DirectionalLight with a 4-cascade CascadedShadowGenerator (PCF5). Caster transforms come from a seeded PRNG so Lite and the Babylon.js CSM oracle place every knot identically; cascade Z bounds auto-fit the caster AABB (autoCalcShadowZBounds).",
+        "tags": ["shadows", "csm", "standard", "directional"],
+        "skipPerf": true
     }
 ]
