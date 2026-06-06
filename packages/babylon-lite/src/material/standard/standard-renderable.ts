@@ -45,7 +45,7 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
     const { tiSync, tiFragment, shadowFragment } = factories;
 
     // Collect per-light shadow info.
-    const shadowLights: { lightIndex: number; shadowType: "esm" | "pcf"; gen: ShadowGenerator }[] = [];
+    const shadowLights: { lightIndex: number; shadowType: "esm" | "pcf" | "csm"; gen: ShadowGenerator }[] = [];
     for (let i = 0; i < scene.lights.length; i++) {
         const sg = scene.lights[i]!.shadowGenerator;
         if (sg) {

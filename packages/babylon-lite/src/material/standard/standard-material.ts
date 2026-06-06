@@ -155,7 +155,7 @@ export function _standardFeatureKey(features: number, meshFeatures: number, vari
 }
 
 /** @internal Key for Standard scene-driven shader variants not encoded in feature bits. */
-export function _standardShaderVariantKey(shadowLights: readonly { readonly lightIndex: number; readonly shadowType: "esm" | "pcf" }[]): string {
+export function _standardShaderVariantKey(shadowLights: readonly { readonly lightIndex: number; readonly shadowType: "esm" | "pcf" | "csm" }[]): string {
     return shadowLights.length === 0 ? "" : shadowLights.map((sl) => `${sl.lightIndex}${sl.shadowType === "pcf" ? "p" : "e"}`).join(",");
 }
 
