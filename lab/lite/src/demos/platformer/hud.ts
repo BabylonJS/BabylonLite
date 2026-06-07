@@ -82,15 +82,12 @@ export function createHud(host: HTMLElement): Hud {
         "background:linear-gradient(90deg,#ff5d5d,#ffd95d,#7dff5d,#5dd0ff,#b15dff,#ff5d5d);background-size:200% 100%;" +
         "-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-stroke:2px rgba(0,0,0,.5);" +
         "filter:drop-shadow(0 6px 0 rgba(0,0,0,.45));animation:pf-shimmer 3s linear infinite,pf-bob 3.2s ease-in-out infinite;";
-    const titleSub = document.createElement("div");
-    titleSub.textContent = "Babylon Lite \u00B7 WebGPU";
-    titleSub.style.cssText = "font:700 clamp(13px,2.2vw,20px) system-ui,sans-serif;color:#fff;text-shadow:0 2px 0 #000;letter-spacing:.22em;";
     const titlePrompt = document.createElement("div");
     titlePrompt.textContent = "PRESS SPACE \u00B7 TAP \u24B6";
     titlePrompt.style.cssText =
         "margin-top:28px;font:800 clamp(15px,2.6vw,24px) system-ui,sans-serif;color:#ffd36b;" +
         "text-shadow:0 2px 0 #000;animation:pf-blink 1.1s steps(1,end) infinite;";
-    titleEl.append(titleLogo, titleSub, titlePrompt);
+    titleEl.append(titleLogo, titlePrompt);
 
     // ── Boss health bar (shown only during the castle boss fight) ─────────────
     const bossBar = document.createElement("div");

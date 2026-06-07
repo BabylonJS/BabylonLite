@@ -231,6 +231,7 @@ function buildOverworld(): LevelArea {
     // ── Flag goal on a tall pedestal ──────────────────────────────────────────
     for (let h = 0; h < 8; h++) set(FLAG_COL, GROUND_TOP - 1 - h, "=");
     for (let h = 1; h < 8; h++) set(FLAG_COL, GROUND_TOP - 1 - h, " "); // clear pole cells (flag is an entity)
+    set(FLAG_COL, GROUND_TOP - 1, "E"); // pedestal base = earthen tile (matches the ground, not white stone)
     set(FLAG_COL, GROUND_TOP - 9, "F");
 
     const b = makeBuild(cols);
@@ -533,7 +534,10 @@ function groundFrame(cx: number, cy: number, isGround: (x: number, y: number) =>
         if (openRight && !openLeft) return "grassRight";
         return "grassMid";
     }
-    return "dirtCenter";
+    // Below the surface: a full brown earth tile. (The pack's `dirtCenter` is bugged —
+    // it shares atlas coords with `snowCenter` and renders light grey/white — so use
+    // `grassCenter`, the dirt body that sits under grass; its brown matches `grassMid`.)
+    return "grassCenter";
 }
 
 /** Floating solid platforms use stone tiles to read distinctly from the ground. */

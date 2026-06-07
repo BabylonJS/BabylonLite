@@ -42,297 +42,70 @@ import { LAVA_FRAGMENT } from "./lava.js";
 import { LANTERN_FRAGMENT, makeGlowDataUrl } from "./lantern.js";
 import { moveAndCollide, overlaps, type AABB, type CollisionMap } from "./physics.js";
 
-const SKY = { r: 0.38, g: 0.62, b: 0.95, a: 1 } as const;
-const START_TIME = 300;
-const ASSET_BASE = "/platformer";
-
-/** Number of afterimage ghosts in the star-power trail. */
-const STAR_TRAIL = 6;
-/** Frame spacing between consecutive ghosts (larger = longer, sparser trail). */
-const STAR_TRAIL_GAP = 3;
-
-// Visual draw sizes are decoupled from the collision boxes. The Kenney frames
-// carry transparent padding above the character/creature (art sits at the frame
-// bottom), and a tight hitbox feels better than a roomy one — so each sprite is
-// DRAWN larger than its box, scaled to read ~1 tile like the ?-blocks. The
-// bottom-centre pivot keeps the feet grounded as the sprite grows.
-/** Player target *visible* height (small, un-grown / big, mushroom). Deluxe
- *  alien frames are tightly cropped (art reaches the frame edges), so the
- *  sprite is scaled by its stand-frame height to hit these heights; other poses
- *  (jump/duck/walk) keep their natural aspect. Big reads ~2 tiles (SMB-style). */
-const PLAYER_VIS_SMALL = TILE * 1.3;
-const PLAYER_VIS_BIG = TILE * 2.0;
-/** Enemy sprite scale over its natural (tightly-cropped) frame size. */
-const ENEMY_VIS_SCALE = 1.45;
-/** Flying-enemy tuning: horizontal drift, vertical bob amplitude / frequency. */
-const FLY_SPEED = 70;
-const FLY_AMP = TILE * 1.3;
-const FLY_FREQ = 2.2;
-/** Piranha-plant emerge/retract cycle (seconds) and how far it rises (px). */
-const PIRANHA_CYCLE = 3.4;
-const PIRANHA_RISE = TILE * 1.45;
-/** Castle boss tuning. */
-const BOSS_MAX_HP = 3;
-const BOSS_W = TILE * 2.8; // collision box (tuned to cover the drawn spider body)
-const BOSS_H = TILE * 2.35; // box top reaches the drawn head so the boss is stompable
-const BOSS_VIS_SCALE = 3.2; // boss sprite draw scale over its natural frame size
-const BOSS_SPEED = TILE * 1.6; // base pace speed (px/s); scales up per phase
-const BOSS_HURT_TIME = 1.0; // invulnerable-flash window after a hit (s)
-const BOSS_PROJ_MAX = 4;
-const BOSS_PROJ_SPEED = TILE * 5.5;
-const BOSS_PROJ_DRAW = TILE * 0.7;
-/** Piranha emergence 0..1 (hidden → rising → up → retracting) from its cycle phase (s). */
-function piranhaEmerge(phase: number): number {
-    const t = (((phase % PIRANHA_CYCLE) + PIRANHA_CYCLE) % PIRANHA_CYCLE) / PIRANHA_CYCLE;
-    if (t < 0.12) return 0;
-    if (t < 0.32) return (t - 0.12) / 0.2; // rising
-    if (t < 0.62) return 1; // fully up
-    if (t < 0.82) return 1 - (t - 0.62) / 0.2; // retracting
-    return 0; // hidden in the pipe
-}
-// Items (coins, power-ups) use near-square 128×128 frames, but the art carries
-// generous transparent padding (~50–62% fill), so the DRAWN cell must be larger
-// than the visible item for it to read ~0.85 tile vs the 1-tile ?-blocks. The
-// centre pivot keeps the visible shape centred on the (tighter) collision box.
-/** Floating-coin draw size (cell; coin art fills ~60%). */
-const COIN_DRAW = TILE * 1.4;
-/** Coin collection radius box (half-extent). */
-const COIN_PICK_HALF = TILE * 0.42;
-/** Per-kind pickup DRAW size (square cell), tuned per art fill so each reads ~0.85 tile. */
-const PICKUP_DRAW: Record<PickupState["kind"], number> = {
-    "coin-pop": TILE * 1.4,
-    mushroom: TILE * 1.5,
-    star: TILE * 1.75,
-    "fire-flower": TILE * 1.1,
-};
-/**
- * For grounded pickups (mushroom, star, fire-flower) the sprite is drawn much larger
- * than its collision box, so we anchor it by the FEET instead of centring it — otherwise
- * the oversized centred sprite sinks below the box and clips into the block it emerges
- * from. Value = `0.5 − padBottom` of the frame (measured alpha bounds): the mushroom
- * art is flush with its frame bottom (padBottom≈0 → 0.5); the star is centred in its
- * frame (padBottom≈0.27 → ≈0.23); the fire flower has a short stem (padBottom≈0.1 → 0.4).
- */
-const PICKUP_FOOT: Partial<Record<PickupState["kind"], number>> = {
-    mushroom: 0.5,
-    star: 0.23,
-    "fire-flower": 0.4,
-};
-/** Seconds the fire flower takes to rise out of its block (occluded reveal). */
-const FLOWER_EMERGE_DUR = 0.55;
-
-// Fireball projectiles (fire power-up). Travel along the ground, bounce, and pop
-// enemies on contact; drawn as additive glows.
-const FIREBALL_SPEED = 600;
-const FIREBALL_BOUNCE = 360;
-const FIREBALL_LIFE = 2.4;
-const FIREBALL_MAX = 2;
-const FIRE_COOLDOWN = 0.28;
-const FIREBALL_DRAW = TILE * 0.7;
-
-// "Juice": additive sparkle bursts + floating score popups on coin / stomp.
-/** Additive spark particle pool size + per-burst count. */
-const SPARK_MAX = 40;
-const SPARK_PER_BURST = 8;
-const SPARK_LIFE = 0.45;
-const SPARK_DRAW = TILE * 0.5;
-/** Score-popup pool: each popup lays out up to MAX_DIGITS floating digit sprites. */
-const POPUP_MAX = 6;
-const POPUP_DIGITS = 4;
-const POPUP_LIFE = 0.8;
-const POPUP_RISE = TILE * 1.4; // world px the popup floats up over its life
-const POPUP_DIGIT_DRAW = TILE * 0.62;
-/** Tint colours for sparkle bursts. */
-const SPARK_GOLD: readonly [number, number, number] = [1, 0.86, 0.4];
-const SPARK_WHITE: readonly [number, number, number] = [1, 1, 1];
-
-// Brick-break debris: four spinning chunks fly out when a big player smashes a brick.
-const DEBRIS_MAX = 16;
-const DEBRIS_LIFE = 1.1;
-const DEBRIS_DRAW = TILE * 0.42;
-
-/**
- * Player invincibility fragment: an animated rainbow palette-cycle + sparkle pulse,
- * mixed over the sprite by `fx.params.x` (0 = untouched sprite, 1 = full star dazzle).
- * At strength 0 it returns exactly the stock `atlas * tint * opacity`, so the same
- * layer renders the normal player when not invincible. WGSL contract per
- * `createSprite2DCustomShader`: `in.uv`/`in.tint`, `atlasTex`/`atlasSamp`, `fx.time`/
- * `fx.params`, and the layer UBO `L.opacityMul`.
- */
-const STAR_FRAGMENT = `
-let base = textureSample(atlasTex, atlasSamp, in.uv);
-let strength = fx.params.x;
-let phase = fx.time * 7.0 + in.uv.y * 6.0 - in.uv.x * 3.0;
-let rainbow = vec3<f32>(
-    0.55 + 0.45 * sin(phase),
-    0.55 + 0.45 * sin(phase + 2.0944),
-    0.55 + 0.45 * sin(phase + 4.1888)
-);
-let lum = dot(base.rgb, vec3<f32>(0.299, 0.587, 0.114));
-let starRgb = mix(vec3<f32>(lum), rainbow, 0.85) * (0.45 + 0.7 * lum);
-let pulse = 0.5 + 0.5 * sin(fx.time * 22.0);
-let rgb = mix(base.rgb, starRgb, strength) + rainbow * (pulse * 0.3 * strength);
-return vec4<f32>(rgb, base.a) * in.tint * L.opacityMul;
-`;
-
-/** One recorded player pose sampled by the star afterimage trail. */
-interface TrailPose {
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-    frame: number;
-    flip: boolean;
-}
-
-interface BlockState {
-    cx: number;
-    cy: number;
-    kind: BlockKind;
-    used: boolean;
-    broken: boolean;
-    slot: number;
-    /** Vertical bump offset (px) when hit from below; animates back to 0. */
-    bump: number;
-}
-
-interface EnemyState {
-    kind: "slime" | "snail" | "fly" | "piranha";
-    box: AABB;
-    vx: number;
-    vy: number;
-    dir: -1 | 1;
-    alive: boolean;
-    /** snail-only: stomped into a shell. */
-    shell: boolean;
-    /** shell sliding speed sign, or 0 if idle. */
-    shellDir: -1 | 0 | 1;
-    /** Seconds left of "just-kicked" immunity (a kicked shell passes through harmlessly). */
-    kickGrace: number;
-    dying: number; // >0 = death animation countdown
-    slot: number;
-    /** The layer this enemy's sprite lives on. Piranhas use a layer BEHIND the pipes so
-     *  they emerge from / retract into the pipe mouth; all others use the front enemy layer. */
-    layer: Sprite2DLayer;
-    animT: number;
-    /** fly: vertical bob centre (world px). piranha: pipe-mouth top Y (world px). */
-    homeY: number;
-    /** fly: sine phase. piranha: emerge/retract cycle phase (seconds). */
-    phase: number;
-}
-
-/** A kinematic moving platform that ping-pongs along one axis and carries the rider. */
-interface MovingPlatform {
-    box: AABB;
-    axis: "x" | "y";
-    /** Travel bounds along the axis (world px). */
-    min: number;
-    max: number;
-    /** Speed in world px/sec, and the current travel direction. */
-    speed: number;
-    dir: 1 | -1;
-    /** This frame's movement delta (used to carry the rider). */
-    dx: number;
-    dy: number;
-    /** Sprite slots, one per platform tile (left → right). */
-    slots: number[];
-}
-
-/** The castle boss: a big spider that paces, lobs projectiles, and takes 3 hits. */
-interface BossState {
-    active: boolean;
-    box: AABB;
-    hp: number;
-    dir: -1 | 1;
-    vy: number;
-    /** Counts down after a hit: invulnerable + flashing while > 0. */
-    hurt: number;
-    /** Death animation countdown (> 0 = dying), then defeated. */
-    dying: number;
-    /** Seconds until the next projectile lob. */
-    attackT: number;
-    animT: number;
-    slot: number;
-}
-
-/** A boss projectile: an arcing additive orb that hurts the player on contact. */
-interface BossProjectile {
-    box: AABB;
-    vx: number;
-    vy: number;
-    active: boolean;
-    slot: number;
-}
-
-interface PickupState {
-    kind: "coin-pop" | "mushroom" | "star" | "fire-flower";
-    box: AABB;
-    vx: number;
-    vy: number;
-    active: boolean;
-    /** coin-pop only: lifetime countdown. */
-    life: number;
-    slot: number;
-    /** The layer this pool entry's sprite lives on (atlas-specific). */
-    layer: Sprite2DLayer;
-    /** fire-flower only: seconds left of the box-emerge rise (0 = done / not emerging). */
-    emergeT: number;
-    /** fire-flower only: the box.y it settles at once fully emerged (sitting on the block). */
-    emergeEndY: number;
-    /** fire-flower only: its sprite slot on the behind-block emerge layer (-1 if unused). */
-    emergeSlot: number;
-}
-
-/** A fire-power projectile: bounces along the ground, pops enemies, drawn additive. */
-interface Fireball {
-    box: AABB;
-    vx: number;
-    vy: number;
-    life: number;
-    active: boolean;
-    slot: number;
-}
-
-/** An additive sparkle particle for coin/stomp bursts. */
-interface Spark {
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    life: number;
-    maxLife: number;
-    active: boolean;
-    slot: number;
-    color: readonly [number, number, number];
-}
-
-/** A floating score popup (e.g. "100") rendered from HUD digit sprites. */
-interface Popup {
-    x: number;
-    y: number;
-    life: number;
-    active: boolean;
-    /** Digit frame indices (left to right) for the value's text. */
-    digits: number[];
-    /** This popup's digit sprite slots on the digit layer (fixed run). */
-    slots: number[];
-}
-
-/** A spinning brick chunk thrown out when a brick is smashed. */
-interface Debris {
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    rot: number;
-    spin: number;
-    life: number;
-    active: boolean;
-    slot: number;
-}
-
-type Phase = "title" | "ready" | "playing" | "warping" | "dying" | "complete" | "won" | "gameover";
-
+import type {
+    BlockState,
+    BossProjectile,
+    BossState,
+    Debris,
+    EnemyState,
+    Fireball,
+    MovingPlatform,
+    Phase,
+    PickupState,
+    Popup,
+    Spark,
+    TrailPose,
+} from "./entities.js";
+import {
+    ASSET_BASE,
+    BOSS_H,
+    BOSS_HURT_TIME,
+    BOSS_MAX_HP,
+    BOSS_PROJ_DRAW,
+    BOSS_PROJ_MAX,
+    BOSS_PROJ_SPEED,
+    BOSS_SPEED,
+    BOSS_VIS_SCALE,
+    BOSS_W,
+    COIN_DRAW,
+    COIN_PICK_HALF,
+    DEBRIS_DRAW,
+    DEBRIS_LIFE,
+    DEBRIS_MAX,
+    ENEMY_VIS_SCALE,
+    FIRE_COOLDOWN,
+    FIREBALL_BOUNCE,
+    FIREBALL_DRAW,
+    FIREBALL_LIFE,
+    FIREBALL_MAX,
+    FIREBALL_SPEED,
+    FLOWER_EMERGE_DUR,
+    FLY_AMP,
+    FLY_FREQ,
+    FLY_SPEED,
+    PICKUP_DRAW,
+    PICKUP_FOOT,
+    PIRANHA_RISE,
+    piranhaEmerge,
+    PLAYER_VIS_BIG,
+    PLAYER_VIS_SMALL,
+    POPUP_DIGIT_DRAW,
+    POPUP_DIGITS,
+    POPUP_LIFE,
+    POPUP_MAX,
+    POPUP_RISE,
+    SKY,
+    SPARK_DRAW,
+    SPARK_GOLD,
+    SPARK_LIFE,
+    SPARK_MAX,
+    SPARK_PER_BURST,
+    SPARK_WHITE,
+    STAR_FRAGMENT,
+    START_TIME,
+    STAR_TRAIL,
+    STAR_TRAIL_GAP,
+} from "./constants.js";
 export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext): Promise<void> {
     const world: World = buildWorld();
     const allAreas = Object.values(world.areas);
@@ -363,7 +136,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     const parallax = await createParallax(engine, 0);
 
     // ── Portal textures (warp pipe, cave backdrop, iris-wipe quad) ────────────
-    const [pipeTex, caveTex, whiteTex, fireFlowerTex, fireballTex, sparkTex, glowTex] = await Promise.all([
+    const [pipeTex, backdropTex, whiteTex, fireFlowerTex, fireballTex, sparkTex, glowTex] = await Promise.all([
         loadTexture2D(engine, makePipeTextureDataUrl(), { invertY: false, addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", mipMaps: false, minFilter: "linear", magFilter: "linear" }),
         loadTexture2D(engine, "/platformer/backgrounds/bg_castle.png", { invertY: false, addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", mipMaps: false, minFilter: "linear", magFilter: "linear" }),
         loadTexture2D(engine, makeWhiteTextureDataUrl(), { invertY: false, mipMaps: false }),
@@ -373,7 +146,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         loadTexture2D(engine, makeGlowDataUrl(), { invertY: false, addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", mipMaps: false, minFilter: "linear", magFilter: "linear" }),
     ]);
     const pipeAtlas = createGridSpriteAtlas(pipeTex, { cellWidthPx: pipeTex.width, cellHeightPx: pipeTex.height });
-    const caveAtlas = createGridSpriteAtlas(caveTex, { cellWidthPx: caveTex.width, cellHeightPx: caveTex.height });
+    const backdropAtlas = createGridSpriteAtlas(backdropTex, { cellWidthPx: backdropTex.width, cellHeightPx: backdropTex.height });
     const whiteAtlas = createGridSpriteAtlas(whiteTex, { cellWidthPx: whiteTex.width, cellHeightPx: whiteTex.height });
     const sparkAtlas = createGridSpriteAtlas(sparkTex, { cellWidthPx: sparkTex.width, cellHeightPx: sparkTex.height });
     const fireFlowerAtlas = createGridSpriteAtlas(fireFlowerTex, { cellWidthPx: fireFlowerTex.width, cellHeightPx: fireFlowerTex.height });
@@ -382,12 +155,13 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
 
     // ── Gameplay layers (back → front) ────────────────────────────────────────
     // Frame indices are atlas-specific, so each sheet needs its own layer(s).
-    // Dark cave backdrop: full-screen panel shown only underground, behind terrain.
-    const caveBackLayer = createSprite2DLayer(caveAtlas, { capacity: 1, order: 4, pivot: [0, 0] });
+    // Full-screen backdrop image (bg_castle), shown only underground (cave + castle), behind terrain.
+    const backdropLayer = createSprite2DLayer(backdropAtlas, { capacity: 1, order: 4, pivot: [0, 0] });
     // Molten lava pools: procedural custom-shader quads (reuse the 1×1 white atlas),
-    // drawn just in front of the cave backdrop and behind the stone terrain + player.
+    // drawn ABOVE the lantern (order 17) so the molten pool stays EMISSIVE: it glows in the
+    // dark instead of being multiplied toward black by the lantern far from the player.
     const lavaShader = createSprite2DCustomShader({ fragment: LAVA_FRAGMENT });
-    const lavaLayer = createSprite2DLayer(whiteAtlas, { capacity: maxOf((a) => a.lava.length), order: 4.5, customShader: lavaShader, pivot: [0, 0] });
+    const lavaLayer = createSprite2DLayer(whiteAtlas, { capacity: maxOf((a) => a.lava.length), order: 17.2, customShader: lavaShader, pivot: [0, 0] });
     const terrainLayer = createSprite2DLayer(tiles.atlas, { capacity: maxOf((a) => a.terrain.length) + 4, order: 5, pivot: [0, 0] });
     // Player sprite while travelling through a pipe: a dedicated layer just BEHIND the
     // pipe (order 5.5 < pipeLayer's 6) so the player slides in/out occluded by the pipe.
@@ -441,7 +215,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     const irisLayer = createSprite2DLayer(whiteAtlas, { capacity: 1, order: 20, pivot: [0, 0], customShader: irisShader });
 
     const renderer = createSpriteRenderer(engine, {
-        layers: [...parallax.layers, caveBackLayer, lavaLayer, terrainLayer, pipeTravelLayer, piranhaLayer, pipeLayer, moverLayer, fireFlowerEmergeLayer, blockLayer, coinLayer, itemLayer, shroomLayer, fireFlowerLayer, enemyLayer, bossLayer, torchLayer, trailLayer, playerLayer, fireballLayer, bossProjLayer, sparkLayer, digitLayer, debrisLayer, lanternLayer, torchGlowLayer, irisLayer],
+        layers: [...parallax.layers, backdropLayer, lavaLayer, terrainLayer, pipeTravelLayer, piranhaLayer, pipeLayer, moverLayer, fireFlowerEmergeLayer, blockLayer, coinLayer, itemLayer, shroomLayer, fireFlowerLayer, enemyLayer, bossLayer, torchLayer, trailLayer, playerLayer, fireballLayer, bossProjLayer, sparkLayer, digitLayer, debrisLayer, lanternLayer, torchGlowLayer, irisLayer],
         clearValue: SKY,
     });
     registerSpriteRenderer(renderer);
@@ -458,8 +232,18 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         }
     });
 
+    // Pause (P): hold a static frame while playing; press again to resume.
+    let paused = false;
+    window.addEventListener("keydown", (e) => {
+        if ((e.key === "p" || e.key === "P") && !e.repeat && game.phase === "playing") {
+            paused = !paused;
+            hud.banner(paused ? "PAUSED" : null);
+            sfx.music.setPaused(paused);
+        }
+    });
+
     // Persistent single-slot overlays, reused across areas (repositioned/hidden).
-    const caveBackSlot = addSprite2DIndex(caveBackLayer, { positionPx: [0, 0], sizePx: [1, 1], visible: false });
+    const backdropSlot = addSprite2DIndex(backdropLayer, { positionPx: [0, 0], sizePx: [1, 1], visible: false });
     const lanternSlot = addSprite2DIndex(lanternLayer, { positionPx: [0, 0], sizePx: [1, 1], color: [1.77, 0, 0, 1], visible: false });
     const pipeTravelSlot = addSprite2DIndex(pipeTravelLayer, { positionPx: [0, 0], sizePx: [1, 1], visible: false });
     const irisSlot = addSprite2DIndex(irisLayer, { positionPx: [0, 0], sizePx: [1, 1], visible: false });
@@ -1010,6 +794,8 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         player.vx = 0;
         player.vy = 0;
         player.onGround = true;
+        // Background music follows the area: bright overworld theme, moody cave/castle theme.
+        sfx.music.play(level.theme === "overworld" ? "overworld" : "cave");
     };
 
     // Build the starting area now so the first frame has content.
@@ -1069,6 +855,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         game.timer = 1.8;
         player.vy = -760;
         sfx.die();
+        sfx.music.stop();
         updateSprite2DIndex(playerLayer, playerSlot, { frame: players.frameOf(PLAYER_FRAMES.hit) });
     };
 
@@ -1429,6 +1216,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             // End-of-area tally: convert remaining time into bonus points.
             const bonus = Math.floor(game.time) * 50;
             addScore(bonus);
+            sfx.music.stop();
             sfx.complete();
             hud.banner("STAGE CLEAR!", `TIME BONUS  ${bonus}  ·  TO THE CASTLE`);
         }
@@ -1592,6 +1380,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         game.phase = "won";
         game.timer = 6;
         addScore(5000 + Math.floor(game.time) * 50);
+        sfx.music.stop();
         sfx.complete();
         burstSparks(player.box.x + player.box.w / 2, player.box.y, SPARK_GOLD, 16);
         hud.banner("YOU WIN!", "CASTLE CLEARED — thanks for playing!");
@@ -1794,7 +1583,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         parallax.update(cam.x, game.flagAnimT, cw, ch);
 
         // Cave backdrop: full-screen dark panel, shown only while underground.
-        updateSprite2DIndex(caveBackLayer, caveBackSlot, inCave ? { positionPx: [0, 0], sizePx: [cw, ch], visible: true } : { visible: false });
+        updateSprite2DIndex(backdropLayer, backdropSlot, inCave ? { positionPx: [0, 0], sizePx: [cw, ch], visible: true } : { visible: false });
 
         // Molten lava pools (world-space; only the cave has them, shown while underground).
         for (let i = 0; i < lavaSlots.length; i++) {
@@ -2230,6 +2019,14 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     const tick = (now: number): void => {
         const dt = Math.min(1 / 30, (now - last) / 1000);
         last = now;
+        // Paused: keep presenting the last frame (no sim / animation advance) until resumed.
+        if (paused && game.phase === "playing") {
+            project();
+            crt.sync(canvas.width, canvas.height);
+            input.endFrame();
+            requestAnimationFrame(tick);
+            return;
+        }
         game.flagAnimT += dt;
         player.animT += dt;
 

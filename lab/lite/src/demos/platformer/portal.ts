@@ -55,29 +55,6 @@ export function makePipeTextureDataUrl(size = 128): string {
     return ctx.canvas.toDataURL("image/png");
 }
 
-/**
- * Dark cave backdrop — a soft vignette gradient (lighter centre, near-black edges)
- * with faint speckle, drawn full-screen behind the cave's stone tiles. Stretched to
- * the canvas, so a single small texture suffices.
- */
-export function makeCaveBackdropDataUrl(w = 160, h = 96): string {
-    const ctx = makeCtx(w, h);
-    const g = ctx.createRadialGradient(w / 2, h * 0.42, h * 0.1, w / 2, h * 0.5, h * 0.95);
-    g.addColorStop(0, "#2a2336");
-    g.addColorStop(0.6, "#171320");
-    g.addColorStop(1, "#0a0810");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
-    // Faint speckle for a rocky feel.
-    ctx.fillStyle = "rgba(120,110,140,0.06)";
-    for (let i = 0; i < 90; i++) {
-        const x = (i * 73) % w;
-        const y = (i * 137) % h;
-        ctx.fillRect(x, y, 1, 1);
-    }
-    return ctx.canvas.toDataURL("image/png");
-}
-
 /** Tiny solid-white texture (the iris custom shader ignores the sampled colour). */
 export function makeWhiteTextureDataUrl(size = 8): string {
     const ctx = makeCtx(size, size);
