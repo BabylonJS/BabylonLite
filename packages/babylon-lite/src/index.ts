@@ -47,6 +47,8 @@ export type { ShadowTask } from "./frame-graph/shadow-task.js";
 export type { RenderTarget, RenderTargetDescriptor } from "./engine/render-target.js";
 export { createRenderTarget } from "./engine/render-target.js";
 export { createRenderTargetTexture } from "./texture/rtt.js";
+export { enableSceneTransmission, enableRenderTaskTransmission } from "./frame-graph/transmission.js";
+export type { TransmissionOptions, SceneColorGrab } from "./frame-graph/transmission.js";
 
 // ─── Fullscreen Effects ─────────────────────────────────────────────
 export { createEffectWrapper, setEffectUniforms, setEffectTexture, createEffectRenderTask, disposeEffectWrapper } from "./effect/effect-renderer.js";
