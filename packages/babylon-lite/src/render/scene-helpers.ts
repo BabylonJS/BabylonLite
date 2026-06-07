@@ -3,6 +3,7 @@
  *  Centralises patterns that PBR and Standard pipelines previously duplicated:
  *  scene BGL creation, mesh world-matrix updates, and pipeline descriptors. */
 
+import { SS } from "../engine/gpu-flags.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { Mesh } from "../mesh/mesh.js";
 import { REVERSE_DEPTH_COMPARE } from "../engine/render-target.js";
@@ -24,8 +25,8 @@ export function getSceneBindGroupLayout(engine: EngineContext): GPUBindGroupLayo
     _cachedSceneBGL = device.createBindGroupLayout({
         label: "scene",
         entries: [
-            { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
-            { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
+            { binding: 0, visibility: SS.VERTEX | SS.FRAGMENT, buffer: { type: "uniform" } },
+            { binding: 1, visibility: SS.FRAGMENT, buffer: { type: "uniform" } },
         ],
     });
     return _cachedSceneBGL;

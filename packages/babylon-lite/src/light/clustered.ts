@@ -1,3 +1,5 @@
+import { F32, U32 } from "../engine/typed-arrays.js";
+import { TU, SS } from "../engine/gpu-flags.js";
 import { getProjectionMatrix, getViewMatrix, type Camera } from "../camera/camera.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { SceneContext } from "../scene/scene.js";
@@ -102,10 +104,10 @@ const clusteredPbrExt: PbrExt = {
         return {
             _id: "clustered-lights",
             _bindings: [
-                { _name: "clusteredLightParams", _type: { _kind: "uniform-buffer" }, _visibility: GPUShaderStage.FRAGMENT },
-                { _name: "clusteredLights", _type: { _kind: "texture", _textureType: "texture_2d<f32>", _sampleType: "unfilterable-float" }, _visibility: GPUShaderStage.FRAGMENT },
-                { _name: "clusteredCells", _type: { _kind: "texture", _textureType: "texture_2d<u32>" }, _visibility: GPUShaderStage.FRAGMENT },
-                { _name: "clusteredIndices", _type: { _kind: "texture", _textureType: "texture_2d<u32>" }, _visibility: GPUShaderStage.FRAGMENT },
+                { _name: "clusteredLightParams", _type: { _kind: "uniform-buffer" }, _visibility: SS.FRAGMENT },
+                { _name: "clusteredLights", _type: { _kind: "texture", _textureType: "texture_2d<f32>", _sampleType: "unfilterable-float" }, _visibility: SS.FRAGMENT },
+                { _name: "clusteredCells", _type: { _kind: "texture", _textureType: "texture_2d<u32>" }, _visibility: SS.FRAGMENT },
+                { _name: "clusteredIndices", _type: { _kind: "texture", _textureType: "texture_2d<u32>" }, _visibility: SS.FRAGMENT },
             ],
             _helperFunctions: CLUSTERED_LIGHT_STRUCTS,
             _fragmentSlots: { AD: CLUSTERED_LIGHT_BLOCK, BL: CLUSTERED_LIGHT_BLOCK },
@@ -137,13 +139,13 @@ export function buildClusteredLightGpuState(engine: EngineContext, scene: SceneC
     const dataTextureWidth = Math.max(1, Math.min(MAX_DATA_TEXTURE_WIDTH, engine._device.limits.maxTextureDimension2D));
     const batchCount = Math.max(1, Math.ceil(container.pointLights.length / CLUSTER_BATCH_SIZE));
     const lightTexels = Math.max(1, container.pointLights.length * 2);
-    const lightData = new Float32Array(textureElementCount(lightTexels, 4, dataTextureWidth));
-    const sliceData = new Uint32Array(textureElementCount(zSlices, 4, dataTextureWidth));
+    const lightData = new F32(textureElementCount(lightTexels, 4, dataTextureWidth));
+    const sliceData = new U32(textureElementCount(zSlices, 4, dataTextureWidth));
     const maskTexels = Math.max(1, tileCountX * tileCountY * batchCount);
-    const maskData = new Uint32Array(textureElementCount(maskTexels, 1, dataTextureWidth));
+    const maskData = new U32(textureElementCount(maskTexels, 1, dataTextureWidth));
     const params = new ArrayBuffer(32);
-    const paramsU = new Uint32Array(params);
-    const paramsF = new Float32Array(params);
+    const paramsU = new U32(params);
+    const paramsF = new F32(params);
     paramsU[0] = tileCountX;
     paramsU[1] = tileCountY;
     paramsU[2] = zSlices;
@@ -260,7 +262,7 @@ function createDataTexture(
         label,
         size: { width: dataTextureWidth, height },
         format,
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        usage: TU.TEXTURE_BINDING | TU.COPY_DST,
     });
     writeDataTexture(engine, texture, data, components, texels, dataTextureWidth);
     return texture;

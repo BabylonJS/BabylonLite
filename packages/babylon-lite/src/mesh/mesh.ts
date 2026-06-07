@@ -1,6 +1,7 @@
 /** High-level Mesh — position/rotation/scaling + material + GPU geometry.
  *  Plain data (no scene reference). The scene collects meshes via addToScene(). */
 
+import { BU } from "../engine/gpu-flags.js";
 import type { EngineContext } from "../engine/engine.js";
 import { createMappedBuffer } from "../resource/gpu-buffers.js";
 import { mat4Compose } from "../math/mat4-compose.js";
@@ -181,18 +182,18 @@ export function uploadMeshToGPU(
     colors?: Float32Array
 ): MeshGPU {
     const device = engine._device;
-    const positionBuffer = createMappedBuffer(engine, positions, GPUBufferUsage.VERTEX);
-    const normalBuffer = createMappedBuffer(engine, normals, GPUBufferUsage.VERTEX);
-    const indexBuffer = createMappedBuffer(engine, indices, GPUBufferUsage.INDEX);
+    const positionBuffer = createMappedBuffer(engine, positions, BU.VERTEX);
+    const normalBuffer = createMappedBuffer(engine, normals, BU.VERTEX);
+    const indexBuffer = createMappedBuffer(engine, indices, BU.INDEX);
 
     // UVs: use provided or create zero-filled buffer
     let uvBuffer: GPUBuffer;
     if (uvs && uvs.length > 0) {
-        uvBuffer = createMappedBuffer(engine, uvs, GPUBufferUsage.VERTEX);
+        uvBuffer = createMappedBuffer(engine, uvs, BU.VERTEX);
     } else {
         uvBuffer = device.createBuffer({
             size: (positions.length / 3) * 8,
-            usage: GPUBufferUsage.VERTEX,
+            usage: BU.VERTEX,
             mappedAtCreation: true,
         });
         uvBuffer.unmap();
@@ -201,11 +202,11 @@ export function uploadMeshToGPU(
     // UV2: only create if provided
     let uv2Buffer: GPUBuffer | null = null;
     if (uvs2 && uvs2.length > 0) {
-        uv2Buffer = createMappedBuffer(engine, uvs2, GPUBufferUsage.VERTEX);
+        uv2Buffer = createMappedBuffer(engine, uvs2, BU.VERTEX);
     }
 
-    const tangentBuffer = tangents && tangents.length > 0 ? createMappedBuffer(engine, tangents, GPUBufferUsage.VERTEX) : null;
-    const colorBuffer = colors && colors.length > 0 ? createMappedBuffer(engine, colors, GPUBufferUsage.VERTEX) : null;
+    const tangentBuffer = tangents && tangents.length > 0 ? createMappedBuffer(engine, tangents, BU.VERTEX) : null;
+    const colorBuffer = colors && colors.length > 0 ? createMappedBuffer(engine, colors, BU.VERTEX) : null;
 
     return {
         positionBuffer,

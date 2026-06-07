@@ -34,6 +34,7 @@
  * were an ordinary single-attachment render target.
  */
 
+import { F32 } from "../engine/typed-arrays.js";
 import type { Camera } from "../camera/camera.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { RenderTarget, RenderTargetDescriptor, RenderTargetSignature } from "../engine/render-target.js";
@@ -289,7 +290,7 @@ export function createGeometryRendererTask(config: GeometryRendererTaskConfig, e
     });
 
     const paramsUBO = needsParams ? createEmptyUniformBuffer(eng, 80) : null;
-    const paramsData = needsParams ? new Float32Array(20) : null;
+    const paramsData = needsParams ? new F32(20) : null;
 
     // Pass color attachments: one per geometry MRT slot + optional trailing
     // target-texture slot (populated each record() from the live RT view).
@@ -359,11 +360,11 @@ export function createGeometryRendererTask(config: GeometryRendererTaskConfig, e
         _ownedDepthWrapper: ownedDepthWrapper,
         _sceneUBO: sceneUBO,
         _sceneBG: sceneBG,
-        _sceneData: new Float32Array(SCENE_UBO_BYTES / 4),
+        _sceneData: new F32(SCENE_UBO_BYTES / 4),
         _paramsUBO: paramsUBO,
         _paramsData: paramsData,
-        _previousViewProjection: new Float32Array(16),
-        _viewProjectionScratch: new Float32Array(16),
+        _previousViewProjection: new F32(16),
+        _viewProjectionScratch: new F32(16),
         _renderPassDescriptor: renderPassDescriptor,
         _colorAttachments: colorAttachments,
         _depthAttachment: null,
@@ -478,7 +479,7 @@ function recordTask(task: GeometryRendererTaskInternal, config: GeometryRenderer
         const binding = renderable.bind(eng, task._signature as unknown as RenderTargetSignature);
         task._bound.push({ _mesh: mesh, _binding: binding, _view: view });
         if (task._needsVelocity) {
-            task._previousWorlds.set(mesh, new Float32Array(mesh.worldMatrix));
+            task._previousWorlds.set(mesh, new F32(mesh.worldMatrix));
         }
     }
 

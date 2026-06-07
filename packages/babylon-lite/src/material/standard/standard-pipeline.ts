@@ -10,6 +10,7 @@
  *  Pipelines are cached per (features, format, msaaSamples) tuple.
  *  Shared scene UBO layout is identical across all variants (176 bytes). */
 
+import { F32 } from "../../engine/typed-arrays.js";
 import type { EngineContext } from "../../engine/engine.js";
 import type { RenderTargetSignature } from "../../engine/render-target.js";
 import type { StandardMaterialProps } from "./standard-material.js";
@@ -244,7 +245,7 @@ export function createStandardMeshBindGroup(
 
     // UV params UBO (only when UVs are actually emitted).
     if (needsUV) {
-        const uvData = new Float32Array(4);
+        const uvData = new F32(4);
         const scaleX = material.uvScale[0];
         let scaleY = material.uvScale[1];
         let offsetY = 0;

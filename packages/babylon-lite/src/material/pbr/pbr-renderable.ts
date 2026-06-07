@@ -5,6 +5,7 @@
  *  work to `buildSinglePbrRenderable`. Both initial build and material-swap
  *  rebuilds go through the same single-mesh function. */
 
+import { F32 } from "../../engine/typed-arrays.js";
 import type { EngineContext } from "../../engine/engine.js";
 import type { SceneContext } from "../../scene/scene.js";
 import type { Mesh } from "../../mesh/mesh.js";
@@ -292,7 +293,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         const bindings = getOrCreatePbrBindings(engine, features, features2, meshFeatures, sceneFeatures, composed, `${lightMode}:${singleLightType}${vbKey}`);
 
         // Mesh UBO (world matrix at offset 0; spec.totalBytes covers any extra fields).
-        const meshUboData = new Float32Array(composed._meshUboSpec._totalBytes / 4);
+        const meshUboData = new F32(composed._meshUboSpec._totalBytes / 4);
         const _packMeshWorld = engine._makePackMeshWorld?.(s as SceneContext) ?? packMat4IntoF32;
         _packMeshWorld(meshUboData, mesh.worldMatrix, 0, 0);
         writeMeshLightSelection(mesh, s.lights, meshUboData);
@@ -300,7 +301,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
 
         // Material UBO.
         const materialSpec = composed._materialUboSpec!;
-        const matInitData = new Float32Array(materialSpec._totalBytes / 4);
+        const matInitData = new F32(materialSpec._totalBytes / 4);
         _writeMaterialData(matInitData, mat, materialSpec);
         const materialUBO = createUniformBuffer(engine, matInitData);
 
@@ -374,7 +375,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
                 _lastUboVersion = uboVersion;
                 let data = materialScratch.get(materialSpec._totalBytes);
                 if (!data) {
-                    data = new Float32Array(materialSpec._totalBytes / 4);
+                    data = new F32(materialSpec._totalBytes / 4);
                     materialScratch.set(materialSpec._totalBytes, data);
                 } else {
                     data.fill(0);

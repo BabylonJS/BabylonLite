@@ -1,3 +1,5 @@
+import { U8 } from "../engine/typed-arrays.js";
+import { BU, SS } from "../engine/gpu-flags.js";
 import { registerRenderingContext, unregisterRenderingContext } from "../engine/engine.js";
 import type { EngineContext, RenderingContext } from "../engine/engine.js";
 import type { RenderTarget, RenderTargetSignature } from "../engine/render-target.js";
@@ -398,7 +400,7 @@ function createBindingSlots(wrapper: EffectWrapperInternal): void {
             const buffer = wrapper._engine._device.createBuffer({
                 label: `${wrapper.name}-${layout.name ?? layout.binding}-ubo`,
                 size: byteLength,
-                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+                usage: BU.UNIFORM | BU.COPY_DST,
             });
             wrapper._uniforms.push({ layout, buffer, byteLength });
         } else if (layout.kind === "texture") {
@@ -487,7 +489,7 @@ function getBindGroupLayout(wrapper: EffectWrapperInternal): GPUBindGroupLayout 
 }
 
 function bindingLayoutEntry(layout: EffectBindingLayout): GPUBindGroupLayoutEntry {
-    const visibility = layout.visibility ?? GPUShaderStage.FRAGMENT;
+    const visibility = layout.visibility ?? SS.FRAGMENT;
     if (layout.kind === "uniform") {
         return { binding: layout.binding, visibility, buffer: { type: "uniform" } };
     }
@@ -570,9 +572,9 @@ function writeUniformSlot(wrapper: EffectWrapperInternal, slot: EffectUniformSlo
 
 function toBytes(data: ArrayBuffer | ArrayBufferView): Uint8Array {
     if (data instanceof ArrayBuffer) {
-        return new Uint8Array(data);
+        return new U8(data);
     }
-    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    return new U8(data.buffer, data.byteOffset, data.byteLength);
 }
 
 function isBufferData(data: ArrayBuffer | ArrayBufferView | Record<string | number, ArrayBuffer | ArrayBufferView>): data is ArrayBuffer | ArrayBufferView {

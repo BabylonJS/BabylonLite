@@ -4,6 +4,7 @@
  * - Image extraction (embedded or external)
  * - Node hierarchy traversal with memoized world-matrix computation
  */
+import { F32, U32, U16, U8 } from "../engine/typed-arrays.js";
 import type { Mat4 } from "../math/types.js";
 import { mat4ComposeInto } from "../math/mat4-compose-into.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
@@ -50,13 +51,13 @@ export function resolveAccessor(json: any, binChunk: DataView, accessorIdx: numb
 
     switch (accessor.componentType) {
         case FLOAT:
-            return { _data: new Float32Array(ab, baseOffset, count * componentCount), _count: count, _componentCount: componentCount };
+            return { _data: new F32(ab, baseOffset, count * componentCount), _count: count, _componentCount: componentCount };
         case UNSIGNED_SHORT:
-            return { _data: new Uint16Array(ab, baseOffset, count * componentCount), _count: count, _componentCount: componentCount };
+            return { _data: new U16(ab, baseOffset, count * componentCount), _count: count, _componentCount: componentCount };
         case UNSIGNED_INT:
-            return { _data: new Uint32Array(ab, baseOffset, count * componentCount), _count: count, _componentCount: componentCount };
+            return { _data: new U32(ab, baseOffset, count * componentCount), _count: count, _componentCount: componentCount };
         case UNSIGNED_BYTE:
-            return { _data: new Uint8Array(ab, baseOffset, count * componentCount), _count: count, _componentCount: componentCount };
+            return { _data: new U8(ab, baseOffset, count * componentCount), _count: count, _componentCount: componentCount };
         default:
             throw new Error(`Unsupported component type: ${accessor.componentType}`);
     }
@@ -133,7 +134,7 @@ export async function resolveImage(json: any, binChunk: DataView, imageIdx: numb
 
 // Babylon.js RH→LH root: rotation [0,1,0,0] + scale [1,1,-1] = diag(-1,1,1,1)
 // prettier-ignore
-const RH_TO_LH_ROOT = new Float32Array([-1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1]) as unknown as Mat4;
+const RH_TO_LH_ROOT = new F32([-1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1]) as unknown as Mat4;
 
 /** Build a parent index map by scanning node.children arrays once. O(n). */
 export function buildParentMap(json: any): Map<number, number> {
@@ -180,7 +181,7 @@ export function computeNodeWorldMatrix(json: any, nodeIdx: number, parentMap: Ma
     let localBuf: import("../math/types.js").Mat4Storage;
     if (node.matrix) {
         // Pre-built matrix — copy into a fresh Float32Array (cannot alias scratch safely across calls).
-        localBuf = new Float32Array(node.matrix);
+        localBuf = new F32(node.matrix);
     } else {
         const t = node.translation ?? [0, 0, 0];
         const r = node.rotation ?? [0, 0, 0, 1];
@@ -198,7 +199,7 @@ export function computeNodeWorldMatrix(json: any, nodeIdx: number, parentMap: Ma
     // mesh runtime world-matrix caches are separately allocated via
     // `allocateMat4()` in `initMeshTransform` and pick up whatever precision
     // the process-global allocator was set to.
-    const world = new Float32Array(16) as unknown as Mat4;
+    const world = new F32(16) as unknown as Mat4;
     mat4MultiplyInto(world as unknown as Mat4Storage, 0, parentWorld as unknown as Mat4Storage, 0, localBuf, 0);
 
     cache.set(nodeIdx, world);

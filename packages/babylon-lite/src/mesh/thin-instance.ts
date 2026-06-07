@@ -3,6 +3,7 @@
  *  per-instance color (4 floats). The render system creates and syncs
  *  GPU buffers automatically via version tracking. */
 
+import { F32 } from "../engine/typed-arrays.js";
 import type { Mat4 } from "../math/types.js";
 import type { Mesh } from "./mesh.js";
 
@@ -85,7 +86,7 @@ export function addThinInstance(mesh: Mesh, matrix: Mat4): number {
     const ti = mesh.thinInstances;
     if (!ti) {
         const capacity = 16;
-        const matrices = new Float32Array(capacity * 16);
+        const matrices = new F32(capacity * 16);
         matrices.set(matrix, 0);
         mesh.thinInstances = {
             matrices,
@@ -109,7 +110,7 @@ export function addThinInstance(mesh: Mesh, matrix: Mat4): number {
     const index = ti.count;
     if (index >= ti._capacity) {
         const newCap = ti._capacity * 2;
-        const newData = new Float32Array(newCap * 16);
+        const newData = new F32(newCap * 16);
         newData.set(ti.matrices);
         ti.matrices = newData;
         ti._capacity = newCap;

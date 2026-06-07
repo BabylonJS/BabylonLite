@@ -1,3 +1,4 @@
+import { SS } from "../engine/gpu-flags.js";
 import type { EngineContext } from "../engine/engine.js";
 import { pickingShaderSource, pickingThinInstanceShaderSource } from "./picking-shader.js";
 import { createSingleUniformBGL } from "../shader/bgl-helpers.js";
@@ -29,7 +30,7 @@ function invalidateIfNeeded(engine: EngineContext): void {
 export function getPickingSceneBGL(engine: EngineContext): GPUBindGroupLayout {
     invalidateIfNeeded(engine);
     if (!_sceneBGL) {
-        _sceneBGL = createSingleUniformBGL(engine, "picking-scene-bgl", GPUShaderStage.VERTEX);
+        _sceneBGL = createSingleUniformBGL(engine, "picking-scene-bgl", SS.VERTEX);
     }
     return _sceneBGL;
 }
@@ -38,7 +39,7 @@ export function getPickingSceneBGL(engine: EngineContext): GPUBindGroupLayout {
 export function getPickingMeshBGL(engine: EngineContext): GPUBindGroupLayout {
     invalidateIfNeeded(engine);
     if (!_meshBGL) {
-        _meshBGL = createSingleUniformBGL(engine, "picking-mesh-bgl", GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT);
+        _meshBGL = createSingleUniformBGL(engine, "picking-mesh-bgl", SS.VERTEX | SS.FRAGMENT);
     }
     return _meshBGL;
 }
@@ -53,12 +54,12 @@ export function getPickingTIMeshBGL(engine: EngineContext): GPUBindGroupLayout {
             entries: [
                 {
                     binding: 0,
-                    visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                    visibility: SS.VERTEX | SS.FRAGMENT,
                     buffer: { type: "uniform" },
                 },
                 {
                     binding: 1,
-                    visibility: GPUShaderStage.VERTEX,
+                    visibility: SS.VERTEX,
                     buffer: { type: "read-only-storage" },
                 },
             ],

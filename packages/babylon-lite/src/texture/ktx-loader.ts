@@ -8,6 +8,8 @@
  * Fully tree-shakable: only bundled when explicitly imported.
  */
 
+import { U8, DV } from "../engine/typed-arrays.js";
+import { TU } from "../engine/gpu-flags.js";
 import { acquireTexture, getOrCreateSampler } from "../resource/gpu-pool.js";
 import type { EngineContext } from "../engine/engine.js";
 import { loadTexture2D } from "./texture-2d.js";
@@ -17,7 +19,7 @@ import type { CompressedFormatInfo } from "./compressed-formats.js";
 
 // ── KTX1 magic number ───────────────────────────────────────────────
 
-const KTX_MAGIC = new Uint8Array([0xab, 0x4b, 0x54, 0x58, 0x20, 0x31, 0x31, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
+const KTX_MAGIC = new U8([0xab, 0x4b, 0x54, 0x58, 0x20, 0x31, 0x31, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 // ── Internal types ──────────────────────────────────────────────────
 
@@ -37,7 +39,7 @@ interface KtxParseResult {
 // ── KTX1 parser ─────────────────────────────────────────────────────
 
 function parseKtx1(buffer: ArrayBuffer): KtxParseResult {
-    const bytes = new Uint8Array(buffer);
+    const bytes = new U8(buffer);
     if (buffer.byteLength < 64) {
         throw new Error("KTX: file too small");
     }
@@ -49,7 +51,7 @@ function parseKtx1(buffer: ArrayBuffer): KtxParseResult {
         }
     }
 
-    const view = new DataView(buffer);
+    const view = new DV(buffer);
 
     // Endianness check
     if (view.getUint32(12, true) !== 0x04030201) {
@@ -110,7 +112,7 @@ function parseKtx1(buffer: ArrayBuffer): KtxParseResult {
             throw new Error(`KTX: mip ${i} data overflows buffer`);
         }
 
-        mips.push({ data: new Uint8Array(buffer as ArrayBuffer, offset, imageSize), width: mipW, height: mipH });
+        mips.push({ data: new U8(buffer as ArrayBuffer, offset, imageSize), width: mipW, height: mipH });
         offset += imageSize;
         // Align to 4 bytes
         offset = (offset + 3) & ~3;
@@ -135,7 +137,7 @@ function uploadCompressed(engine: EngineContext, parsed: KtxParseResult, opts: T
         size: { width: parsed.width, height: parsed.height },
         format: fmt.gpuFormat,
         mipLevelCount: parsed.mips.length,
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        usage: TU.TEXTURE_BINDING | TU.COPY_DST,
     });
 
     for (let i = 0; i < parsed.mips.length; i++) {

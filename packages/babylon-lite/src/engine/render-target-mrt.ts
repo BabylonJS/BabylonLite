@@ -23,6 +23,7 @@
  * single-attachment API.
  */
 
+import { TU } from "./gpu-flags.js";
 import type { EngineContext } from "./engine.js";
 
 /** Description of a multi-render-target — what to create, not the GPU objects themselves. */
@@ -98,7 +99,7 @@ export function buildRenderTargetMrt(rt: RenderTargetMrt, engine: EngineContext)
             size,
             format: fmt,
             sampleCount: samples,
-            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
+            usage: TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING | TU.COPY_SRC,
         });
         rt._colorTextures.push(colorTex);
         rt._colorViews.push(colorTex.createView());
@@ -109,7 +110,7 @@ export function buildRenderTargetMrt(rt: RenderTargetMrt, engine: EngineContext)
                 size,
                 format: fmt,
                 sampleCount: 1,
-                usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
+                usage: TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING | TU.COPY_SRC,
             });
             rt._resolveColorTextures.push(resolveTex);
             rt._resolveColorViews.push(resolveTex.createView());
@@ -122,7 +123,7 @@ export function buildRenderTargetMrt(rt: RenderTargetMrt, engine: EngineContext)
             size,
             format: desc.depthStencilFormat,
             sampleCount: samples,
-            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+            usage: TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING,
         });
         rt._depthView = rt._depthTexture.createView();
     }

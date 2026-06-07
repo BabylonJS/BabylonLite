@@ -13,6 +13,8 @@
  *     current command encoder and swapchain view. Off-screen / HUD-to-texture
  *     rendering is deferred until there is a concrete caller.
  */
+import { F32 } from "../engine/typed-arrays.js";
+import { BU } from "../engine/gpu-flags.js";
 import { getRenderTargetSize, registerRenderingContext, unregisterRenderingContext } from "../engine/engine.js";
 import type { EngineContext, RenderingContext } from "../engine/engine.js";
 import { createEmptyUniformBuffer, createMappedBuffer } from "../resource/gpu-buffers.js";
@@ -159,7 +161,7 @@ function ensureLayerGpu(rr: SpriteRenderer, layer: Sprite2DLayer): LayerGpu {
             uploadedVersion: -1,
             fx,
             pipeline: null,
-            lastUbo: new Float32Array(LAYER_UBO_BYTES / 4),
+            lastUbo: new F32(LAYER_UBO_BYTES / 4),
             uboUploaded: false,
             renderBundle: null,
             bundleCount: -1,
@@ -197,7 +199,7 @@ function disposeLayerGpu(lg: LayerGpu): void {
     }
 }
 
-const _scratchUbo = new Float32Array(LAYER_UBO_BYTES / 4);
+const _scratchUbo = new F32(LAYER_UBO_BYTES / 4);
 
 /**
  * Build (and cache) the bind group that attaches `lg.uniformBuffer` + atlas texture +
@@ -226,7 +228,7 @@ function compareLayers(a: Sprite2DLayer, b: Sprite2DLayer): number {
 /** Create a `SpriteRenderer` for `engine`, pre-warming pipelines for the layers' blend modes. */
 export function createSpriteRenderer(engine: EngineContext, opts: SpriteRendererOptions): SpriteRenderer {
     assertSpriteRendererLayers(opts.layers);
-    const indexBuffer = createMappedBuffer(engine, SHARED_SPRITE_INDEX_DATA, GPUBufferUsage.INDEX);
+    const indexBuffer = createMappedBuffer(engine, SHARED_SPRITE_INDEX_DATA, BU.INDEX);
     const targetSize = getRenderTargetSize(engine);
 
     const layers = opts.layers.slice();

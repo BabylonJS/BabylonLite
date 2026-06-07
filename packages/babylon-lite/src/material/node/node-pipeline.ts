@@ -12,6 +12,7 @@
  *  leaves block emitters free of cross-cutting knowledge about the pipeline.
  */
 
+import { SS } from "../../engine/gpu-flags.js";
 import type { EngineContext } from "../../engine/engine.js";
 import { REVERSE_DEPTH_COMPARE } from "../../engine/render-target.js";
 import { getSceneBindGroupLayout } from "../../render/scene-helpers.js";
@@ -393,23 +394,23 @@ struct lightsUniforms { count: u32, _p0: u32, _p1: u32, _p2: u32, lights: array<
     const sceneBGL = getSceneBindGroupLayout(_engine);
 
     // group 1 BGL
-    const meshBglEntries: GPUBindGroupLayoutEntry[] = [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }];
+    const meshBglEntries: GPUBindGroupLayoutEntry[] = [{ binding: 0, visibility: SS.VERTEX | SS.FRAGMENT, buffer: { type: "uniform" } }];
     if (_nodeUboBinding !== null) {
-        meshBglEntries.push({ binding: _nodeUboBinding, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } });
+        meshBglEntries.push({ binding: _nodeUboBinding, visibility: SS.VERTEX | SS.FRAGMENT, buffer: { type: "uniform" } });
     }
     for (const tb of _textureBindings) {
-        meshBglEntries.push({ binding: tb._texBinding, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, texture: { sampleType: "float", viewDimension: "2d" } });
-        meshBglEntries.push({ binding: tb._sampBinding, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } });
+        meshBglEntries.push({ binding: tb._texBinding, visibility: SS.VERTEX | SS.FRAGMENT, texture: { sampleType: "float", viewDimension: "2d" } });
+        meshBglEntries.push({ binding: tb._sampBinding, visibility: SS.VERTEX | SS.FRAGMENT, sampler: { type: "filtering" } });
     }
     if (_morphBindings !== null) {
         meshBglEntries.push({
             binding: _morphBindings._textureBinding,
-            visibility: GPUShaderStage.VERTEX,
+            visibility: SS.VERTEX,
             texture: { sampleType: "unfilterable-float", viewDimension: "2d" },
         });
         meshBglEntries.push({
             binding: _morphBindings._uboBinding,
-            visibility: GPUShaderStage.VERTEX,
+            visibility: SS.VERTEX,
             buffer: { type: "uniform", minBindingSize: 32 },
         });
     }
@@ -420,7 +421,7 @@ struct lightsUniforms { count: u32, _p0: u32, _p1: u32, _p2: u32, lights: array<
         meshBglEntries.push(...shadowEmit._bglEntries);
     }
     if (_esmShadowParamsBinding !== null) {
-        meshBglEntries.push({ binding: _esmShadowParamsBinding, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } });
+        meshBglEntries.push({ binding: _esmShadowParamsBinding, visibility: SS.FRAGMENT, buffer: { type: "uniform" } });
     }
     const _meshBGL = device.createBindGroupLayout({ label: "node-mesh", entries: meshBglEntries });
 

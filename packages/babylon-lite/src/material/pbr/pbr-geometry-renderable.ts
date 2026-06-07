@@ -17,6 +17,7 @@
  *  PBR scenes that don't use the geometry renderer task pay zero bytes for
  *  it. */
 
+import { F32 } from "../../engine/typed-arrays.js";
 import type { EngineContext } from "../../engine/engine.js";
 import type { RenderTargetSignature } from "../../engine/render-target.js";
 import type { Mesh } from "../../mesh/mesh.js";
@@ -108,7 +109,7 @@ export function buildPbrGeometryRenderable(scene: SceneContext, mesh: Mesh, view
     const composed = res._composed;
 
     // ── Mesh UBO ───────────────────────────────────────────────────────
-    const meshUboData = new Float32Array(composed._meshUboSpec._totalBytes / 4);
+    const meshUboData = new F32(composed._meshUboSpec._totalBytes / 4);
     const _packMeshWorld = engine._makePackMeshWorld?.(scene) ?? packMat4IntoF32;
     _packMeshWorld(meshUboData, mesh.worldMatrix, 0, 0);
     writeMeshLightSelection(mesh, scene.lights, meshUboData);
@@ -116,7 +117,7 @@ export function buildPbrGeometryRenderable(scene: SceneContext, mesh: Mesh, view
 
     // ── Material UBO ───────────────────────────────────────────────────
     const materialSpec = composed._materialUboSpec!;
-    const matInitData = new Float32Array(materialSpec._totalBytes / 4);
+    const matInitData = new F32(materialSpec._totalBytes / 4);
     // Use the per-scene writer captured on the geometry context.
     _writePbrMaterialData(matInitData, source, materialSpec);
     const materialUBO = createUniformBuffer(engine, matInitData);
@@ -182,7 +183,7 @@ export function buildPbrGeometryRenderable(scene: SceneContext, mesh: Mesh, view
     let _lastWorldVersion = mesh.worldMatrixVersion;
     let _lastLightsCount = scene.lights.length;
     let _lastUboVersion = source._uboVersion;
-    const matScratch = new Float32Array(materialSpec._totalBytes / 4);
+    const matScratch = new F32(materialSpec._totalBytes / 4);
 
     const _baseUpdate = (): void => {
         if (mesh.worldMatrixVersion !== _lastWorldVersion || scene.lights.length !== _lastLightsCount) {

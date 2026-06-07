@@ -1,3 +1,5 @@
+import { F32 } from "../engine/typed-arrays.js";
+import { BU, SS } from "../engine/gpu-flags.js";
 import type { NormalizedViewport } from "../camera/camera.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { RenderTarget, RenderTargetDescriptor, RenderTargetSignature } from "../engine/render-target.js";
@@ -251,15 +253,15 @@ function getBindGroupLayout(task: PostProcessTaskInternal, engine: EngineContext
         return task._bindGroupLayout;
     }
     const entries: GPUBindGroupLayoutEntry[] = [
-        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
+        { binding: 0, visibility: SS.FRAGMENT, sampler: { type: "filtering" } },
+        { binding: 1, visibility: SS.FRAGMENT, texture: { sampleType: "float" } },
     ];
     const extraTextures = task._shader.extraTextures ?? [];
     for (let i = 0; i < extraTextures.length; i++) {
-        entries.push({ binding: 2 + i, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } });
+        entries.push({ binding: 2 + i, visibility: SS.FRAGMENT, texture: { sampleType: "float" } });
     }
     if (hasUniform) {
-        entries.push({ binding: getUniformBinding(task), visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } });
+        entries.push({ binding: getUniformBinding(task), visibility: SS.VERTEX | SS.FRAGMENT, buffer: { type: "uniform" } });
     }
     task._bindGroupLayout = engine._device.createBindGroupLayout({ label: `${task.name}-bind-group-layout`, entries });
     return task._bindGroupLayout;
@@ -289,13 +291,13 @@ function createUniformBuffer(task: PostProcessTaskInternal, engine: EngineContex
     return engine._device.createBuffer({
         label: `${task.name}-uniforms`,
         size,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        usage: BU.UNIFORM | BU.COPY_DST,
     });
 }
 
 function createUniformData(task: PostProcessTaskInternal): Float32Array | null {
     const size = align16(task._shader.uniformByteLength ?? 0);
-    return size === 0 ? null : new Float32Array(size / 4);
+    return size === 0 ? null : new F32(size / 4);
 }
 
 function writePostProcessUniforms(task: PostProcessTaskInternal, engine: EngineContext): void {

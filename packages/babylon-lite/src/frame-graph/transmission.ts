@@ -1,3 +1,4 @@
+import { TU, SS } from "../engine/gpu-flags.js";
 import type { EngineContext } from "../engine/engine.js";
 import { _vis } from "../engine/engine.js";
 import { createRenderTarget } from "../engine/render-target.js";
@@ -204,7 +205,7 @@ function createRenderTaskTransmission(task: RenderTask, engine: EngineContext): 
         size: { width, height },
         format,
         mipLevelCount: generateMipmaps ? biasedMipLevelCount(width, height, REFRACTION_LOD_BIAS) : 1,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        usage: TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING | TU.COPY_DST,
     });
     const tex: Texture2D = {
         texture,
@@ -306,14 +307,14 @@ function getBlitPipeline(engine: EngineContext, format: GPUTextureFormat, multis
     if (multisampled) {
         blitMsaaShader ??= device.createShaderModule({ code: BLIT_MSAA_SHADER });
         blitMsaaBgl ??= device.createBindGroupLayout({
-            entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float", multisampled: true } }],
+            entries: [{ binding: 0, visibility: SS.FRAGMENT, texture: { sampleType: "unfilterable-float", multisampled: true } }],
         });
     } else {
         blitShader ??= device.createShaderModule({ code: BLIT_SHADER });
         blitBgl ??= device.createBindGroupLayout({
             entries: [
-                { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
-                { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+                { binding: 0, visibility: SS.FRAGMENT, texture: { sampleType: "float" } },
+                { binding: 1, visibility: SS.FRAGMENT, sampler: {} },
             ],
         });
     }

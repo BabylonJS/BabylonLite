@@ -28,6 +28,7 @@
  * swapchain in one frame (e.g., a 3D scene + a UI overlay scene).
  */
 
+import { F32 } from "../engine/typed-arrays.js";
 import type { EngineContext } from "../engine/engine.js";
 import { _vis } from "../engine/engine.js";
 import type { Mesh } from "../mesh/mesh.js";
@@ -217,7 +218,7 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
         _sceneUBO: sceneUBO,
         _sceneBG: sceneBG,
         _lightsUBO: lightsUBO,
-        _suData: new Float32Array(SCENE_UBO_BYTES / 4),
+        _suData: new F32(SCENE_UBO_BYTES / 4),
         _su: [],
         _targetSignature: targetSignature,
         _pendingMeshes: [],

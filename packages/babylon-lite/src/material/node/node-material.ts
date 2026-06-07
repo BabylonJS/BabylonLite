@@ -12,6 +12,7 @@
  *    → return NodeMaterial with `inputs` map + `_buildGroup` dispatcher.
  */
 
+import { F32 } from "../../engine/typed-arrays.js";
 import type { EngineContext } from "../../engine/engine.js";
 import type { Texture2D } from "../../texture/texture-2d.js";
 import type { MeshGroupBuilder, MeshGroupBuildResult } from "../../render/renderable.js";
@@ -193,7 +194,7 @@ export async function parseNodeMaterialFromSnippet(engine: EngineContext, snippe
         }
         const len = floatCount(_type);
         const defaultValues = extractDefault(block.serialized["value"], _type);
-        const _values = new Float32Array(len);
+        const _values = new F32(len);
         _values.set(defaultValues);
         const slot: UniformSlot = { _name, _type, _offsetBytes, _values };
         uniformValues.set(_name, slot);
@@ -241,7 +242,7 @@ export async function parseNodeMaterialFromSnippet(engine: EngineContext, snippe
         }
         const len = floatCount(_type);
         const defaultValues = extractDefault(block.serialized["value"], _type);
-        const _values = new Float32Array(len);
+        const _values = new F32(len);
         _values.set(defaultValues);
         uniformValues.set(_name, { _name, _type, _offsetBytes, _values });
     }
@@ -421,7 +422,7 @@ export function writeNodeUBO(engine: EngineContext, buffer: GPUBuffer, material:
     if (size === 0) {
         return;
     }
-    const scratch = new Float32Array(size / 4);
+    const scratch = new F32(size / 4);
     for (const slot of material._uniformValues.values()) {
         const dstIdx = slot._offsetBytes >> 2;
         scratch.set(slot._values, dstIdx);

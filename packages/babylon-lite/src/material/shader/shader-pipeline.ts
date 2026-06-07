@@ -1,3 +1,4 @@
+import { SS } from "../../engine/gpu-flags.js";
 import type { EngineContext } from "../../engine/engine.js";
 import type { RenderTargetSignature } from "../../engine/render-target.js";
 import { targetSignatureKey } from "../../engine/render-target.js";
@@ -25,7 +26,7 @@ interface ShaderMaterialPipelineState extends ShaderMaterial {
     _shaderCustomVersion?: number;
 }
 
-const SHADER_STAGE_ALL = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
+const SHADER_STAGE_ALL = SS.VERTEX | SS.FRAGMENT;
 
 export function getOrCreateShaderPipelineBindings(engine: EngineContext, material: ShaderMaterial): ShaderPipelineBindings {
     const state = material as ShaderMaterialPipelineState;

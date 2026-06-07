@@ -10,6 +10,7 @@
  * mipmaps — the common case for pixel-art / data textures. Override via options.
  */
 
+import { TU } from "../engine/gpu-flags.js";
 import type { Texture2D } from "./texture-2d.js";
 import type { EngineContext } from "../engine/engine.js";
 import { acquireTexture, getOrCreateSampler } from "../resource/gpu-pool.js";
@@ -53,7 +54,7 @@ export function createTexture2DFromPixels(engine: EngineContext, data: Uint8Arra
     const texture = device.createTexture({
         size: { width, height },
         format,
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        usage: TU.TEXTURE_BINDING | TU.COPY_DST,
     });
 
     device.queue.writeTexture({ texture }, data as Uint8Array<ArrayBuffer>, { bytesPerRow: width * 4, rowsPerImage: height }, { width, height });

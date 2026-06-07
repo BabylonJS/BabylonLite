@@ -1,3 +1,5 @@
+import { U8 } from "../engine/typed-arrays.js";
+import { BU, SS } from "../engine/gpu-flags.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { RenderTarget, RenderTargetSignature } from "../engine/render-target.js";
 import { buildRenderTarget, disposeRenderTarget, targetSignatureKey } from "../engine/render-target.js";
@@ -76,7 +78,7 @@ export function createUniformEffectWrapper(engine: EngineContext, options: Unifo
         _uniformBuffer: eng._device.createBuffer({
             label: `${options.name ?? "uniform-effect-wrapper"}-ubo`,
             size: byteLength,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            usage: BU.UNIFORM | BU.COPY_DST,
         }),
         _uniformByteLength: byteLength,
     } as UniformEffectWrapperInternal;
@@ -210,7 +212,7 @@ function getBindGroupLayout(wrapper: UniformEffectWrapperInternal): GPUBindGroup
     if (!wrapper._bindGroupLayout) {
         wrapper._bindGroupLayout = wrapper._engine._device.createBindGroupLayout({
             label: `${wrapper.name}-bgl`,
-            entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }],
+            entries: [{ binding: 0, visibility: SS.FRAGMENT, buffer: { type: "uniform" } }],
         });
     }
     return wrapper._bindGroupLayout;
@@ -229,9 +231,9 @@ function getUniformEffectBindGroup(wrapper: UniformEffectWrapperInternal): GPUBi
 
 function toBytes(data: ArrayBuffer | ArrayBufferView): Uint8Array {
     if (data instanceof ArrayBuffer) {
-        return new Uint8Array(data);
+        return new U8(data);
     }
-    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    return new U8(data.buffer, data.byteOffset, data.byteLength);
 }
 
 function align4(value: number): number {

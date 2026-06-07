@@ -10,6 +10,7 @@
  * view to be wired as a sampled texture before the frame graph is built.
  */
 
+import { TU } from "./gpu-flags.js";
 import type { EngineContext } from "./engine.js";
 import type { Texture2D } from "../texture/texture-2d.js";
 
@@ -115,7 +116,7 @@ export function buildRenderTarget(rt: RenderTarget, engine: EngineContext): void
             size: { width, height },
             format: desc.format!,
             sampleCount: desc.samples,
-            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
+            usage: TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING | TU.COPY_SRC,
         });
         rt._colorView = rt._colorTexture.createView();
     }
@@ -126,7 +127,7 @@ export function buildRenderTarget(rt: RenderTarget, engine: EngineContext): void
             size: { width, height },
             format: desc.dFormat,
             sampleCount: desc.samples,
-            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+            usage: TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING,
         });
         rt._depthView = rt._depthTexture.createView();
     }

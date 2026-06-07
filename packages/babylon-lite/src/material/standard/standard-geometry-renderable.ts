@@ -25,6 +25,7 @@
  *  — scenes that do not use the geometry renderer task pay zero bytes for it.
  */
 
+import { F32 } from "../../engine/typed-arrays.js";
 import type { EngineContext } from "../../engine/engine.js";
 import type { RenderTargetSignature } from "../../engine/render-target.js";
 import type { Mesh } from "../../mesh/mesh.js";
@@ -111,7 +112,7 @@ export function buildStandardGeometryRenderable(scene: SceneContext, mesh: Mesh,
     const features = res._features;
 
     // Per-mesh UBOs + bind group.
-    const meshUboData = new Float32Array(res._composed._meshUboSpec._totalBytes / 4);
+    const meshUboData = new F32(res._composed._meshUboSpec._totalBytes / 4);
     meshUboData.set(mesh.worldMatrix, 0);
     writeMeshLightSelection(mesh, scene.lights, meshUboData);
     const meshUBO = createUniformBuffer(engine, meshUboData);
@@ -278,7 +279,7 @@ function _ensureViewResources(view: StandardGeometryMaterialView, engine: Engine
 
     // Shared material UBO (one per source material per view). All meshes of
     // this material reuse the same UBO; updates are version-guarded.
-    const matData = new Float32Array(24);
+    const matData = new F32(24);
     const textureLevel = (features & HAS_DIFFUSE_TEXTURE) !== 0 ? 1.0 : 0.0;
     writeStdMaterialData(matData, source, textureLevel);
     const matUBO = createUniformBuffer(engine, matData);
@@ -286,7 +287,7 @@ function _ensureViewResources(view: StandardGeometryMaterialView, engine: Engine
     // UV transform UBO when the vertex stage emits UV math.
     let upUBO: GPUBuffer | null = null;
     if ((features & NEEDS_UV) !== 0) {
-        const uvData = new Float32Array(4);
+        const uvData = new F32(4);
         let scaleX = 1;
         let scaleY = 1;
         let offsetY = 0;
