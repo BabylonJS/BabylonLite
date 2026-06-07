@@ -11,33 +11,60 @@ const MAX_DATA_TEXTURE_WIDTH = 8192;
 const CLUSTER_BATCH_SIZE = 32;
 const EMPTY_SLICE_FIRST = 0xffffffff;
 
+/**
+ * A single point light stored inside a {@link ClusteredLightContainer}. Plain
+ * data — created via {@link createClusteredPointLight} and mutated in place.
+ */
 export interface ClusteredPointLight {
+    /** World-space position `[x, y, z]`. */
     position: [number, number, number];
+    /** Diffuse colour `[r, g, b]` in linear space. */
     diffuse: [number, number, number];
+    /** Falloff range in world units. */
     range: number;
+    /** Light intensity multiplier. */
     intensity: number;
 }
 
+/**
+ * Holds a large set of point lights that are binned into screen-space clusters
+ * on the GPU, so PBR materials can shade hundreds of lights efficiently. Add it
+ * to a scene with {@link addClusteredLightContainer}.
+ */
 export interface ClusteredLightContainer {
+    /** Discriminant tag identifying this object as a clustered light container. */
     readonly kind: "clusteredLightContainer";
+    /** The point lights managed by this container. */
     pointLights: ClusteredPointLight[];
+    /** Number of cluster tiles across the screen horizontally. */
     horizontalTiles: number;
+    /** Number of cluster tiles across the screen vertically. */
     verticalTiles: number;
+    /** Number of depth slices used to bin lights along view-space Z. */
     zSlices: number;
     /** @internal */
     _version: number;
 }
 
+/** Options for {@link createClusteredPointLight}. */
 export interface ClusteredPointLightOptions {
+    /** World-space position `[x, y, z]`. */
     position: [number, number, number];
+    /** Diffuse colour `[r, g, b]` in linear space. */
     diffuse: [number, number, number];
+    /** Falloff range in world units. Default `1`. */
     range?: number;
+    /** Light intensity multiplier. Default `1`. */
     intensity?: number;
 }
 
+/** Options for {@link createClusteredLightContainer}. */
 export interface ClusteredLightContainerOptions {
+    /** Number of cluster tiles across the screen horizontally. Default `64`. */
     horizontalTiles?: number;
+    /** Number of cluster tiles across the screen vertically. Default `64`. */
     verticalTiles?: number;
+    /** Number of depth slices used to bin lights along view-space Z. Default `16`. */
     zSlices?: number;
 }
 
@@ -50,6 +77,14 @@ export interface ClusteredLightGpuState {
     dispose(): void;
 }
 
+/**
+ * Create an empty {@link ClusteredLightContainer}. Add point lights with
+ * {@link createClusteredPointLight}, then register it on a scene via
+ * {@link addClusteredLightContainer}.
+ *
+ * @param options - Optional cluster tiling overrides.
+ * @returns A new, empty clustered light container.
+ */
 export function createClusteredLightContainer(options?: ClusteredLightContainerOptions): ClusteredLightContainer {
     return {
         kind: "clusteredLightContainer",
@@ -61,6 +96,14 @@ export function createClusteredLightContainer(options?: ClusteredLightContainerO
     };
 }
 
+/**
+ * Add a point light to a clustered light container.
+ *
+ * @param container - The container to add the light to.
+ * @param options - The light's position, colour and (optional) range/intensity.
+ * @returns The created light (also pushed onto `container.pointLights`); mutate
+ * it in place and call {@link markClusteredLightContainerDirty} to animate it.
+ */
 export function createClusteredPointLight(container: ClusteredLightContainer, options: ClusteredPointLightOptions): ClusteredPointLight {
     const light: ClusteredPointLight = {
         position: options.position,
@@ -73,6 +116,20 @@ export function createClusteredPointLight(container: ClusteredLightContainer, op
     return light;
 }
 
+/** Force the container's GPU light state to re-upload next frame. Call after mutating a light's
+ *  position / range / intensity / diffuse in place (e.g. animated lights such as drifting fireflies),
+ *  since those edits don't bump the container version on their own. */
+export function markClusteredLightContainerDirty(container: ClusteredLightContainer): void {
+    container._version++;
+}
+
+/**
+ * Register a clustered light container on a scene, building its GPU state and
+ * wiring it into the PBR materials already present in the scene.
+ *
+ * @param scene - The scene to attach the container to.
+ * @param container - The clustered light container to register.
+ */
 export function addClusteredLightContainer(scene: SceneContext, container: ClusteredLightContainer): void {
     const ctx = scene as SceneContext;
     ctx._clusteredLightContainer = container;
