@@ -37,7 +37,7 @@ export type { Pass, RenderPassExecuteFunc } from "./frame-graph/pass.js";
 export { addPassDependencies } from "./frame-graph/pass.js";
 export type { RenderPass } from "./frame-graph/render-pass.js";
 export type { RenderTask, RenderTaskConfig } from "./frame-graph/render-task.js";
-export { createRenderTask, removeMeshFromTask, setRenderTaskDepthOverride } from "./frame-graph/render-task.js";
+export { createRenderTask, removeMeshFromTask } from "./frame-graph/render-task.js";
 export { createImageProcessingTask } from "./frame-graph/image-processing-task.js";
 export type { ImageProcessingSource, ImageProcessingTaskConfig } from "./frame-graph/image-processing-task.js";
 export type { PostProcessTask, PostProcessTaskSettings, PostProcessAlphaMode, PostProcessSamplingMode } from "./frame-graph/post-process-task.js";
@@ -71,8 +71,12 @@ export { createExtractHighlightsPostProcessTask } from "./post-process/extract-h
 export type { ExtractHighlightsPostProcessTask, ExtractHighlightsPostProcessTaskConfig } from "./post-process/extract-highlights.js";
 export { createChromaticAberrationPostProcessTask } from "./post-process/chromatic-aberration.js";
 export type { ChromaticAberrationPostProcessTask, ChromaticAberrationPostProcessTaskConfig } from "./post-process/chromatic-aberration.js";
+export { createCircleOfConfusionPostProcessTask } from "./post-process/circle-of-confusion.js";
+export type { CircleOfConfusionPostProcessTask, CircleOfConfusionPostProcessTaskConfig } from "./post-process/circle-of-confusion.js";
 export { createBloomPostProcessTask } from "./post-process/bloom.js";
 export type { BloomPostProcessTask, BloomPostProcessTaskConfig } from "./post-process/bloom.js";
+export { createDepthOfFieldPostProcessTask, DepthOfFieldBlurLevel } from "./post-process/depth-of-field.js";
+export type { DepthOfFieldPostProcessTask, DepthOfFieldPostProcessTaskConfig } from "./post-process/depth-of-field.js";
 
 // ─── Camera ──────────────────────────────────────────────────────────
 export { createArcRotateCamera } from "./camera/arc-rotate.js";

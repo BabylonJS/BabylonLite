@@ -67,6 +67,11 @@ export interface GeometryRendererTextureDescription {
     /** Per-attachment WebGPU format override. Defaults to
      *  {@link GEOMETRY_TEXTURE_DESCRIPTIONS}[type].defaultFormat. */
     readonly format?: GPUTextureFormat;
+    /** Per-attachment clear-value override. Defaults to
+     *  {@link GEOMETRY_TEXTURE_DESCRIPTIONS}[type].clearValue. Use to match a
+     *  reference engine's clear behaviour (e.g. clear VIEW_DEPTH to 0 instead of
+     *  the camera far plane to mirror BJS's PREPASS_DEPTH). */
+    readonly clearValue?: GPUColor;
 }
 
 export interface GeometryRendererTaskConfig {
@@ -223,7 +228,7 @@ export function createGeometryRendererTask(config: GeometryRendererTaskConfig, e
             _type: d.type,
             _index: i,
             _format: d.format ?? desc.defaultFormat,
-            _clearValue: desc.clearValue,
+            _clearValue: d.clearValue ?? desc.clearValue,
         };
     });
     const types = attachments.map((a) => a._type);

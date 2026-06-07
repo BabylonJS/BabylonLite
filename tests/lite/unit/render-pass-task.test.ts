@@ -7,7 +7,7 @@ import type { DrawBinding, DrawUpdateContext, Renderable } from "../../../packag
 import { createSceneContext, registerScene } from "../../../packages/babylon-lite/src/scene/scene";
 import type { SceneContext } from "../../../packages/babylon-lite/src/scene/scene-core";
 import { createRenderTarget } from "../../../packages/babylon-lite/src/engine/render-target";
-import { createRenderTask, setRenderTaskDepthOverride, type RenderTask } from "../../../packages/babylon-lite/src/frame-graph/render-task";
+import { createRenderTask, type RenderTask } from "../../../packages/babylon-lite/src/frame-graph/render-task";
 import { enableRenderTaskTransmission, enableSceneTransmission } from "../../../packages/babylon-lite/src/frame-graph/transmission";
 
 const gpuGlobals = globalThis as Omit<typeof globalThis, "GPUBufferUsage" | "GPUShaderStage" | "GPUTextureUsage"> & {
@@ -53,6 +53,7 @@ function makeMockEngine(options?: {
     bindGroupLayouts?: GPUBindGroupLayoutDescriptor[];
     samplers?: GPUSamplerDescriptor[];
     textures?: GPUTextureDescriptor[];
+    bundleDescriptors?: GPURenderBundleEncoderDescriptor[];
 }): EngineContext {
     let currentPipeline: GPURenderPipeline | null = null;
     const pass = {
@@ -95,12 +96,14 @@ function makeMockEngine(options?: {
                 destroy: () => undefined,
             } as unknown as GPUTexture;
         },
-        createRenderBundleEncoder: () =>
-            ({
+        createRenderBundleEncoder: (descriptor: GPURenderBundleEncoderDescriptor) => {
+            options?.bundleDescriptors?.push(descriptor);
+            return {
                 setBindGroup: () => undefined,
                 setPipeline: () => undefined,
                 finish: () => ({}) as GPURenderBundle,
-            }) as unknown as GPURenderBundleEncoder,
+            } as unknown as GPURenderBundleEncoder;
+        },
         queue: {
             writeBuffer: () => undefined,
         },
@@ -431,7 +434,8 @@ describe("RenderPassTask transparent sorting", () => {
 
     it("binds an external depthTexture in place of the color RT's own depth view", async () => {
         const seenDescriptors: GPURenderPassDescriptor[] = [];
-        const engine = makeMockEngine({ msaaSamples: 1, onBeginPass: (d) => seenDescriptors.push(d) });
+        const bundleDescriptors: GPURenderBundleEncoderDescriptor[] = [];
+        const engine = makeMockEngine({ msaaSamples: 1, onBeginPass: (d) => seenDescriptors.push(d), bundleDescriptors });
         const scene = createSceneContext(engine, { defaultRenderTask: false }) as SceneContext;
         scene.camera = makeCamera();
 
@@ -457,8 +461,7 @@ describe("RenderPassTask transparent sorting", () => {
         externalDepth._height = 16;
         externalDepth._eager = true;
 
-        const task = createRenderTask({ name: "scene", rt: colorRt }, engine, scene);
-        setRenderTaskDepthOverride(task, externalDepth);
+        const task = createRenderTask({ name: "scene", rt: colorRt, depth: externalDepth }, engine, scene);
         scene._frameGraph._tasks.push(task);
 
         await registerScene(engine, scene);
@@ -474,6 +477,12 @@ describe("RenderPassTask transparent sorting", () => {
         // The pipeline's signature must reflect the external depth format so
         // beginRenderPass validates against pipelines with depthStencil.format = depth32float.
         expect(task._targetSignature._depthStencilFormat).toBe("depth32float");
+        // Regression: the cached opaque render-bundle encoder's attachment state
+        // must include the overridden depth format too. The colour RT carries no
+        // depthStencilFormat of its own, so a bundle built from the RT descriptor
+        // would omit it and fail WebGPU's bundle/pipeline compatibility check.
+        expect(bundleDescriptors.length).toBeGreaterThan(0);
+        expect(bundleDescriptors.every((d) => d.depthStencilFormat === "depth32float")).toBe(true);
     });
 
     it("always uses depthLoadOp 'clear' for an rt-owned depth attachment, regardless of clr", async () => {
@@ -506,3 +515,61 @@ describe("RenderPassTask transparent sorting", () => {
     });
 });
 
+describe("RenderTask MSAA resolveTarget", () => {
+    it("wires a single-sample resolveTarget as the color attachment's end-of-pass resolve when the RT is MSAA", () => {
+        const engine = makeMockEngine({ msaaSamples: 4 });
+        const scene = createSceneContext(engine, { defaultRenderTask: false }) as SceneContext;
+        scene.camera = makeCamera();
+
+        const msaaRt = createRenderTarget({
+            label: "msaa-color",
+            colorFormat: "rgba8unorm",
+            depthStencilFormat: "depth32float",
+            sampleCount: 4,
+            size: { width: 32, height: 16 },
+        });
+        const resolveTarget = createRenderTarget({
+            label: "resolve-color",
+            colorFormat: "rgba8unorm",
+            sampleCount: 1,
+            size: { width: 32, height: 16 },
+        });
+
+        const task = createRenderTask({ name: "msaa-scene", rt: msaaRt, rst: resolveTarget }, engine, scene);
+        task.record();
+
+        // The resolve target's color view must be allocated and used as the
+        // attachment's resolveTarget so WebGPU resolves the 4x MSAA in-pass.
+        expect(resolveTarget._colorView).toBeTruthy();
+        expect(task._colorAttachment.view).toBe(msaaRt._colorView);
+        expect(task._colorAttachment.resolveTarget).toBe(resolveTarget._colorView);
+    });
+
+    it("ignores resolveTarget when the render target is single-sample", () => {
+        const engine = makeMockEngine({ msaaSamples: 1 });
+        const scene = createSceneContext(engine, { defaultRenderTask: false }) as SceneContext;
+        scene.camera = makeCamera();
+
+        const ssRt = createRenderTarget({
+            label: "ss-color",
+            colorFormat: "rgba8unorm",
+            depthStencilFormat: "depth32float",
+            sampleCount: 1,
+            size: { width: 32, height: 16 },
+        });
+        const resolveTarget = createRenderTarget({
+            label: "resolve-color",
+            colorFormat: "rgba8unorm",
+            sampleCount: 1,
+            size: { width: 32, height: 16 },
+        });
+
+        const task = createRenderTask({ name: "ss-scene", rt: ssRt, rst: resolveTarget }, engine, scene);
+        task.record();
+
+        // Single-sample rt: the resolve target is neither built (no wasted GPU
+        // allocation) nor wired as the attachment's resolveTarget.
+        expect(resolveTarget._colorView).toBeNull();
+        expect(task._colorAttachment.resolveTarget).toBeUndefined();
+    });
+});

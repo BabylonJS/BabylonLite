@@ -54,11 +54,27 @@ export interface RenderTaskConfig {
      *  management is virtualized, callers must provide the concrete target; once
      *  virtualized, the task should create/manage its own render target. */
     rt: RenderTarget;
+    /** Optional single-sample resolve target. When `rt` is multisampled
+     *  (`sampleCount > 1`), the color attachment resolves into this target's
+     *  color texture at end-of-pass — letting an MSAA render feed a post-process
+     *  that requires a single-sample source, without an extra resolve pass.
+     *  Caller contract (not validated): must be single-sample with a color
+     *  format and size matching `rt`; WebGPU errors at pass-encode time if not.
+     *  Ignored when `rt` is single-sample. */
+    rst?: RenderTarget;
+    /** Optional external depth/stencil attachment (e.g. one produced by a
+     *  preceding `GeometryRendererTask`). When set, the pass binds this target's
+     *  depth view instead of allocating its own, uses its `depthStencilFormat`
+     *  for pipeline signature matching, and loads it (`loadOp: "load"`) — the
+     *  caller owns clearing. The colour `rt` must then omit `depthStencilFormat`
+     *  (so it allocates no internal depth) and match this target in size, sample
+     *  count and Y-flip. */
+    depth?: RenderTarget;
     /** Background clear color. May be mutated frame-to-frame. */
     clrColor?: GPUColorDict;
     /** When true, color `loadOp` is "clear"; when false, "load" (overlays previous
      *  color content). Depth is always cleared when rt-owned and always loaded when
-     *  supplied via `setRenderTaskDepthOverride`. */
+     *  supplied via `depth`. */
     clr?: boolean;
     /** Per-pass camera override. Null/undefined uses `scene.camera`. */
     cam?: Camera | null;
@@ -103,11 +119,11 @@ export interface RenderTask extends Task {
     _renderPassDescriptor: GPURenderPassDescriptor;
     /** @internal */
     _colorAttachment: GPURenderPassColorAttachment;
-    /** External depth source set by {@link setRenderTaskDepthOverride}. When unset,
+    /** @internal External depth source from `config.depth`. When unset,
      *  the pass uses `config.rt._depthView`. */
     _depthSrc?: RenderTarget;
-    /** External depth/stencil `loadOp` set by {@link setRenderTaskDepthOverride}. When
-     *  unset, defaults to `"clear"`. */
+    /** @internal External depth/stencil `loadOp` ("load" when `config.depth` is
+     *  set). When unset, defaults to `"clear"`. */
     _depthLoadOp?: GPULoadOp;
 
     /** Per-task scene UBO + bind group. Created eagerly in createRenderTask
@@ -160,7 +176,7 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
     // use the default ccw front face; downstream samplers see upright pixels.
     const targetSignature = {
         _colorFormat: desc.colorFormat,
-        _depthStencilFormat: desc.depthStencilFormat,
+        _depthStencilFormat: config.depth?._descriptor.depthStencilFormat ?? desc.depthStencilFormat,
         _depthCompare: desc._depthCompare,
         _sampleCount: desc.sampleCount ?? 1,
     };
@@ -193,6 +209,8 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
         _lastVis: 0,
         _renderPassDescriptor: { colorAttachments: [colorAttachment] },
         _colorAttachment: colorAttachment,
+        _depthSrc: config.depth,
+        _depthLoadOp: config.depth ? "load" : undefined,
         _sceneUBO: sceneUBO,
         _sceneBG: sceneBG,
         _lightsUBO: lightsUBO,
@@ -217,6 +235,9 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
                 task._renderables.push(...sc._renderables);
             }
             buildRenderTarget(rt, engine);
+            if (config.rst && (rt._descriptor.sampleCount ?? 1) > 1) {
+                buildRenderTarget(config.rst, engine);
+            }
             updateContext.targetWidth = rt._width;
             updateContext.targetHeight = rt._height;
             refreshTaskSceneBindGroup(task, engine);
@@ -229,6 +250,9 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
         dispose(): void {
             task._passes.length = 0;
             disposeRenderTarget(rt);
+            if (config.rst) {
+                disposeRenderTarget(config.rst);
+            }
             task._opaqueBindings.length = 0;
             task._directBindings.length = 0;
             task._transparentBindings.length = 0;
@@ -238,19 +262,6 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
         },
     };
     return task;
-}
-
-/** Override the depth/stencil attachment for this task with an externally-supplied
- *  render target (e.g. one produced by a preceding `GeometryRendererTask`). When set,
- *  the pass binds `depthRt._depthView` instead of `rt._depthView`, uses
- *  `depthRt._descriptor.depthStencilFormat` for pipeline signature matching, and uses
- *  `loadOp: "load"` — the caller owns clearing. The color RT must omit
- *  `depthStencilFormat` so it allocates no internal depth, and must match the depth
- *  attachment in size, sample count and Y-flip. Call before the first `record()`. */
-export function setRenderTaskDepthOverride(task: RenderTask, depthRt: RenderTarget): void {
-    task._depthSrc = depthRt;
-    task._depthLoadOp = "load";
-    (task._targetSignature as { _depthStencilFormat?: GPUTextureFormat })._depthStencilFormat = depthRt._descriptor.depthStencilFormat;
 }
 
 /** Remove a mesh from this task's renderable + binding lists. Idempotent. */
@@ -336,6 +347,11 @@ function buildBindings(task: RenderTask, eng: EngineContext, targetSignature: Re
 function buildRenderPassDescriptor(task: RenderTask, rt: RenderTarget): void {
     const att = task._colorAttachment;
     att.view = rt._colorView!;
+    // End-of-pass MSAA resolve into a caller-supplied single-sample target.
+    // record() only builds the target's color view for an MSAA rt, so its
+    // presence is the gate. The swapchain case is wired per-frame in
+    // executePass (its view changes each frame); this custom view is stable.
+    att.resolveTarget = task._config.rst?._colorView ?? undefined;
     task._renderPassDescriptor.colorAttachments = rt._colorView ? [att] : [];
 
     const depthSrc = task._depthSrc ?? rt;
@@ -454,7 +470,12 @@ function executePassBody(task: RenderTask, pass: GPURenderPassEncoder): number {
         const desc = rt._descriptor;
         const be = eng._device.createRenderBundleEncoder({
             colorFormats: desc.colorFormat ? [desc.colorFormat] : [],
-            depthStencilFormat: desc.depthStencilFormat,
+            // Use the task's target signature, not the RT descriptor: a depth
+            // override (config.depth) supplies the depth format externally, so
+            // the cached opaque pipelines are built with it while the colour RT
+            // carries no depthStencilFormat of its own. The bundle encoder's
+            // attachment state must match those pipelines exactly.
+            depthStencilFormat: task._targetSignature._depthStencilFormat,
             sampleCount: desc.sampleCount ?? 1,
         });
         be.setBindGroup(0, sceneBG);
