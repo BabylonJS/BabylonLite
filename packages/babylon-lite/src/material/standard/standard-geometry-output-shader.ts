@@ -166,7 +166,7 @@ function createGeometryParamsFragment(needsParamsUbo: boolean, needsVelocityVary
  *  the same code path. The fragment WGSL is then string-patched to switch
  *  the entry-point return type to a multi-attachment `FragmentOutput`.
  *
- *  @param emitColor When true, an extra `@location(N) color: vec4<f32>`
+ *  @param emitColor - When true, an extra `@location(N) color: vec4<f32>`
  *      attachment is appended to `FragmentOutput` (N = `attachments.length`)
  *      and populated with the standard lit `color` value. Used when the
  *      task's `targetTexture` is set — that target receives the real (lit)

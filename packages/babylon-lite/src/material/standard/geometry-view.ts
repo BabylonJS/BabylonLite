@@ -43,15 +43,16 @@ export interface StandardGeometryViewConfig {
 
 /** Standard material view that emits geometry textures instead of shaded colour. */
 export interface StandardGeometryMaterialView extends MaterialView {
-    /** Ordered MRT attachment list — index = `@location(i)`. */
+    /** @internal Ordered MRT attachment list — index = `@location(i)`. */
     readonly _geometryAttachments: StandardGeometryAttachments;
-    /** Geometry pipeline carries an extra `@location(N)` color attachment. */
+    /** @internal Geometry pipeline carries an extra `@location(N)` color attachment. */
     readonly _emitColor: boolean;
-    /** Optional per-task geometry-params UBO shared with the composer's
+    /** @internal Optional per-task geometry-params UBO shared with the composer's
      *  `geometryParams` fragment. */
     readonly _gpUBO: GPUBuffer | null;
+    /** @internal */
     readonly _reverseCulling: boolean;
-    /** Shared per-view resources cache populated lazily by the renderable
+    /** @internal Shared per-view resources cache populated lazily by the renderable
      *  factory. Opaque to callers. */
     _geometry?: unknown;
 }

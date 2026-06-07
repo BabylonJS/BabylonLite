@@ -39,17 +39,24 @@ export interface RenderTargetMrtDescriptor {
 
 /** Allocated GPU state for an MRT render target. All arrays are length `colorFormats.length`. */
 export interface RenderTargetMrt {
+    /** @internal */
     readonly _descriptor: RenderTargetMrtDescriptor;
-    /** Per-attachment render-attachment textures (MSAA when `sampleCount > 1`, else single-sampled). */
+    /** @internal Per-attachment render-attachment textures (MSAA when `sampleCount > 1`, else single-sampled). */
     _colorTextures: GPUTexture[];
+    /** @internal */
     _colorViews: GPUTextureView[];
-    /** Per-attachment single-sample resolve textures. Length 0 when `sampleCount === 1`,
+    /** @internal Per-attachment single-sample resolve textures. Length 0 when `sampleCount === 1`,
      *  else `colorFormats.length`. */
     _resolveColorTextures: GPUTexture[];
+    /** @internal */
     _resolveColorViews: GPUTextureView[];
+    /** @internal */
     _depthTexture: GPUTexture | null;
+    /** @internal */
     _depthView: GPUTextureView | null;
+    /** @internal */
     _width: number;
+    /** @internal */
     _height: number;
 }
 

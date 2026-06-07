@@ -4,7 +4,7 @@
  *  {@link createStandardGeometryMaterialView} into the geometry renderer
  *  task's multi-attachment render target. Mirrors the regular
  *  {@link buildStandardMeshRenderables} structure (rebuildSingle closure
- *  → Renderable.bind() → DrawBinding.{update,draw}) so that per-mesh
+ *  → Renderable.bind() → DrawBinding.update/draw) so that per-mesh
  *  bind groups, mesh UBO refreshes (including writeMeshLightSelection),
  *  and material UBO version tracking flow through the exact same
  *  contract scenes already use for ordinary Standard renderables.
