@@ -1,5 +1,5 @@
 import type { EngineContext } from "./engine.js";
-import { startEngine, stopEngine, resizeEngine } from "./engine.js";
+import { startEngine, stopEngine, resizeEngine, _refreshScRT } from "./engine.js";
 import type { SceneContext } from "../scene/scene-core.js";
 import { isRenderingContextRegistered } from "./engine.js";
 import type { Mesh, MeshGPU } from "../mesh/mesh.js";
@@ -186,6 +186,10 @@ async function recoverDevice(engine: EngineContext, state: RecoveryState): Promi
         }
         engine._device = await adapter.requestDevice({ requiredFeatures: state.requiredFeatures });
         engine._context.configure({ device: engine._device, format: engine.format, alphaMode: engine._alphaMode });
+        // Re-acquire the canvas swapchain texture into engine.scRT after the
+        // context is reconfigured against the new device (the previous device's texture
+        // is invalid) so the rebuilt frame graph wires a valid color attachment.
+        _refreshScRT(engine);
         clearSceneBGLCache();
         resizeEngine(engine);
 

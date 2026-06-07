@@ -1,5 +1,6 @@
 import type { EngineContext } from "../engine/engine.js";
 import { _vis } from "../engine/engine.js";
+import { createRenderTarget } from "../engine/render-target.js";
 import { getBilinearSampler } from "../resource/samplers.js";
 import { getTrilinearAnisotropicSampler } from "../resource/trilinear-anisotropic-sampler.js";
 import type { Texture2D } from "../texture/texture-2d.js";
@@ -88,26 +89,43 @@ export function enableRenderTaskTransmission(task: RenderTask, engine: EngineCon
 }
 
 function retargetRenderTaskToLinearOffscreen(task: RenderTask, engine: EngineContext): void {
-    const desc = task._config.rt._descriptor;
-    if (desc.resolveToSwapchain) {
-        desc.resolveToSwapchain = false;
-        desc.colorFormat = "rgba16float";
-        task._opaqueBundles.length = 0;
-        task._lastVersion = -1;
-    } else if (!desc.colorFormat) {
-        desc.colorFormat = "rgba16float";
-    }
-    desc.sampleCount = engine.msaaSamples;
+    const cfg = task._config;
+    const oldDesc = cfg.rt._descriptor;
+    const sampleCount = engine.msaaSamples;
+    // The scene render task may target the shared engine scRT (single-sample,
+    // colour-only — single-sample default path) or an MSAA colour RT that resolves into it
+    // via `rst` (MSAA default path). Never mutate the shared scRT descriptor —
+    // instead point the task at a fresh offscreen HDR target and stop resolving to swap.
+    // Transmission samples this linear HDR result in its own final image-processing pass
+    // that writes the tonemapped result to the swapchain.
+    //
+    // Depth ownership: when the task already carries an external depth (`cfg.depth`, the
+    // single-sample default path), keep it; otherwise the new target owns depth (matching
+    // the MSAA colour RT it replaces).
+    const ownsDepth = !cfg.depth;
+    const newRt = createRenderTarget({
+        lbl: "transmission-linear",
+        format: "rgba16float",
+        dFormat: ownsDepth ? (oldDesc.dFormat ?? "depth24plus-stencil8") : undefined,
+        _depthClearValue: oldDesc._depthClearValue,
+        _depthCompare: oldDesc._depthCompare,
+        samples: sampleCount,
+        size: "canvas",
+    });
+    cfg.rt = newRt;
+    cfg.rst = undefined;
     const sig = task._targetSignature as {
         _colorFormat?: GPUTextureFormat;
         _depthStencilFormat?: GPUTextureFormat;
         _depthCompare?: GPUCompareFunction;
         _sampleCount: number;
     };
-    sig._colorFormat = desc.colorFormat;
-    sig._depthStencilFormat = desc.depthStencilFormat;
-    sig._depthCompare = desc._depthCompare;
-    sig._sampleCount = desc.sampleCount;
+    sig._colorFormat = "rgba16float";
+    sig._depthStencilFormat = cfg.depth?._descriptor.dFormat ?? newRt._descriptor.dFormat;
+    sig._depthCompare = newRt._descriptor._depthCompare;
+    sig._sampleCount = sampleCount;
+    task._opaqueBundles.length = 0;
+    task._lastVersion = -1;
 }
 
 function executeRenderTaskLinear(scene: SceneContext, execute: () => number): number {
@@ -402,9 +420,9 @@ function drawBaseTask(task: RenderTask, pass: GPURenderPassEncoder): number {
     if (task._lastVersion !== scene._renderableVersion || task._lastVis !== _vis || opaqueBundles.length === 0) {
         const desc = rt._descriptor;
         const be = eng._device.createRenderBundleEncoder({
-            colorFormats: desc.colorFormat ? [desc.colorFormat] : [],
-            depthStencilFormat: desc.depthStencilFormat,
-            sampleCount: desc.sampleCount ?? 1,
+            colorFormats: desc.format ? [desc.format] : [],
+            depthStencilFormat: desc.dFormat,
+            sampleCount: desc.samples ?? 1,
         });
         be.setBindGroup(0, task._sceneBG);
         drawList(be, opaqueBindings, eng);

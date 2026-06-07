@@ -33,22 +33,20 @@ export const REVERSE_DEPTH_COMPARE = "greater-equal" as GPUCompareFunction;
 /** Describes a render target — what attachments to create, not the GPU objects
  *  themselves. GPU textures are allocated later by `buildRenderTarget`. */
 export interface RenderTargetDescriptor {
-    label?: string;
-    colorFormat?: GPUTextureFormat;
-    depthStencilFormat?: GPUTextureFormat;
+    /** Debug label applied to the allocated GPU color/depth textures. */
+    lbl?: string;
+    /** Color attachment texture format (e.g. `"bgra8unorm"`, `"rgba16float"`). Omit for a depth-only target. */
+    format?: GPUTextureFormat;
+    /** Depth/stencil attachment format (e.g. `"depth24plus-stencil8"`). Omit for a color-only target (e.g. the swapchain). */
+    dFormat?: GPUTextureFormat;
     /** @internal Depth clear value. Defaults to reverse-Z far depth `0`. Shadow-map targets use standard-Z far depth `1`. */
     _depthClearValue?: number;
     /** @internal Depth compare for pipelines targeting this RT. Defaults to reverse-Z `"greater-equal"`. */
     _depthCompare?: GPUCompareFunction;
-    sampleCount: number;
+    /** MSAA sample count: `1` = single-sample (no multisampling), `4` = 4x MSAA. */
+    samples: number;
     /** 'canvas' means match the canvas pixel size. Otherwise explicit pixels. */
     size: "canvas" | { width: number; height: number };
-    /** If true, the color attachment resolves to the swapchain texture. The RT still
-     *  owns the MSAA texture (when sampleCount \> 1) and the depth texture; only the
-     *  final color is the swapchain view, acquired per frame and patched in at execute
-     *  time. With sampleCount === 1 the RT owns no color texture (the swap view is the
-     *  color attachment directly). */
-    resolveToSwapchain?: boolean;
 }
 
 /** Stringified signature used to key pipelines against a render target's attachment set. */
@@ -92,11 +90,11 @@ export function createRenderTarget(descriptor: RenderTargetDescriptor): RenderTa
     };
 }
 
-/** Allocate GPU textures for the render target. Idempotent for eager targets.
- *  For swapchain-resolved targets the color texture is only allocated when
- *  sampleCount \> 1 (MSAA texture used as color attachment, swap view used as
- *  resolve target); with sampleCount === 1 the swap view is the color attachment
- *  directly so no color texture is owned. Depth is always owned by the RT. */
+/** Allocate GPU textures for the render target. Idempotent for eager targets
+ *  (`_eager` — e.g. `createRenderTargetTexture` outputs and the engine-owned
+ *  `scRT`, whose color texture the engine refreshes per frame). A
+ *  color texture is allocated whenever the descriptor has a `format`; depth
+ *  is allocated whenever it has a `depthStencilFormat`. */
 export function buildRenderTarget(rt: RenderTarget, engine: EngineContext): void {
     if (rt._eager) {
         return;
@@ -109,33 +107,38 @@ export function buildRenderTarget(rt: RenderTarget, engine: EngineContext): void
     rt._height = height;
 
     const device = engine._device;
-    const allocColor = !!desc.colorFormat && (!desc.resolveToSwapchain || desc.sampleCount > 1);
+    const allocColor = !!desc.format;
 
     if (allocColor) {
         rt._colorTexture = device.createTexture({
-            label: desc.label,
+            label: desc.lbl,
             size: { width, height },
-            format: desc.colorFormat!,
-            sampleCount: desc.sampleCount,
+            format: desc.format!,
+            sampleCount: desc.samples,
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
         });
         rt._colorView = rt._colorTexture.createView();
     }
 
-    if (desc.depthStencilFormat) {
+    if (desc.dFormat) {
         rt._depthTexture = device.createTexture({
-            label: desc.label,
+            label: desc.lbl,
             size: { width, height },
-            format: desc.depthStencilFormat,
-            sampleCount: desc.sampleCount,
+            format: desc.dFormat,
+            sampleCount: desc.samples,
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
         });
         rt._depthView = rt._depthTexture.createView();
     }
 }
 
-/** Free GPU textures owned by the render target. */
-export function disposeRenderTarget(rt: RenderTarget): void {
+/** Free GPU textures owned by the render target. No-op for `null`/`undefined` and for
+ *  `_eager` targets — the latter (e.g. the engine `scRT` and `GeometryRendererTask`
+ *  depth outputs) are owned externally, so callers can pass them unconditionally. */
+export function disposeRenderTarget(rt: RenderTarget | null | undefined): void {
+    if (!rt || rt._eager) {
+        return;
+    }
     if (rt._colorTexture) {
         rt._colorTexture.destroy();
         rt._colorTexture = null;

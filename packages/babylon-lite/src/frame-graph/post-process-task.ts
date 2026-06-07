@@ -120,7 +120,7 @@ export function createPostProcessTask(config: PostProcessTaskConfig, engine: Eng
             createPostProcessGpuState(task, engine);
         },
         execute(): number {
-            applyColorAttachmentState(task._colorAttachment, task.outputTexture, engine, task.clear);
+            applyColorAttachmentState(task._colorAttachment, task.outputTexture, task.clear);
             const pass = engine._currentEncoder.beginRenderPass(task._renderPassDescriptor);
             applyViewport(pass, task.viewport, task.outputTexture);
             pass.setPipeline(task._pipeline!);
@@ -143,9 +143,7 @@ export function createPostProcessTask(config: PostProcessTaskConfig, engine: Eng
             task._pipelineLayout = null;
             task._shaderModule = null;
             task._shaderModuleCode = "";
-            if (task._internalTarget) {
-                disposeRenderTarget(task._internalTarget);
-            }
+            disposeRenderTarget(task._internalTarget);
         },
     };
     return task;
@@ -156,13 +154,13 @@ function createPostProcessGpuState(task: PostProcessTaskInternal, engine: Engine
     if (!source._colorTexture || !source._colorView) {
         throw new Error(`PostProcessTask "${task.name}": sourceTexture has no color texture. Render the source to an offscreen RenderTarget before post-processing.`);
     }
-    if ((source._descriptor.sampleCount ?? 1) !== 1) {
+    if ((source._descriptor.samples ?? 1) !== 1) {
         throw new Error(`PostProcessTask "${task.name}": multisampled source textures are not supported. Use a sampleCount: 1 source RenderTarget.`);
     }
     const target = task.outputTexture;
-    const colorFormat = target._descriptor.colorFormat;
-    if (!colorFormat) {
-        throw new Error(`PostProcessTask "${task.name}": outputTexture must have a colorFormat.`);
+    const format = target._descriptor.format;
+    if (!format) {
+        throw new Error(`PostProcessTask "${task.name}": outputTexture must have a format.`);
     }
     task._uniformBuffer ??= createUniformBuffer(task, engine);
     task._uniformData ??= createUniformData(task);
@@ -171,8 +169,8 @@ function createPostProcessGpuState(task: PostProcessTaskInternal, engine: Engine
     const bgl = getBindGroupLayout(task, engine);
     task._pipelineLayout ??= engine._device.createPipelineLayout({ label: `${task.name}-pipeline-layout`, bindGroupLayouts: [bgl] });
     const signature: RenderTargetSignature = {
-        _colorFormat: colorFormat,
-        _sampleCount: target._descriptor.sampleCount ?? 1,
+        _colorFormat: format,
+        _sampleCount: target._descriptor.samples ?? 1,
     };
     task._pipeline = engine._device.createRenderPipeline({
         label: `${task.name}-${targetSignatureKey(signature)}-${task.alphaMode}`,
@@ -181,7 +179,7 @@ function createPostProcessGpuState(task: PostProcessTaskInternal, engine: Engine
         fragment: {
             module: getShaderModule(task, engine),
             entryPoint: "postProcessFragment",
-            targets: [{ format: colorFormat, blend: alphaModeToBlend(task.alphaMode) }],
+            targets: [{ format: format, blend: alphaModeToBlend(task.alphaMode) }],
         },
         primitive: { topology: "triangle-list" },
         multisample: { count: signature._sampleCount },
@@ -229,13 +227,13 @@ function prepareOutputTarget(task: PostProcessTaskInternal): void {
 
 function createInternalTarget(name: string, source: RenderTarget): RenderTarget {
     const srcDesc = source._descriptor;
-    if (!srcDesc.colorFormat) {
-        throw new Error(`PostProcessTask "${name}": sourceTexture must have a colorFormat.`);
+    if (!srcDesc.format) {
+        throw new Error(`PostProcessTask "${name}": sourceTexture must have a format.`);
     }
     const desc: RenderTargetDescriptor = {
-        label: `${name}-output`,
-        colorFormat: srcDesc.colorFormat,
-        sampleCount: 1,
+        lbl: `${name}-output`,
+        format: srcDesc.format,
+        samples: 1,
         size: srcDesc.size,
     };
     return createRenderTarget(desc);
@@ -244,7 +242,7 @@ function createInternalTarget(name: string, source: RenderTarget): RenderTarget 
 function internalTargetKey(source: RenderTarget): string {
     const desc = source._descriptor;
     const size = desc.size === "canvas" ? "canvas" : `${desc.size.width}x${desc.size.height}`;
-    return `${desc.colorFormat ?? "-"}|${desc.sampleCount ?? 1}|${size}`;
+    return `${desc.format ?? "-"}|${desc.samples ?? 1}|${size}`;
 }
 
 function getBindGroupLayout(task: PostProcessTaskInternal, engine: EngineContext): GPUBindGroupLayout {
@@ -309,19 +307,12 @@ function writePostProcessUniforms(task: PostProcessTaskInternal, engine: EngineC
     engine._device.queue.writeBuffer(task._uniformBuffer!, 0, task._uniformData as Float32Array<ArrayBuffer>);
 }
 
-function applyColorAttachmentState(att: GPURenderPassColorAttachment, rt: RenderTarget, eng: EngineContext, clear: boolean): void {
-    if (rt._descriptor.resolveToSwapchain === true) {
-        if ((rt._descriptor.sampleCount ?? 1) > 1) {
-            att.view = rt._colorView!;
-            att.resolveTarget = eng._swapchainView;
-        } else {
-            att.view = eng._swapchainView;
-            att.resolveTarget = undefined;
-        }
-    } else {
-        att.view = rt._colorView!;
-        att.resolveTarget = undefined;
-    }
+function applyColorAttachmentState(att: GPURenderPassColorAttachment, rt: RenderTarget, clear: boolean): void {
+    // Re-read each frame: a scRT output re-acquires its view per frame;
+    // offscreen targets keep a stable view. Post-process passes render to a single
+    // target with no MSAA resolve (the scRT is always single-sample).
+    att.view = rt._colorView!;
+    att.resolveTarget = undefined;
     att.loadOp = clear ? "clear" : "load";
 }
 

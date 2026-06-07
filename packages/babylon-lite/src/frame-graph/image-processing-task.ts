@@ -48,7 +48,7 @@ export function createImageProcessingTask(config: ImageProcessingTaskConfig, eng
             const pass = engine._currentEncoder.beginRenderPass({
                 colorAttachments: [
                     {
-                        view: engine._swapchainView,
+                        view: engine.scRT._colorView!,
                         loadOp: "clear",
                         storeOp: "store",
                         clearValue: scene.clearColor,

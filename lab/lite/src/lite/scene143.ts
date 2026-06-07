@@ -29,19 +29,15 @@ async function main(): Promise<void> {
     scene.camera = camera;
     attachControl(camera, canvas, scene);
 
-    const outputTarget = createRenderTarget({
-        label: "scene143-postprocess-output",
-        colorFormat: engine.format,
-        sampleCount: engine.msaaSamples,
-        size: "canvas",
-        resolveToSwapchain: true,
-    });
+    // Final chromatic-aberration pass writes directly into the engine swapchain (a
+    // fullscreen blit, so single-sample is pixel-identical to MSAA-resolve-to-swap).
+    const outputTarget = engine.scRT;
 
     const sourceTarget = createRenderTarget({
-        label: "scene143-source",
-        colorFormat: engine.format,
-        depthStencilFormat: "depth24plus-stencil8",
-        sampleCount: 1,
+        lbl: "scene143-source",
+        format: engine.format,
+        dFormat: "depth24plus-stencil8",
+        samples: 1,
         size: "canvas",
     });
     const sourceTask = createRenderTask(

@@ -10,7 +10,8 @@
  *       * No viewport.
  *       * Source and target have the same format and same sampleCount.
  *       * Source mip(`lodLevel`) dimensions match the target's mip-0 dimensions.
- *       * Target is not the swapchain (the swap view is not a copy destination).
+ *       * Target is not the engine scRT (its color texture is re-acquired
+ *         per frame, so a copy-destination handle captured at build time would go stale).
  *       * Target owns a color GPU texture (offscreen / MSAA-color).
  *
  *   - Blit path: a full-screen triangle samples the source texture and writes
@@ -33,7 +34,8 @@
  *
  * All decisions, GPU object creation, and per-attachment / viewport math are
  * performed in `record()`. `execute()` only dispatches the prebuilt path
- * (with one optional swap-view patch for swapchain targets).
+ * (re-reading the engine scRT's per-frame color view when it is the
+ * target or resolve target).
  */
 
 import type { NormalizedViewport } from "../camera/camera.js";
@@ -71,7 +73,7 @@ export interface CopyToTextureTaskConfig {
      *    target. `viewport` and `lodLevel` are ignored. `sourceTexture` and
      *    `resolveTexture` must have matching dimensions.
      *
-     *  In both modes, `resolveTexture.colorFormat` must match the MSAA
+     *  In both modes, `resolveTexture.format` must match the MSAA
      *  attachment's format and `resolveTexture` must be single-sample. */
     resolveTexture?: RenderTarget;
 }
@@ -93,9 +95,9 @@ interface BlitState {
     readonly _bindGroup: GPUBindGroup;
     /** Pre-computed pixel viewport when a normalized viewport is supplied. */
     readonly _viewport: { x: number; y: number; w: number; h: number } | null;
-    /** Whether the color attachment's `view` is patched per frame from the swapchain. */
+    /** Whether the color attachment's `view` is re-read per frame from `engine.scRT._colorView`. */
     readonly _swapAsView: boolean;
-    /** Whether the color attachment's `resolveTarget` is patched per frame from the swapchain (MSAA → swap). */
+    /** Whether the color attachment's `resolveTarget` is re-read per frame from `engine.scRT._colorView` (MSAA → swap). */
     readonly _swapAsResolve: boolean;
 }
 
@@ -106,8 +108,8 @@ interface FastPathState {
 }
 
 interface ResolveState {
-    /** True when `resolveTexture` is a swapchain RT and its view must be
-     *  patched from `engine._swapchainView` per frame. */
+    /** True when `resolveTexture` is the engine scRT and its view must be
+     *  re-read from `engine.scRT._colorView` per frame. */
     readonly _swapAsResolve: boolean;
 }
 
@@ -218,13 +220,12 @@ export function createCopyToTextureTask(config: CopyToTextureTaskConfig, engine:
                 throw new Error(`CopyToTextureTask "${task.name}": sourceTexture has no color texture. The source must be built before this task records.`);
             }
             // Auto-build offscreen target/resolve textures that aren't owned by a
-            // RenderTask. SS swap RTs (sampleCount===1) own no GPU texture — their
-            // swap view is the attachment directly — so we skip those. MSAA swap RTs
-            // still need their MSAA color texture allocated (the swap view is only the
-            // resolve target). Already-built RTs are no-ops in `buildRenderTarget`.
-            // Keeps copy-only chains (e.g. an SS staging texture between MSAA resolve
-            // and final swap blit) from requiring the caller to pre-build them.
-            const needsBuild = (rt: RenderTarget) => !rt._colorTexture && (!rt._descriptor.resolveToSwapchain || rt._descriptor.sampleCount > 1);
+            // RenderTask. The engine scRT is `_eager` (build is a no-op) and
+            // already carries a per-frame color texture, so `!rt._colorTexture` skips it.
+            // Already-built RTs are no-ops in `buildRenderTarget`. Keeps copy-only chains
+            // (e.g. an SS staging texture between an MSAA resolve and the final swap blit)
+            // from requiring the caller to pre-build them.
+            const needsBuild = (rt: RenderTarget) => !rt._colorTexture;
             if (task.targetTexture && needsBuild(task.targetTexture)) {
                 buildRenderTarget(task.targetTexture, eng);
             }
@@ -232,7 +233,7 @@ export function createCopyToTextureTask(config: CopyToTextureTaskConfig, engine:
                 buildRenderTarget(task.resolveTexture, eng);
             }
             if (task.resolveTexture && !task.targetTexture) {
-                buildResolvePath(task, source, task.resolveTexture);
+                buildResolvePath(task, source, task.resolveTexture, eng);
                 return;
             }
             const target = task.targetTexture!;
@@ -250,7 +251,7 @@ export function createCopyToTextureTask(config: CopyToTextureTaskConfig, engine:
             const resolve = task._resolve;
             if (resolve) {
                 if (resolve._swapAsResolve) {
-                    colorAttachment.resolveTarget = eng._swapchainView;
+                    colorAttachment.resolveTarget = eng.scRT._colorView!;
                 }
                 // No draws — the end-of-pass operation hardware-resolves the
                 // (loaded) MSAA color attachment into its resolveTarget.
@@ -260,10 +261,10 @@ export function createCopyToTextureTask(config: CopyToTextureTaskConfig, engine:
             }
             const blit = task._blit!;
             if (blit._swapAsView) {
-                colorAttachment.view = eng._swapchainView;
+                colorAttachment.view = eng.scRT._colorView!;
             }
             if (blit._swapAsResolve) {
-                colorAttachment.resolveTarget = eng._swapchainView;
+                colorAttachment.resolveTarget = eng.scRT._colorView!;
             }
             const pass = eng._currentEncoder.beginRenderPass(task._renderPassDescriptor);
             const v = blit._viewport;
@@ -287,22 +288,21 @@ export function createCopyToTextureTask(config: CopyToTextureTaskConfig, engine:
     return task;
 }
 
-function buildResolvePath(task: CopyToTextureTaskInternal, source: RenderTarget, resolveTexture: RenderTarget): void {
+function buildResolvePath(task: CopyToTextureTaskInternal, source: RenderTarget, resolveTexture: RenderTarget, eng: EngineContext): void {
     const srcDesc = source._descriptor;
     const dstDesc = resolveTexture._descriptor;
-    const srcSamples = srcDesc.sampleCount ?? 1;
+    const srcSamples = srcDesc.samples ?? 1;
     if (srcSamples < 2) {
         throw new Error(`CopyToTextureTask "${task.name}": resolveTexture requires a multisampled sourceTexture (got sampleCount=${srcSamples}).`);
     }
-    if ((dstDesc.sampleCount ?? 1) !== 1) {
-        throw new Error(`CopyToTextureTask "${task.name}": resolveTexture must be single-sample (got sampleCount=${dstDesc.sampleCount}).`);
+    if ((dstDesc.samples ?? 1) !== 1) {
+        throw new Error(`CopyToTextureTask "${task.name}": resolveTexture must be single-sample (got sampleCount=${dstDesc.samples}).`);
     }
-    const swapAsResolve = !!dstDesc.resolveToSwapchain;
-    // Swapchain targets aren't built by `buildRenderTarget` (their view is
-    // patched per frame from `engine._swapchainView`), so `_width`/`_height`
-    // stay 0. The swap is always sized to the engine canvas, which by
-    // construction matches a canvas-sized source RT, so skip the dimension
-    // check in that case and let WebGPU validate at end-of-pass resolve time.
+    const swapAsResolve = resolveTexture === eng.scRT;
+    // The engine scRT's color view is re-acquired per frame (re-read at
+    // execute), and its build-time `_width`/`_height` may lag the canvas. It is always
+    // canvas-sized at render time, matching a canvas-sized source, so skip the dimension
+    // check for it and let WebGPU validate at end-of-pass resolve time.
     if (!swapAsResolve && (source._width !== resolveTexture._width || source._height !== resolveTexture._height)) {
         throw new Error(
             `CopyToTextureTask "${task.name}": sourceTexture (${source._width}x${source._height}) and resolveTexture (${resolveTexture._width}x${resolveTexture._height}) must have matching dimensions.`
@@ -315,7 +315,7 @@ function buildResolvePath(task: CopyToTextureTaskInternal, source: RenderTarget,
     task._resolve = { _swapAsResolve: swapAsResolve };
 }
 
-function tryBuildFastPath(task: CopyToTextureTaskInternal, source: RenderTarget, target: RenderTarget, _engine: EngineContext): boolean {
+function tryBuildFastPath(task: CopyToTextureTaskInternal, source: RenderTarget, target: RenderTarget, engine: EngineContext): boolean {
     if (task.viewport !== undefined) {
         return false;
     }
@@ -325,7 +325,10 @@ function tryBuildFastPath(task: CopyToTextureTaskInternal, source: RenderTarget,
         return false;
     }
     const targetTexture = target._colorTexture;
-    if (target._descriptor.resolveToSwapchain || !targetTexture) {
+    // The scRT's color texture is re-acquired each frame; the encoder-copy
+    // fast path captures the destination texture handle at build time, so never use it
+    // when the target is the scRT (a captured handle would go stale).
+    if (target === engine.scRT || !targetTexture) {
         return false;
     }
     const sourceTexture = source._colorTexture;
@@ -334,13 +337,13 @@ function tryBuildFastPath(task: CopyToTextureTaskInternal, source: RenderTarget,
     }
     const srcDesc = source._descriptor;
     const dstDesc = target._descriptor;
-    const srcFormat = srcDesc.colorFormat;
-    const dstFormat = dstDesc.colorFormat;
+    const srcFormat = srcDesc.format;
+    const dstFormat = dstDesc.format;
     if (!srcFormat || srcFormat !== dstFormat) {
         return false;
     }
-    const srcSamples = srcDesc.sampleCount ?? 1;
-    const dstSamples = dstDesc.sampleCount ?? 1;
+    const srcSamples = srcDesc.samples ?? 1;
+    const dstSamples = dstDesc.samples ?? 1;
     if (srcSamples !== dstSamples) {
         return false;
     }
@@ -363,9 +366,9 @@ function tryBuildFastPath(task: CopyToTextureTaskInternal, source: RenderTarget,
 
 function buildBlitPath(task: CopyToTextureTaskInternal, source: RenderTarget, target: RenderTarget, engine: EngineContext): void {
     resetCache(engine._device);
-    const targetFormat = effectiveTargetFormat(target, engine);
-    const targetSamples = target._descriptor.sampleCount ?? 1;
-    const multisampledSource = (source._descriptor.sampleCount ?? 1) > 1;
+    const targetFormat = effectiveTargetFormat(target);
+    const targetSamples = target._descriptor.samples ?? 1;
+    const multisampledSource = (source._descriptor.samples ?? 1) > 1;
     const pipeline = getOrCreateCopyPipeline(engine, targetFormat, targetSamples, multisampledSource, task.lodLevel);
     const bgl = multisampledSource ? _bglMsaa! : _bglFiltering!;
     const entries: GPUBindGroupEntry[] = multisampledSource
@@ -378,15 +381,15 @@ function buildBlitPath(task: CopyToTextureTaskInternal, source: RenderTarget, ta
 
     // Color attachment view setup. Three cases for `view`:
     //   - Offscreen target: view = target._colorView (stable).
-    //   - Swapchain target with sampleCount === 1: view = swap view (patched per frame).
-    //   - Swapchain target with sampleCount > 1: view = MSAA color view (stable).
+    //   - scRT with sampleCount === 1: view re-read from scRT per frame.
+    //   - scRT with sampleCount > 1: view = MSAA color view (stable).
     //
     // `resolveTarget` is set when:
     //   - Caller passes a separate `resolveTexture` (target must be MSAA, resolveTexture
-    //     must be SS) — resolveTarget = resolveTexture._colorView, or swap view if it's
-    //     a swap RT.
-    //   - Target itself is a swap RT with MSAA (implicit auto-resolve to swap).
-    const isSwap = !!target._descriptor.resolveToSwapchain;
+    //     must be SS) — resolveTarget = resolveTexture._colorView, re-read from the
+    //     scRT per frame if it is the scRT.
+    //   - Target itself is the scRT with MSAA (implicit auto-resolve to swap).
+    const isSwap = target === engine.scRT;
     const swapAsView = isSwap && targetSamples === 1;
     let swapAsResolve = false;
     if (task.resolveTexture) {
@@ -394,15 +397,13 @@ function buildBlitPath(task: CopyToTextureTaskInternal, source: RenderTarget, ta
             throw new Error(`CopyToTextureTask "${task.name}": resolveTexture requires a multisampled targetTexture (got sampleCount=${targetSamples}).`);
         }
         const resolveDesc = task.resolveTexture._descriptor;
-        if ((resolveDesc.sampleCount ?? 1) !== 1) {
-            throw new Error(`CopyToTextureTask "${task.name}": resolveTexture must be single-sample (got sampleCount=${resolveDesc.sampleCount}).`);
+        if ((resolveDesc.samples ?? 1) !== 1) {
+            throw new Error(`CopyToTextureTask "${task.name}": resolveTexture must be single-sample (got sampleCount=${resolveDesc.samples}).`);
         }
-        if (resolveDesc.colorFormat !== target._descriptor.colorFormat) {
-            throw new Error(
-                `CopyToTextureTask "${task.name}": resolveTexture format (${resolveDesc.colorFormat}) must match targetTexture format (${target._descriptor.colorFormat}).`
-            );
+        if (resolveDesc.format !== target._descriptor.format) {
+            throw new Error(`CopyToTextureTask "${task.name}": resolveTexture format (${resolveDesc.format}) must match targetTexture format (${target._descriptor.format}).`);
         }
-        if (resolveDesc.resolveToSwapchain) {
+        if (task.resolveTexture === engine.scRT) {
             swapAsResolve = true;
         } else {
             task._colorAttachment.resolveTarget = task.resolveTexture._colorView!;
@@ -492,11 +493,9 @@ function getOrCreateCopyPipeline(engine: EngineContext, targetFormat: GPUTexture
     return pipeline;
 }
 
-function effectiveTargetFormat(target: RenderTarget, engine: EngineContext): GPUTextureFormat {
-    if (target._descriptor.resolveToSwapchain) {
-        return engine.format;
-    }
-    const fmt = target._descriptor.colorFormat;
+function effectiveTargetFormat(target: RenderTarget): GPUTextureFormat {
+    // The scRT carries its real format (engine.format) in its descriptor.
+    const fmt = target._descriptor.format;
     if (!fmt) {
         throw new Error("CopyToTextureTask: targetTexture has no color format.");
     }

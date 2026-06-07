@@ -53,18 +53,12 @@ async function main(): Promise<void> {
     // allocating its own, matching the BJS reference (renderTask.depthTexture =
     // geomTask.outputDepthTexture).
     const colorTarget = createRenderTarget({
-        label: "scene147-color",
-        colorFormat: engine.format,
-        sampleCount,
+        lbl: "scene147-color",
+        format: engine.format,
+        samples: sampleCount,
         size: "canvas",
     });
-    const swapchainTarget = createRenderTarget({
-        label: "scene147-swap",
-        colorFormat: engine.format,
-        sampleCount,
-        size: "canvas",
-        resolveToSwapchain: true,
-    });
+    const scRT = engine.scRT;
 
     // Geometry renderer → normalized view depth ([0,1], r16float, filterable by
     // the post-process bilinear sampler). The CoC reconstructs camera distance
@@ -105,7 +99,7 @@ async function main(): Promise<void> {
             focalLength: 50,
             fStop: 0.04,
             focusDistance: 80000,
-            targetTexture: swapchainTarget,
+            targetTexture: scRT,
         },
         engine,
         scene

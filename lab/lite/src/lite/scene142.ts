@@ -56,10 +56,10 @@ async function main(): Promise<void> {
     addToScene(scene, createHemisphericLight([0, 1, 0], 0.4));
 
     const sourceTarget = createRenderTarget({
-        label: "scene142-source",
-        colorFormat: engine.format,
-        depthStencilFormat: "depth24plus-stencil8",
-        sampleCount: 1,
+        lbl: "scene142-source",
+        format: engine.format,
+        dFormat: "depth24plus-stencil8",
+        samples: 1,
         size: "canvas",
     });
     const sourceTask = createRenderTask(
@@ -73,10 +73,10 @@ async function main(): Promise<void> {
         scene
     );
     const leftTarget = createRenderTarget({
-        label: "scene142-left",
-        colorFormat: engine.format,
-        depthStencilFormat: "depth24plus-stencil8",
-        sampleCount: 1,
+        lbl: "scene142-left",
+        format: engine.format,
+        dFormat: "depth24plus-stencil8",
+        samples: 1,
         size: "canvas",
     });
     const leftTask = createRenderTask(
@@ -110,13 +110,10 @@ async function main(): Promise<void> {
         leftTask.addMesh(box);
     }
 
-    const outputTarget = createRenderTarget({
-        label: "scene142-postprocess-output",
-        colorFormat: engine.format,
-        sampleCount: engine.msaaSamples,
-        size: "canvas",
-        resolveToSwapchain: true,
-    });
+    // Final post-process passes composite (via viewports) directly into the engine
+    // swapchain. A fullscreen-triangle blit covers every pixel, so this single-sample
+    // target is pixel-identical to the previous MSAA-resolve-to-swap target.
+    const outputTarget = engine.scRT;
     const blackAndWhite = createBlackAndWhitePostProcessTask(
         {
             name: "scene142-black-and-white",

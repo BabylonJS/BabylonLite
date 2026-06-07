@@ -91,11 +91,11 @@ export function createShadowRenderTarget(sg: ShadowGenerator, colorTexture: GPUT
     return {
         _descriptor: {
             size: { width: mapSize, height: mapSize },
-            colorFormat: colorTexture ? "rgba16float" : undefined,
-            depthStencilFormat: "depth32float",
+            format: colorTexture ? "rgba16float" : undefined,
+            dFormat: "depth32float",
             _depthClearValue: 1,
             _depthCompare: "less-equal",
-            sampleCount: 1,
+            samples: 1,
         },
         _colorTexture: colorTexture,
         _colorView: colorTexture?.createView() ?? null,

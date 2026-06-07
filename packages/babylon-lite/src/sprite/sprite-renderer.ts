@@ -330,7 +330,7 @@ function spriteRendererRecord(rr: SpriteRenderer): number {
     assertSpriteRendererLayers(rr.layers);
     const eng = rr._engine;
     const encoder = eng._currentEncoder;
-    const swapView = eng._swapchainView;
+    const swapView = eng.scRT._colorView!;
 
     // Open a sampleCount=1 render pass directly on the swapchain. This keeps HUD
     // sprites from resolving a fresh MSAA target over the already-rendered scene.

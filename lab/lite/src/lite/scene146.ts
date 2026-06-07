@@ -52,29 +52,23 @@ async function main(): Promise<void> {
 
     // Intermediate offscreen target — main scene + impostor strip composite here.
     const intermediateTarget = createRenderTarget({
-        label: "scene146-intermediate",
-        colorFormat: engine.format,
-        depthStencilFormat: "depth24plus-stencil8",
-        sampleCount: samples,
+        lbl: "scene146-intermediate",
+        format: engine.format,
+        dFormat: "depth24plus-stencil8",
+        samples: samples,
         size: "canvas",
     });
     const ssIntermediate = createRenderTarget({
-        label: "scene146-ss-intermediate",
-        colorFormat: engine.format,
-        sampleCount: 1,
+        lbl: "scene146-ss-intermediate",
+        format: engine.format,
+        samples: 1,
         size: "canvas",
     });
-    const swapchainTarget = createRenderTarget({
-        label: "scene146-swap",
-        colorFormat: engine.format,
-        sampleCount: 1,
-        size: "canvas",
-        resolveToSwapchain: true,
-    });
+    const scRT = engine.scRT;
     const realColorTarget = createRenderTarget({
-        label: "scene146-real-color",
-        colorFormat: engine.format,
-        sampleCount: samples,
+        lbl: "scene146-real-color",
+        format: engine.format,
+        samples: samples,
         size: "canvas",
     });
     const sceneTask = createRenderTask(
@@ -187,7 +181,7 @@ async function main(): Promise<void> {
             {
                 name: "scene146-to-swap",
                 sourceTexture: samples > 1 ? ssIntermediate : intermediateTarget,
-                targetTexture: swapchainTarget,
+                targetTexture: scRT,
             },
             engine,
             scene

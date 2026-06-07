@@ -26,7 +26,7 @@ export function createRenderTargetTexture(engine: EngineContext, descriptor: Ren
     rt._eager = true;
     if (!rt._colorTexture || !rt._colorView) {
         if (!rt._depthTexture) {
-            throw new Error("createRenderTargetTexture: render target has no color or depth texture (resolveToSwapchain with sampleCount=1?).");
+            throw new Error("createRenderTargetTexture: render target has no color or depth texture (no format / depthStencilFormat?).");
         }
         const texture: Texture2D = {
             texture: rt._depthTexture,

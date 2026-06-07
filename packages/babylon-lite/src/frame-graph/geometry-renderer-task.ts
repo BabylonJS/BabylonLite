@@ -238,19 +238,19 @@ export function createGeometryRendererTask(config: GeometryRendererTaskConfig, e
     const size = config.size ?? "canvas";
 
     if (config.depthTexture) {
-        const ds = config.depthTexture._descriptor.sampleCount ?? 1;
+        const ds = config.depthTexture._descriptor.samples ?? 1;
         if (ds !== samples) {
             throw new Error(`GeometryRendererTask: depthTexture sampleCount (${ds}) must match samples (${samples}).`);
         }
     }
 
     if (config.targetTexture) {
-        const ts = config.targetTexture._descriptor.sampleCount ?? 1;
+        const ts = config.targetTexture._descriptor.samples ?? 1;
         if (ts !== samples) {
             throw new Error(`GeometryRendererTask: targetTexture sampleCount (${ts}) must match samples (${samples}).`);
         }
-        if (!config.targetTexture._descriptor.colorFormat) {
-            throw new Error("GeometryRendererTask: targetTexture must have a colorFormat.");
+        if (!config.targetTexture._descriptor.format) {
+            throw new Error("GeometryRendererTask: targetTexture must have a format.");
         }
     }
 
@@ -317,12 +317,12 @@ export function createGeometryRendererTask(config: GeometryRendererTaskConfig, e
     // texture format when emitColor is set.
     const sigColorFormats = colorFormats.slice();
     if (config.targetTexture) {
-        sigColorFormats.push(config.targetTexture._descriptor.colorFormat!);
+        sigColorFormats.push(config.targetTexture._descriptor.format!);
     }
     const signature = {
         _colorFormat: sigColorFormats.join(),
         _colorFormats: sigColorFormats,
-        _depthStencilFormat: (config.depthTexture ?? outputTarget)._descriptor.depthStencilFormat ?? "depth32float",
+        _depthStencilFormat: (config.depthTexture ? config.depthTexture._descriptor.dFormat : outputTarget._descriptor.depthStencilFormat) ?? "depth32float",
         _depthCompare: "greater-equal" as GPUCompareFunction,
         _sampleCount: samples,
     };
@@ -549,7 +549,7 @@ function rebuildRenderPassDescriptor(task: GeometryRendererTaskInternal, config:
     let depthClearValue: number;
     if (config.depthTexture) {
         depthView = config.depthTexture._depthView;
-        depthFormat = config.depthTexture._descriptor.depthStencilFormat;
+        depthFormat = config.depthTexture._descriptor.dFormat;
         depthClearValue = config.depthTexture._descriptor._depthClearValue ?? 0;
     } else {
         depthView = mrt._depthView;
@@ -708,9 +708,9 @@ function resolveSourceMaterial(task: GeometryRendererTaskInternal, material: Mat
 function createWrapperRenderTarget(mrt: RenderTargetMrt, attachment: AttachmentInfo): RenderTarget {
     const baseDesc = mrt._descriptor;
     const wrapperDesc: RenderTargetDescriptor = {
-        label: `${baseDesc.label ?? "geometry"}.${attachment._index}`,
-        colorFormat: attachment._format,
-        sampleCount: 1,
+        lbl: `${baseDesc.label ?? "geometry"}.${attachment._index}`,
+        format: attachment._format,
+        samples: 1,
         size: baseDesc.size,
     };
     return {
@@ -728,9 +728,9 @@ function createWrapperRenderTarget(mrt: RenderTargetMrt, attachment: AttachmentI
 function createDepthWrapperRenderTarget(mrt: RenderTargetMrt, sampleCount: number): RenderTarget {
     const baseDesc = mrt._descriptor;
     const wrapperDesc: RenderTargetDescriptor = {
-        label: `${baseDesc.label ?? "geometry"}.depth`,
-        depthStencilFormat: baseDesc.depthStencilFormat,
-        sampleCount,
+        lbl: `${baseDesc.label ?? "geometry"}.depth`,
+        dFormat: baseDesc.depthStencilFormat,
+        samples: sampleCount,
         size: baseDesc.size,
     };
     return {

@@ -6,7 +6,7 @@ import type { Mat4 } from "../../../packages/babylon-lite/src/math/types";
 import type { DrawBinding, DrawUpdateContext, Renderable } from "../../../packages/babylon-lite/src/render/renderable";
 import { createSceneContext, registerScene } from "../../../packages/babylon-lite/src/scene/scene";
 import type { SceneContext } from "../../../packages/babylon-lite/src/scene/scene-core";
-import { createRenderTarget } from "../../../packages/babylon-lite/src/engine/render-target";
+import { createRenderTarget, type RenderTarget } from "../../../packages/babylon-lite/src/engine/render-target";
 import { createRenderTask, type RenderTask } from "../../../packages/babylon-lite/src/frame-graph/render-task";
 import { enableRenderTaskTransmission, enableSceneTransmission } from "../../../packages/babylon-lite/src/frame-graph/transmission";
 
@@ -130,7 +130,16 @@ function makeMockEngine(options?: {
             },
             copyTextureToTexture: () => options?.onCopy?.(),
         } as unknown as GPUCommandEncoder,
-        _swapchainView: {} as GPUTextureView,
+        scRT: {
+            _colorTexture: {},
+            _colorView: {},
+            _depthTexture: null,
+            _depthView: null,
+            _descriptor: { format: "bgra8unorm", samples: 1, size: "canvas" },
+            _width: 800,
+            _height: 600,
+            _eager: true,
+        } as unknown as RenderTarget,
         _currentDelta: 0,
         _cbs: [],
     };
@@ -183,10 +192,10 @@ describe("RenderPassTask transparent sorting", () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine);
         const rt = createRenderTarget({
-            colorFormat: "bgra8unorm",
-            depthStencilFormat: "depth32float",
+            format: "bgra8unorm",
+            dFormat: "depth32float",
             _depthCompare: "less-equal",
-            sampleCount: 1,
+            samples: 1,
             size: { width: 16, height: 16 },
         });
         const task = createRenderTask({ name: "standard-z-offscreen", rt }, engine, scene);
@@ -400,14 +409,11 @@ describe("RenderPassTask transparent sorting", () => {
         expect(passCount).toBe(2);
     });
 
-    it("patches color attachments when rendering to a single-sample swapchain target", async () => {
-        // Regression: with sampleCount === 1 + resolveToSwapchain, no MSAA color
-        // texture exists at build time, so the render pass descriptor is created
-        // with `colorAttachments: []`. The swap view must be patched in per frame
-        // (as `view`, not `resolveTarget`) AND the descriptor's colorAttachments
-        // array must be repopulated; otherwise the pass runs with no color targets
-        // while bundles draw into BGRA8 pipelines, producing a black canvas and
-        // WebGPU validation errors.
+    it("renders the default single-sample scene task into the engine scRT", async () => {
+        // Regression: the single-sample default scene task targets the colour-only engine
+        // scRT directly (with a standalone depth buffer). Its colorAttachments
+        // array must be non-empty and its `view` must be the scRT's per-frame
+        // color view (re-read at execute), with no `resolveTarget` (single-sample).
         const seenDescriptors: GPURenderPassDescriptor[] = [];
         const engine = makeMockEngine({
             msaaSamples: 1,
@@ -420,15 +426,12 @@ describe("RenderPassTask transparent sorting", () => {
         await registerScene(engine, scene);
         scene._record();
 
-        // The default swap render task must have run with a non-empty
-        // colorAttachments array whose `view` is the swapchain view (no
-        // `resolveTarget`, since sampleCount === 1).
         expect(seenDescriptors.length).toBeGreaterThan(0);
         const swapDescriptor = seenDescriptors[seenDescriptors.length - 1]!;
         const colorAttachments = swapDescriptor.colorAttachments as readonly GPURenderPassColorAttachment[];
         expect(colorAttachments.length).toBe(1);
         expect(colorAttachments[0]).toBeTruthy();
-        expect(colorAttachments[0]!.view).toBe(engine._swapchainView);
+        expect(colorAttachments[0]!.view).toBe(engine.scRT._colorView);
         expect(colorAttachments[0]!.resolveTarget).toBeUndefined();
     });
 
@@ -441,16 +444,16 @@ describe("RenderPassTask transparent sorting", () => {
 
         // Color-only RT (no depthStencilFormat → buildRenderTarget allocates no depth).
         const colorRt = createRenderTarget({
-            label: "scene-color",
-            colorFormat: "bgra8unorm",
-            sampleCount: 1,
+            lbl: "scene-color",
+            format: "bgra8unorm",
+            samples: 1,
             size: { width: 16, height: 16 },
         });
         // Externally-supplied depth — simulates the output of a preceding GeometryRendererTask.
         const externalDepth = createRenderTarget({
-            label: "external-depth",
-            depthStencilFormat: "depth32float",
-            sampleCount: 1,
+            lbl: "external-depth",
+            dFormat: "depth32float",
+            samples: 1,
             size: { width: 16, height: 16 },
         });
         // Pre-populate the depth view (the geometry task would do this in record()).
@@ -493,10 +496,10 @@ describe("RenderPassTask transparent sorting", () => {
 
         // Color RT with its own depth — buildRenderTarget will allocate _depthTexture/_depthView.
         const rt = createRenderTarget({
-            label: "scene",
-            colorFormat: "bgra8unorm",
-            depthStencilFormat: "depth32float",
-            sampleCount: 1,
+            lbl: "scene",
+            format: "bgra8unorm",
+            dFormat: "depth32float",
+            samples: 1,
             size: { width: 16, height: 16 },
         });
 
@@ -522,16 +525,16 @@ describe("RenderTask MSAA resolveTarget", () => {
         scene.camera = makeCamera();
 
         const msaaRt = createRenderTarget({
-            label: "msaa-color",
-            colorFormat: "rgba8unorm",
-            depthStencilFormat: "depth32float",
-            sampleCount: 4,
+            lbl: "msaa-color",
+            format: "rgba8unorm",
+            dFormat: "depth32float",
+            samples: 4,
             size: { width: 32, height: 16 },
         });
         const resolveTarget = createRenderTarget({
-            label: "resolve-color",
-            colorFormat: "rgba8unorm",
-            sampleCount: 1,
+            lbl: "resolve-color",
+            format: "rgba8unorm",
+            samples: 1,
             size: { width: 32, height: 16 },
         });
 
@@ -551,16 +554,16 @@ describe("RenderTask MSAA resolveTarget", () => {
         scene.camera = makeCamera();
 
         const ssRt = createRenderTarget({
-            label: "ss-color",
-            colorFormat: "rgba8unorm",
-            depthStencilFormat: "depth32float",
-            sampleCount: 1,
+            lbl: "ss-color",
+            format: "rgba8unorm",
+            dFormat: "depth32float",
+            samples: 1,
             size: { width: 32, height: 16 },
         });
         const resolveTarget = createRenderTarget({
-            label: "resolve-color",
-            colorFormat: "rgba8unorm",
-            sampleCount: 1,
+            lbl: "resolve-color",
+            format: "rgba8unorm",
+            samples: 1,
             size: { width: 32, height: 16 },
         });
 

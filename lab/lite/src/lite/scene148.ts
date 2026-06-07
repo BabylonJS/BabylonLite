@@ -55,28 +55,22 @@ async function main(): Promise<void> {
 
     // Offscreen colour target — the scene renders here at MSAA sampleCount.
     const colorTarget = createRenderTarget({
-        label: "scene148-color",
-        colorFormat: engine.format,
-        depthStencilFormat: "depth24plus-stencil8",
-        sampleCount,
+        lbl: "scene148-color",
+        format: engine.format,
+        dFormat: "depth24plus-stencil8",
+        samples: sampleCount,
         size: "canvas",
     });
     // Single-sample resolve of colorTarget — the depth-of-field source. The
     // render task resolves the MSAA colour into this at end-of-pass (the CoC /
     // blur post-processes require a single-sample source).
     const colorResolveTarget = createRenderTarget({
-        label: "scene148-color-resolve",
-        colorFormat: engine.format,
-        sampleCount: 1,
+        lbl: "scene148-color-resolve",
+        format: engine.format,
+        samples: 1,
         size: "canvas",
     });
-    const swapchainTarget = createRenderTarget({
-        label: "scene148-swap",
-        colorFormat: engine.format,
-        sampleCount: 1,
-        size: "canvas",
-        resolveToSwapchain: true,
-    });
+    const scRT = engine.scRT;
 
     // Geometry renderer → camera-space view depth (r16float). Rendered at
     // samples=1 (single-sample): MSAA depth has to be resolved by averaging,
@@ -118,7 +112,7 @@ async function main(): Promise<void> {
             focalLength: 50,
             fStop: 0.04,
             focusDistance: 80000,
-            targetTexture: swapchainTarget,
+            targetTexture: scRT,
         },
         engine,
         scene

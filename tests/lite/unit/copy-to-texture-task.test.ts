@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { EngineContext } from "../../../packages/babylon-lite/src/engine/engine";
-import { createRenderTarget } from "../../../packages/babylon-lite/src/engine/render-target";
+import { createRenderTarget, type RenderTarget } from "../../../packages/babylon-lite/src/engine/render-target";
 import { createCopyToTextureTask } from "../../../packages/babylon-lite/src/frame-graph/copy-to-texture-task";
 import { createSceneContext } from "../../../packages/babylon-lite/src/scene/scene";
 import type { SceneContext } from "../../../packages/babylon-lite/src/scene/scene-core";
@@ -85,7 +85,16 @@ function makeMockEngine(capture: BeginPassCapture): EngineContext {
                 capture.copies.push({ source, target, size });
             },
         } as unknown as GPUCommandEncoder,
-        _swapchainView: { id: "swap" } as unknown as GPUTextureView,
+        scRT: {
+            _colorTexture: { id: "swap-tex" },
+            _colorView: { id: "swap" },
+            _depthTexture: null,
+            _depthView: null,
+            _descriptor: { format: "bgra8unorm", samples: 1, size: "canvas" },
+            _width: 800,
+            _height: 600,
+            _eager: true,
+        } as unknown as RenderTarget,
         _currentDelta: 0,
         _cbs: [],
     };
@@ -93,9 +102,9 @@ function makeMockEngine(capture: BeginPassCapture): EngineContext {
 
 function makeOffscreenRT(format: GPUTextureFormat, width: number, height: number, sampleCount: 1 | 4 = 1) {
     return createRenderTarget({
-        label: `rt-${format}-${width}x${height}-${sampleCount}`,
-        colorFormat: format,
-        sampleCount,
+        lbl: `rt-${format}-${width}x${height}-${sampleCount}`,
+        format: format,
+        samples: sampleCount,
         size: { width, height },
     });
 }
@@ -103,8 +112,8 @@ function makeOffscreenRT(format: GPUTextureFormat, width: number, height: number
 function buildColor(rt: ReturnType<typeof makeOffscreenRT>, engine: EngineContext, mipLevelCount = 1): void {
     const tex = engine._device.createTexture({
         size: { width: (rt._descriptor.size as { width: number }).width, height: (rt._descriptor.size as { height: number }).height },
-        format: rt._descriptor.colorFormat!,
-        sampleCount: rt._descriptor.sampleCount,
+        format: rt._descriptor.format!,
+        sampleCount: rt._descriptor.samples,
         mipLevelCount,
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
     });
@@ -244,21 +253,13 @@ describe("CopyToTextureTask", () => {
         expect(pipeline.multisample?.count).toBe(4);
     });
 
-    it("blits to the swapchain view when target is a swapchain RT", () => {
+    it("blits to the swapchain view when target is the engine scRT", () => {
         const capture: BeginPassCapture = { descriptors: [], viewports: [], scissors: [], draws: 0, copies: [], pipelines: [] };
         const engine = makeMockEngine(capture);
         const scene = createSceneContext(engine) as SceneContext;
         const source = makeOffscreenRT("bgra8unorm", 64, 32);
-        const swapTarget = createRenderTarget({
-            label: "swap",
-            colorFormat: "bgra8unorm",
-            sampleCount: 1,
-            size: "canvas",
-            resolveToSwapchain: true,
-        });
+        const swapTarget = engine.scRT;
         buildColor(source, engine);
-        swapTarget._width = 64;
-        swapTarget._height = 32;
 
         const task = createCopyToTextureTask({ sourceTexture: source, targetTexture: swapTarget }, engine, scene);
         task.record();
@@ -267,8 +268,8 @@ describe("CopyToTextureTask", () => {
         expect(drawCount).toBe(1);
         const desc = capture.descriptors[0]!;
         const att = (desc.colorAttachments as GPURenderPassColorAttachment[])[0]!;
-        // sampleCount=1 swapchain: view = swap view directly
-        expect(att.view).toBe(engine._swapchainView);
+        // sampleCount=1 scRT: view re-read from scRT._colorView per frame
+        expect(att.view).toBe(engine.scRT._colorView);
     });
 
     it("exposes targetTexture as outputTexture", () => {
@@ -366,21 +367,13 @@ describe("CopyToTextureTask", () => {
         expect(task.outputTexture).toBe(resolve);
     });
 
-    it("hardware-resolves MSAA source into a swapchain resolveTexture, patching the swap view per frame", () => {
+    it("hardware-resolves MSAA source into the scRT resolveTexture, re-reading the swap view per frame", () => {
         const capture: BeginPassCapture = { descriptors: [], viewports: [], scissors: [], draws: 0, copies: [], pipelines: [] };
         const engine = makeMockEngine(capture);
         const scene = createSceneContext(engine) as SceneContext;
         const source = makeOffscreenRT("bgra8unorm", 64, 32, 4);
-        const swap = createRenderTarget({
-            label: "swap",
-            colorFormat: "bgra8unorm",
-            sampleCount: 1,
-            size: "canvas",
-            resolveToSwapchain: true,
-        });
+        const swap = engine.scRT;
         buildColor(source, engine);
-        swap._width = 64;
-        swap._height = 32;
 
         const task = createCopyToTextureTask({ sourceTexture: source, resolveTexture: swap }, engine, scene);
         task.record();
@@ -389,7 +382,7 @@ describe("CopyToTextureTask", () => {
         expect(drawCount).toBe(0);
         const att = (capture.descriptors[0]!.colorAttachments as GPURenderPassColorAttachment[])[0]!;
         expect(att.view).toBe(source._colorView);
-        expect(att.resolveTarget).toBe(engine._swapchainView);
+        expect(att.resolveTarget).toBe(engine.scRT._colorView);
     });
 
     it("rejects resolveTexture when the source is single-sampled", () => {
@@ -460,19 +453,13 @@ describe("CopyToTextureTask", () => {
         expect(task.outputTexture).toBe(resolve);
     });
 
-    it("blits to MSAA target and end-of-pass resolves into a swapchain resolveTexture", () => {
+    it("blits to MSAA target and end-of-pass resolves into the scRT resolveTexture", () => {
         const capture: BeginPassCapture = { descriptors: [], viewports: [], scissors: [], draws: 0, copies: [], pipelines: [] };
         const engine = makeMockEngine(capture);
         const scene = createSceneContext(engine) as SceneContext;
         const source = makeOffscreenRT("bgra8unorm", 64, 32);
         const target = makeOffscreenRT("bgra8unorm", 64, 32, 4);
-        const swap = createRenderTarget({
-            label: "swap",
-            colorFormat: "bgra8unorm",
-            sampleCount: 1,
-            size: "canvas",
-            resolveToSwapchain: true,
-        });
+        const swap = engine.scRT;
         buildColor(source, engine);
         buildColor(target, engine);
 
@@ -483,7 +470,7 @@ describe("CopyToTextureTask", () => {
         expect(drawCount).toBe(1);
         const att = (capture.descriptors[0]!.colorAttachments as GPURenderPassColorAttachment[])[0]!;
         expect(att.view).toBe(target._colorView);
-        expect(att.resolveTarget).toBe(engine._swapchainView);
+        expect(att.resolveTarget).toBe(engine.scRT._colorView);
     });
 
     it("rejects targetTexture+resolveTexture when target is single-sampled", () => {

@@ -137,13 +137,13 @@ export function createDepthOfFieldPostProcessTask(config: DepthOfFieldPostProces
         blurRatios.push(0.75 / Math.pow(2, i));
     }
 
-    const sourceFormat = params.sourceTexture._descriptor.colorFormat;
+    const sourceFormat = params.sourceTexture._descriptor.format;
     if (!sourceFormat) {
-        throw new Error(`DepthOfFieldPostProcessTask "${name}": sourceTexture must have a colorFormat.`);
+        throw new Error(`DepthOfFieldPostProcessTask "${name}": sourceTexture must have a format.`);
     }
 
     // Circle-of-confusion target (single-channel, filterable), full source size.
-    const cocTarget = createRenderTarget({ label: `${name}-coc`, colorFormat: "r16float", sampleCount: 1, size: "canvas" });
+    const cocTarget = createRenderTarget({ lbl: `${name}-coc`, format: "r16float", samples: 1, size: "canvas" });
     const coc = createCircleOfConfusionPostProcessTask(
         {
             name: `${name}-coc`,
@@ -169,8 +169,8 @@ export function createDepthOfFieldPostProcessTask(config: DepthOfFieldPostProces
     const blurSteps: RenderTarget[] = [];
     for (let i = 0; i < blurCount; i++) {
         const size = blurTargetSize(params.sourceTexture, blurRatios[i]!, eng);
-        const yTarget = createRenderTarget({ label: `${name}-blur-y-${i}`, colorFormat: sourceFormat, sampleCount: 1, size });
-        const xTarget = createRenderTarget({ label: `${name}-blur-x-${i}`, colorFormat: sourceFormat, sampleCount: 1, size });
+        const yTarget = createRenderTarget({ lbl: `${name}-blur-y-${i}`, format: sourceFormat, samples: 1, size });
+        const xTarget = createRenderTarget({ lbl: `${name}-blur-x-${i}`, format: sourceFormat, samples: 1, size });
         const yTask = createDepthOfFieldBlurPostProcessTask(
             {
                 name: `${name}-blur-y-${i}`,

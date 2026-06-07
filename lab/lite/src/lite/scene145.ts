@@ -51,10 +51,10 @@ async function main(): Promise<void> {
     // the BJS frame-graph reference (which always uses the mirrored RT path),
     // BL's intermediate RTs also mirror — no explicit flag needed.
     const intermediateTarget = createRenderTarget({
-        label: "scene145-intermediate",
-        colorFormat: engine.format,
-        depthStencilFormat: "depth24plus-stencil8",
-        sampleCount: samples,
+        lbl: "scene145-intermediate",
+        format: engine.format,
+        dFormat: "depth24plus-stencil8",
+        samples: samples,
         size: "canvas",
     });
     // Single-sample staging target used by the final shader-blit to the swap.
@@ -67,27 +67,21 @@ async function main(): Promise<void> {
     // across the frame vs. the direct hardware-resolve path. To match the
     // reference output we intentionally take the same extra hop here.
     const ssIntermediate = createRenderTarget({
-        label: "scene145-ss-intermediate",
-        colorFormat: engine.format,
-        sampleCount: 1,
+        lbl: "scene145-ss-intermediate",
+        format: engine.format,
+        samples: 1,
         size: "canvas",
     });
     // Final swapchain target — receives the composite via a closing copy task.
-    const swapchainTarget = createRenderTarget({
-        label: "scene145-swap",
-        colorFormat: engine.format,
-        sampleCount: 1,
-        size: "canvas",
-        resolveToSwapchain: true,
-    });
+    const scRT = engine.scRT;
     // Real-color target written by geomTaskA's targetTexture pass — collects
     // the actual lit material color alongside the geometry-data attachments,
     // and is displayed as one of the impostors below to demonstrate the
     // GeometryRendererTask.targetTexture feature.
     const realColorTarget = createRenderTarget({
-        label: "scene145-real-color",
-        colorFormat: engine.format,
-        sampleCount: samples,
+        lbl: "scene145-real-color",
+        format: engine.format,
+        samples: samples,
         size: "canvas",
     });
     const sceneTask = createRenderTask(
@@ -222,7 +216,7 @@ async function main(): Promise<void> {
             {
                 name: "scene145-to-swap",
                 sourceTexture: samples > 1 ? ssIntermediate : intermediateTarget,
-                targetTexture: swapchainTarget,
+                targetTexture: scRT,
             },
             engine,
             scene

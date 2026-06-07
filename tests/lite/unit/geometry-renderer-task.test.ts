@@ -51,7 +51,16 @@ function makeMockEngine(): EngineContext {
         _renderFn: null,
         _renderingContexts: [],
         _currentEncoder: {} as unknown as GPUCommandEncoder,
-        _swapchainView: { id: "swap" } as unknown as GPUTextureView,
+        scRT: {
+            _colorView: { id: "swap" },
+            _colorTexture: {},
+            _depthTexture: null,
+            _depthView: null,
+            _descriptor: { format: "bgra8unorm", samples: 1, size: "canvas" },
+            _width: 0,
+            _height: 0,
+            _eager: true,
+        } as unknown as import("../../../packages/babylon-lite/src/engine/render-target").RenderTarget,
         _currentDelta: 0,
         _cbs: [],
     };
@@ -130,8 +139,8 @@ describe("GeometryRendererTask", () => {
         const scene = createSceneContext(engine) as SceneContext;
         const task = createGeometryRendererTask({ textureDescriptions: [{ type: GeometryTextureType.VIEW_DEPTH }, { type: GeometryTextureType.VIEW_NORMAL }] }, engine, scene);
         const wrapper = task.geometryViewNormalTexture!;
-        expect(wrapper._descriptor.colorFormat).toBe("rgba16float");
-        expect(wrapper._descriptor.sampleCount).toBe(1);
+        expect(wrapper._descriptor.format).toBe("rgba16float");
+        expect(wrapper._descriptor.samples).toBe(1);
         expect(wrapper._eager).toBe(true);
     });
 
@@ -152,7 +161,7 @@ describe("GeometryRendererTask", () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContext;
         const depth = {
-            _descriptor: { depthStencilFormat: "depth32float" as const, sampleCount: 4 as const, size: "canvas" as const },
+            _descriptor: { dFormat: "depth32float" as const, samples: 4 as const, size: "canvas" as const },
             _colorTexture: null,
             _colorView: null,
             _depthTexture: null,
@@ -173,8 +182,8 @@ describe("GeometryRendererTask", () => {
 
         const depthRt = task.geometryDepthTexture;
         expect(depthRt).toBeTruthy();
-        expect(depthRt._descriptor.depthStencilFormat).toBe("depth32float");
-        expect(depthRt._descriptor.sampleCount).toBe(1);
+        expect(depthRt._descriptor.dFormat).toBe("depth32float");
+        expect(depthRt._descriptor.samples).toBe(1);
         expect(depthRt._eager).toBe(true);
 
         // Before record(): no GPU resources yet.
@@ -193,7 +202,7 @@ describe("GeometryRendererTask", () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContext;
         const external = {
-            _descriptor: { depthStencilFormat: "depth32float" as const, sampleCount: 1 as const, size: "canvas" as const },
+            _descriptor: { dFormat: "depth32float" as const, samples: 1 as const, size: "canvas" as const },
             _colorTexture: null,
             _colorView: null,
             _depthTexture: null,
@@ -217,7 +226,7 @@ describe("GeometryRendererTask", () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContext;
         const target = {
-            _descriptor: { colorFormat: "bgra8unorm" as const, sampleCount: 1 as const, size: "canvas" as const },
+            _descriptor: { format: "bgra8unorm" as const, samples: 1 as const, size: "canvas" as const },
             _colorTexture: null,
             _colorView: null,
             _depthTexture: null,
@@ -233,7 +242,7 @@ describe("GeometryRendererTask", () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContext;
         const target = {
-            _descriptor: { colorFormat: "bgra8unorm" as const, sampleCount: 4 as const, size: "canvas" as const },
+            _descriptor: { format: "bgra8unorm" as const, samples: 4 as const, size: "canvas" as const },
             _colorTexture: null,
             _colorView: null,
             _depthTexture: null,
@@ -246,11 +255,11 @@ describe("GeometryRendererTask", () => {
         );
     });
 
-    it("throws when targetTexture has no colorFormat", () => {
+    it("throws when targetTexture has no format", () => {
         const engine = makeMockEngine();
         const scene = createSceneContext(engine) as SceneContext;
         const target = {
-            _descriptor: { sampleCount: 1 as const, size: "canvas" as const },
+            _descriptor: { samples: 1 as const, size: "canvas" as const },
             _colorTexture: null,
             _colorView: null,
             _depthTexture: null,
@@ -259,7 +268,7 @@ describe("GeometryRendererTask", () => {
             _height: 0,
         } as unknown as import("../../../packages/babylon-lite/src/engine/render-target").RenderTarget;
         expect(() => createGeometryRendererTask({ textureDescriptions: [{ type: GeometryTextureType.VIEW_NORMAL }], samples: 1, targetTexture: target }, engine, scene)).toThrow(
-            /colorFormat/
+            /format/
         );
     });
 });

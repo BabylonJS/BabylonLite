@@ -21,12 +21,11 @@
  *     scene's renderables. Re-sync happens automatically when the scene's
  *     `_renderableVersion` changes between frames (mesh add/remove, material swap).
  *
- * Swapchain mode is detected by `rt.descriptor.resolveToSwapchain` and is
- * handled inside the `RenderPass` (the swap view is patched into the cached
- * descriptor per frame, as either the resolveTarget for MSAA RTs or the
- * direct color view otherwise). `clr: false` switches color + depth `loadOp`
- * to `"load"` so multiple scenes can share the swapchain in one frame
- * (e.g., a 3D scene + a UI overlay scene).
+ * The engine `scRT` is just another `RenderTarget` here: a task that
+ * targets it (`rt`) or resolves into it (`rst`) re-reads its per-frame color view
+ * at execute time (the swap texture is re-acquired each frame). `clr: false`
+ * switches color + depth `loadOp` to `"load"` so multiple scenes can share the
+ * swapchain in one frame (e.g., a 3D scene + a UI overlay scene).
  */
 
 import type { EngineContext } from "../engine/engine.js";
@@ -62,13 +61,18 @@ export interface RenderTaskConfig {
      *  format and size matching `rt`; WebGPU errors at pass-encode time if not.
      *  Ignored when `rt` is single-sample. */
     rst?: RenderTarget;
-    /** Optional external depth/stencil attachment (e.g. one produced by a
-     *  preceding `GeometryRendererTask`). When set, the pass binds this target's
-     *  depth view instead of allocating its own, uses its `depthStencilFormat`
-     *  for pipeline signature matching, and loads it (`loadOp: "load"`) — the
-     *  caller owns clearing. The colour `rt` must then omit `depthStencilFormat`
-     *  (so it allocates no internal depth) and match this target in size, sample
-     *  count and Y-flip. */
+    /** Optional separate depth/stencil attachment. The pass binds this target's
+     *  depth view instead of `rt`'s own, and uses its `depthStencilFormat` for
+     *  pipeline signature matching. The colour `rt` must omit `depthStencilFormat`
+     *  (so it allocates no internal depth) and match this target in size + sample
+     *  count. Two ownership modes, distinguished by `_eager`:
+     *  - `_eager` depth (e.g. a `GeometryRendererTask` output): the task neither
+     *    builds nor clears nor disposes it — it loads it (`loadOp: "load"`) and the
+     *    caller owns clearing. This is how scenes reuse a pre-rendered depth buffer.
+     *  - non-`_eager` depth: the task owns it — builds/rebuilds it in `record()`,
+     *    clears it (`loadOp: "clear"`), and disposes it. Used by the default
+     *    single-sample scene task, whose colour `rt` is the depth-less
+     *    engine `scRT`. */
     depth?: RenderTarget;
     /** Background clear color. May be mutated frame-to-frame. */
     clrColor?: GPUColorDict;
@@ -167,18 +171,17 @@ interface MutableDrawUpdateContext {
  *  Swapchain-targeted tasks acquire the swap view per-frame at execute time. */
 export function createRenderTask(config: RenderTaskConfig, engine: EngineContext, scene: SceneContext): RenderTask {
     const sc = scene as SceneContext;
-    const rt = config.rt;
     config.clrColor ??= { r: 0.2, g: 0.2, b: 0.3, a: 1.0 };
     config.clr ??= true;
-    const desc = rt._descriptor;
+    const desc = config.rt._descriptor;
     // Render upright: row 0 of the GPU texture is the top of the scene. Every
     // RT (offscreen or swapchain) renders without a projection Y-flip; pipelines
     // use the default ccw front face; downstream samplers see upright pixels.
     const targetSignature = {
-        _colorFormat: desc.colorFormat,
-        _depthStencilFormat: config.depth?._descriptor.depthStencilFormat ?? desc.depthStencilFormat,
+        _colorFormat: desc.format,
+        _depthStencilFormat: config.depth?._descriptor.dFormat ?? desc.dFormat,
         _depthCompare: desc._depthCompare,
-        _sampleCount: desc.sampleCount ?? 1,
+        _sampleCount: desc.samples ?? 1,
     };
 
     const sceneBGL = getSceneBindGroupLayout(engine);
@@ -210,7 +213,7 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
         _renderPassDescriptor: { colorAttachments: [colorAttachment] },
         _colorAttachment: colorAttachment,
         _depthSrc: config.depth,
-        _depthLoadOp: config.depth ? "load" : undefined,
+        _depthLoadOp: config.depth ? (config.depth._eager ? "load" : "clear") : undefined,
         _sceneUBO: sceneUBO,
         _sceneBG: sceneBG,
         _lightsUBO: lightsUBO,
@@ -234,9 +237,19 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
             if (task._autoFromScene) {
                 task._renderables.push(...sc._renderables);
             }
+            // Read config.rt dynamically — transmission retargeting swaps it after
+            // the task is created, and the engine scRT must never be rebuilt.
+            const rt = config.rt;
             buildRenderTarget(rt, engine);
-            if (config.rst && (rt._descriptor.sampleCount ?? 1) > 1) {
+            if (config.rst && (rt._descriptor.samples ?? 1) > 1) {
                 buildRenderTarget(config.rst, engine);
+            }
+            // A non-eager external depth (e.g. the default single-sample scene task's
+            // depth, whose colour rt is the depth-less scRT) is task-managed:
+            // build/rebuild it here. Eager depths (GeometryRendererTask outputs) are
+            // pre-built and skipped by buildRenderTarget.
+            if (config.depth && !config.depth._eager) {
+                buildRenderTarget(config.depth, engine);
             }
             updateContext.targetWidth = rt._width;
             updateContext.targetHeight = rt._height;
@@ -249,10 +262,12 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
         },
         dispose(): void {
             task._passes.length = 0;
-            disposeRenderTarget(rt);
-            if (config.rst) {
-                disposeRenderTarget(config.rst);
-            }
+            // disposeRenderTarget no-ops on the engine scRT and on eager
+            // GeometryRendererTask depth outputs (both `_eager`), and on an undefined
+            // rst/depth — so these can be passed unconditionally.
+            disposeRenderTarget(config.rt);
+            disposeRenderTarget(config.rst);
+            disposeRenderTarget(config.depth);
             task._opaqueBindings.length = 0;
             task._directBindings.length = 0;
             task._transparentBindings.length = 0;
@@ -366,7 +381,7 @@ function buildRenderPassDescriptor(task: RenderTask, rt: RenderTarget): void {
             depthLoadOp: loadOp,
             depthStoreOp: "store",
         };
-        if (dd.depthStencilFormat?.includes("stencil")) {
+        if (dd.dFormat?.includes("stencil")) {
             depthAttachment.stencilClearValue = 0;
             depthAttachment.stencilLoadOp = loadOp;
             depthAttachment.stencilStoreOp = "store";
@@ -413,19 +428,18 @@ function executePass(task: RenderTask, eng: EngineContext, targetSignature: Rend
     prepareRenderTaskPass(task, eng, targetSignature, context);
     const att = task._colorAttachment;
     const cfg = task._config;
-    const swapchain = cfg.rt._descriptor.resolveToSwapchain === true;
-    if (cfg.rt._colorView || swapchain) {
+    if (cfg.rt._colorView) {
+        // The engine scRT's color view is re-acquired every frame, so re-read
+        // it here. Offscreen color views are stable between rebuilds — leaving att.view
+        // untouched preserves an external override (swapchain-overlay shares the base
+        // scene's MSAA color view). The resolve target (rst) is re-read each frame so an
+        // `rst === scRT` picks up its fresh per-frame view.
+        if (cfg.rt === eng.scRT) {
+            att.view = cfg.rt._colorView;
+        }
+        att.resolveTarget = cfg.rst?._colorView ?? undefined;
         att.clearValue = task._autoFromScene ? sc.clearColor : cfg.clrColor!;
         att.loadOp = cfg.clr ? "clear" : "load";
-    }
-    if (swapchain) {
-        const swapView = eng._swapchainView;
-        if (sampleCount > 1) {
-            att.resolveTarget = swapView;
-        } else {
-            att.view = swapView;
-            task._renderPassDescriptor.colorAttachments = [att];
-        }
     }
     if (task._executeWithTransmission) {
         return task._executeWithTransmission(sampleCount);
@@ -469,14 +483,14 @@ function executePassBody(task: RenderTask, pass: GPURenderPassEncoder): number {
     if (task._lastVersion !== scene._renderableVersion || task._lastVis !== _vis || opaqueBundles.length === 0) {
         const desc = rt._descriptor;
         const be = eng._device.createRenderBundleEncoder({
-            colorFormats: desc.colorFormat ? [desc.colorFormat] : [],
+            colorFormats: desc.format ? [desc.format] : [],
             // Use the task's target signature, not the RT descriptor: a depth
             // override (config.depth) supplies the depth format externally, so
             // the cached opaque pipelines are built with it while the colour RT
             // carries no depthStencilFormat of its own. The bundle encoder's
             // attachment state must match those pipelines exactly.
             depthStencilFormat: task._targetSignature._depthStencilFormat,
-            sampleCount: desc.sampleCount ?? 1,
+            sampleCount: desc.samples ?? 1,
         });
         be.setBindGroup(0, sceneBG);
         drawList(be, opaqueBindings, eng);

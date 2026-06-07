@@ -240,26 +240,13 @@ export function createSceneContext(engine: EngineContext, options?: SceneContext
     const fg = createFrameGraph(eng);
     ctx._frameGraph = fg;
     if (options?.defaultRenderTask !== false) {
-        const swapRT = createRenderTarget({
-            label: "scene-swapchain",
-            colorFormat: eng.format,
-            depthStencilFormat: "depth24plus-stencil8",
-            sampleCount: eng.msaaSamples,
-            size: "canvas",
-            resolveToSwapchain: true,
-        });
-        _appendTask(
-            fg,
-            createRenderTask(
-                {
-                    name: "scene",
-                    rt: swapRT,
-                    clrColor: ctx.clearColor,
-                },
-                eng,
-                ctx
-            )
-        );
+        // MSAA: render into an MSAA colour RT (which owns depth) and resolve into the
+        // single-sample scRT. No MSAA: render straight into the colour-only
+        // scRT with a task-owned single-sample depth buffer it builds/clears/frees.
+        const msaa = eng.msaaSamples > 1;
+        const rt = msaa ? createRenderTarget({ lbl: "scene-color", format: eng.format, dFormat: "depth24plus-stencil8", samples: eng.msaaSamples, size: "canvas" }) : eng.scRT;
+        const depth = msaa ? undefined : createRenderTarget({ lbl: "scene-depth", dFormat: "depth24plus-stencil8", samples: 1, size: "canvas" });
+        _appendTask(fg, createRenderTask({ name: "scene", rt, rst: msaa ? eng.scRT : undefined, depth, clrColor: ctx.clearColor }, eng, ctx));
     }
     ctx._disposables.push(() => fg.dispose());
     return ctx;

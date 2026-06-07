@@ -41,9 +41,9 @@ describe("reverse-Z depth", () => {
 
     it("defaults render targets and pipeline signatures to reverse-Z", () => {
         const rt = createRenderTarget({
-            colorFormat: "bgra8unorm",
-            depthStencilFormat: "depth24plus-stencil8",
-            sampleCount: 1,
+            format: "bgra8unorm",
+            dFormat: "depth24plus-stencil8",
+            samples: 1,
             size: { width: 1, height: 1 },
         });
 
@@ -54,10 +54,10 @@ describe("reverse-Z depth", () => {
 
     it("allows internal shadow targets to keep standard-Z depth maps", () => {
         const rt = createRenderTarget({
-            depthStencilFormat: "depth32float",
+            dFormat: "depth32float",
             _depthClearValue: 1,
             _depthCompare: "less-equal",
-            sampleCount: 1,
+            samples: 1,
             size: { width: 1, height: 1 },
         });
 
@@ -68,9 +68,9 @@ describe("reverse-Z depth", () => {
 
     it("initializes render-pass depth attachments with reverse-Z clear by default", () => {
         const rt = createRenderTarget({
-            colorFormat: "bgra8unorm",
-            depthStencilFormat: "depth24plus-stencil8",
-            sampleCount: 1,
+            format: "bgra8unorm",
+            dFormat: "depth24plus-stencil8",
+            samples: 1,
             size: { width: 1, height: 1 },
         });
         rt._colorView = {} as GPUTextureView;
