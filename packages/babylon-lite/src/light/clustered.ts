@@ -73,6 +73,13 @@ export function createClusteredPointLight(container: ClusteredLightContainer, op
     return light;
 }
 
+/** Force the container's GPU light state to re-upload next frame. Call after mutating a light's
+ *  position / range / intensity / diffuse in place (e.g. animated lights such as drifting fireflies),
+ *  since those edits don't bump the container version on their own. */
+export function markClusteredLightContainerDirty(container: ClusteredLightContainer): void {
+    container._version++;
+}
+
 export function addClusteredLightContainer(scene: SceneContext, container: ClusteredLightContainer): void {
     const ctx = scene as SceneContext;
     ctx._clusteredLightContainer = container;

@@ -223,11 +223,20 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     let _syncThinInstanceBuffers:
         | ((engine: EngineContext, ti: ThinInstanceData, pass: GPURenderPassEncoder | GPURenderBundleEncoder, slot: number, hasColor: boolean) => number)
         | null = null;
+    // Per-frame thin-instance matrix/color UPLOAD (no pass — just writeBuffer of the dirty range).
+    // The bundle-recorded draw only re-binds the buffer; animated instances (e.g. wind-swayed flora)
+    // mutate their matrices every frame, but the cached opaque bundle is NOT re-recorded each frame,
+    // so the draw-time sync never runs on a steady frame. We therefore upload dirty thin-instance data
+    // from the per-frame update() below (which always runs). It is version-gated, so static instances
+    // cost nothing, and it never recreates the buffer for a same-capacity update — keeping the cached
+    // bundle's setVertexBuffer reference valid.
+    let _syncThinInstanceGpuData: ((engine: EngineContext, ti: ThinInstanceData, hasColor: boolean) => void) | null = null;
     if (hasSomeThinInstances) {
         const mod = await import("../../shader/fragments/thin-instance-fragment.js");
         _createThinInstanceFragment = mod.createThinInstanceFragment;
         const gpuMod = await import("../../mesh/thin-instance-gpu.js");
         _syncThinInstanceBuffers = gpuMod.syncThinInstanceBuffers;
+        _syncThinInstanceGpuData = gpuMod.syncThinInstanceGpuData;
     }
 
     // ACES tonemap WGSL is dynamically imported only when requested (keeps standard-tonemap bundles lean).
@@ -273,6 +282,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     // same shadowLights array, so a BG keyed by shadowBGL alone is correct.
     const shadowBGCache = new Map<GPUBindGroupLayout, GPUBindGroup>();
     const syncThinInstanceBuffers = _syncThinInstanceBuffers;
+    const syncThinInstanceGpuData = _syncThinInstanceGpuData;
 
     // Closure used both for the initial per-mesh build below AND for later
     // material-swap / per-pass-override rebuilds (set on pbrGroupBuilder._rebuildSingle).
@@ -394,6 +404,15 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
                 }
                 writeMaterialData(data, mat, materialSpec);
                 device.queue.writeBuffer(materialUBO, 0, data.buffer, 0, data.byteLength);
+            }
+            // Upload any dirty thin-instance matrices/colors every frame (version-gated; see the
+            // _syncThinInstanceGpuData declaration above). This is what makes per-frame animated
+            // instance transforms (wind sway) actually reach the GPU despite the cached draw bundle.
+            if (hasTI && syncThinInstanceGpuData) {
+                const ti = mesh.thinInstances;
+                if (ti) {
+                    syncThinInstanceGpuData(engine, ti, hasTIColor);
+                }
             }
         };
         // FO-version wrapper applied only when the engine has floating-origin
