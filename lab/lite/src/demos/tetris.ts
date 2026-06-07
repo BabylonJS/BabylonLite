@@ -23,14 +23,17 @@ import { createGame, hardDrop, moveLeft, moveRight, restartGame, rotateCCW, rota
 import { createTetrisRenderer } from "./tetris/renderer.js";
 import { createTetrisHud } from "./tetris/hud.js";
 import { createTetrisAudio } from "./tetris/sound.js";
+import { installFetchProgress } from "./loading-progress.js";
+import { demoAssetUrl } from "./demo-asset-url.js";
 
 // A studio HDR environment drives the IBL — reflections + ambient on every PBR
 // material. The visible background is a *blurred* PBR skybox box that samples
 // this same environment along the view ray (see renderer.ts), giving a soft
 // photographic backdrop with real lighting variation rather than a flat colour.
-// Stored locally under lab/public so it loads same-origin.
-const ENV_URL = "/textures/environment.env";
-const BRDF_URL = "/brdf-lut.png";
+// Stored locally under lab/public so it loads same-origin. Resolved relative to
+// this demo module so it works under any base path (e.g. /lite-demos/).
+const ENV_URL = demoAssetUrl("./environment.env", import.meta.url);
+const BRDF_URL = demoAssetUrl("./brdf-lut.png", import.meta.url);
 
 // Repeat rates for held arrow keys (ms).
 const DAS_DELAY = 170;
@@ -45,6 +48,10 @@ interface RepeatState {
 async function main(): Promise<void> {
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 
+    // Instrument asset downloads (HDR environment, BRDF LUT, frame geometry +
+    // colormap, pet geometries ≈ 1 MB) so the loading overlay shows a determinate
+    // progress bar. Restored via progress.done() once everything is fetched.
+    const progress = installFetchProgress(canvas, { estimatedBytes: 1_050_000 });
     // 2× supersample for crisp edges. The engine sizes its swapchain to
     // `clientWidth * devicePixelRatio`, so doubling the reported DPR causes
     // the scene to render at 4× the pixel count and the browser does the
@@ -241,6 +248,7 @@ async function main(): Promise<void> {
         hud.render(game);
     });
 
+    progress.done();
     await registerScene(engine, scene);
     await startEngine(engine);
     canvas.dataset.ready = "true";
