@@ -265,8 +265,15 @@ export function executePassWithTransmission(task: RenderTask, engine: EngineCont
     let pass = beginTaskPass(task, null, sampleCount, false);
     let draws = drawBaseTask(task, pass);
     let lastPipeline: GPURenderPipeline | null = null;
+    let overlay: DrawBinding[] | null = null;
     for (let i = 0; i < transparent.length; i++) {
         const binding = transparent[i]!;
+        // `Mesh.renderOnTop` surfaces draw last — after the scene-colour grab — so they sit on top of the
+        // transmissive surface and are excluded from what it refracts (e.g. lily pads on water).
+        if (binding.renderable.mesh?.renderOnTop === true) {
+            (overlay ??= []).push(binding);
+            continue;
+        }
         const transmissive = binding.renderable._transmissive === true;
         if (transmissive && canUpdateTransmission(state)) {
             pass.end();
@@ -284,6 +291,9 @@ export function executePassWithTransmission(task: RenderTask, engine: EngineCont
             lastPipeline = binding.pipeline;
         }
         draws += binding.draw(pass, engine);
+    }
+    if (overlay) {
+        draws += drawList(pass, overlay, engine);
     }
     pass.end();
     return draws;
