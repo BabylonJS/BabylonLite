@@ -60,7 +60,7 @@ let n = 0.5
     + 0.20 * sin(uu * 5.1 - dd * 2.3 - t * 1.7)
     + 0.12 * sin(uu * 9.7 + dd * 6.1 + t * 0.7);
 let hot = clamp(n - dd * 0.95 + 0.5, 0.0, 1.0);
-let deepCol = vec3<f32>(0.30, 0.03, 0.02);
+let deepCol = vec3<f32>(0.62, 0.10, 0.05);
 let midCol  = vec3<f32>(0.92, 0.28, 0.04);
 let hotCol  = vec3<f32>(1.0, 0.80, 0.30);
 var rgb = mix(deepCol, midCol, smoothstep(0.22, 0.6, hot));
@@ -82,8 +82,8 @@ rgb = rgb + vec3<f32>(1.0, 0.6, 0.2) * mote * (0.35 + 0.5 * depth);
 // Settle the deepest band toward a warm DARK RED (not black) so the pool reads as
 // molten depth glowing in the rock, rather than a dark void at the bottom. Kept fairly
 // bright + only a partial mix so the deep stays clearly red-hot.
-let deepRed = vec3<f32>(0.5, 0.09, 0.04);
-rgb = mix(rgb, deepRed, 0.5 * smoothstep(0.6, 1.0, depth));
+let deepRed = vec3<f32>(0.80, 0.14, 0.06);
+rgb = mix(rgb, deepRed, 0.9 * smoothstep(0.4, 1.0, depth));
 
 // Slow whole-pool emissive pulse.
 rgb = rgb * (0.92 + 0.10 * sin(t * 2.2 + u * 1.3));

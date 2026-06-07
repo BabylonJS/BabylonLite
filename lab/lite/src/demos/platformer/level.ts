@@ -109,7 +109,7 @@ const ROWS = 14;
 /** y of the top ground surface row (shared by all areas so the vertical scale matches). */
 const GROUND_TOP = 12;
 
-type Glyph = " " | "#" | "=" | "B" | "?" | "M" | "S" | "o" | "g" | "n" | "f" | "^" | "F" | "p";
+type Glyph = " " | "#" | "=" | "E" | "B" | "?" | "M" | "S" | "o" | "g" | "n" | "f" | "^" | "F" | "p";
 
 /** Mutable accumulator used while assembling one area. */
 interface AreaBuild {
@@ -225,7 +225,7 @@ function buildOverworld(): LevelArea {
     // ── Ascending staircase before the goal (solid blocks) ────────────────────
     const stairBase = 100;
     for (let s = 0; s < 6; s++) {
-        for (let h = 0; h <= s; h++) set(stairBase + s, GROUND_TOP - 1 - h, "=");
+        for (let h = 0; h <= s; h++) set(stairBase + s, GROUND_TOP - 1 - h, "E");
     }
 
     // ── Flag goal on a tall pedestal ──────────────────────────────────────────
@@ -243,10 +243,11 @@ function buildOverworld(): LevelArea {
     addPipe(b, 80, GROUND_TOP - 2, 2, 2, { decorative: true });
     b.enemies.push({ cx: 80.5, cy: GROUND_TOP - 3, kind: "piranha" });
 
-    // ── One-way (jump-through) grass ledges ───────────────────────────────────
-    addOneWay(b, 31, 35, GROUND_TOP - 3);
-    for (let i = 0; i < 5; i++) b.coins.push({ cx: 31 + i, cy: GROUND_TOP - 4 });
-    addOneWay(b, 84, 88, GROUND_TOP - 4);
+    // ── Breakable-brick platform over the later pit (replaces the old jump-through ledges) ──
+    for (let i = 0; i < 5; i++) {
+        b.solid[(GROUND_TOP - 4) * b.cols + (84 + i)] = 1;
+        b.blocks.push({ cx: 84 + i, cy: GROUND_TOP - 4, kind: "brick" });
+    }
     for (let i = 0; i < 5; i++) b.coins.push({ cx: 84 + i, cy: GROUND_TOP - 5 });
 
     // ── Moving platforms ──────────────────────────────────────────────────────
@@ -315,7 +316,7 @@ function buildCave(): LevelArea {
     // Left entry chamber coins.
     for (let c = 5; c <= 11; c += 2) b.coins.push({ cx: c, cy: GROUND_TOP - 1 });
     // Mid chamber bonus ledge with reward blocks.
-    for (let c = 24; c <= 30; c++) caveSolid(c, GROUND_TOP - 4, "stoneMid");
+    for (let c = 24; c <= 30; c++) caveSolid(c, GROUND_TOP - 3, "stoneMid");
     caveBlock(26, GROUND_TOP - 6, "mushroom-block");
     caveBlock(28, GROUND_TOP - 6, "star-block");
     b.coins.push({ cx: 24, cy: GROUND_TOP - 6 });
@@ -330,8 +331,8 @@ function buildCave(): LevelArea {
     b.enemies.push({ cx: 46, cy: GROUND_TOP - 1, kind: "slime" });
     // Torches.
     b.torches.push({ cx: 1, cy: GROUND_TOP - 1 });
-    b.torches.push({ cx: 25, cy: GROUND_TOP - 5 });
-    b.torches.push({ cx: 29, cy: GROUND_TOP - 5 });
+    b.torches.push({ cx: 25, cy: GROUND_TOP - 4 });
+    b.torches.push({ cx: 29, cy: GROUND_TOP - 4 });
     b.torches.push({ cx: W - 1, cy: GROUND_TOP - 1 });
 
     // Entry emerge pipe (decorative): the player rises out of it on warp-in.
@@ -387,6 +388,8 @@ function buildCastle(): LevelArea {
     b.torches.push({ cx: 2, cy: GROUND_TOP - 1 });
     b.torches.push({ cx: W - 2, cy: GROUND_TOP - 1 });
     b.torches.push({ cx: 14, cy: CASTLE_CEIL + 2 });
+    // Decorative arched windows along the upper back wall (purely visual, not solid).
+    for (const wx of [5, 10, 19, 24]) b.terrain.push({ cx: wx, cy: CASTLE_CEIL + 2, name: "window" });
     // A decorative door at the far right (the way "out", flavour only).
     b.terrain.push({ cx: W - 1, cy: GROUND_TOP - 2, name: "door_closedTop" });
     b.terrain.push({ cx: W - 1, cy: GROUND_TOP - 1, name: "door_closedMid" });
@@ -407,15 +410,6 @@ function addPipe(b: AreaBuild, cx: number, cy: number, w: number, h: number, opt
     b.pipes.push({ cx, cy, w, h, ...opts });
 }
 
-/** Add a thin one-way (jump-through) grass ledge spanning cols [cx0, cx1] at row cy. */
-function addOneWay(b: AreaBuild, cx0: number, cx1: number, cy: number): void {
-    for (let cx = cx0; cx <= cx1; cx++) {
-        b.oneway[cy * b.cols + cx] = 1;
-        const name = cx0 === cx1 ? "grassHalf" : cx === cx0 ? "grassHalfLeft" : cx === cx1 ? "grassHalfRight" : "grassHalfMid";
-        b.terrain.push({ cx, cy, name });
-    }
-}
-
 /** Compile a glyph grid into the build's solid/terrain/blocks/coins/enemies/hazards. */
 function compileGrid(b: AreaBuild, grid: Glyph[][], theme: AreaTheme): { spawn: Cell; flag: Cell | null } {
     const cols = b.cols;
@@ -424,7 +418,7 @@ function compileGrid(b: AreaBuild, grid: Glyph[][], theme: AreaTheme): { spawn: 
     const isGround = (cx: number, cy: number): boolean => {
         if (cx < 0 || cx >= cols || cy < 0 || cy >= ROWS) return false;
         const g = grid[cy]![cx]!;
-        return g === "#" || g === "=";
+        return g === "#" || g === "=" || g === "E";
     };
     for (let cy = 0; cy < ROWS; cy++) {
         for (let cx = 0; cx < cols; cx++) {
@@ -437,6 +431,12 @@ function compileGrid(b: AreaBuild, grid: Glyph[][], theme: AreaTheme): { spawn: 
                 case "=":
                     b.solid[cy * cols + cx] = 1;
                     b.terrain.push({ cx, cy, name: platformFrame(cx, cy, isGround) });
+                    break;
+                case "E":
+                    // Earthen step: grassMid is the only tile with a brown body, so the
+                    // whole staircase (incl. its base) reads brown and blends into the ground.
+                    b.solid[cy * cols + cx] = 1;
+                    b.terrain.push({ cx, cy, name: "grassMid" });
                     break;
                 case "B":
                     b.solid[cy * cols + cx] = 1;

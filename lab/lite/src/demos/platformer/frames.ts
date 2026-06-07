@@ -21,7 +21,7 @@ export const PHYS = {
     maxWalk: 360,
     maxRun: 560,
     maxFall: 1200,
-    jumpSpeed: 1020,
+    jumpSpeed: 884,
     /** Upward speed imparted by a successful enemy stomp. */
     stompBounce: 760,
     /** Coyote-time and input-buffer windows (seconds). */

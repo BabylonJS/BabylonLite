@@ -37,7 +37,7 @@ import { buildWorld, type AreaId, type BlockKind, type LevelArea, type Pipe, typ
 import { createParallax } from "./parallax.js";
 import { makeFireballDataUrl, makeFireFlowerDataUrl } from "./fire.js";
 import { makeSparkDataUrl } from "./juice.js";
-import { IRIS_FRAGMENT, makeCaveBackdropDataUrl, makePipeTextureDataUrl, makeWhiteTextureDataUrl } from "./portal.js";
+import { IRIS_FRAGMENT, makePipeTextureDataUrl, makeWhiteTextureDataUrl } from "./portal.js";
 import { LAVA_FRAGMENT } from "./lava.js";
 import { LANTERN_FRAGMENT, makeGlowDataUrl } from "./lantern.js";
 import { moveAndCollide, overlaps, type AABB, type CollisionMap } from "./physics.js";
@@ -73,8 +73,8 @@ const PIRANHA_CYCLE = 3.4;
 const PIRANHA_RISE = TILE * 1.45;
 /** Castle boss tuning. */
 const BOSS_MAX_HP = 3;
-const BOSS_W = TILE * 2.4; // collision box (close to the drawn size)
-const BOSS_H = TILE * 1.7;
+const BOSS_W = TILE * 2.8; // collision box (tuned to cover the drawn spider body)
+const BOSS_H = TILE * 2.35; // box top reaches the drawn head so the boss is stompable
 const BOSS_VIS_SCALE = 3.2; // boss sprite draw scale over its natural frame size
 const BOSS_SPEED = TILE * 1.6; // base pace speed (px/s); scales up per phase
 const BOSS_HURT_TIME = 1.0; // invulnerable-flash window after a hit (s)
@@ -365,7 +365,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
     // ── Portal textures (warp pipe, cave backdrop, iris-wipe quad) ────────────
     const [pipeTex, caveTex, whiteTex, fireFlowerTex, fireballTex, sparkTex, glowTex] = await Promise.all([
         loadTexture2D(engine, makePipeTextureDataUrl(), { invertY: false, addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", mipMaps: false, minFilter: "linear", magFilter: "linear" }),
-        loadTexture2D(engine, makeCaveBackdropDataUrl(), { invertY: false, addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", mipMaps: false, minFilter: "linear", magFilter: "linear" }),
+        loadTexture2D(engine, "/platformer/backgrounds/bg_castle.png", { invertY: false, addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", mipMaps: false, minFilter: "linear", magFilter: "linear" }),
         loadTexture2D(engine, makeWhiteTextureDataUrl(), { invertY: false, mipMaps: false }),
         loadTexture2D(engine, makeFireFlowerDataUrl(), { invertY: false, addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", mipMaps: false, minFilter: "linear", magFilter: "linear" }),
         loadTexture2D(engine, makeFireballDataUrl(), { invertY: false, addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", mipMaps: false, minFilter: "linear", magFilter: "linear" }),
@@ -631,7 +631,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
 
     // Brick-break debris pool: spinning chunks from the items sheet's brick-particle frames.
     const debris: Debris[] = [];
-    const particleFrames = ["particleBrick1a", "particleBrick1b", "particleBrick2a", "particleBrick2b"].map((n) => items.frameOf(n));
+    const particleFrames = ["particleBrick1a", "particleBrick1b"].map((n) => items.frameOf(n));
     for (let i = 0; i < DEBRIS_MAX; i++) {
         debris.push({
             x: 0,
@@ -1668,7 +1668,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
         if (!overlaps(player.box, boss.box)) return;
         // Stomp = descending and the player's feet are in the boss's upper third.
         const feet = player.box.y + player.box.h;
-        const stomping = player.vy > 0 && feet - boss.box.y < boss.box.h * 0.55;
+        const stomping = player.vy > 0 && feet - boss.box.y < boss.box.h * 0.6;
         if (player.star > 0) {
             player.vy = -PHYS.stompBounce;
             damageBoss();
@@ -1914,7 +1914,7 @@ export async function startGame(canvas: HTMLCanvasElement, engine: EngineContext
             const upCenterY = (level.flag.cy + 0.5) * TILE; // near the top of the pole
             const flagCenterY = downCenterY + ease * (upCenterY - downCenterY);
             const fdraw = TILE * (1 + 0.4 * ease); // "expands" as it reaches the top
-            const flagName = Math.floor(game.flagAnimT * 6) % 2 === 0 ? "flagGreen" : "flagGreen2";
+            const flagName = raiseK <= 0 ? "flagGreenHanging" : (Math.floor(game.flagAnimT * 6) % 2 === 1 ? "flagGreen2" : "flagGreen");
             updateSprite2DIndex(coinLayer, flagSlot, {
                 positionPx: [sx(flagX * TILE + TILE * 0.5 + fdraw * 0.43), sy(flagCenterY)],
                 sizePx: [ss(fdraw), ss(fdraw)],
