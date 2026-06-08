@@ -552,7 +552,7 @@ export interface _PbrGeometryContext {
     /** @internal */
     readonly _envTextures: EnvironmentTextures | null;
     /** @internal */
-    readonly _shadowLights: readonly { readonly lightIndex: number; readonly shadowType: "esm" | "pcf"; readonly gen: ShadowGenerator }[];
+    readonly _shadowLights: readonly { readonly lightIndex: number; readonly shadowType: "esm" | "pcf" | "csm"; readonly gen: ShadowGenerator }[];
     /** @internal */
     readonly _syncThinInstanceBuffers:
         | ((engine: EngineContext, ti: ThinInstanceData, pass: GPURenderPassEncoder | GPURenderBundleEncoder, slot: number, hasColor: boolean) => number)
