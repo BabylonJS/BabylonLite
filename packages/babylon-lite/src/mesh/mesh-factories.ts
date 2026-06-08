@@ -95,14 +95,23 @@ export function resizeMeshGeometry(
     colors?: Float32Array
 ): void {
     const old = mesh._gpu;
-    old.positionBuffer.destroy();
-    old.normalBuffer.destroy();
-    old.indexBuffer.destroy();
-    old.uvBuffer.destroy();
-    old.uv2Buffer?.destroy();
-    old.tangentBuffer?.destroy();
-    old.colorBuffer?.destroy();
-
+    // A geometry REALLOCATION: any cached draw recording that captured raw buffer handles (e.g. the main
+    // opaque render bundle or the shadow task's bundle) must re-record, or it would keep binding the OLD
+    // buffers we're about to free. Resize is a structural (vertex-count) change — conceptually a scene
+    // mutation — so bump every registered scene's renderable version, which is exactly what the cached
+    // bundles already key off to know they must rebuild. (A mesh holds no scene reference per pillar 4b,
+    // so we can't target just its owner; bumping all registered scenes is a no-op for any without it.)
+    for (const ctx of engine._renderingContexts) {
+        const sc = ctx as { _renderableVersion?: number };
+        if (sc._renderableVersion !== undefined) {
+            sc._renderableVersion++;
+        }
+    }
+    // Allocate the NEW buffers and swap them in FIRST, so any subsequent frame records from the new
+    // geometry. The OLD buffers may still be referenced by a frame that was already submitted to the GPU
+    // this tick, so we must NOT destroy them synchronously — that hits the validation error
+    // "Buffer used in submit while destroyed". Defer their destruction until the GPU has drained the
+    // currently-submitted work (onSubmittedWorkDone), by which point nothing references them.
     mesh._gpu = uploadMeshToGPU(engine, positions, normals, indices, uvs, uvs2, tangents, colors);
     const [min, max] = computeAabb(positions);
     mesh.boundMin = isFinite(min[0]) ? min : undefined;
@@ -114,6 +123,23 @@ export function resizeMeshGeometry(
     mesh._cpuUvs = uvs;
     mesh._cpuIndices = indices;
     engine._dlr?.m(mesh, uvs2 ?? null, tangents ?? null, colors ?? null, indices, "uint32");
+
+    void engine._device.queue
+        .onSubmittedWorkDone()
+        .then(() => {
+            try {
+                old.positionBuffer.destroy();
+                old.normalBuffer.destroy();
+                old.indexBuffer.destroy();
+                old.uvBuffer.destroy();
+                old.uv2Buffer?.destroy();
+                old.tangentBuffer?.destroy();
+                old.colorBuffer?.destroy();
+            } catch {
+                // Device may have been lost/disposed before the deferred destroy ran — nothing to free.
+            }
+        })
+        .catch(() => {});
 }
 
 /** Re-upload (part of) a mesh's NORMAL buffer — the twin of `updateMeshPositions` for dynamically
