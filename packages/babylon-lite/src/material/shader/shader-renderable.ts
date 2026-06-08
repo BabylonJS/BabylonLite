@@ -213,6 +213,7 @@ function createTransparentRenderable(scene: SceneContext, material: ShaderMateri
     const r: Renderable = {
         order: packet.mesh.renderOrder ?? 200,
         isTransparent: true,
+        _transmissive: material.transmissive,
         mesh: packet.mesh,
         _worldCenter: sortCenter,
         bind(eng, sig) {

@@ -37,6 +37,13 @@ export interface ShaderMaterialOptions {
      *  standard src-over; "additive" adds the fragment's premultiplied-by-alpha
      *  color to the framebuffer, which is the right choice for glows/light FX. */
     readonly blendMode?: "alpha" | "additive";
+    /** Mark this surface as transmissive/refractive: the renderer grabs the opaque scene color
+     *  behind it just before it draws, so the fragment can sample what is *through* it (water,
+     *  glass). Requires `needAlphaBlending` (the surface composites over the grabbed scene
+     *  color). Enable the scene-color grab on the surface's render task with
+     *  `enableRenderTaskTransmission`, then bind the resulting texture via `setShaderTexture`.
+     *  Default false. */
+    readonly transmissive?: boolean;
     readonly needAlphaTesting?: boolean;
     readonly backFaceCulling?: boolean;
     readonly depthWrite?: boolean;
@@ -91,6 +98,8 @@ export interface ShaderMaterial extends Material {
     readonly defines: readonly ShaderDefine[];
     readonly needAlphaBlending: boolean;
     readonly blendMode: "alpha" | "additive";
+    /** True for transmissive/refractive surfaces (see `ShaderMaterialOptions.transmissive`). */
+    readonly transmissive: boolean;
     readonly needAlphaTesting: boolean;
     readonly backFaceCulling: boolean;
     readonly depthWrite: boolean;
@@ -214,6 +223,10 @@ export function createShaderMaterial(options: ShaderMaterialOptions): ShaderMate
     }
     defines.sort((a, b) => a.name.localeCompare(b.name));
 
+    if (options.transmissive && !(options.needAlphaBlending ?? false)) {
+        throw new Error("ShaderMaterial: `transmissive` requires `needAlphaBlending` (the surface composites over the grabbed opaque scene color).");
+    }
+
     return {
         name: options.name,
         vertexSource: options.vertexSource,
@@ -224,6 +237,7 @@ export function createShaderMaterial(options: ShaderMaterialOptions): ShaderMate
         defines,
         needAlphaBlending: options.needAlphaBlending ?? false,
         blendMode: options.blendMode ?? "alpha",
+        transmissive: options.transmissive ?? false,
         needAlphaTesting: options.needAlphaTesting ?? false,
         backFaceCulling: options.backFaceCulling ?? true,
         depthWrite: options.depthWrite ?? true,
