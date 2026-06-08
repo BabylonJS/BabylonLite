@@ -36,7 +36,7 @@ import { inflateRawSync } from "node:zlib";
 import { mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { bleedPlatformerAlpha } from "./bleed-platformer-alpha.ts";
+import { bleedPlatformerAlpha } from "./bleed-platformer-alpha";
 
 const PACK_VERSION = "deluxe";
 const ZIP_URL = "https://kenney.nl/media/pages/assets/platformer-art-deluxe/cb30f83169-1677696393/kenney_platformer-art-deluxe.zip";
