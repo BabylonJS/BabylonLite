@@ -10,7 +10,7 @@ function makeBrowserSpy(bjsError?: string): { browser: Browser; screenshotCalls:
         goto: async () => undefined,
         waitForFunction: async () => undefined,
         waitForTimeout: async () => undefined,
-        evaluate: async () => bjsError,
+        evaluate: async () => ({ done: !bjsError, error: bjsError ?? null }),
         addStyleTag: async () => undefined,
         locator: () => ({
             screenshot: async () => {

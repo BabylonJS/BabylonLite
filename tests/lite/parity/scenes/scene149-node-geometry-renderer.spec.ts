@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import * as path from "path";
-import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
+import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig, waitForCanvasReady } from "../compare-utils";
 
 const sceneConfig = getSceneConfig(149);
 const REFERENCE_DIR = path.resolve(__dirname, "../../../../reference/lite/scene149-node-geometry-renderer");
@@ -15,7 +15,7 @@ test("Scene 149 — node-material geometry renderer task matches Babylon.js refe
     await captureGolden(browser, { sceneId: 149, timeout: 120_000, settleMs: 5_000 });
 
     await page.goto("/scene149.html");
-    await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 120_000 });
+    await waitForCanvasReady(page, { timeout: 120_000, label: "Scene 149 Lite" });
     await page.waitForTimeout(500);
 
     const screenshotPath = path.join(REFERENCE_DIR, "test-actual.png");

@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import * as path from "path";
-import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
+import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig, waitForCanvasReady } from "../compare-utils";
 
 const sceneConfig = getSceneConfig(148);
 const REFERENCE_DIR = path.resolve(__dirname, "../../../../reference/lite/scene148-depth-of-field");
@@ -15,7 +15,7 @@ test("Scene 148 — Depth of Field post-process matches Babylon.js reference", a
     await captureGolden(browser, { sceneId: 148, timeout: 120_000, settleMs: 5_000 });
 
     await page.goto("/scene148.html");
-    await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 120_000 });
+    await waitForCanvasReady(page, { timeout: 120_000, label: "Scene 148 Lite" });
     await page.waitForTimeout(500);
 
     const screenshotPath = path.join(REFERENCE_DIR, "test-actual.png");
