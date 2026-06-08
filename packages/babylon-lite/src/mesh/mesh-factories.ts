@@ -165,6 +165,18 @@ export function updateMeshColors(engine: EngineContext, mesh: Mesh, colors: Floa
     engine._device.queue.writeBuffer(gpu.colorBuffer, vertexOffset * 4 * 4, colors.buffer as ArrayBuffer, colors.byteOffset, colors.byteLength);
 }
 
+/** Re-upload (part of) a mesh's UV buffer — the twin of `updateMeshNormals`/`updateMeshColors` for
+ *  dynamically re-generated geometry whose per-vertex UVs change (e.g. a procedural mesh whose parts
+ *  carry per-rebuild UV payloads). The uv attribute is vec2 (8 bytes/vertex). No-op if the mesh was
+ *  created without UVs. Zero-allocation GPU upload only. */
+export function updateMeshUvs(engine: EngineContext, mesh: Mesh, uvs: Float32Array, vertexOffset = 0): void {
+    const gpu = mesh._gpu;
+    if (!gpu.uvBuffer) {
+        return;
+    }
+    engine._device.queue.writeBuffer(gpu.uvBuffer, vertexOffset * 2 * 4, uvs.buffer as ArrayBuffer, uvs.byteOffset, uvs.byteLength);
+}
+
 /** Create a sphere mesh. Caller must assign material. */
 export function createSphere(engine: EngineContext, options?: SphereOptions): Mesh {
     const data = createSphereData(options);

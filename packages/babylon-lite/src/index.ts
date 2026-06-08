@@ -109,6 +109,7 @@ export {
     updateMeshPositions,
     updateMeshNormals,
     updateMeshColors,
+    updateMeshUvs,
     resizeMeshGeometry,
 } from "./mesh/mesh-factories.js";
 export { createSphereData } from "./mesh/create-sphere.js";
