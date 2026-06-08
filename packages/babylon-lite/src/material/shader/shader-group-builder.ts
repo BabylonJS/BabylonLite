@@ -11,3 +11,9 @@ export const shaderGroupBuilder: MeshGroupBuilder = async (scene, meshes) => {
     shaderGroupBuilder._rebuildSingle = result.rebuildSingle;
     return result;
 };
+
+// Marks this family so the shadow caster pass can render a custom ShaderMaterial into the (depth-only)
+// shadow map via a no-color material view — the shader pipeline already drops its fragment stage when the
+// render target has no colour attachment, and each view gets its own system UBO (written with the shadow
+// camera), so a ShaderMaterial mesh can cast like the standard/pbr/node families.
+shaderGroupBuilder._materialFamily = "shader";
