@@ -16,8 +16,148 @@
  *  O(later-group slot count) shift only when the touched group must grow.
  */
 
-import type { CurveSetId, GlyphRun, TextDataUpdate } from "./public-types.js";
-import type { GlyphStorage, GlyphStorageCurveSet, RunRecord, TextData, TextDataDrawGroup } from "./internal.js";
+import type { CurveSetId, GlyphStorage, GlyphStorageCurveSet } from "./glyph-storage.js";
+
+declare const textDataBrand: unique symbol;
+
+// ─── Public value types ───────────────────────────────────────────────────
+
+export type PlacedGlyph = {
+    readonly glyphId: number;
+    /** Pixel position of glyph baseline origin. */
+    readonly x: number;
+    readonly y: number;
+    /** Optional per-glyph color as linear RGBA in [0,1]. When present this overrides the
+     *  run's `defaultColor` for this glyph. When omitted, the glyph falls back to the run's
+     *  `defaultColor`, and if that is also omitted, to opaque white. The rendered alpha is
+     *  additionally scaled by the whole-block opacity (e.g. `TextRenderable.opacity`). */
+    readonly color?: readonly [number, number, number, number];
+};
+
+export type GlyphRun = {
+    /** Which curve set this run's glyph ids index into. */
+    readonly curveSet: CurveSetId;
+    readonly glyphs: readonly PlacedGlyph[];
+    /** Font-units → pixels scale used by the layout. */
+    readonly pixelsPerFontUnit: number;
+    /** Optional default color for every glyph in this run, as linear RGBA in [0,1]. A glyph's
+     *  own `PlacedGlyph.color` takes precedence over this. When omitted, glyphs default to
+     *  opaque white. The rendered alpha is additionally scaled by the whole-block opacity. */
+    readonly defaultColor?: readonly [number, number, number, number];
+};
+
+/** Discriminated union driving `updateTextData`. Each variant's `update` field is the
+ *  discriminator. Arrays/maps passed inside any variant are *adopted* by the `TextData`
+ *  and must not be read or mutated by the caller afterward. */
+export type TextDataUpdate =
+    | {
+          /** Rebuild runs and/or swap to a different storage. Both `runs` and `storage`
+           *  are optional; missing fields default to the TextData's current value, so
+           *  `{ update: "reset" }` with neither performs a pure compaction pass that
+           *  re-lays-out the slot allocator without dead slots or gaps.
+           *  Invalidates any previously-passed `GlyphRun` references when `runs` is set. */
+          update: "reset";
+          runs?: GlyphRun[];
+          storage?: GlyphStorage;
+      }
+    | {
+          /** Append a new run to the live runs list, or insert it before the run currently at
+           *  `insertBefore`. The run's `curveSet` must already exist in the bound storage. */
+          update: "addRun";
+          run: GlyphRun;
+          /** Index in `data.runs` to insert before. Default = append at end. */
+          insertBefore?: number;
+      }
+    | {
+          /** Remove a previously-added run. Accepts either the `GlyphRun` reference or its
+           *  current index in `data.runs`. */
+          update: "removeRun";
+          run: GlyphRun | number;
+      }
+    | {
+          /** Replace one run's contents in place. The new run takes the slot in `data.runs`
+           *  that the previous run occupied. Cheapest when the new run has the same glyph
+           *  count and the same `curveSet` as the previous one. */
+          update: "replaceRun";
+          previous: GlyphRun | number;
+          run: GlyphRun;
+      };
+
+// ─── Branded public type + internal supporting types ──────────────────────
+
+export interface TextData {
+    readonly [textDataBrand]: true;
+    /** Live, in-insertion-order view of the runs currently rendered. Mutated by
+     *  `updateTextData`. Do not mutate from outside. */
+    readonly runs: readonly GlyphRun[];
+    /** @internal Mutable alias of {@link runs} (same array reference). */
+    _runs: GlyphRun[];
+    /** @internal Per-curve-set draw groups. Length = number of unique curveSet ids referenced. */
+    _groups: TextDataDrawGroup[];
+    /** @internal Per-run bookkeeping records, keyed by `GlyphRun` reference. */
+    _runRecords: Map<GlyphRun, RunRecord>;
+    /** @internal Pooled per-instance float buffer (TEXT_INSTANCE_FLOATS per instance). */
+    _instances: Float32Array;
+    /** @internal Total *capacity* used (live + dead slots across all groups). */
+    _instanceCount: number;
+    /** @internal GlyphStorage backing this TextData. Borrowed reference — caller owns it. */
+    _storage: GlyphStorage;
+    /** @internal Monotonic version bumped whenever instance data changes. */
+    _version: number;
+    /** @internal Inclusive-exclusive dirty range of instances awaiting upload. */
+    _dirtyStart: number;
+    /** @internal */ _dirtyEnd: number;
+    /** @internal Lazy per-text-block GPU resources. */
+    _gpu: TextDataGpu | null;
+}
+
+/** @internal Per-curve-set draw group within a TextData. One group per unique font used by the
+ *  live runs. Groups own a contiguous *slot range* in the shared instance buffer; live and dead
+ *  slots intermix within that range. The vertex shader emits a degenerate quad for dead slots
+ *  so they cost only a vertex-shader invocation. */
+export type TextDataDrawGroup = {
+    /** Curve-set id (matches the key inside the parent storage's `_curveSets` map). */
+    curveSetId: CurveSetId;
+    /** Cached pointer to the curve-set entry within the parent TextData's `_storage`.
+     *  Refreshed whenever `_storage` swaps in `applyReset`; identity-compared to invalidate
+     *  the cached `bindGroup`. */
+    curveSet: GlyphStorageCurveSet;
+    /** First slot index (in instances, not bytes) owned by this group. */
+    slotStart: number;
+    /** Number of slots reserved by this group (live + dead). The draw call covers
+     *  `[slotStart, slotStart + slotCount)`. */
+    slotCount: number;
+    /** Number of *live* (non-dead) instances in this group. Tracked for stats. */
+    liveCount: number;
+    /** Indices (absolute, within `TextData._instances`) of dead slots inside this group's
+     *  range, available for reuse by `addRun`/`replaceRun`. LIFO order keeps recent frees
+     *  reusable first (locality). */
+    freeSlots: number[];
+    /** Lazy GPU bind group for this group's atlas (recreated on atlas-grow or first bind). */
+    bindGroup: GPUBindGroup | null;
+    /** Atlas-GPU upload version captured when `bindGroup` was last (re)built. */
+    bindGroupVersion: number;
+};
+
+/** @internal Per-run bookkeeping. Lets us locate a run's instances inside its draw group's
+ *  slot range in O(1) for add/remove/replace ops. Slots are not guaranteed to be contiguous
+ *  (the allocator may have reused freed slots from anywhere in the group's range). */
+export type RunRecord = {
+    run: GlyphRun;
+    /** Index of the owning draw group in `TextData._groups`. */
+    groupIdx: number;
+    /** Absolute slot indices (within `TextData._instances`) currently occupied by this run.
+     *  Length === number of glyphs actually written (skipped glyphs do not occupy slots). */
+    slots: number[];
+};
+
+/** @internal Lazy GPU instance buffer for a TextData (single buffer covering all groups). */
+export type TextDataGpu = {
+    device: GPUDevice;
+    instanceBuf: GPUBuffer;
+    instanceBufCapacity: number;
+    uploadedVersion: number;
+};
 
 /** Bytes per instance: 5 vec4 attributes (slugBounds, slugAnchor, slugAtlas, slugBand, slugColor). */
 export const TEXT_INSTANCE_FLOATS = 20;

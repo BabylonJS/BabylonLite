@@ -17,10 +17,10 @@ import type { SceneContext } from "../scene/scene-core.js";
 import type { Mat4, Mat4Storage, Vec3 } from "../math/types.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
 import { getViewProjectionMatrix, getEffectiveAspectRatio } from "../camera/camera.js";
-import type { TextData } from "./internal.js";
+import type { TextData } from "./text-data.js";
 import { TEXT_INSTANCE_BYTES } from "./text-data.js";
-import { ensureSharedAtlasGpu } from "./_gpu/slug-textures.js";
-import { getOrCreateTextPipeline } from "./_gpu/slug-pipeline.js";
+import { ensureSharedAtlasGpu } from "./_gpu/text-textures.js";
+import { getOrCreateTextPipeline } from "./_gpu/text-pipeline.js";
 
 export interface TextRenderableOptions {
     readonly position?: Readonly<Vec3>;

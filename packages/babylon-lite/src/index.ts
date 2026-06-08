@@ -397,22 +397,29 @@ export {
 } from "./sprite/sprite-renderer.js";
 
 // ─── Text ────────────────────────────────────────────────────────────
-export type { Font } from "./text/internal.js";
+export type { Font } from "./text/font.js";
 export { loadFont, createFontFromBuffer } from "./text/font.js";
-export type { QuadCurve, GlyphBounds, GlyphCurves, PlacedGlyph, GlyphRun, TextDataUpdate, TextLayoutOptions, CurveSetId } from "./text/public-types.js";
-export { extractGlyphCurves, cubicToQuadratics } from "./text/curves.js";
-export type { GlyphStorage } from "./text/internal.js";
+export { extractGlyphCurves, cubicToQuadratics } from "./text/glyph-extraction.js";
+export type { TextLayoutOptions } from "./text/layout.js";
+export type { GlyphStorage, CurveSetId, QuadCurve, GlyphBounds, GlyphCurves } from "./text/glyph-storage.js";
 export { createGlyphStorage, updateGlyphStorage, disposeGlyphStorage } from "./text/glyph-storage.js";
-export type { DefaultTextData } from "./text/internal.js";
-export { createDefaultTextData, updateDefaultTextData, disposeDefaultTextData } from "./text/default-text-data.js";
-export type { TextData } from "./text/internal.js";
+export type { TextData, PlacedGlyph, GlyphRun, TextDataUpdate } from "./text/text-data.js";
 export { createTextData, updateTextData, disposeTextData } from "./text/text-data.js";
+export type { DefaultTextData } from "./text/default-text-data.js";
+export { createDefaultTextData, updateDefaultTextData, disposeDefaultTextData } from "./text/default-text-data.js";
 export type { TextRenderableOptions, TextRenderable } from "./text/text-renderable.js";
 export { createTextRenderable, disposeTextRenderable, addTextRenderable } from "./text/text-renderable.js";
-export type { TextLayer, TextLayerOptions } from "./text/text-layer.js";
-export { createTextLayer, setTextLayerPosition } from "./text/text-layer.js";
-export type { TextRenderer, TextRendererOptions } from "./text/text-renderer.js";
-export { createTextRenderer, addTextRendererLayer, removeTextRendererLayer, registerTextRenderer, unregisterTextRenderer, disposeTextRenderer } from "./text/text-renderer.js";
+export type { TextLayer, TextLayerOptions, TextRenderer, TextRendererOptions } from "./text/text-renderer.js";
+export {
+    createTextLayer,
+    setTextLayerPosition,
+    createTextRenderer,
+    addTextRendererLayer,
+    removeTextRendererLayer,
+    registerTextRenderer,
+    unregisterTextRenderer,
+    disposeTextRenderer,
+} from "./text/text-renderer.js";
 
 // ─── Physics ─────────────────────────────────────────────────────────
 export {

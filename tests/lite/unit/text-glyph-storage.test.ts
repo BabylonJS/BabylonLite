@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { GlyphCurves } from "../../../packages/babylon-lite/src/text/public-types";
+import type { GlyphCurves } from "../../../packages/babylon-lite/src/text/glyph-storage";
 import { createTextData, disposeTextData, updateTextData } from "../../../packages/babylon-lite/src/text/text-data";
 import { createGlyphStorage, disposeGlyphStorage, updateGlyphStorage } from "../../../packages/babylon-lite/src/text/glyph-storage";
-import type { SharedAtlas, SharedAtlasGpu } from "../../../packages/babylon-lite/src/text/internal";
+import type { SharedAtlas, SharedAtlasGpu } from "../../../packages/babylon-lite/src/text/glyph-storage";
 
 function makeGlyph(glyphId: number): GlyphCurves {
     return {

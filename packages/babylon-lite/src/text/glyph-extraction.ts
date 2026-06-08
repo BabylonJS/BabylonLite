@@ -1,8 +1,16 @@
-/** Extract quadratic Bézier outlines from a font. Memoized per (font, glyphId). */
+/** Glyph outline extraction: the default `text-shaper`-backed pipeline that
+ *  produces `GlyphCurves` values from a `Font`'s glyph paths.
+ *
+ *  The outline value types themselves (`QuadCurve`, `GlyphBounds`, `GlyphCurves`)
+ *  live in `glyph-storage.ts` because storage is what owns and persists them.
+ *  Callers using their own outline source (DirectWrite, FreeType, hand-rolled)
+ *  import those types directly from `glyph-storage.js` and never pull this
+ *  module — so `text-shaper` stays out of their bundle. The only helper they
+ *  may want is `cubicToQuadratics`, which has no dependency on text-shaper. */
 
 import { getGlyphPath } from "text-shaper";
-import type { GlyphBounds, GlyphCurves, QuadCurve } from "./public-types.js";
-import type { Font } from "./internal.js";
+import type { Font } from "./font.js";
+import type { GlyphBounds, GlyphCurves, QuadCurve } from "./glyph-storage.js";
 
 /** Approximate a cubic Bézier with two quadratics using the "3/4 rule" (matches Slug reference).
  *  Exposed as a public helper so callers that ingest cubic outlines from their own font sources

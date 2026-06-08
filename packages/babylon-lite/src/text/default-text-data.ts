@@ -1,12 +1,36 @@
 /** Default convenience TextData: shapes text + extracts curves into a fresh GlyphStorage. */
 
-import type { DefaultTextData, Font } from "./internal.js";
-import type { CurveSetId, GlyphCurves, GlyphRun, TextLayoutOptions } from "./public-types.js";
-import { extractGlyphCurves } from "./curves.js";
-import { layoutText } from "./layout.js";
-import { createTextData, disposeTextData, updateTextData } from "./text-data.js";
+import type { Font } from "./font.js";
+import { extractGlyphCurves } from "./glyph-extraction.js";
+import type { CurveSetId, GlyphCurves, GlyphStorage } from "./glyph-storage.js";
 import { createGlyphStorage, disposeGlyphStorage, updateGlyphStorage } from "./glyph-storage.js";
+import type { GlyphRun, TextData } from "./text-data.js";
+import { createTextData, disposeTextData, updateTextData } from "./text-data.js";
+import type { TextLayoutOptions } from "./layout.js";
+import { layoutText } from "./layout.js";
 import { getFontFamily } from "text-shaper";
+
+declare const defaultTextDataBrand: unique symbol;
+
+/** Convenience text-data variant that owns its `GlyphStorage` and exposes the laid-out
+ *  pixel-space `width` / `height` of the text block. Produced by `createDefaultTextData`. */
+export interface DefaultTextData extends TextData {
+    readonly [defaultTextDataBrand]: true;
+    /** Pixel-space width of the laid-out run (max line width). */
+    readonly width: number;
+    /** Pixel-space height of the laid-out run (lines × line-height). */
+    readonly height: number;
+    /** @internal Font used to shape this data. */
+    readonly _font: Font;
+    /** @internal Font size in pixels used to shape this data. */
+    readonly _fontSizePx: number;
+    /** @internal Layout options captured at create-time. */
+    readonly _options: TextLayoutOptions | undefined;
+    /** @internal Curve-set id derived from the font's family name. */
+    readonly _curveSetId: CurveSetId;
+    /** @internal GlyphStorage owned by this DefaultTextData. Disposed by `disposeDefaultTextData`. */
+    readonly _storage: GlyphStorage;
+}
 
 /** Derive the curve-set id from the font's family name (e.g. "Inter", "Roboto"). Falls back
  *  to `"font"` for fonts that lack a usable name table. */

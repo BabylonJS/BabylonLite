@@ -1,8 +1,25 @@
-/** @internal Default LTR + word-wrap + align layout. Not exported from `src/index.ts`. */
+/** Default LTR + word-wrap + align layout, backed by text-shaper.
+ *
+ *  Public surface: `TextLayoutOptions` (the options bag, public) and `layoutText` (the
+ *  internal implementation; not exported from `src/index.ts`). Callers driving their own
+ *  layout don't import this module and pay zero bytes for it. */
 
 import { UnicodeBuffer, shape } from "text-shaper";
-import type { Font } from "./internal.js";
-import type { PlacedGlyph, TextLayoutOptions } from "./public-types.js";
+import type { Font } from "./font.js";
+import type { PlacedGlyph } from "./text-data.js";
+
+export type TextLayoutOptions = {
+    /** Max line width in pixels before word-wrap. Default: Infinity. */
+    readonly maxWidth?: number;
+    /** Line-height multiplier. Default: 1.2. */
+    readonly lineHeight?: number;
+    /** Horizontal alignment. Default: "left". */
+    readonly align?: "left" | "center" | "right";
+    /** Extra spacing in font units. Default: 0. */
+    readonly letterSpacing?: number;
+    /** Tab size in spaces. Default: 4. */
+    readonly tabSize?: number;
+};
 
 interface ShapedEntry {
     glyphId: number;

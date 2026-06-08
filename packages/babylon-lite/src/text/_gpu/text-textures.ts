@@ -1,8 +1,13 @@
 /** Owns the curve + band rgba32float GPU textures shared across a SharedAtlas's lifetime.
  *  Lazy-init: created on first bind, recreated only when capacity grows. */
 
-import { TEX_WIDTH } from "../internal.js";
-import type { SharedAtlas, SharedAtlasGpu } from "../internal.js";
+import type { SharedAtlas, SharedAtlasGpu } from "../glyph-storage.js";
+
+/** Width of the curve / band textures. Must match `TEX_WIDTH` in `glyph-storage.ts` —
+ *  duplicated here as a literal to avoid a Rollup module-init ordering hazard where the
+ *  text-textures module body executes before glyph-storage's `TEX_WIDTH` const is
+ *  initialized. Same Slug-protocol invariant; never changes. */
+const TEX_WIDTH = 4096;
 
 const ROW_FLOATS = TEX_WIDTH * 4;
 const BYTES_PER_ROW = ROW_FLOATS * 4;
@@ -98,17 +103,4 @@ export function ensureSharedAtlasGpu(device: GPUDevice, atlas: SharedAtlas): { r
     }
 
     return { rebuilt, gpu };
-}
-
-/** Destroy an atlas's GPU textures and clear `gpu`. The CPU staging (curve/band data and
- *  glyph slots) is left intact so the textures can be lazily rebuilt by `ensureSharedAtlasGpu`
- *  if the atlas is referenced again. Safe to call when no GPU resources exist. */
-export function disposeSharedAtlasGpu(atlas: SharedAtlas): void {
-    const gpu = atlas.gpu;
-    if (!gpu) {
-        return;
-    }
-    gpu.curveTex.destroy();
-    gpu.bandTex.destroy();
-    atlas.gpu = null;
 }

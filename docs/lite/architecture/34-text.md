@@ -212,7 +212,7 @@ export function disposeDefaultTextData(data: DefaultTextData): void;
 
 `createDefaultTextData` runs the default LTR + word-wrap + align layout
 (`layout.ts`, built on `text-shaper`'s HarfBuzz-style shaping), extracts the
-required glyph outlines from the font (`curves.ts`, using `text-shaper`'s glyph
+required glyph outlines from the font (`glyph-extraction.ts`, using `text-shaper`'s glyph
 path provider), packs them into a fresh single-curve-set `GlyphStorage`, and
 wraps the result in a `TextData` with one `GlyphRun`. The branded
 `DefaultTextData` carries pixel-space `width` / `height` so callers can size
@@ -228,7 +228,7 @@ unchanged.
 owned `GlyphStorage` (because this helper allocated both).
 
 Callers driving their own text layout import only Tiers 1–3 and pay zero bytes
-for `layout.ts`, `curves.ts`, `default-text-data.ts`, or `text-shaper`'s shaping
+for `layout.ts`, `glyph-extraction.ts`, `default-text-data.ts`, or `text-shaper`'s shaping
 codepath.
 
 ### Minimal example — `createDefaultTextData` + `TextRenderer`
@@ -394,7 +394,7 @@ true` (texture object identity changed) is the signal for the renderer to drop
 every draw group's `bindGroup` so it gets re-created against the new texture
 views. Same-version polls during steady-state are a single integer compare.
 
-### Spatial-band index (`slug-bands.ts`)
+### Spatial-band index (internal to `glyph-storage.ts`)
 
 For each glyph, `buildGlyphBands(glyph)` partitions the curves into up to 8
 horizontal and 8 vertical bands by bounding-box overlap. Curves within an
@@ -405,7 +405,7 @@ memoized on the `GlyphCurves` object via a `@internal _bands?` field so a
 glyph re-used by a second `GlyphStorage` (e.g. another text block re-extracting
 from the same `Font`) pays the band-build cost only once.
 
-### Pipeline (`_gpu/slug-pipeline.ts`)
+### Pipeline (`_gpu/text-pipeline.ts`)
 
 One bind group layout + one pair of WGSL modules cached per `GPUDevice` (a
 `WeakMap<GPUDevice, TextPipelineDeviceCache>`). The render pipeline itself is
@@ -525,7 +525,7 @@ pixel-space positions:
   the `GlyphRun` consumes it and the per-instance `slugAnchor.z = 1 / scale`
   drives the vertex shader's em→pixel transform.
 
-### Default curve extraction (`curves.ts`)
+### Default curve extraction (`glyph-extraction.ts`)
 
 `extractGlyphCurves(font, glyphIds, target)` walks `text-shaper.getGlyphPath`
 for each requested id, converts every command (`M`, `L`, `Q`, `C`, `Z`) into
@@ -541,7 +541,7 @@ outlines.
 ## Dependencies
 
 - `text-shaper` (npm) — used by `font.ts` (font loading), `layout.ts`
-  (shaping), and `curves.ts` (glyph path extraction). Only the default-layout
+  (shaping), and `glyph-extraction.ts` (glyph path extraction). Only the default-layout
   / default-curves modules import it; callers using hand-rolled layout pay zero
   bytes for it.
 - `engine/engine.ts` — `EngineContext`, `RenderingContext` (TextRenderer
@@ -593,22 +593,17 @@ Unit tests live in `tests/lite/unit/`:
 
 ## File inventory
 
-| File                              | Responsibility                                                                                                                                                                                                                                                          |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/text/public-types.ts`        | Re-exported value-level types (`QuadCurve`, `GlyphCurves`, `PlacedGlyph`, `GlyphRun`, `TextDataUpdate`, `TextLayoutOptions`, `CurveSetId`).                                                                                                                             |
-| `src/text/internal.ts`            | Module-shared interfaces + brand symbols: `Font`, `GlyphStorage`, `GlyphStorageCurveSet`, `TextData`, `DefaultTextData`, `SharedAtlas`, `TextDataDrawGroup`, `RunRecord`, etc. `@internal` fields stripped from the published d.ts by the trim-internal-dts build pass. |
-| `src/text/font.ts`                | `loadFont` / `createFontFromBuffer` / `getGlyphId` / `getGlyphIds`; thin wrapper over `text-shaper.Font`.                                                                                                                                                               |
-| `src/text/curves.ts`              | `extractGlyphCurves` + `cubicToQuadratics`; converts `text-shaper.getGlyphPath` output into the quadratic-only `GlyphCurves` shape.                                                                                                                                     |
-| `src/text/layout.ts`              | `layoutText` — default LTR + word-wrap + align layout via `text-shaper.shape`. `@internal`, not exported.                                                                                                                                                               |
-| `src/text/slug-bands.ts`          | `buildGlyphBands` — spatial-band partitioning + sort, memoized per `GlyphCurves`.                                                                                                                                                                                       |
-| `src/text/slug-pack.ts`           | `createSharedAtlas` + `packAppendGlyph` — Float32 staging arrays for curve / band textures, append-only with row-doubling growth.                                                                                                                                       |
-| `src/text/glyph-storage.ts`       | `createGlyphStorage` / `updateGlyphStorage` / `disposeGlyphStorage`.                                                                                                                                                                                                    |
-| `src/text/text-data.ts`           | `createTextData` / `updateTextData` / `disposeTextData`; slot allocator (addRun / removeRun / replaceRun / reset+compaction), dirty-range tracking, draw groups, per-instance packing.                                                                                  |
-| `src/text/default-text-data.ts`   | `createDefaultTextData` / `updateDefaultTextData` / `disposeDefaultTextData`; convenience layer composing layout + curve extraction + a private `GlyphStorage`.                                                                                                         |
-| `src/text/text-renderable.ts`     | `createTextRenderable` / `addTextRenderable` / `disposeTextRenderable`; 3D `Renderable` implementation.                                                                                                                                                                 |
-| `src/text/text-layer.ts`          | `createTextLayer` / `setTextLayerPosition`; 2D pixel-space layer record.                                                                                                                                                                                                |
-| `src/text/text-renderer.ts`       | `createTextRenderer` / `addTextRendererLayer` / `registerTextRenderer` / `disposeTextRenderer`; standalone `RenderingContext`.                                                                                                                                          |
-| `src/text/_gpu/slug-textures.ts`  | `ensureSharedAtlasGpu` / `disposeSharedAtlasGpu`; lazy `rgba32float` texture create + version-gated upload + capacity grow.                                                                                                                                             |
-| `src/text/_gpu/slug-pipeline.ts`  | `getOrCreateTextPipeline` / `clearTextPipelineCache`; per-device bind group layout + WGSL modules + per-target-key pipeline cache.                                                                                                                                      |
-| `src/text/shaders/slug.vert.wgsl` | Vertex stage: dead-slot collapse + Slug dilation + MVP transform.                                                                                                                                                                                                       |
-| `src/text/shaders/slug.frag.wgsl` | Fragment stage: per-band quadratic root solve + signed coverage accumulation.                                                                                                                                                                                           |
+| File                              | Responsibility                                                                                                                                                                                                                                                                                                         |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/text/font.ts`                | `Font` (branded type) + `loadFont` + `createFontFromBuffer`; text-shaper boundary.                                                                                                                                                                                                                                     |
+| `src/text/glyph-extraction.ts`    | `extractGlyphCurves` + `cubicToQuadratics`; default text-shaper-backed glyph path extraction. Outline value types live in `glyph-storage.ts`.                                                                                                                                                                          |
+| `src/text/glyph-storage.ts`       | `GlyphStorage` (branded) + `CurveSetId` + outline value types (`QuadCurve`, `GlyphBounds`, `GlyphCurves`) + the supporting `SharedAtlas` / `AtlasSlot` / `GlyphBands` types and their packers (`packAppendGlyph`, `buildGlyphBands`). Public API: `createGlyphStorage` / `updateGlyphStorage` / `disposeGlyphStorage`. |
+| `src/text/layout.ts`              | `TextLayoutOptions` + `layoutText` — default LTR + word-wrap + align layout via `text-shaper.shape`.                                                                                                                                                                                                                   |
+| `src/text/text-data.ts`           | `TextData` (branded) + `GlyphRun` + `PlacedGlyph` + `TextDataUpdate` + slot-allocator types. Public API: `createTextData` / `updateTextData` / `disposeTextData` and the per-instance allocator (addRun / removeRun / replaceRun / reset+compaction).                                                                  |
+| `src/text/default-text-data.ts`   | `DefaultTextData` (branded) + `createDefaultTextData` / `updateDefaultTextData` / `disposeDefaultTextData`; convenience layer composing layout + curve extraction + a private `GlyphStorage`.                                                                                                                          |
+| `src/text/text-renderable.ts`     | `TextRenderable` + `createTextRenderable` / `addTextRenderable` / `disposeTextRenderable`; 3D `Renderable` implementation.                                                                                                                                                                                             |
+| `src/text/text-renderer.ts`       | `TextLayer` (2D pixel-space placement record) + `TextRenderer` (standalone `RenderingContext`) + their factories and the swapchain draw pass.                                                                                                                                                                          |
+| `src/text/_gpu/text-textures.ts`  | `ensureSharedAtlasGpu`; lazy `rgba32float` texture create + version-gated upload + capacity grow. (Atlas teardown is inlined in `disposeGlyphStorage` to avoid a circular import.)                                                                                                                                     |
+| `src/text/_gpu/text-pipeline.ts`  | `getOrCreateTextPipeline` / `clearTextPipelineCache`; per-device bind group layout + WGSL modules + per-target-key pipeline cache.                                                                                                                                                                                     |
+| `src/text/shaders/slug.vert.wgsl` | Vertex stage: dead-slot collapse + Slug dilation + MVP transform.                                                                                                                                                                                                                                                      |
+| `src/text/shaders/slug.frag.wgsl` | Fragment stage: per-band quadratic root solve + signed coverage accumulation.                                                                                                                                                                                                                                          |

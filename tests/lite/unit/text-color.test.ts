@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { GlyphCurves } from "../../../packages/babylon-lite/src/text/public-types";
+import type { GlyphCurves } from "../../../packages/babylon-lite/src/text/glyph-storage";
 import { createTextData, TEXT_INSTANCE_FLOATS } from "../../../packages/babylon-lite/src/text/text-data";
 import { createGlyphStorage } from "../../../packages/babylon-lite/src/text/glyph-storage";
 
