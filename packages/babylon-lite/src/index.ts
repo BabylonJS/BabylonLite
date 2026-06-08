@@ -398,7 +398,7 @@ export {
 
 // ─── Text ────────────────────────────────────────────────────────────
 export type { Font } from "./text/internal.js";
-export { loadFont, createFontFromBuffer, getGlyphId, getGlyphIds } from "./text/font.js";
+export { loadFont, createFontFromBuffer } from "./text/font.js";
 export type { QuadCurve, GlyphBounds, GlyphCurves, PlacedGlyph, GlyphRun, TextDataUpdate, TextLayoutOptions, CurveSetId } from "./text/public-types.js";
 export { extractGlyphCurves, cubicToQuadratics } from "./text/curves.js";
 export type { GlyphStorage } from "./text/internal.js";
