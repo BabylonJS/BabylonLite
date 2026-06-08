@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { gzipSync } from "zlib";
 
-export const IGNORED_BUNDLE_MODULE_PATTERN = "*-nme.ts";
+/** Human-readable label for the ignored-module set used in test/log output. */
+export const IGNORED_BUNDLE_MODULE_PATTERN = "*-nme.ts + text-shaper";
 
 export interface RuntimeJsPayload {
     file: string;
@@ -37,9 +38,16 @@ export interface RuntimeBundleSummary {
     ignoredModules: IgnoredBundleModule[];
 }
 
+/** A module is excluded from the runtime-code measurement when it is either:
+ *    1. A scene-specific NME data payload (`*-nme.ts`) — checked-in scene data,
+ *       not engine code, so ceiling drift should not track it.
+ *    2. The `text-shaper` third-party shaping library — only loaded by the
+ *       default-layout text path (`createDefaultTextData` and friends). Callers
+ *       using `GlyphStorage` + `TextData` with their own layout pay zero for it,
+ *       so it should not count against engine-size ceilings. */
 function isIgnoredBundleModule(id: string): boolean {
     const clean = id.replace(/\\/g, "/").split("?")[0]!;
-    return /(?:^|\/)[^/]+-nme\.ts$/.test(clean);
+    return /(?:^|\/)[^/]+-nme\.ts$/.test(clean) || /(?:^|\/)text-shaper\//.test(clean);
 }
 
 export function findIgnoredBundleModules(bundleInfoDir: string, scene: string, runtimeChunks: Iterable<string>): IgnoredBundleModule[] {

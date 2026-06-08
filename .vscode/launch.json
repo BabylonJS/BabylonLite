@@ -2,8 +2,17 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch Babylon Lite",
+            "name": "Launch Babylon Lite (Edge)",
             "type": "msedge",
+            "request": "launch",
+            "url": "http://localhost:5174",
+            "webRoot": "${workspaceFolder}",
+            "preLaunchTask": "dev-server",
+            "sourceMaps": true
+        },
+        {
+            "name": "Launch Babylon Lite (Chrome)",
+            "type": "chrome",
             "request": "launch",
             "url": "http://localhost:5174",
             "webRoot": "${workspaceFolder}",

@@ -2353,17 +2353,17 @@
     ]
   },
   "scene180": {
-    "rawKB": 698.6,
-    "gzipKB": 146.4,
-    "ignoredRawKB": 0,
+    "rawKB": 27,
+    "gzipKB": 146.5,
+    "ignoredRawKB": 671.6,
     "runtimeChunks": [
       "scene180.js"
     ]
   },
   "scene181": {
-    "rawKB": 713.9,
+    "rawKB": 42.2,
     "gzipKB": 152.6,
-    "ignoredRawKB": 0,
+    "ignoredRawKB": 671.8,
     "runtimeChunks": [
       "scene181.js"
     ]
