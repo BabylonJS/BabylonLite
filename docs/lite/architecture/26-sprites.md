@@ -316,9 +316,9 @@ export function removeSpriteRendererLayer(sr: SpriteRenderer, layer: Sprite2DLay
 export function registerSpriteRenderer(sr: SpriteRenderer): void;
 export function unregisterSpriteRenderer(sr: SpriteRenderer): void;
 export function disposeSpriteRenderer(sr: SpriteRenderer): void;
-/** Redirect output to an offscreen color view (render-to-texture), or null = swapchain.
+/** Redirect output to an offscreen render texture (render-to-texture), or null = swapchain.
  *  See "Offscreen render target" below. */
-export function setSpriteRendererTarget(sr: SpriteRenderer, view: GPUTextureView | null): void;
+export function setSpriteRendererTarget(sr: SpriteRenderer, target: Texture2D | null): void;
 ```
 
 A `SpriteRenderer` does **not** own persistent color/depth attachments.
@@ -378,8 +378,8 @@ export interface RenderTexture2DOptions {
 export function createRenderTexture2D(engine: EngineContext, width: number, height: number, options?: RenderTexture2DOptions): Texture2D;
 
 // src/sprite/sprite-renderer.ts
-/** Point a renderer at an offscreen color view, or null for the swapchain (default). */
-export function setSpriteRendererTarget(sr: SpriteRenderer, view: GPUTextureView | null): void;
+/** Point a renderer at an offscreen render texture (`Texture2D`), or null for the swapchain (default). */
+export function setSpriteRendererTarget(sr: SpriteRenderer, target: Texture2D | null): void;
 ```
 
 Both default to the swapchain / swapchain format, so **every existing scene and
@@ -396,12 +396,12 @@ unused (`createRenderTexture2D` is a separate import; `_targetView` defaults to
 
 The render-to-texture pattern is two registered renderers, ordered:
 
-1. **Scene pass** → `setSpriteRendererTarget(scene, rt.view)` so it draws into an
+1. **Scene pass** → `setSpriteRendererTarget(scene, rt)` so it draws into an
    offscreen `rt = createRenderTexture2D(engine, w, h)` (sized to the canvas backing
    store, swapchain format so it can be sampled and presented).
 2. **Present pass** → a second `SpriteRenderer` owning one full-screen layer whose
    atlas IS `rt` (via `createGridSpriteAtlas`), drawn with a custom-shader fragment
-   (e.g. CRT curvature + scanlines). It targets the swapchain (`view = null`) and is
+   (e.g. CRT curvature + scanlines). It targets the swapchain (`target = null`) and is
    registered **after** the scene pass, so it runs second and samples the finished
    frame. Toggling the effect off is `setSpriteRendererTarget(scene, null)` +
    unregistering the present pass — restoring the direct path for zero overhead.

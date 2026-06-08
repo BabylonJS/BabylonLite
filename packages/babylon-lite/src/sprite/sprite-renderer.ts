@@ -19,6 +19,7 @@ import { createEmptyUniformBuffer, createMappedBuffer } from "../resource/gpu-bu
 import type { SpriteLayerFx } from "./custom-shader-core.js";
 import { _getSpriteFxHook } from "./sprite-fx-hook.js";
 import type { Sprite2DLayer } from "./sprite-2d.js";
+import type { Texture2D } from "../texture/texture-2d.js";
 import {
     LAYER_UBO_BYTES,
     SHARED_SPRITE_INDEX_DATA,
@@ -100,7 +101,8 @@ export interface SpriteRenderer extends RenderingContext {
     /** @internal Whether this pass clears the swapchain before drawing. False for HUD overlays. */
     _clear: boolean;
     /** @internal Offscreen color-attachment view to render into; null = the swapchain.
-     *  Set via {@link setSpriteRendererTarget} for render-to-texture / post-process. */
+     *  Set via {@link setSpriteRendererTarget} (which takes a {@link Texture2D} target)
+     *  for render-to-texture / post-process. */
     _targetView: GPUTextureView | null;
 }
 
@@ -429,17 +431,17 @@ export function registerSpriteRenderer(sr: SpriteRenderer): void {
 }
 
 /**
- * Redirect a sprite renderer's output to an offscreen color-attachment `view` (for
+ * Redirect a sprite renderer's output to an offscreen render {@link Texture2D} `target` (for
  * render-to-texture / post-processing), or pass `null` to render to the swapchain (the
- * default). The view's texture must be a `RENDER_ATTACHMENT` of the engine's swapchain
- * format and the renderer's target size — pair with {@link createRenderTexture2D} at its
- * default format. Sprite pipelines are baked with `engine.format`, so a target of any
- * OTHER format fails WebGPU validation at render-pass begin. A second renderer can then
- * sample that texture (e.g. a fullscreen custom-shader layer) and present it. Renderers
- * registered later run later, so register the offscreen scene pass before the presenting pass.
+ * default). Pair with {@link createRenderTexture2D} at its default format and the renderer's
+ * target size. The target's texture must be the engine's swapchain format: sprite pipelines
+ * are baked with `engine.format`, so a target of any OTHER format fails WebGPU validation at
+ * render-pass begin. A second renderer can then sample that texture (e.g. a fullscreen
+ * custom-shader layer) and present it. Renderers registered later run later, so register the
+ * offscreen scene pass before the presenting pass.
  */
-export function setSpriteRendererTarget(sr: SpriteRenderer, view: GPUTextureView | null): void {
-    sr._targetView = view;
+export function setSpriteRendererTarget(sr: SpriteRenderer, target: Texture2D | null): void {
+    sr._targetView = target ? target.view : null;
 }
 
 /** Splice the renderer out of its engine's `_renderingContexts`. No-op if not present. */

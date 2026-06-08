@@ -344,7 +344,7 @@ Consolidated from the 🟡/🔴 ideas above — to discuss before committing.
 
 | # | Feature | Unlocks | Status |
 |---|---------|---------|--------|
-| A | **SpriteRenderer → offscreen target + post pass** ✅ **SHIPPED** | CRT/scanline (#17 ✅), fullscreen heat-haze (#9), graded day/night sky (#10), screen-wide flashes | Done: `createRenderTexture2D` (renderable+sampleable `Texture2D`) + `setSpriteRendererTarget(sr, view\|null)` (defaults to the swapchain, so zero impact on existing scenes; tree-shaken when unused). The platformer CRT (#17) is the first user — scene renders into an RT, a present `SpriteRenderer` samples it through a custom shader. |
+| A | **SpriteRenderer → offscreen target + post pass** ✅ **SHIPPED** | CRT/scanline (#17 ✅), fullscreen heat-haze (#9), graded day/night sky (#10), screen-wide flashes | Done: `createRenderTexture2D` (renderable+sampleable `Texture2D`) + `setSpriteRendererTarget(sr, target\|null)` (defaults to the swapchain, so zero impact on existing scenes; tree-shaken when unused). The platformer CRT (#17) is the first user — scene renders into an RT, a present `SpriteRenderer` samples it through a custom shader. |
 | B | **Render-to-texture at integer scale + blit** | Crisp integer-scale pixel zoom (#18) | Same RT building blocks; needs an integer-scale resolve/blit path. |
 | C | **2D sprite cutout (alpha-test) blend** | Hard-edged depth-sorted sprites (foliage/grates) if we ever go 2.5D | Billboard cutout already ships; 2D-sprite cutout is still TODO. Low priority for this demo. |
 | D | **(Nice-to-have) lightweight 2D light/normal system** | Cleaner underground lighting (#8) | Fully fakeable with multiply sprites today; only worth it if multiple demos want real 2D lighting. |

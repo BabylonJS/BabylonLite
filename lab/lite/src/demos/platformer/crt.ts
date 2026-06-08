@@ -177,7 +177,7 @@ export function createCrtPostProcess(engine: EngineContext, scene: SpriteRendere
         // present pass runs second and samples the finished scene texture.
         registerSpriteRenderer(present);
         presentRegistered = true;
-        setSpriteRendererTarget(scene, sceneRt.view);
+        setSpriteRendererTarget(scene, sceneRt);
     };
 
     const setEnabled = (next: boolean): void => {
@@ -214,7 +214,7 @@ export function createCrtPostProcess(engine: EngineContext, scene: SpriteRendere
             } else if (!presentRegistered) {
                 registerSpriteRenderer(present);
                 presentRegistered = true;
-                setSpriteRendererTarget(scene, sceneRt!.view);
+                setSpriteRendererTarget(scene, sceneRt!);
             }
             updateSprite2DIndex(present!.layers[0]!, presentSlot, { positionPx: [0, 0], sizePx: [cw, ch], visible: true });
             // params: strength, aspect, scanline cycles (~6 device-px pitch), device width.
