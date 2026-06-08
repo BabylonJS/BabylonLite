@@ -107,6 +107,9 @@ export {
     createExtrudeShape,
     createMeshFromData,
     updateMeshPositions,
+    updateMeshNormals,
+    updateMeshColors,
+    resizeMeshGeometry,
 } from "./mesh/mesh-factories.js";
 export { createSphereData } from "./mesh/create-sphere.js";
 export type { SphereMeshData } from "./mesh/create-sphere.js";
