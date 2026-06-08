@@ -3,7 +3,6 @@
 
 import type { SceneContext } from "../../scene/scene.js";
 import type { EngineContext } from "../../engine/engine.js";
-import type { Mat4 } from "../../math/types.js";
 import type { Renderable } from "../../render/renderable.js";
 import { getOrCreateSampler } from "../../resource/gpu-pool.js";
 import { createMappedBuffer, createUniformBuffer } from "../../resource/gpu-buffers.js";
@@ -39,8 +38,8 @@ function createSkyboxBuffers(engine: EngineContext, S: number): { posBuffer: GPU
     };
 }
 
-function buildSkyboxWorldMatrix(rootPosition: [number, number, number]): Mat4 {
-    const world = new Float32Array(16) as Mat4;
+function buildSkyboxWorldMatrix(rootPosition: [number, number, number]): Float32Array {
+    const world = new Float32Array(16);
     world[0] = 1;
     world[5] = 1;
     world[10] = 1;

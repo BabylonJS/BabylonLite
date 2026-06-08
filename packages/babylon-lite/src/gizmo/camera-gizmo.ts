@@ -13,6 +13,7 @@ import type { EngineContext } from "../engine/engine.js";
 import type { Camera } from "../camera/camera.js";
 import type { Mesh } from "../mesh/mesh.js";
 import type { SceneNode } from "../scene/scene-node.js";
+import type { Mat4 } from "../math/types.js";
 import type { SceneContext } from "../scene/scene-core.js";
 import { addToScene } from "../scene/scene-core.js";
 import { removeFromScene } from "../scene/scene-remove.js";
@@ -368,7 +369,7 @@ function cameraAsSceneNode(cam: Camera): SceneNode {
 
 /** Extract the rotation quaternion from the upper-left 3×3 of a 4×4 world
  *  matrix.  Removes per-axis scale by normalizing each column. */
-function quatFromMat4Upper3x3(m: Readonly<Float32Array>): [number, number, number, number] {
+function quatFromMat4Upper3x3(m: Mat4): [number, number, number, number] {
     const sx = Math.hypot(m[0]!, m[1]!, m[2]!) || 1;
     const sy = Math.hypot(m[4]!, m[5]!, m[6]!) || 1;
     const sz = Math.hypot(m[8]!, m[9]!, m[10]!) || 1;

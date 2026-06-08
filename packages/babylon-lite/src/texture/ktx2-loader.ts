@@ -192,8 +192,13 @@ function uploadCompressed(engine: EngineContext, mips: Ktx2DecodedMip[], format:
     });
     for (let level = 0; level < mips.length; level++) {
         const mip = mips[level]!;
-        const rowBytes = Math.ceil(mip.width / format.blockW) * format.blockBytes;
-        engine._device.queue.writeTexture({ texture, mipLevel: level }, mip.data as Uint8Array<ArrayBuffer>, { bytesPerRow: rowBytes }, { width: mip.width, height: mip.height });
+        const blocksPerRow = Math.ceil(mip.width / format.blockW);
+        const rowBytes = blocksPerRow * format.blockBytes;
+        // Copy extent must be block-padded (physical) size; tail mips smaller
+        // than the block are copied as one full block (see ktx-loader.ts).
+        const copyW = blocksPerRow * format.blockW;
+        const copyH = Math.ceil(mip.height / format.blockH) * format.blockH;
+        engine._device.queue.writeTexture({ texture, mipLevel: level }, mip.data as Uint8Array<ArrayBuffer>, { bytesPerRow: rowBytes }, { width: copyW, height: copyH });
     }
     const tex2d: Texture2D = { texture, view: texture.createView(), sampler: makeSampler(engine, mips.length), width, height, invertY: true };
     acquireTexture(tex2d);

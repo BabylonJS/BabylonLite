@@ -3,6 +3,7 @@
 
 import type { ThinInstanceData } from "./thin-instance.js";
 import type { EngineContext } from "../engine/engine.js";
+import { packMat4IntoF32 } from "../math/pack-mat4-into-f32.js";
 
 /** @internal Optional replacement buffers used by GPU culling after it compacts visible instances. */
 export interface ThinInstanceDrawBuffers {
@@ -21,7 +22,11 @@ export function syncThinInstanceGpuData(engine: EngineContext, ti: ThinInstanceD
             ti._gpuBuffer?.destroy();
             ti._gpuBuffer = device.createBuffer({
                 size: Math.max(ti._capacity * 64, 4),
-                usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST | (needsStorage ? GPUBufferUsage.STORAGE : 0),
+                // STORAGE is always included: the GPU picker binds this matrix
+                // buffer as a read-only storage buffer for thin-instance picking,
+                // so it must be storage-capable even when compute culling is off
+                // (otherwise the whole pick pass is invalidated → nothing is pickable).
+                usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
             });
             ti._gpuBufferStorage = needsStorage;
             bufferRecreated = true;
@@ -32,7 +37,24 @@ export function syncThinInstanceGpuData(engine: EngineContext, ti: ThinInstanceD
         if (dirtyMax > dirtyMin) {
             const minByte = dirtyMin * 64;
             const maxByte = dirtyMax * 64;
-            device.queue.writeBuffer(ti._gpuBuffer, minByte, ti.matrices.buffer, ti.matrices.byteOffset + minByte, maxByte - minByte);
+            if (ti.matrices instanceof Float32Array) {
+                // Fast path: F32 source — direct byte copy, no per-instance pack.
+                device.queue.writeBuffer(ti._gpuBuffer, minByte, ti.matrices.buffer, ti.matrices.byteOffset + minByte, maxByte - minByte);
+            } else {
+                // F64 source (HPM-on path) — pack each dirty instance into a
+                // per-mesh reused F32 upload scratch, then writeBuffer the
+                // dirty subrange. Scratch is sized to capacity in F32 floats
+                // and grown when capacity grows; never per-frame allocated.
+                const neededFloats = ti._capacity * 16;
+                if (!ti._uploadF32 || ti._uploadF32.length < neededFloats) {
+                    ti._uploadF32 = new Float32Array(neededFloats);
+                }
+                const upload = ti._uploadF32;
+                for (let i = dirtyMin; i < dirtyMax; i++) {
+                    packMat4IntoF32(upload, ti.matrices, i * 16, i * 16);
+                }
+                device.queue.writeBuffer(ti._gpuBuffer, minByte, upload.buffer, upload.byteOffset + minByte, maxByte - minByte);
+            }
         }
         ti._dirtyMin = ti.count;
         ti._dirtyMax = 0;

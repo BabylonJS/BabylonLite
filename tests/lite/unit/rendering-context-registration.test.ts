@@ -17,9 +17,9 @@ const gpuGlobals = globalThis as Omit<typeof globalThis, "GPUShaderStage" | "GPU
     GPUTextureUsage?: { RENDER_ATTACHMENT: number; TEXTURE_BINDING: number };
 };
 
-gpuGlobals.GPUShaderStage ??= { VERTEX: 0x1, FRAGMENT: 0x2 };
-gpuGlobals.GPUBufferUsage ??= { UNIFORM: 0x40, COPY_DST: 0x8 };
-gpuGlobals.GPUTextureUsage ??= { RENDER_ATTACHMENT: 0x10, TEXTURE_BINDING: 0x4 };
+gpuGlobals.GPUShaderStage ??= { VERTEX: 0x1, FRAGMENT: 0x2 } as unknown as GPUShaderStage;
+gpuGlobals.GPUBufferUsage ??= { UNIFORM: 0x40, COPY_DST: 0x8 } as unknown as GPUBufferUsage;
+gpuGlobals.GPUTextureUsage ??= { RENDER_ATTACHMENT: 0x10, TEXTURE_BINDING: 0x4 } as unknown as GPUTextureUsage;
 
 function makeMockEngine(): EngineContext {
     const device = {
@@ -41,6 +41,8 @@ function makeMockEngine(): EngineContext {
         canvas: {} as HTMLCanvasElement,
         msaaSamples: 4,
         drawCallCount: 0,
+        useHighPrecisionMatrix: false,
+        useFloatingOrigin: false,
         maxDevicePixelRatio: Infinity,
         _device: device,
         _context: {} as GPUCanvasContext,

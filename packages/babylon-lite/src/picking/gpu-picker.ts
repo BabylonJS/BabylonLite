@@ -149,7 +149,7 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number): Promis
     const vp = getViewProjectionMatrix(camera, aspect);
 
     // ── Compute pick-zoomed VP (renders single pixel to 1×1 target) ──
-    computePickVP(_pickVP, vp as Float32Array, px, py, w, h);
+    computePickVP(_pickVP, vp as unknown as Float32Array, px, py, w, h);
 
     const rt = ensureTargets(engine, picker);
     const sceneUbo = ensureSceneUbo(engine, picker);

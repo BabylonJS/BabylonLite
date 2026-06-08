@@ -78,6 +78,9 @@ export interface SceneContext extends RenderingContext {
     _gsMeshes: GaussianSplattingMesh[];
     /** @internal Scene uniform updaters (one per shared UBO). */
     _uniformUpdaters: SceneUniformUpdater[];
+    /** @internal Opt-in feature writers for the SceneUniforms UBO (fog, clip plane, env SH).
+     *  Populated lazily via the scene-ubo-extras seam; run by the render task. */
+    _sceneUboContributors?: ((data: Float32Array, scene: SceneContext) => void)[];
     /** @internal Per-frame callbacks run before rendering (animation, physics, etc.). */
     _beforeRender: ((deltaMs: number) => void)[];
     /** @internal Deferred builders — registered by loaders/factories, run once at startEngine(). */
@@ -199,6 +202,17 @@ export function createSceneContext(engine: EngineContext, options?: SceneContext
         _drawCallsPre: 0,
 
         _update(): void {
+            // When the engine was created with `useFloatingOrigin: true`, mark
+            // the active camera so `getViewMatrix` knows to zero its
+            // translation column (the GPU view × world product is then the
+            // eye-relative result the LWR offset trick produces). For non-LWR
+            // engines `eng.useFloatingOrigin` is false and this is a single
+            // boolean check per frame — the inner branch is dead.
+            if (eng.useFloatingOrigin && ctx.camera && !ctx.camera._useFloatingOrigin) {
+                ctx.camera._useFloatingOrigin = true;
+                ctx.camera._viewVer = -1;
+                ctx.camera._vpVer = -1;
+            }
             const d = ctx.fixedDeltaMs > 0 ? ctx.fixedDeltaMs : eng._currentDelta;
             const encoder = eng._currentEncoder;
             let draws = 0;
@@ -296,9 +310,11 @@ export function addDeferredSceneRenderables(
 }
 
 /**
- * Adds an entity to the scene, dispatching on its type. Asset containers are unpacked and
- * each contained entity added recursively; meshes, lights, cameras, transform nodes, and
- * shadow generators are registered in their respective scene collections.
+ * Adds an entity (mesh, light, camera, transform node, shadow generator, or asset container)
+ * to the scene, dispatching on its type. Asset containers are unpacked and each contained
+ * entity added recursively. Optional scene-hosted systems such as depth-hosted sprites
+ * expose their own opt-in add functions so mesh-only scenes do not pay feature-specific
+ * routing bytes here.
  * @param scene - The owning scene (pillar 4b: entities never reference the scene themselves).
  * @param entity - The entity (or asset container) to add.
  */
@@ -334,7 +350,7 @@ export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camer
         const mesh = entity as unknown as Mesh;
         ctx.meshes.push(mesh);
         installMaterialSetter(ctx, mesh);
-        const build = mesh.material?._buildGroup;
+        const build = mesh.material ? (mesh.material as unknown as { _buildGroup?: MeshGroupBuilder })._buildGroup : undefined;
         if (build) {
             let group = ctx._groups.get(build);
             if (!group) {

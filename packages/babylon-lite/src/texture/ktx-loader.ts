@@ -142,7 +142,14 @@ function uploadCompressed(engine: EngineContext, parsed: KtxParseResult, opts: T
         const mip = parsed.mips[i]!;
         const blocksPerRow = Math.ceil(mip.width / fmt.blockW);
         const rowBytes = blocksPerRow * fmt.blockBytes;
-        device.queue.writeTexture({ texture, mipLevel: i }, mip.data as Uint8Array<ArrayBuffer>, { bytesPerRow: rowBytes }, { width: mip.width, height: mip.height });
+        // WebGPU requires the copy extent for compressed textures to be the
+        // block-padded (physical) size, not the logical mip size. Tail mips
+        // smaller than the block (e.g. 2×2, 1×1 for a 4×4 block) must be copied
+        // as one full block, otherwise WebGPU rejects copySize as not a multiple
+        // of the block width/height.
+        const copyW = blocksPerRow * fmt.blockW;
+        const copyH = Math.ceil(mip.height / fmt.blockH) * fmt.blockH;
+        device.queue.writeTexture({ texture, mipLevel: i }, mip.data as Uint8Array<ArrayBuffer>, { bytesPerRow: rowBytes }, { width: copyW, height: copyH });
     }
 
     const minF = opts.minFilter ?? "linear";

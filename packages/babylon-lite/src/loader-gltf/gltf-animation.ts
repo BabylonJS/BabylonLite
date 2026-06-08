@@ -14,7 +14,9 @@ import { INTERP_LINEAR, INTERP_STEP, INTERP_CUBICSPLINE, PATH_TRANSLATION, PATH_
 import { mat4Identity } from "../math/mat4-identity.js";
 import { mat4Invert } from "../math/mat4-invert.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
+import type { Mat4Storage } from "../math/types.js";
 import { resolveAccessor, computeNodeWorldMatrix, findParent } from "./gltf-parser.js";
+import { getLoaderTmpAnim } from "./_loader-scratch.js";
 import type { SceneNode } from "../scene/scene-node.js";
 
 /** Registration seam for KHR_animation_pointer. The pointer feature module
@@ -92,9 +94,9 @@ export function computeBoneTextureData(skin: GltfSkinData): Float32Array {
     const numBones = skin.jointNodes.length;
     const data = new Float32Array(numBones * 16);
     const invMeshWorld = mat4Invert(skin.meshWorldMatrix) ?? mat4Identity();
-    const tmp = new Float32Array(16);
+    const tmp = getLoaderTmpAnim() as unknown as Mat4Storage;
     for (let i = 0; i < numBones; i++) {
-        mat4MultiplyInto(tmp, 0, invMeshWorld, 0, skin.jointWorldMatrices[i]!, 0);
+        mat4MultiplyInto(tmp, 0, invMeshWorld as unknown as Mat4Storage, 0, skin.jointWorldMatrices[i]! as unknown as Mat4Storage, 0);
         mat4MultiplyInto(data, i * 16, tmp, 0, skin.inverseBindMatrices, i * 16);
     }
     return data;

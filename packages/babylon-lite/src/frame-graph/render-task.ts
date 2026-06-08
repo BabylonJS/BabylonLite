@@ -41,6 +41,7 @@ import type { RenderTarget } from "../engine/render-target.js";
 import { buildRenderTarget, disposeRenderTarget } from "../engine/render-target.js";
 import { getViewProjectionMatrix, getViewMatrix } from "../camera/camera.js";
 import { getSceneBindGroupLayout } from "../render/scene-helpers.js";
+import { packMat4IntoF32 } from "../math/pack-mat4-into-f32.js";
 import { createEmptyUniformBuffer } from "../resource/gpu-buffers.js";
 import { SCENE_UBO_BYTES } from "../shader/scene-uniforms-size.js";
 import { ensureSceneLightState, refreshSceneLightsUBO } from "../render/lights-ubo.js";
@@ -235,6 +236,11 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
 
 /** Remove a mesh from this task's renderable + binding lists. Idempotent. */
 export function removeMeshFromTask(task: RenderTask, mesh: object): void {
+    // Not a renderable-bearing task (e.g. a post/effect task that also carries `_config`): nothing to
+    // remove. Guard keeps callers that scan all frame-graph tasks (removeFromScene) shape-safe.
+    if (!task._renderables) {
+        return;
+    }
     let removed = false;
     for (let i = task._renderables.length - 1; i >= 0; i--) {
         if (task._renderables[i]!.mesh === mesh) {
@@ -504,7 +510,7 @@ function writePassSceneUBO(task: RenderTask, eng: EngineContext, scene: SceneCon
     //   envRotationY    = 36   vSphericalL00    = 40   exposureLinear  = 76
     //   contrast        = 77   lodGenerationScale = 78 vFogInfos       = 80
     //   vFogColor       = 84   clipPlane        = 88
-    data.set(viewProj, 0);
+    packMat4IntoF32(data, viewProj, 0);
     // Y-flip for offscreen passes — negate row 1 of the projection (the multiplied
     // view*proj matrix). Row 1 of a column-major mat4 lives at indices 1,5,9,13.
     if (flipY) {
@@ -513,37 +519,38 @@ function writePassSceneUBO(task: RenderTask, eng: EngineContext, scene: SceneCon
         data[9] = -data[9]!;
         data[13] = -data[13]!;
     }
-    data.set(viewMat, 16);
-    data[32] = wm[12]!;
-    data[33] = wm[13]!;
-    data[34] = wm[14]!;
-
-    if (fog) {
-        data[80] = fog.mode;
-        data[81] = fog.start;
-        data[82] = fog.end;
-        data[83] = fog.density;
-        data[84] = fog.color[0]!;
-        data[85] = fog.color[1]!;
-        data[86] = fog.color[2]!;
+    packMat4IntoF32(data, viewMat, 16);
+    // vEyePosition uniform — the world-space camera position. For LWR-on
+    // scenes the camera is at the origin in the eye-relative frame (the
+    // mesh-world pack and the view matrix translation both already encode
+    // the offset subtraction), so the uniform is mathematically zero.
+    // For non-LWR scenes it's the camera world translation. Shader code
+    // that does `vEyePosition - input.worldPos` produces the eye-relative
+    // vector at full precision in both cases.
+    if (eng.useFloatingOrigin) {
+        data[32] = 0;
+        data[33] = 0;
+        data[34] = 0;
+    } else {
+        data[32] = wm[12]!;
+        data[33] = wm[13]!;
+        data[34] = wm[14]!;
     }
+
     data[87] = eng.canvas.width;
 
     data[36] = envRotationY;
-    if (envTextures?.sphericalHarmonics) {
-        data.set(envTextures.sphericalHarmonics, 40);
-    }
 
     data[76] = img.exposure;
     data[77] = img.contrast;
     data[78] = envTextures?.lodGenerationScale ?? 0.8;
     data[79] = +img.toneMappingEnabled;
     data[37] = eng.canvas.height;
-    if (scene.clipPlane) {
-        data[88] = scene.clipPlane[0];
-        data[89] = scene.clipPlane[1];
-        data[90] = scene.clipPlane[2];
-        data[91] = scene.clipPlane[3];
+    const contribs = scene._sceneUboContributors;
+    if (contribs) {
+        for (const c of contribs) {
+            c(data, scene);
+        }
     }
     eng._device.queue.writeBuffer(task._sceneUBO, 0, data as Float32Array<ArrayBuffer>);
 }

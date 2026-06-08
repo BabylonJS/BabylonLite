@@ -47,6 +47,9 @@
 | [29-shader-material.md](29-shader-material.md)                     | Shader Material         | WGSL-only ShaderMaterial: typed uniforms, samplers, defines, alpha blend/test                  |
 | [30-grid-material.md](30-grid-material.md)                         | Grid Material           | Procedural unlit object-space grid built on ShaderMaterial                                      |
 | [31-post-process.md](31-post-process.md)                           | Post Process            | Frame-graph fullscreen post-process helper and concrete post-process tasks                     |
+| [32-large-world-rendering.md](32-large-world-rendering.md)         | LWR / Floating Origin   | `useFloatingOrigin` engine flag, eye-relative upload, FO version tracking                      |
+| [33-high-precision-matrix.md](33-high-precision-matrix.md)         | High-Precision Matrix   | `useHighPrecisionMatrix` engine flag, F64 backing, `allocateMat4` singleton, `packMat4IntoF32` |
+| [34-cascaded-shadow.md](34-cascaded-shadow.md)                     | Cascaded Shadow Maps    | Directional CSM: frustum splits, per-cascade ortho fit, depth array, PCF5 receiver             |
 
 ---
 

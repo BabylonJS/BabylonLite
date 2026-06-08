@@ -22,11 +22,15 @@
  *  public version on read. All in-engine hosts (mesh, scene node, camera, light,
  *  Gaussian-splatting mesh) ARE tagged, so engine hierarchies are pure push.
  *
- *  Zero entity imports — depends only on Mat4 and mat4Multiply. */
+ *  Backing storage comes from `allocateMat4()` — process-global lazy singleton
+ *  in `_matrix-allocator.ts`. F32 by default; F64 after an HPM engine is
+ *  constructed (see `docs/architecture/33-high-precision-matrix.md`). */
 
 import type { Mat4 } from "../math/types.js";
 import type { IWorldMatrixProvider } from "./parentable.js";
 import { mat4MultiplyInto } from "../math/mat4-multiply-into.js";
+import type { Mat4Storage } from "../math/types.js";
+import { allocateMat4 } from "../math/_matrix-allocator.js";
 
 export interface WorldMatrixAccessors {
     /** Getter — returns lazily computed world matrix. */
@@ -72,7 +76,7 @@ export function createWorldMatrixState(getLocalMatrix: () => Mat4): WorldMatrixA
     let _worldVersion = 0;
     let _lastSeenParentVersion = -1;
     let _cachedWorld: Mat4 | null = null;
-    const _ownedWorld = new Float32Array(16) as Mat4;
+    const _ownedWorld: Mat4 = allocateMat4();
     let _parent: IWorldMatrixProvider | null = null;
     let _parentState: WorldMatrixAccessors | null = null;
     const _children: WorldMatrixAccessors[] = [];
@@ -137,7 +141,7 @@ export function createWorldMatrixState(getLocalMatrix: () => Mat4): WorldMatrixA
             const local = getLocalMatrix();
             if (_parent !== null) {
                 const pw = _parent.worldMatrix;
-                mat4MultiplyInto(_ownedWorld as Float32Array, 0, pw as Float32Array, 0, local as Float32Array, 0);
+                mat4MultiplyInto(_ownedWorld as unknown as Mat4Storage, 0, pw as unknown as Mat4Storage, 0, local as unknown as Mat4Storage, 0);
                 _cachedWorld = _ownedWorld;
             } else {
                 _cachedWorld = local;

@@ -147,7 +147,7 @@ export function signedAngleAroundNormal(a: Vec3, b: Vec3, normal: Vec3): number 
  *  combination of the columns weighted by `dir`'s components — equivalent to
  *  `M * v` where M is read row-by-row but each "row" here picks one element
  *  from each column. */
-export function transformDirectionByWorld(wm: Readonly<Float32Array>, dir: Vec3): Vec3 {
+export function transformDirectionByWorld(wm: Mat4, dir: Vec3): Vec3 {
     // Each "column" of the matrix (wm[0..2], wm[4..6], wm[8..10]) is the
     // world-space direction of the corresponding LOCAL axis (+X, +Y, +Z).
     const x = wm[0]! * dir.x + wm[4]! * dir.y + wm[8]! * dir.z;

@@ -16,8 +16,7 @@ export interface LightVersionState {
     bump(): void;
 }
 
-/** Create the world-matrix state + dirty callback shared by all light types.
- *  Returns `lvs` — a version state that callers bump when non-position properties change. */
+/** Create the world-matrix state + dirty callback shared by all light types. */
 export function createLightBase(getLocalMatrix: () => Mat4): { wm: WorldMatrixAccessors; onDirty: () => void; lvs: LightVersionState } {
     const wm = createWorldMatrixState(getLocalMatrix);
     const lvs: LightVersionState = {
@@ -34,8 +33,8 @@ export function createLightBase(getLocalMatrix: () => Mat4): { wm: WorldMatrixAc
 }
 
 /** Mixin world-matrix accessors (parent, worldMatrix, worldMatrixVersion) onto a light object.
- *  Also adds _lightVersion from the LightVersionState.
- *  Returns the same object reference typed as R (defineProperties adds the accessors at runtime). */
+ *  Also adds _lightVersion from the LightVersionState. Returns the same object reference
+ *  typed as R (defineProperties adds the accessors at runtime). */
 export function applyWorldMatrixAccessors<R>(target: object, wm: WorldMatrixAccessors, lvs?: LightVersionState): R {
     Object.defineProperties(target, {
         parent: {

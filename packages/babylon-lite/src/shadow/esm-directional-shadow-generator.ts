@@ -27,6 +27,7 @@ import {
 } from "./shadow-base.js";
 import type { ShadowGenerator, ShadowTaskInternalState } from "./shadow-generator.js";
 import blurVertSrc from "../../shaders/shadow-blur.vertex.wgsl?raw";
+import { packMat4IntoF32 } from "../math/pack-mat4-into-f32.js";
 
 export interface EsmLightMatrix {
     /** @internal */
@@ -329,7 +330,7 @@ function renderEsmShadowMap(engine: EngineContext, sg: ShadowGenerator, state: E
 
     const matrix = _computeDirectionalLightMatrix(sg._light as DirectionalLight, casterMeshes, sg._config._orthoMinZ!, sg._config._orthoMaxZ!);
     if (shadowMatrixChanged(sg._lightMatrix, matrix._viewProj)) {
-        sg._lightMatrix.set(matrix._viewProj);
+        packMat4IntoF32(sg._lightMatrix, matrix._viewProj, 0);
         sg._version++;
         writeShadowUboFields(resources._shadowUboData, sg);
         engine._device.queue.writeBuffer(sg._shadowUBO, 0, resources._shadowUboData as Float32Array<ArrayBuffer>);

@@ -63,6 +63,8 @@ function makeMockEngine(): EngineContext {
         canvas: { width: 800, height: 600 } as HTMLCanvasElement,
         msaaSamples: 4,
         drawCallCount: 0,
+        useHighPrecisionMatrix: false,
+        useFloatingOrigin: false,
         maxDevicePixelRatio: Infinity,
         _device: device,
         _context: {} as GPUCanvasContext,

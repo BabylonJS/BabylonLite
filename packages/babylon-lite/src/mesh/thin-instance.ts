@@ -8,8 +8,11 @@ import type { Mesh } from "./mesh.js";
 
 /** CPU-side data backing a thin-instanced mesh: world matrices, optional colors, and GPU sync state. */
 export interface ThinInstanceData {
-    /** CPU-side instance world matrices (16 floats per instance). */
-    matrices: Float32Array;
+    /** CPU-side instance world matrices (16 floats per instance). Storage may
+     *  be Float32Array (default) or Float64Array (after an HPM engine is
+     *  constructed; the caller built the slab via `allocateMat4()`). The GPU
+     *  upload path in thin-instance-gpu.ts handles both (REQ-API-3, D5). */
+    matrices: Float32Array | Float64Array;
     /** Active instance count. */
     count: number;
     /** @internal Allocated capacity (in instances). */
@@ -38,12 +41,18 @@ export interface ThinInstanceData {
     _colorGpuBufferStorage: boolean;
     /** @internal Last color version uploaded to GPU. */
     _colorGpuVersion: number;
+
+    /** @internal Lazy per-mesh F32 upload scratch. Allocated by thin-instance-gpu.ts only
+     *  when `matrices` is F64-backed (HPM-on); F32-backed input takes a direct
+     *  writeBuffer fast-path. Sized in floats = `_capacity * 16`. */
+    _uploadF32?: Float32Array;
+
     /** @internal Opt-in flag for GPU frustum culling + indirect drawing. */
     _gpuCullingEnabled: boolean;
 }
 
 /** Set all instances from a pre-built matrix array. */
-export function setThinInstances(mesh: Mesh, matrices: Float32Array, count: number): void {
+export function setThinInstances(mesh: Mesh, matrices: Float32Array | Float64Array, count: number): void {
     if (!mesh.thinInstances) {
         mesh.thinInstances = {
             matrices,

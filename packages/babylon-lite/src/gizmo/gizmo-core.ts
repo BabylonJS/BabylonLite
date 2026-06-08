@@ -3,6 +3,7 @@
 
 import type { Mesh } from "../mesh/mesh.js";
 import type { SceneNode } from "../scene/scene-node.js";
+import type { Mat4 } from "../math/types.js";
 import type { SceneContext } from "../scene/scene-core.js";
 import type { StandardMaterialProps } from "../material/standard/standard-material.js";
 import { createStandardMaterial } from "../material/standard/create-standard-material.js";
@@ -66,7 +67,7 @@ export function attachFollowTarget(
     gizmoRoot: SceneNode,
     getTarget: () => SceneNode | null,
     scaleRatio: number | null = null,
-    onAfterFollow?: (target: SceneNode, worldMatrix: Readonly<Float32Array>) => void
+    onAfterFollow?: (target: SceneNode, worldMatrix: Mat4) => void
 ): () => void {
     let stopped = false;
     onBeforeRender(scene, () => {
