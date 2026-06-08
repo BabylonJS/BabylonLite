@@ -59,6 +59,14 @@ export interface PointerDragOptions {
      *  mesh.  Gizmos always set this to false and apply transforms to their
      *  attached node themselves. */
     moveAttached?: boolean;
+    /** Optional override for the drag-plane anchor point (plane mode only).
+     *  When it returns a point, the camera-facing drag plane passes through that
+     *  point instead of the picked surface point, so the screen→world scale is
+     *  taken at that depth.  The BoundingBoxGizmo body drag anchors at the
+     *  bounding-box CENTRE (matching BJS, whose body `_dragMesh` sits at the box
+     *  centroid) so the translation scale doesn't depend on where the press
+     *  landed on the (inset, camera-facing) body surface. */
+    getPlanePoint?: () => Vec3 | null;
 }
 
 export interface PointerDrag {
@@ -288,7 +296,22 @@ async function handlePointerDown(state: DispatcherState, event: PointerEvent): P
 
     const hitPoint = info.pickedPoint ? { x: info.pickedPoint[0], y: info.pickedPoint[1], z: info.pickedPoint[2] } : null;
     const planeNormal = pickDragPlaneNormal(drag, state.layer.scene, hitPoint);
-    const planePoint = hitPoint ?? { x: 0, y: 0, z: 0 };
+    // Plane-mode drags may anchor the plane at a caller-supplied point (e.g. the
+    // gizmo's world centre) instead of the picked surface point, so the
+    // screen→world scale is taken at the correct depth (see `getPlanePoint`).
+    const overridePoint = drag.options.getPlanePoint?.();
+    const planePoint = overridePoint ?? hitPoint ?? { x: 0, y: 0, z: 0 };
+    // The initial drag-plane point is where the pointer-DOWN ray meets the drag
+    // plane.  Without an override this is just the picked surface point; with an
+    // override (which only sets the plane DEPTH) we must re-cast the down ray
+    // onto the deeper plane, else the first move's delta carries the offset
+    // between the override anchor and the press location (a one-off jump).
+    let startPoint = hitPoint ?? planePoint;
+    if (overridePoint) {
+        const downRay = canvasRayFromPointer(state.layer.scene, state.canvas, event.offsetX, event.offsetY);
+        const hit = downRay ? rayPlaneIntersect(downRay.origin, downRay.dir, planePoint, planeNormal) : null;
+        startPoint = hit ?? planePoint;
+    }
 
     // Clear any hover state — the active drag handler owns the visual now.
     if (state.hovered) {
@@ -301,12 +324,12 @@ async function handlePointerDown(state: DispatcherState, event: PointerEvent): P
         drag,
         planeNormal,
         planePoint,
-        lastPlanePoint: { x: planePoint.x, y: planePoint.y, z: planePoint.z },
-        startPlanePoint: { x: planePoint.x, y: planePoint.y, z: planePoint.z },
+        lastPlanePoint: { x: startPoint.x, y: startPoint.y, z: startPoint.z },
+        startPlanePoint: { x: startPoint.x, y: startPoint.y, z: startPoint.z },
         pointerId: event.pointerId,
     };
     drag.dragging = true;
-    drag.onDragStart.notify({ dragPlanePoint: planePoint, pointerEvent: event });
+    drag.onDragStart.notify({ dragPlanePoint: startPoint, pointerEvent: event });
 }
 
 function handlePointerMove(state: DispatcherState, event: PointerEvent): void {
