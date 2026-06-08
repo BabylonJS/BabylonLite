@@ -282,6 +282,11 @@ export function createRenderTask(config: RenderTaskConfig, engine: EngineContext
 
 /** Remove a mesh from this task's renderable + binding lists. Idempotent. */
 export function removeMeshFromTask(task: RenderTask, mesh: object): void {
+    // Not a renderable-bearing task (e.g. a post/effect task that also carries `_config`): nothing to
+    // remove. Guard keeps callers that scan all frame-graph tasks (removeFromScene) shape-safe.
+    if (!task._renderables) {
+        return;
+    }
     let removed = false;
     for (let i = task._renderables.length - 1; i >= 0; i--) {
         if (task._renderables[i]!.mesh === mesh) {
@@ -553,6 +558,12 @@ function writePassSceneUBO(task: RenderTask, eng: EngineContext, scene: SceneCon
 
     const data = task._suData;
     _packSceneUniforms(data, eng, scene, camera, aspect);
+    const contribs = scene._sceneUboContributors;
+    if (contribs) {
+        for (const c of contribs) {
+            c(data, scene);
+        }
+    }
     eng._device.queue.writeBuffer(task._sceneUBO, 0, data as Float32Array<ArrayBuffer>);
 }
 

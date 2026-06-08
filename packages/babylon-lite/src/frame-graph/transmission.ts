@@ -62,11 +62,41 @@ export function enableSceneTransmission(scene: SceneContext, engine: EngineConte
     }
 }
 
-export function enableRenderTaskTransmission(task: RenderTask, engine: EngineContext): void {
+export interface TransmissionOptions {
+    /** When true (the default), retarget the task's color buffer to a linear `rgba16float`
+     *  offscreen and tone-map it in a trailing image-processing pass — the model PBR
+     *  transmission uses so refractive materials read scene color in *linear* space.
+     *
+     *  Set false to perform ONLY the mid-pass scene-color grab: the task's render target
+     *  format / sample count / clear are left untouched and no tone-map pass is added. Use
+     *  this for consumers that own their tone mapping / post (e.g. a custom depth-of-field
+     *  stack) and just need the opaque scene color exposed to a custom transmissive
+     *  `ShaderMaterial`. */
+    linear?: boolean;
+}
+
+/** Handle to a render task's scene-color grab, returned by `enableRenderTaskTransmission`. */
+export interface SceneColorGrab {
+    /** The live opaque-scene-color texture sampled by transmissive surfaces, or null before the
+     *  frame graph has built the task at least once. Its identity changes when the task rebuilds
+     *  (e.g. on resize), so consumers that bind it to a custom material should re-bind when it
+     *  changes. */
+    readonly texture: Texture2D | null;
+}
+
+export function enableRenderTaskTransmission(task: RenderTask, engine: EngineContext, options?: TransmissionOptions): SceneColorGrab {
+    const linear = options?.linear !== false;
+    const grab: SceneColorGrab = {
+        get texture(): Texture2D | null {
+            return (task._targetSignature as { _transmissionTexture?: Texture2D })._transmissionTexture ?? null;
+        },
+    };
     if (task._executeWithTransmission) {
-        return;
+        return grab;
     }
-    retargetRenderTaskToLinearOffscreen(task, engine);
+    if (linear) {
+        retargetRenderTaskToLinearOffscreen(task, engine);
+    }
     let state: RenderTaskTransmissionState | null = null;
     const record = task.record.bind(task);
     const execute = task.execute?.bind(task);
@@ -78,7 +108,7 @@ export function enableRenderTaskTransmission(task: RenderTask, engine: EngineCon
         record();
         configureTransmissionSource(state, task, engine);
     };
-    if (execute) {
+    if (linear && execute) {
         task.execute = () => executeRenderTaskLinear(task.scene, execute);
     }
     task.dispose = () => {
@@ -87,6 +117,7 @@ export function enableRenderTaskTransmission(task: RenderTask, engine: EngineCon
         dispose?.();
     };
     task._executeWithTransmission = (sampleCount) => executePassWithTransmission(task, engine, state!, sampleCount);
+    return grab;
 }
 
 function retargetRenderTaskToLinearOffscreen(task: RenderTask, engine: EngineContext): void {
@@ -250,8 +281,15 @@ export function executePassWithTransmission(task: RenderTask, engine: EngineCont
     let pass = beginTaskPass(task, null, sampleCount, false);
     let draws = drawBaseTask(task, pass);
     let lastPipeline: GPURenderPipeline | null = null;
+    let overlay: DrawBinding[] | null = null;
     for (let i = 0; i < transparent.length; i++) {
         const binding = transparent[i]!;
+        // `Mesh.renderOnTop` surfaces draw last — after the scene-colour grab — so they sit on top of the
+        // transmissive surface and are excluded from what it refracts (e.g. lily pads on water).
+        if (binding.renderable.mesh?.renderOnTop === true) {
+            (overlay ??= []).push(binding);
+            continue;
+        }
         const transmissive = binding.renderable._transmissive === true;
         if (transmissive && canUpdateTransmission(state)) {
             pass.end();
@@ -269,6 +307,9 @@ export function executePassWithTransmission(task: RenderTask, engine: EngineCont
             lastPipeline = binding.pipeline;
         }
         draws += binding.draw(pass, engine);
+    }
+    if (overlay) {
+        draws += drawList(pass, overlay, engine);
     }
     pass.end();
     return draws;

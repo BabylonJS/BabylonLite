@@ -89,6 +89,12 @@ export interface Mesh extends SceneNode {
     /** User-controlled render order. Lower = drawn first within phase.
      *  Only affects ordering within the opaque or transparent phase. */
     renderOrder?: number;
+    /** On a transmission-enabled render task, draw this transparent mesh LAST — after the transmissive
+     *  surface and after the scene-colour grab — so it sits on top of the water/glass AND is excluded from
+     *  what that surface refracts (e.g. lily pads resting on water should not appear in the refraction).
+     *  Enable transmission on the task with `enableRenderTaskTransmission`; only transparent surfaces
+     *  (`needAlphaBlending`) are deferred. No effect on tasks without transmission. */
+    renderOnTop?: boolean;
     /** Thin instance data (CPU-side). GPU buffer managed by render system. */
     thinInstances?: ThinInstanceData | null;
     // name, children, position, rotation, rotationQuaternion, scaling,

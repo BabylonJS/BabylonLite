@@ -24,7 +24,11 @@ export function syncThinInstanceGpuData(engine: EngineContext, ti: ThinInstanceD
             ti._gpuBuffer?.destroy();
             ti._gpuBuffer = device.createBuffer({
                 size: Math.max(ti._capacity * 64, 4),
-                usage: BU.VERTEX | BU.COPY_DST | (needsStorage ? BU.STORAGE : 0),
+                // STORAGE is always included: the GPU picker binds this matrix
+                // buffer as a read-only storage buffer for thin-instance picking,
+                // so it must be storage-capable even when compute culling is off
+                // (otherwise the whole pick pass is invalidated → nothing is pickable).
+                usage: BU.VERTEX | BU.COPY_DST | BU.STORAGE,
             });
             ti._gpuBufferStorage = needsStorage;
             bufferRecreated = true;

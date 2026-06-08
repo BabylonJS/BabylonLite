@@ -5,6 +5,7 @@ import { acquireGPUTexture, releaseGPUTexture } from "../resource/gpu-pool.js";
 import { assembleEnvironmentTextures } from "./env-helpers.js";
 import { mipLevelCount } from "../texture/mip-count.js";
 import { computeSceneSize } from "../material/pbr/scene-size.js";
+import { registerEnvSceneUniforms } from "../scene/scene-ubo-extras.js";
 
 /** GPU-resident environment textures. */
 export interface EnvironmentTextures {
@@ -76,6 +77,7 @@ export async function loadEnvironment(
     const textures = assembleEnvironmentTextures(specularCube, brdfLut, irradianceSH, 0.8, engine);
 
     scene._envTextures = textures;
+    registerEnvSceneUniforms(scene);
 
     acquireGPUTexture(specularCube);
     acquireGPUTexture(brdfLut);
