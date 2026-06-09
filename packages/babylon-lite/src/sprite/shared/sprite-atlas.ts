@@ -41,6 +41,10 @@ export interface SpriteAtlas {
      *  remaining capacity using this state. Absent on atlases built via `createGridSpriteAtlas` /
      *  `loadSpriteAtlas` — those cannot be appended to. */
     _packState?: SpriteAtlasPackState;
+    /** @internal Mutable alias of `frames` (same underlying array) for the runtime packer to
+     *  push new entries into without casting away `readonly`. Always set together with
+     *  `_packState` (i.e. only on atlases built via `createSpriteAtlasFromFrames`). */
+    _frames?: SpriteFrame[];
 }
 
 /** @internal Shelf-pack cursor + parameters for runtime atlas packing. Mutated by

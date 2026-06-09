@@ -31,9 +31,8 @@ import type { SpriteAtlas, SpriteAtlasPackState, SpriteFrame, SpriteSampling } f
 /** One source frame for `createSpriteAtlasFromFrames` / `appendSpriteAtlasFrames`. The packed
  *  region is `width × height` texels. By default the source is read as a tightly-packed RGBA8
  *  buffer of exactly that size starting at byte 0; the optional `srcX` / `srcY` / `srcStrideBytes`
- *  fields let the source describe a sub-rectangle of a larger buffer (e.g. the trimmed glyph
- *  region inside a wasm-owned rasterizer scratch surface) without forcing the caller to copy out
- *  the sub-rect first. */
+ *  fields let the source describe a sub-rectangle of a larger buffer without forcing the caller
+ *  to copy out the sub-rect first. */
 export interface SpriteAtlasFrameSource {
     /** RGBA8 bytes, row-major, top-to-bottom, straight alpha. When `srcX` / `srcY` /
      *  `srcStrideBytes` are all defaulted, this must be exactly `width * height * 4` bytes;
@@ -225,8 +224,9 @@ export function createSpriteAtlasFromFrames(engine: EngineContext, sources: read
     }
 
     // Attach packer state so future appendSpriteAtlasFrames calls can resume shelf-packing.
-    // `_packState` is `@internal` on the SpriteAtlas type — readonly to public consumers,
-    // mutable here because the packer owns it.
+    // `_packState` and `_frames` are `@internal` on the SpriteAtlas type — `frames` stays
+    // `readonly` to public consumers, while `_frames` aliases the same array so the packer
+    // can push to it without casting.
     const packState: SpriteAtlasPackState = {
         penX: placement.penX,
         penY: placement.penY,
@@ -240,6 +240,7 @@ export function createSpriteAtlasFromFrames(engine: EngineContext, sources: read
         frames,
         premultipliedAlpha: options.premultipliedAlpha ?? false,
         _packState: packState,
+        _frames: frames,
     };
 }
 
@@ -266,7 +267,8 @@ export function appendSpriteAtlasFrames(engine: EngineContext, atlas: SpriteAtla
         return [];
     }
     const state = atlas._packState;
-    if (!state) {
+    const framesOut = atlas._frames;
+    if (!state || !framesOut) {
         throw new Error("appendSpriteAtlasFrames: atlas was not built by createSpriteAtlasFromFrames (no packer state).");
     }
     const [atlasW, atlasH] = atlas.textureSizePx;
@@ -275,12 +277,11 @@ export function appendSpriteAtlasFrames(engine: EngineContext, atlas: SpriteAtla
     // Phase 1: validate every source and compute placements; throws before mutating anything.
     const placement = shelfPack(sources, state.padding, shelfMaxWidth, atlasH, state.penX, state.penY, state.shelfHeight, "appendSpriteAtlasFrames");
 
-    // Phase 2: commit — upload texels and append SpriteFrame entries.
+    // Phase 2: commit — upload texels and append SpriteFrame entries. `framesOut` is the same
+    // array `atlas.frames` exposes — appending here keeps existing frame references and indices
+    // stable for consumers already drawing from this atlas.
     const device = engine._device;
     const texture = atlas.texture.texture;
-    // `SpriteAtlas.frames` is `readonly SpriteFrame[]` to consumers, but the packer owns the
-    // underlying Array and appends in place — keeps existing frame references and indices stable.
-    const framesOut = atlas.frames as SpriteFrame[];
     const baseIndex = framesOut.length;
     const newIndices = new Array<number>(sources.length);
 
@@ -295,7 +296,7 @@ export function appendSpriteAtlasFrames(engine: EngineContext, atlas: SpriteAtla
         const dataOffset = srcY * srcStride + srcX * 4;
         device.queue.writeTexture(
             { texture, origin: { x: placement.xs[i]!, y: placement.ys[i]! } },
-            s.pixels as Uint8Array<ArrayBuffer>,
+            s.pixels,
             { offset: dataOffset, bytesPerRow: srcStride, rowsPerImage: s.height },
             { width: s.width, height: s.height }
         );
