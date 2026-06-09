@@ -296,7 +296,10 @@ export function appendSpriteAtlasFrames(engine: EngineContext, atlas: SpriteAtla
         const dataOffset = srcY * srcStride + srcX * 4;
         device.queue.writeTexture(
             { texture, origin: { x: placement.xs[i]!, y: placement.ys[i]! } },
-            s.pixels,
+            // Cast `Uint8Array<ArrayBufferLike>` → `Uint8Array<ArrayBuffer>` so the WebGPU
+            // `GPUAllowSharedBufferSource` overload accepts it. `pixels` is supplied by the caller
+            // as plain bytes (we never construct it from a `SharedArrayBuffer`), so this is sound.
+            s.pixels as Uint8Array<ArrayBuffer>,
             { offset: dataOffset, bytesPerRow: srcStride, rowsPerImage: s.height },
             { width: s.width, height: s.height }
         );
