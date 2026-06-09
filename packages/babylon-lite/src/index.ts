@@ -107,6 +107,10 @@ export {
     createExtrudeShape,
     createMeshFromData,
     updateMeshPositions,
+    updateMeshNormals,
+    updateMeshColors,
+    updateMeshUvs,
+    resizeMeshGeometry,
 } from "./mesh/mesh-factories.js";
 export { createSphereData } from "./mesh/create-sphere.js";
 export type { SphereMeshData } from "./mesh/create-sphere.js";
@@ -119,8 +123,8 @@ export type { Csg2Solid } from "./mesh/csg2.js";
 
 // ─── Textures ────────────────────────────────────────────────────────
 export { createSolidTexture2D } from "./texture/solid-texture.js";
-export { createTexture2DFromPixels, updateTexture2DFromPixels } from "./texture/pixels-texture.js";
-export type { PixelsTexture2DOptions } from "./texture/pixels-texture.js";
+export { createTexture2DFromPixels, updateTexture2DFromPixels, createRenderTexture2D } from "./texture/pixels-texture.js";
+export type { PixelsTexture2DOptions, RenderTexture2DOptions } from "./texture/pixels-texture.js";
 export { loadKtxTexture2D } from "./texture/ktx-loader.js";
 export { loadBasisTexture2D } from "./texture/basis-loader.js";
 
@@ -302,7 +306,7 @@ export { CAP_NONE, CAP_START, CAP_END, CAP_ALL } from "./mesh/create-tube.js";
 
 // ─── Picking ─────────────────────────────────────────────────────────
 export { createGpuPicker, pickAsync, disposePicker } from "./picking/gpu-picker.js";
-export type { GpuPicker } from "./picking/gpu-picker.js";
+export type { GpuPicker, PickOptions } from "./picking/gpu-picker.js";
 export type { PickingInfo } from "./picking/picking-info.js";
 export { enableDetailedPicking } from "./picking/detailed-picking.js";
 export { getPickedNormal, getPickedUV } from "./picking/picking-helpers.js";
@@ -430,6 +434,7 @@ export {
     removeSpriteRendererLayer,
     registerSpriteRenderer,
     unregisterSpriteRenderer,
+    setSpriteRendererTarget,
     disposeSpriteRenderer,
 } from "./sprite/sprite-renderer.js";
 
