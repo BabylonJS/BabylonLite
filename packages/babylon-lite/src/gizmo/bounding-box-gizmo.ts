@@ -633,7 +633,18 @@ export function createBoundingBoxGizmo(engine: EngineContext, layer: UtilityLaye
     // plane, matching BJS's default PointerDragBehavior for the body.  The body
     // is fully transparent and does NOT get a hover indicator — only the
     // rendered handles (edges, corner arms, rotation anchors) tint on hover.
-    const translateDrag = createPointerDrag({ dragPlaneNormal: { x: 0, y: 0, z: 1 }, moveAttached: false });
+    const translateDrag = createPointerDrag({
+        dragPlaneNormal: { x: 0, y: 0, z: 1 },
+        moveAttached: false,
+        // Anchor the camera-facing drag plane at the bounding-box CENTRE (the
+        // body box is kept positioned there each refresh) rather than the picked
+        // body-surface point.  BJS's body drag plane sits at the box centroid, so
+        // matching that depth makes the screen→world translation scale agree with
+        // the reference (pressing the near, camera-facing face of the inset body
+        // would otherwise anchor the plane ~one box-half closer to the camera and
+        // the group would translate short).
+        getPlanePoint: () => ({ x: body.position.x, y: body.position.y, z: body.position.z }),
+    });
     translateDrag._colliders = [body];
     // Keep the drag plane normal aligned with the camera's forward axis every
     // frame.  This MUST run per-frame (not in onDragStart): the pointer-drag

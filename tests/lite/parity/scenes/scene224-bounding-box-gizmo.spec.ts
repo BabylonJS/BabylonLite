@@ -32,8 +32,11 @@ const DRAG_STEPS: DragStep[] = [
     { name: "scale-corner", start: { x: 765, y: 245 }, end: { x: 850, y: 200 } },
     // 2. Rotate — drag a top-edge midpoint anchor laterally to spin around Z.
     { name: "rotate", start: { x: 605, y: 245 }, end: { x: 615, y: 290 } },
-    // 3. Translate — drag the body box (inside the AABB) to shift laterally.
-    { name: "translate", start: { x: 640, y: 360 }, end: { x: 580, y: 340 } },
+    // 3. Translate — drag the body box.  Coordinates are kept clear of the
+    //    rotation anchors / corners so the press lands on the body in BOTH
+    //    engines (a slightly lower start hit a BJS rotation anchor instead, which
+    //    rotated the reference while Lite translated — diverging the frame).
+    { name: "translate", start: { x: 640, y: 340 }, end: { x: 560, y: 340 } },
 ];
 
 test.skip(!!sceneConfig.skipParity, "Scene 224 skipped via skipParity in scene-config.json");
@@ -48,15 +51,22 @@ async function performDrags(page: Page): Promise<void> {
         const sy = box.y + step.start.y;
         const ex = box.x + step.end.x;
         const ey = box.y + step.end.y;
+        // Hover-settle: wait for Lite's async GPU hover-pick to resolve before
+        // pressing so the down-pick lands on a primed picker and the drag
+        // reliably grabs.  (Camera controls are disabled via `?nocam` during the
+        // parity run, so a miss can't orbit the view — but a missed body press
+        // would still skip the translate and diverge from the reference.)
         await page.mouse.move(sx, sy);
-        await page.waitForTimeout(50);
-        await page.mouse.move(sx, sy);
+        await page.waitForTimeout(300);
         await page.mouse.down();
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(250);
         await page.mouse.move(ex, ey, { steps: 8 });
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(150);
         await page.mouse.up();
         await page.waitForTimeout(160);
+        // Park the cursor off the gizmo between drags so hover state clears.
+        await page.mouse.move(box.x + 50, box.y + 50);
+        await page.waitForTimeout(200);
     }
     await page.mouse.move(box.x + 50, box.y + 50);
     await page.waitForTimeout(400);
@@ -87,7 +97,7 @@ test("Scene 224 — Bounding Box Gizmo matches Babylon.js reference (scale / rot
     if (!fs.existsSync(GOLDEN_REF) || process.env.RECAPTURE_GOLDEN) {
         const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
         const bjsPage = await ctx.newPage();
-        await bjsPage.goto("/babylon-ref-scene224.html");
+        await bjsPage.goto("/babylon-ref-scene224.html?nocam=1");
         await bjsPage.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 30_000 });
         await bjsPage.waitForFunction(() => !document.getElementById("babylonjsLoadingDiv"), { timeout: 10_000 }).catch(() => undefined);
         await bjsPage.waitForTimeout(500);
@@ -99,7 +109,7 @@ test("Scene 224 — Bounding Box Gizmo matches Babylon.js reference (scale / rot
         await ctx.close();
     }
 
-    await page.goto("/scene224.html");
+    await page.goto("/scene224.html?nocam=1");
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 30_000 });
     await page.waitForTimeout(500);
     const before = await readRoot(page);

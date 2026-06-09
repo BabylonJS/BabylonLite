@@ -43,8 +43,13 @@ async function main(): Promise<void> {
     camera.farPlane = 100;
     scene.camera = camera;
     // Orbit/zoom/pan controls — defer to gizmo interaction so dragging a
-    // bounding-box handle doesn't also orbit the camera.
-    attachControl(camera, canvas, scene, { shouldHandlePointerDown: () => !isGizmoInteracting(canvas), isExternalDragActive: () => isGizmoDragging(canvas), isExternalPickPending: () => isGizmoPickPending(canvas) });
+    // bounding-box handle doesn't also orbit the camera.  The parity test loads
+    // with `?nocam` to suppress camera controls entirely so a scripted drag that
+    // misses a handle can't orbit the view (keeping the camera identical between
+    // the two engines); interactive use keeps full orbit.
+    if (!new URLSearchParams(window.location.search).has("nocam")) {
+        attachControl(camera, canvas, scene, { shouldHandlePointerDown: () => !isGizmoInteracting(canvas), isExternalDragActive: () => isGizmoDragging(canvas), isExternalPickPending: () => isGizmoPickPending(canvas) });
+    }
 
     const light = createHemisphericLight([0, 1, 0]);
     light.intensity = 0.9;
