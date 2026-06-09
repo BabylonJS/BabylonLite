@@ -118,10 +118,28 @@ describe("createSpriteAtlasFromFrames — sub-rect sources", () => {
         expect(Array.from(composited.subarray(1 * 16 + 3 * 4, 1 * 16 + 4 * 4))).toEqual([0, 0, 255, 255]);
     });
 
-    it("validates srcStrideBytes is at least width * 4", () => {
+    it("rejects sub-rect rows that would spill past srcStrideBytes (srcX = 0)", () => {
+        // srcStride=4 (one texel per row) but width=2 — the row read window is 8 bytes, larger
+        // than the stride. The classic "stride less than width * 4" case.
         const probe = makeMockEngine();
         expect(() => createSpriteAtlasFromFrames(probe.engine, [{ pixels: new Uint8Array(16), width: 2, height: 2, srcStrideBytes: 4 }], { paddingPx: 0 })).toThrow(
-            /srcStrideBytes 4 is less than width \* 4/
+            /sub-rect row extent .* exceeds srcStrideBytes/
+        );
+    });
+
+    it("rejects sub-rect rows that would spill past srcStrideBytes (srcX > 0)", () => {
+        // Regression: srcStride=8 admits width=2 at srcX=0, but srcX=1 + width=2 needs columns
+        // 1..3 — three texels = 12 bytes, exceeding the 8-byte stride. Without an explicit
+        // `(srcX+width)*4 <= srcStride` check this passes the legacy "stride >= width*4"
+        // validation and the per-row `pixels.subarray(srcOffset, srcOffset+rowBytes)` reads
+        // spill into the *next* row's start, producing silently-corrupt atlas uploads.
+        const probe = makeMockEngine();
+        // Buffer: 2 rows × 2 texels = 16 bytes total. requiredBytes = (0+1)*8 + (1+2)*4 = 20 — but
+        // we only get 16, which means the buffer-length check would also catch it; bump to 3 rows
+        // to isolate the *stride* violation from the *length* violation.
+        const pixels = new Uint8Array(3 * 8); // 24 bytes; length passes, stride still fails
+        expect(() => createSpriteAtlasFromFrames(probe.engine, [{ pixels, width: 2, height: 1, srcX: 1, srcStrideBytes: 8 }], { paddingPx: 0 })).toThrow(
+            /sub-rect row extent .* exceeds srcStrideBytes/
         );
     });
 
@@ -149,8 +167,24 @@ describe("createSpriteAtlasFromFrames — sub-rect sources", () => {
 
     it("rejects capacityPx smaller than the initial content footprint", () => {
         const probe = makeMockEngine();
-        const big = makePaddedFrame(8, 8, [1, 2, 3, 4]);
-        expect(() => createSpriteAtlasFromFrames(probe.engine, [big], { capacityPx: [4, 4], paddingPx: 0 })).toThrow(/capacityPx 4x4 too small for initial content/);
+        // Frame fits horizontally inside capacityPx[0]=4 (so the shelf-width clamp doesn't
+        // trip), but is taller than capacityPx[1]=4, so the post-pack content-vs-capacity
+        // size check fires.
+        const tall = makePaddedFrame(4, 8, [1, 2, 3, 4]);
+        expect(() => createSpriteAtlasFromFrames(probe.engine, [tall], { capacityPx: [4, 4], paddingPx: 0 })).toThrow(/capacityPx 4x4 too small for initial content/);
+    });
+
+    it("clamps shelf width to capacityPx[0] so frames wrap to fit a narrower capacity", () => {
+        // capacityPx is narrower than the default maxWidthPx of 1024, so without clamping the
+        // packer would place all four frames on one 32-wide shelf, exceed capacityPx[0]=8, and
+        // throw "capacityPx too small". With clamping, the shelf wraps at 8 → 4 shelves of 8x8
+        // → fits within the 8x32 capacity.
+        const probe = makeMockEngine();
+        const frames = [makePaddedFrame(8, 8, [1, 1, 1, 255]), makePaddedFrame(8, 8, [2, 2, 2, 255]), makePaddedFrame(8, 8, [3, 3, 3, 255]), makePaddedFrame(8, 8, [4, 4, 4, 255])];
+        const atlas = createSpriteAtlasFromFrames(probe.engine, frames, { capacityPx: [8, 32], paddingPx: 0 });
+        expect(atlas.textureSizePx).toEqual([8, 32]);
+        // Four 8x8 frames, all at x=0, y=0/8/16/24.
+        expect(atlas.frames.map((f) => f.uvMin[1])).toEqual([0, 8 / 32, 16 / 32, 24 / 32]);
     });
 
     it("sizes existing-frame UVs against capacityPx, not against the content footprint", () => {

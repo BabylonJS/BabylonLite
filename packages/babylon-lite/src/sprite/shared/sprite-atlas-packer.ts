@@ -48,7 +48,8 @@ export interface SpriteAtlasFrameSource {
     /** Top-left y of the sub-rect to pack, in texels into `pixels`. Default `0`. */
     readonly srcY?: number;
     /** Bytes between consecutive rows of `pixels`. Default `width * 4` (tightly packed).
-     *  Must be `>= width * 4`. */
+     *  Must satisfy `(srcX + width) * 4 <= srcStrideBytes` — i.e. each row's sub-rect window
+     *  must fit within one stride, so reads do not spill into the next row. */
     readonly srcStrideBytes?: number;
     /** Pivot in [0,1] of the frame. Default `[0.5, 0.5]`. */
     readonly pivot?: readonly [number, number];
@@ -117,8 +118,14 @@ function shelfPack(
         if (srcX < 0 || srcY < 0) {
             throw new Error(`${fnLabel}: frame ${i} has negative sub-rect origin (srcX=${srcX}, srcY=${srcY}).`);
         }
-        if (srcStride < s.width * 4) {
-            throw new Error(`${fnLabel}: frame ${i} srcStrideBytes ${srcStride} is less than width * 4 (${s.width * 4}).`);
+        // Each row's read window is `[srcX*4, (srcX+width)*4)` bytes inside one `srcStride`-byte row.
+        // The window must fit within the stride, otherwise per-row reads spill into the *next* row's
+        // start and produce silently-corrupt uploads. Subsumes the looser `srcStride >= width*4` check
+        // (which only handled the srcX=0 case).
+        if ((srcX + s.width) * 4 > srcStride) {
+            throw new Error(
+                `${fnLabel}: frame ${i} sub-rect row extent (srcX + width) * 4 = ${(srcX + s.width) * 4} exceeds srcStrideBytes ${srcStride} (would spill into next row).`
+            );
         }
         // Last byte we need to read = (srcY + height - 1) * srcStride + (srcX + width) * 4.
         const requiredBytes = (srcY + s.height - 1) * srcStride + (srcX + s.width) * 4;
@@ -168,13 +175,20 @@ function shelfPack(
  */
 export function createSpriteAtlasFromFrames(engine: EngineContext, sources: readonly SpriteAtlasFrameSource[], options: SpriteAtlasPackOptions = {}): SpriteAtlas {
     const padding = options.paddingPx ?? 1;
-    const maxWidth = options.maxWidthPx ?? 1024;
+    const requestedMaxWidth = options.maxWidthPx ?? 1024;
 
     if (sources.length === 0 && !options.capacityPx) {
         throw new Error(
             "createSpriteAtlasFromFrames: at least one frame is required, or pass options.capacityPx to create an empty atlas with reserved capacity for appendSpriteAtlasFrames."
         );
     }
+
+    // When `capacityPx` is supplied, clamp the shelf width to the texture width so packing
+    // honors the actual atlas bound (matching what `appendSpriteAtlasFrames` does later).
+    // Otherwise a `maxWidthPx` wider than `capacityPx[0]` lets frames flow past the texture's
+    // right edge and we'd reject the atlas as "too small" even though a narrower shelf would
+    // have wrapped the frames vertically and fit them.
+    const maxWidth = options.capacityPx ? Math.min(requestedMaxWidth, options.capacityPx[0]) : requestedMaxWidth;
 
     // Pack against an unbounded height first so we can discover the content footprint and
     // then decide the final texture dimensions (content-fit vs. caller-supplied capacity).
