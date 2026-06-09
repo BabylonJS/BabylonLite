@@ -37,8 +37,12 @@ import { BoundingBoxGizmo } from "@babylonjs/core/Gizmos/boundingBoxGizmo";
     camera.maxZ = 100;
     // Enable orbit/zoom/pan on the reference camera so it can be rotated like
     // the Lite scene.  The gizmo's own pointer-drag behaviour detaches the
-    // camera while a handle is being dragged, so the two don't fight.
-    camera.attachControl(canvas, true);
+    // camera while a handle is being dragged, so the two don't fight.  The
+    // parity test loads with `?nocam` to suppress orbit so a scripted drag that
+    // misses a handle can't move the view (keeps the camera identical to Lite).
+    if (!new URLSearchParams(window.location.search).has("nocam")) {
+        camera.attachControl(canvas, true);
+    }
 
     const light = new HemisphericLight("light", new Vector3(0, 1, 0), scene);
     light.intensity = 0.9;
