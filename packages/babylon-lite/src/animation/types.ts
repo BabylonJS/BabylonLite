@@ -163,6 +163,12 @@ export interface VatData {
     readonly weightsBuffer: GPUBuffer;
     readonly joints1Buffer: GPUBuffer | null;
     readonly weights1Buffer: GPUBuffer | null;
+    /** Optional per-instance VAT params texture (rgba32float, instanceCount × 1): each texel is
+     *  (fromRow, toRow, timeOffset, fps) for one thin-instance, so every instance plays its own clip +
+     *  phase from the one shared baked texture. Present ⇒ MSH_VAT_INSTANCED, and the VAT vertex path
+     *  reads its frame row from this texture indexed by `@builtin(instance_index)` instead of the shared
+     *  settings UBO. Set via the VatHandle returned by attachVat (vat/vat-baker.ts). */
+    instanceTexture?: GPUTexture | null;
 }
 
 /** Morph target GPU data — delta texture + weights UBO.

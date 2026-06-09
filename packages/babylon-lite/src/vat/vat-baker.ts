@@ -116,6 +116,13 @@ export interface VatHandle {
     play(clip: string, opts?: { offset?: number; fps?: number }): void;
     /** Advance the animation clock by `dtSeconds` and upload it. */
     update(dtSeconds: number): void;
+    /** Enable/refresh PER-INSTANCE VAT: upload one vec4 (fromRow, toRow, timeOffset, fps) per thin-instance
+     *  into a texture the VAT vertex path reads by `instance_index`, so every instance plays its own clip +
+     *  phase from the one shared baked texture (all instances in a single draw call). `params.length` must be
+     *  `4 * instanceCount`. Call this BEFORE registerScene the first time — it sets `mesh.vat.instanceTexture`,
+     *  which selects the MSH_VAT_INSTANCED shader variant; later calls re-upload in place. Use `clips` to look
+     *  up each clip's fromRow/toRow/fps when building `params`. */
+    setInstances(params: Float32Array): void;
 }
 
 /**
@@ -157,6 +164,8 @@ export function attachVat(engine: EngineContext, mesh: Mesh, baked: VatBakeResul
     mesh.skeleton = null; // baked: no live skinning, no skeleton fragment, no per-frame bone upload
 
     let time = 0;
+    let instanceTex: GPUTexture | null = null;
+    let instanceCap = 0;
     const writeUbo = (): void => {
         device.queue.writeBuffer(settingsBuffer, 0, ubo.buffer, ubo.byteOffset, 32);
     };
@@ -178,6 +187,25 @@ export function attachVat(engine: EngineContext, mesh: Mesh, baked: VatBakeResul
             time += dt;
             ubo[4] = time;
             writeUbo();
+        },
+        setInstances(params) {
+            const count = Math.max(1, params.length >> 2);
+            if (!instanceTex || count > instanceCap) {
+                instanceTex?.destroy();
+                instanceTex = device.createTexture({
+                    size: [count, 1],
+                    format: "rgba32float",
+                    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+                });
+                instanceCap = count;
+                vat.instanceTexture = instanceTex;
+            }
+            device.queue.writeTexture(
+                { texture: instanceTex },
+                params.buffer,
+                { offset: params.byteOffset, bytesPerRow: count * 16, rowsPerImage: 1 },
+                { width: count, height: 1 }
+            );
         },
     };
     handle.play(clip ?? Object.keys(baked.clips)[0] ?? "");

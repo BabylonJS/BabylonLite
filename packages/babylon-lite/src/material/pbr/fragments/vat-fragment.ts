@@ -39,8 +39,15 @@ let wrapped = raw - floor(raw / span) * span;
 return i32(p.x + wrapped);
 }`;
 
-function makeVatSkinningCode(has8Bones: boolean): string {
-    let code = `let vatRow = vatFrameRow(vat.params, vat.clock.x);
+function makeVatSkinningCode(has8Bones: boolean, instanced: boolean): string {
+    // Per-instance VAT reads each instance's (fromRow,toRow,offset,fps) from instanceTexture at
+    // column = instance_index; non-instanced VAT uses the shared settings UBO. The shared clock
+    // (vat.clock.x) drives both, so a per-instance offset just staggers each instance's phase.
+    const rowExpr = instanced
+        ? `let vatP = textureLoad(vatInstanceTex, vec2<i32>(i32(vatInstanceIndex), 0), 0);
+let vatRow = vatFrameRow(vatP, vat.clock.x);`
+        : `let vatRow = vatFrameRow(vat.params, vat.clock.x);`;
+    let code = `${rowExpr}
 var influence: mat4x4<f32> = readMatrixFromVat(vatSampler, f32(joints[0]), vatRow) * weights[0];
 influence = influence + readMatrixFromVat(vatSampler, f32(joints[1]), vatRow) * weights[1];
 influence = influence + readMatrixFromVat(vatSampler, f32(joints[2]), vatRow) * weights[2];
@@ -52,17 +59,29 @@ influence = influence + readMatrixFromVat(vatSampler, f32(joints1[1]), vatRow) *
 influence = influence + readMatrixFromVat(vatSampler, f32(joints1[2]), vatRow) * weights1[2];
 influence = influence + readMatrixFromVat(vatSampler, f32(joints1[3]), vatRow) * weights1[3];`;
     }
-    code += `\nfinalWorld = mesh.world * influence;`;
+    // Instanced: place the fully-posed prototype (mesh.world * skin) into the world by the per-instance
+    // matrix (world0-3) applied OUTERMOST, so grid/herd offsets are world-space and not scaled by the
+    // prototype's own transform. Non-instanced keeps the Stage-1 path (mesh.world * skin).
+    code += instanced
+        ? `\nlet vatInstWorld = mat4x4<f32>(world0, world1, world2, world3);
+finalWorld = vatInstWorld * mesh.world * influence;`
+        : `\nfinalWorld = mesh.world * influence;`;
     return code;
 }
 
 /**
  * Create a VAT fragment.
  * @param has8Bones - Whether to use 8-bone skinning (joints1/weights1).
+ * @param instanced - Whether each thin-instance plays its own frame (reads instanceTexture by instance_index).
  */
-export function createVatFragment(has8Bones: boolean): ShaderFragment {
+export function createVatFragment(has8Bones: boolean, instanced: boolean): ShaderFragment {
     return {
         _id: "vat",
+
+        // Instanced VAT places the skinned mesh by world0-3 (declared by the thin-instance fragment), so it
+        // must compose AFTER thin-instance in the shared VW slot — otherwise thin-instance's finalWorld write
+        // would clobber the skinned+instanced transform.
+        _dependencies: instanced ? ["thin-instance"] : undefined,
 
         _vertexAttributes: [
             { _name: "joints", _type: "vec4<u32>", _gpuFormat: "uint32x4" as GPUVertexFormat, _arrayStride: 16 },
@@ -78,18 +97,23 @@ export function createVatFragment(has8Bones: boolean): ShaderFragment {
         _vertexBindings: [
             { _name: "vatSampler", _type: { _kind: "texture", _textureType: "texture_2d<f32>" as const, _sampleType: "unfilterable-float" as const }, _visibility: STAGE_VERTEX },
             { _name: "vat", _type: { _kind: "uniform-buffer" as const }, _visibility: STAGE_VERTEX },
+            ...(instanced
+                ? [{ _name: "vatInstanceTex", _type: { _kind: "texture" as const, _textureType: "texture_2d<f32>" as const, _sampleType: "unfilterable-float" as const }, _visibility: STAGE_VERTEX }]
+                : []),
         ],
+
+        _vertexBuiltins: instanced ? [{ _name: "vatInstanceIndex", _builtin: "instance_index", _type: "u32" }] : undefined,
 
         _vertexHelperFunctions: VAT_HELPERS,
 
         _vertexSlots: {
-            VW: makeVatSkinningCode(has8Bones),
+            VW: makeVatSkinningCode(has8Bones, instanced),
         },
     };
 }
 
 import type { PbrExt } from "../pbr-flags.js";
-import { MSH_VAT, MSH_HAS_SKELETON_8 } from "../../mesh-features.js";
+import { MSH_VAT, MSH_HAS_SKELETON_8, MSH_VAT_INSTANCED } from "../../mesh-features.js";
 
 export const pbrExt: PbrExt = {
     id: "vat",
@@ -98,15 +122,19 @@ export const pbrExt: PbrExt = {
         if (!(ctx._meshFeatures & MSH_VAT)) {
             return null;
         }
-        return createVatFragment((ctx._meshFeatures & MSH_HAS_SKELETON_8) !== 0);
+        return createVatFragment((ctx._meshFeatures & MSH_HAS_SKELETON_8) !== 0, (ctx._meshFeatures & MSH_VAT_INSTANCED) !== 0);
     },
     bind(ctx, entries, b) {
-        const mesh = ctx._mesh as { vat?: { texture: GPUTexture; settingsBuffer: GPUBuffer } } | undefined;
+        const mesh = ctx._mesh as { vat?: { texture: GPUTexture; settingsBuffer: GPUBuffer; instanceTexture?: GPUTexture | null } } | undefined;
         if (!(ctx._meshFeatures & MSH_VAT) || !mesh?.vat) {
             return b;
         }
         entries.push({ binding: b++, resource: mesh.vat.texture.createView() });
         entries.push({ binding: b++, resource: { buffer: mesh.vat.settingsBuffer } });
+        if (ctx._meshFeatures & MSH_VAT_INSTANCED && mesh.vat.instanceTexture) {
+            // Same declaration order as _vertexBindings above (vatSampler, vat, vatInstanceTex).
+            entries.push({ binding: b++, resource: mesh.vat.instanceTexture.createView() });
+        }
         return b;
     },
 };
