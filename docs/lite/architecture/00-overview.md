@@ -50,6 +50,8 @@
 | [32-large-world-rendering.md](32-large-world-rendering.md)         | LWR / Floating Origin   | `useFloatingOrigin` engine flag, eye-relative upload, FO version tracking                      |
 | [33-high-precision-matrix.md](33-high-precision-matrix.md)         | High-Precision Matrix   | `useHighPrecisionMatrix` engine flag, F64 backing, `allocateMat4` singleton, `packMat4IntoF32` |
 | [34-cascaded-shadow.md](34-cascaded-shadow.md)                     | Cascaded Shadow Maps    | Directional CSM: frustum splits, per-cascade ortho fit, depth array, PCF5 receiver             |
+| [35-material-plugin.md](35-material-plugin.md)                     | Material Plugin         | Opt-in PBR/Standard material plugins, self-registration, zero-impact extension seam            |
+| [36-vertex-animation-texture.md](36-vertex-animation-texture.md)   | Vertex Animation Texture | VAT baking, texture-based skinning, per-instance + dual-clip-blend instancing, shadow casting |
 
 ---
 

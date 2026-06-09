@@ -116,17 +116,17 @@ export interface VatHandle {
     play(clip: string, opts?: { offset?: number; fps?: number }): void;
     /** Advance the animation clock by `dtSeconds` and upload it. */
     update(dtSeconds: number): void;
-    /** Enable/refresh PER-INSTANCE VAT: upload one vec4 (fromRow, toRow, timeOffset, fps) per thin-instance
-     *  into a texture the VAT vertex path reads by `instance_index`, so every instance plays its own clip +
-     *  phase from the one shared baked texture (all instances in a single draw call). `params.length` must be
-     *  `4 * instanceCount`. Call this BEFORE registerScene the first time — it sets `mesh.vat.instanceTexture`,
-     *  which selects the MSH_VAT_INSTANCED shader variant; later calls re-upload in place. Use `clips` to look
-     *  up each clip's fromRow/toRow/fps when building `params`. */
+    /** Enable/refresh PER-INSTANCE VAT: upload one vec4 (fromRow, toRow, timeOffset, fps) per thin-instance,
+     *  so every instance plays its own clip + phase from the one shared baked texture (all instances in a
+     *  single draw call). `params.length` must be `4 * instanceCount`. Call this BEFORE registerScene the
+     *  first time — it sets `mesh.vat.instanceTexture`; a VAT mesh that is thin-instanced then takes the
+     *  per-instance vertex path. Later calls re-upload in place. Use `clips` to look up each clip's
+     *  fromRow/toRow/fps when building `params`. (Internally expanded to the dual-clip layout, blend 0.) */
     setInstances(params: Float32Array): void;
     /** PER-INSTANCE DUAL-CLIP VAT: like setInstances, but each instance carries TWO clips that are blended,
      *  so gait cross-fades stay smooth. `params.length` must be `8 * instanceCount` — two vec4s per instance:
      *  A = (fromRowA, toRowA, timeOffset, fpsA), B = (fromRowB, toRowB, blendWeight, fpsB), where blendWeight
-     *  in [0,1] lerps A→B and B reuses A's timeOffset. Selects the MSH_VAT_INSTANCED_BLEND shader variant. */
+     *  in [0,1] lerps A→B and B reuses A's timeOffset. Same per-instance VAT path as setInstances. */
     setInstancesBlend(params: Float32Array): void;
 }
 
@@ -170,14 +170,14 @@ export function attachVat(engine: EngineContext, mesh: Mesh, baked: VatBakeResul
 
     let time = 0;
     let instanceTex: GPUTexture | null = null;
-    let instanceTexCap = 0; // capacity in TEXELS (= instances single-clip, 2*instances blend)
+    let instanceTexCap = 0; // capacity in TEXELS (always 2 per instance — the dual-clip layout)
     const writeUbo = (): void => {
         device.queue.writeBuffer(settingsBuffer, 0, ubo.buffer, ubo.byteOffset, 32);
     };
-    // Upload per-instance VAT params into a (texels x 1) rgba32float texture the VAT vertex path reads by
-    // instance_index. `blend` selects the dual-clip variant (2 texels/instance); single-clip is 1 texel.
-    const uploadInstances = (params: Float32Array, blend: boolean): void => {
-        const texels = Math.max(1, params.length >> 2); // 4 floats per texel
+    // Upload per-instance VAT params (TWO texels per instance — clip A then clip B) into a (texels x 1)
+    // rgba32float texture the VAT vertex path reads by instance_index.
+    const uploadInstances = (params: Float32Array): void => {
+        const texels = Math.max(2, params.length >> 2); // 4 floats per texel
         if (!instanceTex || texels > instanceTexCap) {
             instanceTex?.destroy();
             instanceTex = device.createTexture({
@@ -188,7 +188,6 @@ export function attachVat(engine: EngineContext, mesh: Mesh, baked: VatBakeResul
             instanceTexCap = texels;
             vat.instanceTexture = instanceTex;
         }
-        vat.instanceBlend = blend;
         device.queue.writeTexture({ texture: instanceTex }, params.buffer, { offset: params.byteOffset, bytesPerRow: texels * 16, rowsPerImage: 1 }, { width: texels, height: 1 });
     };
     const handle: VatHandle = {
@@ -211,10 +210,26 @@ export function attachVat(engine: EngineContext, mesh: Mesh, baked: VatBakeResul
             writeUbo();
         },
         setInstances(params) {
-            uploadInstances(params, false);
+            // Single clip per instance (4 floats: fromRow,toRow,offset,fps) expanded to the dual-clip
+            // layout (clip B == A, blend 0) so the one instanced shader variant renders it.
+            const n = params.length >> 2;
+            const dual = new Float32Array(n * 8);
+            for (let i = 0; i < n; i++) {
+                const s = i * 4;
+                const o = i * 8;
+                dual[o] = params[s]!;
+                dual[o + 1] = params[s + 1]!;
+                dual[o + 2] = params[s + 2]!;
+                dual[o + 3] = params[s + 3]!;
+                dual[o + 4] = params[s]!;
+                dual[o + 5] = params[s + 1]!;
+                dual[o + 6] = 0;
+                dual[o + 7] = params[s + 3]!;
+            }
+            uploadInstances(dual);
         },
         setInstancesBlend(params) {
-            uploadInstances(params, true);
+            uploadInstances(params);
         },
     };
     handle.play(clip ?? Object.keys(baked.clips)[0] ?? "");

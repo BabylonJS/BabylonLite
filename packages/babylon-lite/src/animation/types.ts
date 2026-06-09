@@ -163,15 +163,12 @@ export interface VatData {
     readonly weightsBuffer: GPUBuffer;
     readonly joints1Buffer: GPUBuffer | null;
     readonly weights1Buffer: GPUBuffer | null;
-    /** Optional per-instance VAT params texture (rgba32float, instanceCount × 1): each texel is
-     *  (fromRow, toRow, timeOffset, fps) for one thin-instance, so every instance plays its own clip +
-     *  phase from the one shared baked texture. Present ⇒ MSH_VAT_INSTANCED, and the VAT vertex path
-     *  reads its frame row from this texture indexed by `@builtin(instance_index)` instead of the shared
-     *  settings UBO. Set via the VatHandle returned by attachVat (vat/vat-baker.ts). */
+    /** Optional per-instance VAT params texture (rgba32float, (2*instanceCount) x 1): TWO texels per
+     *  thin-instance — A=(fromRow,toRow,offset,fps), B=(fromRow,toRow,blend,fps) — so each instance plays
+     *  its own clip + phase (and can blend two clips) from the one shared baked texture. Present + the mesh
+     *  thin-instanced ⇒ the VAT vertex path reads its frame rows from this texture indexed by
+     *  `@builtin(instance_index)` instead of the shared settings UBO. Set via the VatHandle. */
     instanceTexture?: GPUTexture | null;
-    /** When true, instanceTexture holds TWO texels per instance and the VAT path blends both clips
-     *  (MSH_VAT_INSTANCED_BLEND) for smooth gait cross-fades; otherwise one texel/instance (single clip). */
-    instanceBlend?: boolean;
 }
 
 /** Morph target GPU data — delta texture + weights UBO.

@@ -61,25 +61,18 @@ ${dest} = ${dest} + readMatrixFromVat(vatSampler, f32(joints1[3]), ${row}) * wei
 const VAT_INSTANCE_PLACEMENT = `let vatInstWorld = mat4x4<f32>(world0, world1, world2, world3);
 finalWorld = vatInstWorld * mesh.world * influence;`;
 
-function makeVatSkinningCode(has8Bones: boolean, instanced: boolean, blend: boolean): string {
+function makeVatSkinningCode(has8Bones: boolean, instanced: boolean): string {
     if (!instanced) {
         // Non-instanced: shared settings UBO, single clip (Stage 1).
         return `let vatRow = vatFrameRow(vat.params, vat.clock.x);
 ${vatSkinSum("influence", "vatRow", has8Bones)}
 finalWorld = mesh.world * influence;`;
     }
-    if (!blend) {
-        // Per-instance, single clip: one texel (fromRow,toRow,offset,fps) per instance, read by
-        // instance_index from instanceTexture; the shared clock drives the crowd, the offset staggers it.
-        return `let vatP = textureLoad(vatInstanceTex, vec2<i32>(i32(vatInstanceIndex), 0), 0);
-let vatRow = vatFrameRow(vatP, vat.clock.x);
-${vatSkinSum("influence", "vatRow", has8Bones)}
-${VAT_INSTANCE_PLACEMENT}`;
-    }
-    // Per-instance, dual-clip BLEND: two texels per instance — A=(fromRow,toRow,offset,fps),
-    // B=(fromRow,toRow,blend,fps), B sharing A's offset. Linearly blend the two clips' skin matrices by
-    // B.z, exactly reproducing a weighted gait cross-fade (a weighted sum of bone matrices). Costs 2x the
-    // bone reads, only in the blend variant.
+    // Per-instance: ALWAYS the dual-clip path — two texels per instance: A=(fromRow,toRow,offset,fps),
+    // B=(fromRow,toRow,blend,fps) sharing A's offset. Linearly blend the two clips' skin matrices by B.z,
+    // reproducing a weighted gait cross-fade. A single-clip instance just sets B==A with blend=0, so this
+    // ONE variant covers both — no extra mesh-feature bit, so mesh-features.ts (a shared chunk) stays
+    // byte-identical for non-VAT scenes. The 2x bone reads are negligible vs the one-draw-call win.
     return `let vatIdx = i32(vatInstanceIndex) * 2;
 let vatA = textureLoad(vatInstanceTex, vec2<i32>(vatIdx, 0), 0);
 let vatB = textureLoad(vatInstanceTex, vec2<i32>(vatIdx + 1, 0), 0);
@@ -95,10 +88,10 @@ ${VAT_INSTANCE_PLACEMENT}`;
 /**
  * Create a VAT fragment.
  * @param has8Bones - Whether to use 8-bone skinning (joints1/weights1).
- * @param instanced - Whether each thin-instance plays its own frame (reads instanceTexture by instance_index).
- * @param blend - Whether each instance blends TWO clips (2 texels/instance) for cross-fading (implies instanced).
+ * @param instanced - Whether the mesh is thin-instanced; if so each instance reads its own frame(s) from
+ *                    instanceTexture by instance_index (always the dual-clip path, single-clip = blend 0).
  */
-export function createVatFragment(has8Bones: boolean, instanced: boolean, blend: boolean): ShaderFragment {
+export function createVatFragment(has8Bones: boolean, instanced: boolean): ShaderFragment {
     return {
         _id: "vat",
 
@@ -137,13 +130,13 @@ export function createVatFragment(has8Bones: boolean, instanced: boolean, blend:
         _vertexHelperFunctions: VAT_HELPERS,
 
         _vertexSlots: {
-            VW: makeVatSkinningCode(has8Bones, instanced, blend),
+            VW: makeVatSkinningCode(has8Bones, instanced),
         },
     };
 }
 
 import type { PbrExt } from "../pbr-flags.js";
-import { MSH_VAT, MSH_HAS_SKELETON_8, MSH_VAT_INSTANCED, MSH_VAT_INSTANCED_BLEND } from "../../mesh-features.js";
+import { MSH_VAT, MSH_HAS_SKELETON_8, MSH_HAS_THIN_INSTANCES } from "../../mesh-features.js";
 
 export const pbrExt: PbrExt = {
     id: "vat",
@@ -152,11 +145,10 @@ export const pbrExt: PbrExt = {
         if (!(ctx._meshFeatures & MSH_VAT)) {
             return null;
         }
-        return createVatFragment(
-            (ctx._meshFeatures & MSH_HAS_SKELETON_8) !== 0,
-            (ctx._meshFeatures & MSH_VAT_INSTANCED) !== 0,
-            (ctx._meshFeatures & MSH_VAT_INSTANCED_BLEND) !== 0
-        );
+        // "Instanced" needs no dedicated mesh-feature bit: a VAT mesh that is thin-instanced takes the
+        // per-instance path. Deriving it from the existing MSH_HAS_THIN_INSTANCES keeps mesh-features.ts
+        // (a shared chunk fetched by every scene) byte-identical for non-VAT scenes — zero bundle movement.
+        return createVatFragment((ctx._meshFeatures & MSH_HAS_SKELETON_8) !== 0, (ctx._meshFeatures & MSH_HAS_THIN_INSTANCES) !== 0);
     },
     bind(ctx, entries, b) {
         const mesh = ctx._mesh as { vat?: { texture: GPUTexture; settingsBuffer: GPUBuffer; instanceTexture?: GPUTexture | null } } | undefined;
@@ -165,7 +157,7 @@ export const pbrExt: PbrExt = {
         }
         entries.push({ binding: b++, resource: mesh.vat.texture.createView() });
         entries.push({ binding: b++, resource: { buffer: mesh.vat.settingsBuffer } });
-        if (ctx._meshFeatures & MSH_VAT_INSTANCED && mesh.vat.instanceTexture) {
+        if (ctx._meshFeatures & MSH_HAS_THIN_INSTANCES && mesh.vat.instanceTexture) {
             // Same declaration order as _vertexBindings above (vatSampler, vat, vatInstanceTex).
             entries.push({ binding: b++, resource: mesh.vat.instanceTexture.createView() });
         }

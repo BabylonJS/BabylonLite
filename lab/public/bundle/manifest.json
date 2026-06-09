@@ -2532,8 +2532,8 @@
     ]
   },
   "scene218": {
-    "rawKB": 85,
-    "gzipKB": 34.9,
+    "rawKB": 86.3,
+    "gzipKB": 35.3,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene218-create-skeleton-DWjuzetT.js",
