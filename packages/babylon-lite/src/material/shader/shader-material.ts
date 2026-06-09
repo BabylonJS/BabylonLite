@@ -1,3 +1,4 @@
+import { F32 } from "../../engine/typed-arrays.js";
 import type { Material } from "../material.js";
 import type { MeshGroupBuilder } from "../../render/renderable.js";
 import type { Texture2D } from "../../texture/texture-2d.js";
@@ -304,7 +305,7 @@ function defaultUniformValue(decl: ShaderUniformDecl): ShaderUniformValue {
 
 function normalizeUniformValue(decl: ShaderUniformDecl, value: ShaderUniformValue): Float32Array {
     const count = elementCount(decl.type);
-    const arr = typeof value === "number" ? new Float32Array([value]) : value instanceof Float32Array ? new Float32Array(value) : new Float32Array(value);
+    const arr = typeof value === "number" ? new F32([value]) : value instanceof F32 ? new F32(value) : new F32(value);
     if (arr.length !== count) {
         throw new Error(`ShaderMaterial: uniform "${decl.name}" of type ${decl.type} expects ${count} value(s), got ${arr.length}.`);
     }

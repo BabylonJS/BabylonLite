@@ -11,6 +11,7 @@
  *
  * Tree-shaken: importing this drags in nothing a plain sprite scene pays for.
  */
+import { U8 } from "../../engine/typed-arrays.js";
 import type { EngineContext } from "../../engine/engine.js";
 import { createTexture2DFromPixels } from "../../texture/pixels-texture.js";
 import type { SpriteAtlas, SpriteFrame, SpriteSampling } from "./sprite-atlas.js";
@@ -85,7 +86,7 @@ export function createSpriteAtlasFromFrames(engine: EngineContext, sources: read
     const atlasHeight = penY + shelfHeight;
 
     // Composite every frame into one transparent RGBA8 buffer.
-    const data = new Uint8Array(atlasWidth * atlasHeight * 4);
+    const data = new U8(atlasWidth * atlasHeight * 4);
     for (let i = 0; i < sources.length; i++) {
         const s = sources[i]!;
         const rowBytes = s.width * 4;

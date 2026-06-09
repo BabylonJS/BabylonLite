@@ -91,6 +91,34 @@
 
 - Always aim for the long term solution. Never hack a fix
 
+### 8. Y-Orientation Convention (Mandatory)
+
+Babylon Lite uses BJS Y-up UVs throughout the mesh and shader stack (V=1 is top of texture). WebGPU samplers are Y-down (V=0 is row 0 = top of texture in storage). A V-axis conversion is therefore required somewhere on every textured surface. The codebase performs that conversion through exactly **three paths**; do not invent new ones:
+
+1. **Raster upload-flip.** `texture-2d.ts` calls `copyExternalImageToTexture({ flipY: invertY=true })` on image-decoded uploads (PNG/JPG/HTMLImage/Bitmap). The decoded image data is row 0 = top; the upload writes row 0 = bottom into the GPU texture, so subsequent `textureSample(uv)` with V=1=top reads back upright. This is the default for raster `loadTexture2D`.
+
+2. **Material-side V-flip via `invertY`.** Codec-decoded textures (ktx2/basis) store data row 0 = top in the GPU texture (no upload flip) and set `Texture2D.invertY = true`. Standard/PBR pipelines see this flag and emit a UV V-flip in the material shader (`v = 1 - v`, implemented as a `(scaleY, offsetY)` UV uniform in `standard-pipeline.ts`). This works for clamp/repeat/mirror-repeat where UVs land in `[0, 1]`; for clamp-to-edge with UVs outside `[0, 1]` the V-flip is still safe by codebase convention (atlases always stay in `[0, 1]`).
+
+3. **RTT projection-flip.** Offscreen render targets render with a Y-flipped projection (`viewProj` row 1 negated in `writePassSceneUBO`, pipeline `frontFace = "cw"`). The resulting GPU texture has row 0 = bottom of the rendered scene, so downstream `textureSample(uv)` with V=1=top reads it upright. This is driven by `RenderTargetDescriptor.flipY` (which feeds the internal `RenderTargetSignature._flipY` used for pipeline keying).
+
+#### `flipY` override
+
+`RenderTargetDescriptor.flipY` is a public field. Most scenes get the correct convention without setting it. The default at task creation is:
+
+```ts
+_flipY = desc.flipY ?? (desc.resolveToSwapchain !== true)
+```
+
+i.e. **offscreen RTs flip, swapchain RTs do not**. This matches BJS's WebGPU offscreen-RT convention (`webgpuEngine.ts` mirrors offscreen RT rasterization), giving sub-pixel parity for scenes that render geometry into offscreen RTs (e.g. scene 145). Any frame-graph chain composed from `createRenderTask` + `createPostProcessTask` + `createCopyToTextureTask` then produces upright output on the swap because the post-process / copy tasks apply a vertex-stage XOR-derived V-flip on the final hop.
+
+#### Legitimate `flipY` overrides
+
+- `shadow-base.ts` — `flipY: false` on shadow-map RTs (sampled in light-space, no projection flip needed).
+- `transmission.ts` — forces `flipY = false` on the linear-offscreen color target during transmission retargeting (sample chain stays upright through MSAA + image-processing).
+- `scene143.ts` (lab) — `flipY: false` on the scene-source RT. The chain (`blur → blur → chromatic`) ends in a chromatic-aberration pass whose directional Y shift (`shift.y * 0.3`) is asymmetric in screen space. Sampling from an upside-down source would apply the shift in the wrong frame and produce a vertically-mirrored chromatic effect vs the BJS reference (~0.4 MAD). Forcing the source upright makes the chromatic shift land in the correct screen-space direction.
+
+Any new code that needs a `flipY` override must document why the default convention is wrong for that target.
+
 ---
 
 ## Target API Shape

@@ -97,11 +97,10 @@ export function ensureCsmShadowTaskState(
         const rt: RenderTarget = {
             _descriptor: {
                 size: { width: cfg._mapSize, height: cfg._mapSize },
-                depthStencilFormat: "depth32float",
+                dFormat: "depth32float",
                 _depthClearValue: 1,
                 _depthCompare: "less-equal",
-                sampleCount: 1,
-                flipY: false,
+                samples: 1,
             },
             _colorTexture: null,
             _colorView: null,

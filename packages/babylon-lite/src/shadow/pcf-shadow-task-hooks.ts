@@ -1,5 +1,6 @@
 /** Internal PCF shadow task hooks owned by PCF shadow generators. */
 
+import { F32 } from "../engine/typed-arrays.js";
 import type { Camera } from "../camera/camera.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { Material, MaterialView } from "../material/material.js";
@@ -126,7 +127,7 @@ export function ensurePcfShadowTaskState(
         _cameraVersion: 0,
         _lastCasterVersion: -1,
         _lastLightVersion: -1,
-        _shadowUboData: new Float32Array(24),
+        _shadowUboData: new F32(24),
         _casterMeshes: casterMeshes,
     };
 
@@ -170,7 +171,7 @@ function updateShadowCamera(state: PcfTaskState, sg: ShadowGenerator, matrix: Pc
 }
 
 function biasViewProjection(viewProj: Float32Array, bias: number): Float32Array {
-    const biased = new Float32Array(viewProj);
+    const biased = new F32(viewProj);
     const b = bias * 0.5;
     for (let col = 0; col < 4; col++) {
         const z = 2 + col * 4;

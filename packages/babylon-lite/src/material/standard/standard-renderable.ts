@@ -4,6 +4,7 @@
  *  per-mesh work to `buildSingleStandardRenderable`. The same single-mesh
  *  function is reused by the material-swap path. */
 
+import { F32 } from "../../engine/typed-arrays.js";
 import type { EngineContext } from "../../engine/engine.js";
 import type { SceneContext } from "../../scene/scene.js";
 import type { Mesh } from "../../mesh/mesh.js";
@@ -24,7 +25,7 @@ import { packMat4IntoF32 } from "../../math/pack-mat4-into-f32.js";
 
 /** Scratch buffer for material UBO writes (24 floats = 96 bytes). Reused across
  *  every Standard renderable since binding updates are single-threaded per frame. */
-const _stdMatScratch = new Float32Array(24);
+const _stdMatScratch = new F32(24);
 
 /** Thin instance GPU sync callback type — loaded dynamically only when needed. */
 type ThinInstanceSync = (
@@ -113,13 +114,13 @@ export function buildStandardMeshRenderables(scene: SceneContext, meshes: Mesh[]
 
         const meshShadowGens = receiveShadows ? shadowLights.map((sl) => sl.gen) : [];
 
-        const meshUboData = new Float32Array(bindings._composed._meshUboSpec._totalBytes / 4);
+        const meshUboData = new F32(bindings._composed._meshUboSpec._totalBytes / 4);
         const _packMeshWorld = engine._makePackMeshWorld?.(s as SceneContext) ?? packMat4IntoF32;
         _packMeshWorld(meshUboData, mesh.worldMatrix, 0, 0);
         writeMeshLightSelection(mesh, s.lights, meshUboData);
         const meshUBO = createUniformBuffer(engine, meshUboData);
         const textureLevel = (features & NEEDS_UV) !== 0 ? 1.0 : 0;
-        const matData = new Float32Array(24);
+        const matData = new F32(24);
         writeStdMaterialData(matData, mat, textureLevel);
         const materialUBO = createUniformBuffer(engine, matData);
         const meshBindGroup = createStandardMeshBindGroup(engine, bindings, meshUBO, materialUBO, mat);
