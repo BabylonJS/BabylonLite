@@ -122,6 +122,7 @@ export {
     updateMeshUv2,
     updateMeshTangents,
     resizeMeshGeometry,
+    invalidateRenderBundles,
 } from "./mesh/mesh-factories.js";
 export { createSphereData } from "./mesh/create-sphere.js";
 export type { SphereMeshData } from "./mesh/create-sphere.js";
@@ -238,6 +239,7 @@ export {
     removeThinInstance,
     setThinInstanceMatrix,
     setThinInstances,
+    setThinInstanceCount,
     flushThinInstances,
     setThinInstanceColors,
     enableThinInstanceGpuCulling,
