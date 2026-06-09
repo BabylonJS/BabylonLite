@@ -122,7 +122,13 @@ export function createVatFragment(has8Bones: boolean, instanced: boolean, blend:
             { _name: "vatSampler", _type: { _kind: "texture", _textureType: "texture_2d<f32>" as const, _sampleType: "unfilterable-float" as const }, _visibility: STAGE_VERTEX },
             { _name: "vat", _type: { _kind: "uniform-buffer" as const }, _visibility: STAGE_VERTEX },
             ...(instanced
-                ? [{ _name: "vatInstanceTex", _type: { _kind: "texture" as const, _textureType: "texture_2d<f32>" as const, _sampleType: "unfilterable-float" as const }, _visibility: STAGE_VERTEX }]
+                ? [
+                      {
+                          _name: "vatInstanceTex",
+                          _type: { _kind: "texture" as const, _textureType: "texture_2d<f32>" as const, _sampleType: "unfilterable-float" as const },
+                          _visibility: STAGE_VERTEX,
+                      },
+                  ]
                 : []),
         ],
 
