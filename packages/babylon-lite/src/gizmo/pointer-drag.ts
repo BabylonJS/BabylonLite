@@ -18,7 +18,7 @@ import type { SceneContext } from "../scene/scene-core.js";
 import type { Mesh } from "../mesh/mesh.js";
 import type { Vec3 } from "../math/types.js";
 import { createPickingRay } from "../picking/ray.js";
-import { createGpuPicker, pickAsync } from "../picking/gpu-picker.js";
+import { createGpuPicker, disposePicker, pickAsync } from "../picking/gpu-picker.js";
 import type { GpuPicker } from "../picking/gpu-picker.js";
 import { getViewProjectionMatrix, getCameraPosition } from "../camera/camera.js";
 import { resolveCameraViewport } from "../camera/viewport.js";
@@ -144,8 +144,11 @@ interface DispatcherState {
     cleanup: () => void;
 }
 
-// Lazy-init cache: at most one dispatcher per (utility layer + canvas) pair.
-// No module-level allocation — created on first registration.
+// Lazy-init cache: at most one dispatcher per canvas.  All gizmos sharing a
+// canvas MUST share a single utility layer — the dispatcher binds to the
+// layer's scene/picker on first install, so a later registration with a
+// different layer would silently use the wrong picker scene (the dispatcher
+// warns when this happens, see `registerPointerDrag`).
 let _dispatchers: WeakMap<HTMLCanvasElement, DispatcherState> | null = null;
 
 function getDispatchers(): WeakMap<HTMLCanvasElement, DispatcherState> {
@@ -156,20 +159,64 @@ function getDispatchers(): WeakMap<HTMLCanvasElement, DispatcherState> {
 }
 
 /** Register the drag's colliders + handlers with the per-canvas dispatcher for
- *  this utility layer.  Returns a function that unregisters the drag (used in
- *  gizmo dispose paths). */
+ *  this utility layer.  Returns a function that unregisters the drag.  When the
+ *  last drag for a canvas is unregistered, the dispatcher tears itself down
+ *  (canvas listeners are detached, the GPU picker is disposed, the cache entry
+ *  is removed) so disposing all gizmos doesn't leak listeners or GPU resources. */
 export function registerPointerDrag(layer: UtilityLayer, canvas: HTMLCanvasElement, drag: PointerDrag): () => void {
     const map = getDispatchers();
     let state = map.get(canvas);
     if (!state) {
         state = installDispatcher(layer, canvas);
         map.set(canvas, state);
+    } else if (state.layer !== layer) {
+        // Multiple utility layers on the same canvas isn't supported — the
+        // dispatcher's picker is bound to the first layer's scene, so picks for
+        // gizmos in `layer` would query the wrong scene.  Warn loudly but reuse
+        // the existing dispatcher (the legacy behavior) instead of crashing.
+        console.warn(
+            "[babylon-lite] registerPointerDrag: a second UtilityLayer was used for the same canvas. " +
+                "Only one utility layer per canvas is supported; the first layer's GPU picker will be reused."
+        );
     }
     state.drags.push(drag);
     return () => {
         const i = state!.drags.indexOf(drag);
-        if (i >= 0) {
-            state!.drags.splice(i, 1);
+        if (i < 0) {
+            return;
+        }
+        state!.drags.splice(i, 1);
+        // If the disposed drag is the active one, end the drag cleanly so
+        // observers + pointer capture release.  Without this the dispatcher
+        // would keep `state.active` pointing at the now-orphan drag and ignore
+        // the next pointer-up because the pointerId no longer matches anything.
+        if (state!.active && state!.active.drag === drag) {
+            const pointerId = state!.active.pointerId;
+            drag.dragging = false;
+            drag.onDragEnd.notify({ pointerEvent: null });
+            if ("releasePointerCapture" in state!.canvas) {
+                try {
+                    state!.canvas.releasePointerCapture(pointerId);
+                } catch {
+                    // Non-fatal — pointer might already be released.
+                }
+            }
+            state!.active = null;
+            state!.pickPending = false;
+        }
+        if (state!.hovered === drag) {
+            drag.hovering = false;
+            drag.onHoverEnd.notify();
+            state!.hovered = null;
+        }
+        // Tear down the dispatcher once nothing is left to handle.  Bumping
+        // `hoverToken` invalidates any in-flight async hover pick so its
+        // resolution path early-outs instead of touching the disposed picker.
+        if (state!.drags.length === 0 && !state!.active) {
+            state!.hoverToken++;
+            state!.cleanup();
+            disposePicker(state!.picker);
+            map.delete(canvas);
         }
     };
 }
