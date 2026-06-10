@@ -478,7 +478,7 @@ export function disposeEngine(engine: EngineContext): void {
     engine._device.destroy();
 }
 
-function renderFrame(engine: EngineContext, delta: number): void {
+export function renderFrame(engine: EngineContext, delta: number): void {
     const ctxs = engine._renderingContexts;
     if (ctxs.length === 0) {
         return;

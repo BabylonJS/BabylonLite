@@ -52,6 +52,7 @@
         "vite-plugin-dts": "^4.5.4"
     },
     "dependencies": {
+        "text-shaper": "^0.1.18",
         "@recast-navigation/core": "0.43.0",
         "@recast-navigation/generators": "0.43.0",
         "@recast-navigation/wasm": "0.43.0",

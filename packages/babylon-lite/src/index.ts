@@ -2,7 +2,7 @@
 // Tree-shakable: import only what you use.
 
 // ─── Core ────────────────────────────────────────────────────────────
-export { createEngine, startEngine, stopEngine, resizeEngine, setEngineSize, disposeEngine, VERSION } from "./engine/engine.js";
+export { createEngine, startEngine, stopEngine, renderFrame, resizeEngine, setEngineSize, disposeEngine, VERSION } from "./engine/engine.js";
 export type { EngineContext, EngineOptions, RenderCanvas } from "./engine/engine.js";
 export {
     createSceneContext,
@@ -236,6 +236,9 @@ export { mat4Compose } from "./math/mat4-compose.js";
 export { mat4Invert } from "./math/mat4-invert.js";
 export type { Vec3, Vec3Tuple, Mat4 } from "./math/types.js";
 
+// ─── Color ───────────────────────────────────────────────────────────
+export { linearToSrgbByte, srgbByteToLinear, packedSrgbToLinearRgba } from "./math/color.js";
+
 // ─── Thin Instances ──────────────────────────────────────────────────
 export {
     addThinInstance,
@@ -430,6 +433,31 @@ export {
     setSpriteRendererTarget,
     disposeSpriteRenderer,
 } from "./sprite/sprite-renderer.js";
+
+// ─── Text ────────────────────────────────────────────────────────────
+export type { Font } from "./text/font.js";
+export { loadFont, createFontFromBuffer } from "./text/font.js";
+export { extractGlyphCurves, cubicToQuadratics } from "./text/glyph-extraction.js";
+export type { TextLayoutOptions } from "./text/layout.js";
+export type { GlyphStorage, CurveSetId, QuadCurve, GlyphBounds, GlyphCurves } from "./text/glyph-storage.js";
+export { createGlyphStorage, updateGlyphStorage, disposeGlyphStorage } from "./text/glyph-storage.js";
+export type { TextData, PlacedGlyph, GlyphRun, TextDataUpdate } from "./text/text-data.js";
+export { createTextData, updateTextData, disposeTextData } from "./text/text-data.js";
+export type { DefaultTextData } from "./text/default-text-data.js";
+export { createDefaultTextData, updateDefaultTextData, disposeDefaultTextData } from "./text/default-text-data.js";
+export type { TextRenderableOptions, TextRenderable } from "./text/text-renderable.js";
+export { createTextRenderable, disposeTextRenderable, addTextRenderable } from "./text/text-renderable.js";
+export type { TextLayer, TextLayerOptions, TextRenderer, TextRendererOptions } from "./text/text-renderer.js";
+export {
+    createTextLayer,
+    setTextLayerPosition,
+    createTextRenderer,
+    addTextRendererLayer,
+    removeTextRendererLayer,
+    registerTextRenderer,
+    unregisterTextRenderer,
+    disposeTextRenderer,
+} from "./text/text-renderer.js";
 
 // ─── Physics ─────────────────────────────────────────────────────────
 export {

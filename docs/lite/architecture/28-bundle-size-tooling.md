@@ -22,7 +22,7 @@ Generated local and master breakdown data is ignored except for the tracked curr
 
 `local-manifest.json` is not part of the architecture and must not be used.
 
-When local runtime measurement subtracts ignored NME payload bytes, `measurePage()` prefers `master-manifest.json[scene].ignoredRawKB` when present. This keeps local and master bundle deltas comparable even if source-map attribution moves an ignored `*-nme.ts` module between a source row and chunk overhead.
+When local runtime measurement subtracts ignored bytes, `measurePage()` prefers `master-manifest.json[scene].ignoredRawKB` when present. This keeps local and master bundle deltas comparable even if source-map attribution moves an ignored module between a source row and chunk overhead. The ignored set covers (a) local `*-nme.ts` NME data payloads and (b) the `text-shaper` third-party shaping library used only by the default-layout text path (`createDefaultTextData`); both are excluded so engine-size ceilings track our own runtime code.
 
 ## File/Module Breakdown Semantics
 

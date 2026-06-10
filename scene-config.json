@@ -1404,6 +1404,26 @@
         "bundleTimeoutMs": 180000
     },
     {
+        "id": 180,
+        "slug": "scene180-text-renderer",
+        "name": "Scene 180 - TextRenderer (2D)",
+        "maxRawKB": 33,
+        "description": "Standalone 2D text rendering via TextRenderer — no scene, no camera. Pure pixel-space TextLayer driven by a textarea.",
+        "tags": ["text", "font", "2d", "demo", "interactive"],
+        "skipParity": true,
+        "skipPerf": true
+    },
+    {
+        "id": 181,
+        "slug": "scene181-text-editor",
+        "name": "Scene 181 - Live Text Editor",
+        "maxRawKB": 48,
+        "description": "Edit a textarea to drive a streaming text renderable in real time. Demonstrates in-place atlas growth and instance buffer reuse.",
+        "tags": ["text", "font", "demo", "interactive"],
+        "skipParity": true,
+        "skipPerf": true
+    },
+    {
         "id": 200,
         "slug": "scene200-high-precision-jitter-hpm-off",
         "name": "Scene 200 - LWR Demo (HPM off, FO off)",

@@ -52,6 +52,7 @@
 | [34-cascaded-shadow.md](34-cascaded-shadow.md)                     | Cascaded Shadow Maps    | Directional CSM: frustum splits, per-cascade ortho fit, depth array, PCF5 receiver             |
 | [35-material-plugin.md](35-material-plugin.md)                     | Material Plugin         | Opt-in PBR/Standard material plugins, self-registration, zero-impact extension seam            |
 | [36-vertex-animation-texture.md](36-vertex-animation-texture.md)   | Vertex Animation Texture | VAT baking, texture-based skinning, per-instance + dual-clip-blend instancing, shadow casting |
+| [37-text.md](37-text.md)                                           | Text                    | Slug GPU font: GlyphStorage + TextData + TextRenderable (3D) / TextRenderer (2D) + defaults     |
 
 ---
 
