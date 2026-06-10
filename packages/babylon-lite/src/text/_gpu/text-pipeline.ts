@@ -55,8 +55,8 @@ function getOrCreateDeviceCache(engine: EngineContext): TextPipelineDeviceCache 
     return cache;
 }
 
-function pipelineKey(format: GPUTextureFormat, sampleCount: number, depthStencilFormat: GPUTextureFormat | null, depthWrite: boolean, flipY: boolean): string {
-    return format + ":" + sampleCount + ":" + (depthStencilFormat ?? "-") + ":" + (depthWrite ? "w" : "r") + ":" + (flipY ? "y" : "n");
+function pipelineKey(format: GPUTextureFormat, sampleCount: number, depthStencilFormat: GPUTextureFormat | null, depthWrite: boolean): string {
+    return format + ":" + sampleCount + ":" + (depthStencilFormat ?? "-") + ":" + (depthWrite ? "w" : "r");
 }
 
 export function getOrCreateTextPipeline(
@@ -64,11 +64,10 @@ export function getOrCreateTextPipeline(
     format: GPUTextureFormat,
     sampleCount: 1 | 4,
     depthStencilFormat: GPUTextureFormat | null,
-    depthWrite: boolean,
-    flipY: boolean
+    depthWrite: boolean
 ): { pipeline: GPURenderPipeline; cache: TextPipelineDeviceCache } {
     const cache = getOrCreateDeviceCache(engine);
-    const key = pipelineKey(format, sampleCount, depthStencilFormat, depthWrite, flipY);
+    const key = pipelineKey(format, sampleCount, depthStencilFormat, depthWrite);
     let pipeline = cache.pipelines.get(key);
     if (pipeline) {
         return { pipeline, cache };
@@ -112,7 +111,7 @@ export function getOrCreateTextPipeline(
                 },
             ],
         },
-        primitive: { topology: "triangle-list", cullMode: "none", frontFace: flipY ? "cw" : "ccw" },
+        primitive: { topology: "triangle-list", cullMode: "none", frontFace: "ccw" },
         multisample: { count: sampleCount },
     };
     if (depthStencilFormat) {

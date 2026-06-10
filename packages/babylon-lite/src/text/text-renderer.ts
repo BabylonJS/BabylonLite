@@ -309,15 +309,15 @@ function textRendererUpdate(rr: TextRenderer): void {
         rr._layers.sort(compareLayers);
     }
 
-    // Pipeline: depth-less, sampleCount=1, swapchain format. (One cached pipeline for the renderer.)
-    const { cache } = getOrCreateTextPipeline(rr._engine, rr._engine.format, 1, null, false, false);
+    // Pipeline: depth-less, sampleCount=1, swapchain format. The key is identical for every
+    // layer, so resolve it once per frame and reuse the pipeline + bind-group layout below.
+    const { pipeline, cache } = getOrCreateTextPipeline(rr._engine, rr._engine.format, 1, null, false);
 
     for (const layer of rr._layers) {
         if (!layer.visible) {
             continue;
         }
         const lg = ensureLayerGpu(rr, layer);
-        const { pipeline } = getOrCreateTextPipeline(rr._engine, rr._engine.format, 1, null, false, false);
         if (lg.pipeline !== pipeline) {
             lg.pipeline = pipeline;
             // Pipeline change → bind groups must be rebuilt against new bindGroupLayout.
@@ -334,7 +334,7 @@ function textRendererRecord(rr: TextRenderer): number {
     }
     const eng = rr._engine;
     const encoder = eng._currentEncoder;
-    const swapView = eng._swapchainView;
+    const swapView = eng.scRT._colorView!;
 
     const pass = encoder.beginRenderPass({
         colorAttachments: [
@@ -349,7 +349,7 @@ function textRendererRecord(rr: TextRenderer): number {
 
     let drawCalls = 0;
     let lastPipeline: GPURenderPipeline | null = null;
-    const { cache } = getOrCreateTextPipeline(rr._engine, rr._engine.format, 1, null, false, false);
+    const { cache } = getOrCreateTextPipeline(rr._engine, rr._engine.format, 1, null, false);
     const quadVertex = cache.quadVertexBuffer;
     pass.setVertexBuffer(0, quadVertex);
 

@@ -476,7 +476,8 @@ called by the scene's frame graph; `update` does:
    protocol above.
 3. Compose MVP into a 16-float scratch from the active camera's view-projection
    × the renderable's world matrix; `writeBuffer` to the `TextU` UBO offset 0.
-   Skip when world matrix is clean.
+   Skip the recompute + upload when the world matrix is clean **and** the
+   camera's `worldMatrixVersion` and effective aspect are both unchanged.
 4. Write viewport size at UBO offset 64 (16 bytes) when target size changed.
    Write `(1, 1, 1, opacity)` at UBO offset 80 when opacity changed.
 
