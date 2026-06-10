@@ -1,6 +1,13 @@
 import type { ArcRotateCamera } from "./arc-rotate.js";
 import type { SceneContext } from "../scene/scene.js";
 
+/**
+ * Optional hooks that let an {@link attachControl} caller defer pointer
+ * gestures to an external interactor (typically a gizmo pointer-drag
+ * dispatcher) so the camera doesn't orbit when the user is interacting with
+ * something else on top of it.  All fields are optional; omit them to keep
+ * the default behavior (the camera always handles its own pointer input).
+ */
 export interface AttachControlOptions {
     /** Optional predicate consulted on every pointer-down.  When it returns
      *  false the camera ignores that gesture (no rotate / pan).  Used to defer

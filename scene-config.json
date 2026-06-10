@@ -1502,7 +1502,7 @@
         "name": "Scene 224 — Bounding Box Gizmo",
         "maxMad": 0.15,
         "maxRawKB": 90,
-        "description": "5 cubes parented to a group root, with a BoundingBoxGizmo computing the encompassing AABB. Scripted pointer drags exercise scale (corner), rotation (edge anchor), and translation (body box) operations on the group.",
+        "description": "5 cubes parented to a group root, with a BoundingBoxGizmo computing the encompassing AABB. Parity is driven by a deterministic `__scene224.setRootTrs(...)` test hook that poses the group identically in both engines, verifying the rendered gizmo (12-edge wireframe, 8 corner-scale L-handles, 12 edge-midpoint rotation anchors, and their lit/hover materials) rather than pointer-drag dynamics.",
         "tags": ["std", "gizmo", "interactive", "bbox"],
         "skipPerf": true
     },

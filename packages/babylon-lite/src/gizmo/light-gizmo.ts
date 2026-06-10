@@ -295,7 +295,7 @@ export function createLightGizmo(engine: EngineContext, layer: UtilityLayer, opt
     material.specularColor = [0.1, 0.1, 0.1];
 
     const root = createTransformNode("lightGizmoRoot", 0, 0, 0, 0, 0, 0, 1);
-    addToScene(utilityScene, root as unknown as Mesh);
+    addToScene(utilityScene, root);
 
     const gizmo: LightGizmo = {
         root: root as unknown as SceneNode,

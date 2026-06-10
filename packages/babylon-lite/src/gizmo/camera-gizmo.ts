@@ -228,11 +228,18 @@ function buildFrustumWireframe(
 /** Build a display-only camera gizmo and attach it to the given utility
  *  layer.  Call `attachCameraGizmoToCamera` to bind a camera.
  *
- *  The gizmo is a single wireframe truncated pyramid (the camera's frustum)
- *  rendered using 12 thin cylinder edges parented to a root that follows the
- *  attached camera's world translation + orientation.  There is no separate
- *  "body" mesh — the frustum itself IS the camera visualisation, matching
- *  the user-facing convention that "render with a skewed box". */
+ *  The gizmo has two independently-toggleable parts, both visible by default
+ *  and parented to a root that follows the attached camera's world translation
+ *  + orientation each frame:
+ *
+ *  - A camera **body** (`displayBody`, defaults to `true`) — a distance-scaled
+ *    box + 3 cylinders ported from BJS `_CreateCameraMesh`, lit grey, sized
+ *    so it stays a roughly constant size on screen.
+ *  - A camera **frustum** (`displayFrustum`, defaults to `true`) — 12 thin
+ *    cylinder edges forming a truncated-pyramid wireframe sized from the
+ *    camera's fov / near / far (far clamped to 60× near), unlit white.
+ *
+ *  Set the matching option to `false` to display only one of them. */
 export function createCameraGizmo(engine: EngineContext, layer: UtilityLayer, options: CameraGizmoOptions = {}): CameraGizmo {
     const bodyColor = options.color ?? [0.5, 0.5, 0.5];
     const frustumColor = options.frustumColor ?? [1, 1, 1];
@@ -260,7 +267,7 @@ export function createCameraGizmo(engine: EngineContext, layer: UtilityLayer, op
     // camera body lives under a distance-scaled child so it keeps a constant
     // on-screen size.
     const root = createTransformNode("cameraGizmoRoot", 0, 0, 0, 0, 0, 0, 1);
-    addToScene(utilityScene, root as unknown as Mesh);
+    addToScene(utilityScene, root);
 
     const gizmo: CameraGizmo = {
         root: root as unknown as SceneNode,
