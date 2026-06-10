@@ -3,9 +3,10 @@
  *
  * Loads each bundle-sceneN.html in a real browser via Playwright, intercepts
  * network responses, and measures only the JS bytes actually fetched at
- * runtime, minus local *-nme.ts graph payload modules. Dynamic-import chunks
- * that are never loaded (e.g. animation-group for a static model) are correctly
- * excluded.
+ * runtime, minus (a) local *-nme.ts graph payload modules and (b) the
+ * `text-shaper` shaping library (vendor dep that callers using their own
+ * layout pay zero for). Dynamic-import chunks that are never loaded
+ * (e.g. animation-group for a static model) are correctly excluded.
  *
  * Requires pre-built bundles in lab/public/bundle/.
  * The Playwright webServer config (playwright.config.ts) starts the dev server

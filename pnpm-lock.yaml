@@ -139,12 +139,12 @@ importers:
       '@recast-navigation/wasm':
         specifier: 0.43.0
         version: 0.43.0
-      draco3d:
-        specifier: ^1.5.7
-        version: 1.5.7
       manifold-3d:
         specifier: 3.4.0
         version: 3.4.0(@gltf-transform/core@4.3.0)(@gltf-transform/extensions@4.3.0)(@gltf-transform/functions@4.3.0)(esbuild-wasm@0.27.7)
+      text-shaper:
+        specifier: ^0.1.18
+        version: 0.1.22(typescript@5.9.3)
     devDependencies:
       '@microsoft/api-extractor':
         specifier: ^7.58.7
@@ -1797,9 +1797,6 @@ packages:
     resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
     engines: {node: '>=12'}
 
-  draco3d@1.5.7:
-    resolution: {integrity: sha512-m6WCKt/erDXcw+70IJXnG7M3awwQPAsZvJGX5zY7beBqpELw6RDGkYVU0W43AFxye4pDZ5i2Lbyc/NNGqwjUVQ==}
-
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
     engines: {node: '>= 0.4'}
@@ -3220,6 +3217,11 @@ packages:
 
   text-hex@1.0.0:
     resolution: {integrity: sha512-uuVGNWzgJ4yhRaNSiubPY7OjISw4sw4E5Uv0wbjp+OzcbmVU/rsT8ujgcXJhn9ypzsgr5vlzpPqP+MBBKcGvbg==}
+
+  text-shaper@0.1.22:
+    resolution: {integrity: sha512-OYxqPcNEox3tlXilxZVPNub8EU/A6Lxy9vlCAe362fiGI9f3pMav497wL7cecX0CPq1yVtiBn/lii/ZZUUk9bQ==}
+    peerDependencies:
+      typescript: ^5
 
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
@@ -5156,8 +5158,6 @@ snapshots:
 
   dotenv@17.4.2: {}
 
-  draco3d@1.5.7: {}
-
   dunder-proto@1.0.1:
     dependencies:
       call-bind-apply-helpers: 1.0.2
@@ -6764,6 +6764,10 @@ snapshots:
       - react-native-b4a
 
   text-hex@1.0.0: {}
+
+  text-shaper@0.1.22(typescript@5.9.3):
+    dependencies:
+      typescript: 5.9.3
 
   tinybench@2.9.0: {}
 

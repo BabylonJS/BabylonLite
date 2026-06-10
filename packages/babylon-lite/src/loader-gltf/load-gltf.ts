@@ -1,3 +1,5 @@
+import { F32, U32, U16, U8, DV } from "../engine/typed-arrays.js";
+import { BU } from "../engine/gpu-flags.js";
 import type { Mat4 } from "../math/types.js";
 import { computeAabb } from "../math/compute-aabb.js";
 import type { EngineContext } from "../engine/engine.js";
@@ -174,9 +176,9 @@ async function fetchGltfAsset(url: string): Promise<{ json: any; binChunk: DataV
     if (bufferDef?.uri) {
         const binUrl = new URL(bufferDef.uri, baseUrl + "x").href;
         const binBuffer = await fetch(binUrl).then((r) => r.arrayBuffer());
-        binChunk = new DataView(binBuffer);
+        binChunk = new DV(binBuffer);
     } else {
-        binChunk = new DataView(new ArrayBuffer(0));
+        binChunk = new DV(new ArrayBuffer(0));
     }
     return { json, binChunk, baseUrl };
 }
@@ -342,11 +344,18 @@ async function extractAllMeshes(
                 return idx !== undefined ? resolveAccessor(json, binChunk, idx) : null;
             };
             const posData = resolveAttr("POSITION")!;
-            const normData = resolveAttr("NORMAL")!;
+            const normData = resolveAttr("NORMAL");
             const uvData = resolveAttr("TEXCOORD_0");
             const uv2Data = resolveAttr("TEXCOORD_1");
             const tanData = resolveAttr("TANGENT");
             const colorData = resolveAttr("COLOR_0");
+            // glTF COLOR_0 may be VEC3 or VEC4 with float, normalized ubyte, or normalized
+            // ushort components, but the PBR/standard pipelines bind vertex color as a single
+            // float32x3 layout. Normalize any source to a tight float32 RGB buffer so the GPU
+            // stride matches the layout (otherwise every vertex misaligns -> garbage/black).
+            // The normalizer is imported lazily on first need — colorless assets never fetch it
+            // (the runtime caches the module, so the per-primitive import() resolves instantly).
+            const colors = colorData ? (await import("./gltf-color-normalize.js")).normalizeColorToVec3(colorData._data, colorData._count, colorData._componentCount) : null;
             const idxData = decoded
                 ? { _data: decoded._indices, _count: decoded._indexCount, _componentCount: 1 }
                 : primitive.indices !== undefined
@@ -355,23 +364,29 @@ async function extractAllMeshes(
 
             // Keep vertex data as-is from glTF — RH→LH conversion handled by root world matrix
             const indices = idxData
-                ? idxData._data instanceof Uint32Array
-                    ? new Uint32Array(idxData._data as Uint32Array)
-                    : idxData._data instanceof Uint8Array
+                ? idxData._data instanceof U32
+                    ? new U32(idxData._data as Uint32Array)
+                    : idxData._data instanceof U8
                       ? Uint16Array.from(idxData._data as Uint8Array)
-                      : new Uint16Array(idxData._data!.buffer, idxData._data!.byteOffset, idxData._count)
-                : new Uint16Array(0);
+                      : new U16(idxData._data!.buffer, idxData._data!.byteOffset, idxData._count)
+                : new U16(0);
 
             // Fire material fetch without awaiting — all materials load in parallel
             matPromises.push(getMat(primitive.material));
 
+            // Smooth-normal generation is lazily imported on first need — assets that
+            // always provide NORMAL (the common case) never bundle or fetch this code.
+            const normals = normData
+                ? (normData._data as Float32Array)
+                : (await import("./gltf-normals.js")).computeSmoothNormals(posData._data as Float32Array, indices, posData._count);
+
             partials.push({
                 _positions: posData._data as Float32Array,
-                _normals: normData._data as Float32Array,
+                _normals: normals,
                 _tangents: tanData ? (tanData._data as Float32Array) : null,
-                _uvs: uvData ? (uvData._data as Float32Array) : new Float32Array(posData._count * 2),
+                _uvs: uvData ? (uvData._data as Float32Array) : new F32(posData._count * 2),
                 _uv2s: uv2Data ? (uv2Data._data as Float32Array) : null,
-                _colors: colorData ? (colorData._data as Float32Array) : null,
+                _colors: colors,
                 _indices: indices,
                 _vertexCount: posData._count,
                 _indexCount: idxData?._count ?? 0,
@@ -500,15 +515,15 @@ async function uploadMeshes(meshDatas: GltfMeshData[], features: GltfFeature[], 
             } else {
                 const [boundMin, boundMax] = computeAabb(m._positions!, m._worldMatrix);
                 const gpu: MeshGPU = {
-                    positionBuffer: createMappedBuffer(engine, m._positions!, GPUBufferUsage.VERTEX),
-                    normalBuffer: createMappedBuffer(engine, m._normals!, GPUBufferUsage.VERTEX),
-                    tangentBuffer: m._tangents ? createMappedBuffer(engine, m._tangents, GPUBufferUsage.VERTEX) : null,
-                    uvBuffer: createMappedBuffer(engine, m._uvs!, GPUBufferUsage.VERTEX),
-                    uv2Buffer: m._uv2s ? createMappedBuffer(engine, m._uv2s, GPUBufferUsage.VERTEX) : null,
-                    colorBuffer: m._colors ? createMappedBuffer(engine, m._colors, GPUBufferUsage.VERTEX) : null,
-                    indexBuffer: createMappedBuffer(engine, m._indices, GPUBufferUsage.INDEX),
+                    positionBuffer: createMappedBuffer(engine, m._positions!, BU.VERTEX),
+                    normalBuffer: createMappedBuffer(engine, m._normals!, BU.VERTEX),
+                    tangentBuffer: m._tangents ? createMappedBuffer(engine, m._tangents, BU.VERTEX) : null,
+                    uvBuffer: createMappedBuffer(engine, m._uvs!, BU.VERTEX),
+                    uv2Buffer: m._uv2s ? createMappedBuffer(engine, m._uv2s, BU.VERTEX) : null,
+                    colorBuffer: m._colors ? createMappedBuffer(engine, m._colors, BU.VERTEX) : null,
+                    indexBuffer: createMappedBuffer(engine, m._indices, BU.INDEX),
                     indexCount: m._indexCount,
-                    indexFormat: (m._indices instanceof Uint32Array ? "uint32" : "uint16") as GPUIndexFormat,
+                    indexFormat: (m._indices instanceof U32 ? "uint32" : "uint16") as GPUIndexFormat,
                 };
 
                 mesh = {
@@ -528,7 +543,7 @@ async function uploadMeshes(meshDatas: GltfMeshData[], features: GltfFeature[], 
                 mesh._cpuPositions = m._positions!;
                 mesh._cpuNormals = m._normals!;
                 mesh._cpuUvs = m._uvs!;
-                mesh._cpuIndices = m._indices instanceof Uint32Array ? m._indices : new Uint32Array(m._indices);
+                mesh._cpuIndices = m._indices instanceof U32 ? m._indices : new U32(m._indices);
                 engine._dlr?.m(mesh, m._uv2s, m._tangents, m._colors, m._indices, gpu.indexFormat);
             }
 

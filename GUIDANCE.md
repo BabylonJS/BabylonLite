@@ -29,7 +29,7 @@
 - Significantly faster and smaller than standard Babylon.js.
 - Avoid heavy OOP overhead where data-oriented design or flat arrays serve GPU buffer transfers better.
 - **We do NOT copy Babylon.js code.** We understand the math, then write the minimum code that produces identical pixels.
-- **Bundle size = runtime bytes only, excluding local NME payload modules.** The bundle size tests measure JS bytes actually fetched at runtime via Playwright network interception, then subtract local `*-nme.ts` graph payload modules so scene-specific checked-in NME data is not counted as engine/runtime code. Dynamic-import chunks that are never loaded (e.g. animation-group for a static model, pbr-reflectance-ext when no reflectance textures) are correctly excluded. Unused chunks in the build output are fine — only fetched counted bytes matter.
+- **Bundle size = runtime bytes only, excluding local NME payload modules and the `text-shaper` vendor dependency.** The bundle size tests measure JS bytes actually fetched at runtime via Playwright network interception, then subtract (a) local `*-nme.ts` graph payload modules so scene-specific checked-in NME data is not counted as engine/runtime code, and (b) the `text-shaper` shaping library so the default-layout text path is not charged for an upstream vendor blob (callers using `GlyphStorage` + `TextData` with their own layout pay zero for it). Dynamic-import chunks that are never loaded (e.g. animation-group for a static model, pbr-reflectance-ext when no reflectance textures) are correctly excluded. Unused chunks in the build output are fine — only fetched counted bytes matter.
 - **WGSL minification in production bundles.** The bundle build (scripts/bundle-scenes-core.ts) uses a Vite plugin that strips comments, `\r`, leading whitespace, and blank lines from `?raw` WGSL imports. Inline WGSL template strings in TypeScript source should also use minimal whitespace (no leading indentation). This keeps production bundles lean while source stays readable.
 - **Never parse emitted WGSL strings for structured data.** The WGSL minification plugin rewrites inline template-literal content (collapses whitespace, strips newlines). Code that splits WGSL strings on `\n` or uses regex to extract field names WILL break in production bundles even if it works in dev mode. Always use typed interfaces (e.g. `UboField[]`, `BindingDecl[]`) for structured data; reserve WGSL strings for shader code only.
 - **Zero module-level side effects.** No module may execute code at import time (no `register*()` calls, no `globalThis` mutations, no `new Map()`, no `new WeakMap()`, no `new Set()`). Module-level `const cache = new Map()` **kills tree-shaking** — the bundler treats the allocation as a side-effect and cannot eliminate the module even when nothing is imported from it. Use lazy-init instead: `let cache: Map | null = null; function getCache() { if (!cache) cache = new Map(); return cache; }`. Typed-array constants (`new Float32Array([...])`) are safe — bundlers treat them as pure. Caches must auto-invalidate on device change (compare `device !== _cachedDevice`). Material-swap rebuilders are discovered via `_buildGroup._rebuildSingle` property, not a global registry.
@@ -90,6 +90,16 @@
 ### 7. Never hack dumb solution
 
 - Always aim for the long term solution. Never hack a fix
+
+### 8. Y-Orientation Convention (Mandatory)
+
+Babylon Lite uses BJS Y-up UVs throughout the mesh and shader stack (V=1 is top of texture). WebGPU samplers are Y-down (V=0 is row 0 = top of texture in storage). A V-axis conversion is therefore required somewhere on every textured surface. The codebase performs that conversion through exactly **two paths**; do not invent new ones:
+
+1. **Raster upload-flip.** `texture-2d.ts` calls `copyExternalImageToTexture({ flipY: invertY=true })` on image-decoded uploads (PNG/JPG/HTMLImage/Bitmap). The decoded image data is row 0 = top; the upload writes row 0 = bottom into the GPU texture, so subsequent `textureSample(uv)` with V=1=top reads back upright. This is the default for raster `loadTexture2D`.
+
+2. **Material-side V-flip via `invertY`.** Codec-decoded textures (ktx2/basis) store data row 0 = top in the GPU texture (no upload flip) and set `Texture2D.invertY = true`. Standard/PBR pipelines see this flag and emit a UV V-flip in the material shader (`v = 1 - v`, implemented as a `(scaleY, offsetY)` UV uniform in `standard-pipeline.ts`). This works for clamp/repeat/mirror-repeat where UVs land in `[0, 1]`; for clamp-to-edge with UVs outside `[0, 1]` the V-flip is still safe by codebase convention (atlases always stay in `[0, 1]`).
+
+Offscreen render targets are **not** a third path. As of PR #192 they render **upright** (Y-up, no projection flip, `frontFace = "ccw"` throughout) — the old per-RT Y-flip convention (`RenderTargetDescriptor.flipY` / `RenderTargetSignature._flipY`, `viewProj` row-1 negation, `frontFace = "cw"`) has been removed. Downstream sampling of an RT is handled uniformly by the copy-to-texture / post-process vertex shaders' single unconditional UV convention, so there is no per-RT `flipY` field to set or override.
 
 ---
 
@@ -182,7 +192,7 @@ When a parity diff exists on specific meshes:
     2. Add the entry to `lab/vite.config.ts` rollup inputs
     3. Add a Playwright parity test in `tests/lite/parity/scenes/sceneN-*.spec.ts`
     4. Add a reference screenshot to `reference/lite/sceneN-*/babylon-ref-golden.png`
-    5. Copy the reference to `lab/public/thumbnails/sceneN.png`
+    5. Save a downscaled JPG thumbnail (≤720p, e.g. 1280×720) of the golden to `lab/public/thumbnails/sceneN.jpg`
     6. Add a card to `lab/index.html` (the scene gallery)
     7. Add a bundle-size ceiling test in `tests/lite/parity/bundle-size.spec.ts`
     8. Add an entry to `scene-config.json` with `id`, `slug`, `name`, and `maxMad`
@@ -194,8 +204,20 @@ When a parity diff exists on specific meshes:
 - **Golden reference:** `babylon-ref-golden.png` (every scene, no exceptions).
 - **Test actual output:** `test-actual.png` (written by the parity test).
 - **Live reference (optional):** `live-ref.png` (captured at test time from Babylon.js; falls back to golden if capture fails).
-- **Thumbnail:** Copy the golden to `lab/public/thumbnails/sceneN.png`.
+- **Thumbnail:** A downscaled JPG of the golden lives at `lab/public/thumbnails/sceneN.jpg` — see **§2b″ Thumbnail Convention**.
 - Parity specs define `REFERENCE_DIR = path.resolve(__dirname, '../../../../reference/lite/sceneN-<slug>')` and resolve all images relative to it.
+
+### 2b″. Thumbnail Convention (Mandatory)
+
+Gallery thumbnails are presentation assets for the lab/pages cards — **not** parity ground truth. The lossless PNGs under `reference/lite/**` are reserved for pixel-diffing and must never be served to cards.
+
+- **Format:** JPG only. **Never commit a PNG to `lab/public/thumbnails/`.**
+- **Resolution:** exactly **1280×720** (720p). This is "far enough" for how cards display them and keeps the repo lean. Cover-crop (center, fill, crop overflow) rather than letterbox — gallery cards are 16:9 `object-fit: cover`, so anything taller/wider is cropped at render time anyway. Quality ≈ 78 (raise selectively only if a flat/dark image shows banding; keep files well under ~250 KB).
+- **Naming:** `sceneN.jpg` for scenes, `demo-<slug>.jpg` for demos.
+- **Source:** scene thumbnails are a downscaled JPG of that scene's `babylon-ref-golden.png`; demo thumbnails are a JPG of a representative in-app screenshot.
+- **Cards load thumbnails, not reference images.** Both the scene gallery and the demo gallery `<img src>` point at `/lite/thumbnails/…jpg` and hide on error (`onerror`). Do **not** point cards at `reference/lite/**` or `test-actual.png`.
+- **Every static-server MIME map must map `.jpg`/`.jpeg`** (`lab/vite.config.ts`, `scripts/bundle-scenes-core.ts`, `scripts/coverage-scene.ts`, `scripts/test-scenes-quick.ts`). Adding a new server? Add the JPEG MIME entries.
+- This convention is distinct from the **request-shared screenshots** rule in §1 (JPG, quality ≤ 60, < 1 MB) which governs images attached to a chat turn, not committed thumbnails.
 
 ### 2b′. Scene Config — MAD Thresholds (Mandatory)
 

@@ -855,7 +855,10 @@ export function writeBundleInfo(scene: string, result: unknown): void {
 }
 
 const SCENES = process.env.BUNDLE_SCENES ? process.env.BUNDLE_SCENES.split(",") : ALL_SCENES;
-const BJS_SCENES = process.env.SKIP_BJS ? [] : SCENES.map((s) => `bjs-${s}`);
+// Only scenes with a Babylon.js reference source (lab/src/bjs/<scene>.ts) get a `bjs-` variant.
+// Lite-only demos (e.g. the text-renderer scenes 180/181, marked skipParity) have no BJS
+// counterpart, so skip them rather than failing to resolve a non-existent entry module.
+const BJS_SCENES = process.env.SKIP_BJS ? [] : SCENES.filter((s) => existsSync(resolve(labDir, `src/bjs/${s}.ts`))).map((s) => `bjs-${s}`);
 
 function getAllBundleFiles(dir: string): string[] {
     const results: string[] = [];
@@ -872,6 +875,8 @@ const MIME: Record<string, string> = {
     ".js": "application/javascript",
     ".json": "application/json",
     ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
     ".css": "text/css",
     ".wasm": "application/wasm",
 };
@@ -1020,6 +1025,18 @@ export function isLiteBundleExternal(id: string): boolean {
     return VENDOR_RUNTIMES.some((runtime) => runtime.external(id));
 }
 
+/** Force certain modules into their own chunks so bundle-size accounting can isolate
+ *  them cleanly. Currently used to separate `text-shaper` (a 670 KB vendor shaping
+ *  library) so the gzip-bytes accounting can exclude it as a self-contained chunk
+ *  matching the ignored-module pattern in `bundle-size-accounting.ts`. */
+function liteManualChunks(id: string): string | undefined {
+    const clean = id.replace(/\\/g, "/").split("?")[0]!;
+    if (/(?:^|\/)text-shaper\//.test(clean)) {
+        return "text-shaper";
+    }
+    return undefined;
+}
+
 function readLiteSceneSource(scene: string): string {
     try {
         return readFileSync(liteSceneEntry(scene), "utf-8");
@@ -1098,6 +1115,7 @@ export async function buildLiteSceneBundleInfo(scene: string, sourceRoot: string
                     entryFileNames: "[name].js",
                     chunkFileNames: `${scene}-[name]-[hash].js`,
                     banner: NAME_POLYFILL,
+                    manualChunks: liteManualChunks,
                 },
             },
         },
@@ -1203,6 +1221,7 @@ export async function buildBundleScenes(): Promise<void> {
                         entryFileNames: "[name].js",
                         chunkFileNames: `${scene}-[name]-[hash].js`,
                         banner: NAME_POLYFILL,
+                        ...(!isBjs && { manualChunks: liteManualChunks }),
                     },
                     ...(isBjs && {
                         treeshake: {
