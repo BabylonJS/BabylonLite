@@ -57,6 +57,10 @@ export { createRenderTargetTexture } from "./texture/rtt.js";
 // Pooled GPU samplers (same descriptor → same GPUSampler). Public so consumers building their own
 // sampled-texture wrappers around managed render targets don't have to reach into `engine._device`.
 export { getOrCreateSampler, clearSamplerCache } from "./resource/gpu-pool.js";
+// acquireTexture/releaseTexture let a consumer register the lifetime of its OWN GPU texture in Lite's
+// ref-count pool, so a texture it creates (e.g. a mipped render texture for a Hi-Z pyramid) survives a
+// ShaderMaterial's per-version release/acquire cycle instead of being destroyed at count 0.
+export { acquireTexture, releaseTexture } from "./resource/gpu-pool.js";
 export { enableSceneTransmission, enableRenderTaskTransmission } from "./frame-graph/transmission.js";
 export type { TransmissionOptions, SceneColorGrab } from "./frame-graph/transmission.js";
 
