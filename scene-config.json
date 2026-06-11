@@ -1645,5 +1645,15 @@
         "description": "Per-instance VAT: the scene-11 shark baked to a VAT texture and rendered through the GPU thin-instance VAT path (one identity-matrix instance), frozen via ?seekTime. The instanced path's finalWorld = instanceMatrix * mesh.world * skin equals the plain skinned pose at identity, so it matches the BJS live-skeleton golden exactly — validating per-instance frame selection (the instance params texture read by @builtin(instance_index)), the thin-instance world placement, and the dual-clip blend path (single clip = blend 0). One draw call, no live CPU skeleton.",
         "tags": ["vat", "animation", "skeleton", "instancing", "pbr", "gltf"],
         "skipPerf": true
+    },
+    {
+        "id": 225,
+        "slug": "scene225-geospatial-camera",
+        "name": "Scene 225 — Geospatial Camera",
+        "maxMad": 0.2,
+        "maxRawKB": 52,
+        "description": "Babylon.js GeospatialCamera port: a globe-orbit camera that anchors to a point on a sphere centred at the world origin and is parameterised by center/yaw/pitch/radius. A blue globe with six coloured surface marker cubes is viewed from a fixed deterministic pose (no controls attached) so the camera's view matrix is compared pixel-for-pixel against the Babylon.js GeospatialCamera oracle. The Lite camera reimplements the same left-handed local-basis + lookAt orientation math in the pure-state idiom.",
+        "tags": ["camera", "geospatial", "globe", "standard"],
+        "skipPerf": true
     }
 ]
