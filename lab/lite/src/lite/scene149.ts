@@ -134,13 +134,13 @@ async function main(): Promise<void> {
         format: engine.format,
         dFormat: "depth24plus-stencil8",
         samples: samples,
-        size: "canvas",
+        size: engine,
     });
     const ssIntermediate = createRenderTarget({
         lbl: "scene149-ss-intermediate",
         format: engine.format,
         samples: 1,
-        size: "canvas",
+        size: engine,
     });
     const scRT = engine.scRT;
     const sceneTask = createRenderTask(

@@ -37,7 +37,7 @@ function makeMockEngine(): EngineContext {
         },
     } as unknown as GPUDevice;
 
-    return {
+    const eng = {
         canvas: {} as HTMLCanvasElement,
         msaaSamples: 4,
         drawCallCount: 0,
@@ -57,14 +57,16 @@ function makeMockEngine(): EngineContext {
             _colorTexture: {},
             _depthTexture: null,
             _depthView: null,
-            _descriptor: { format: "bgra8unorm", samples: 1, size: "canvas" },
+            _descriptor: { format: "bgra8unorm", samples: 1, size: { width: 800, height: 600 } },
             _width: 0,
             _height: 0,
             _eager: true,
         } as unknown as import("../../../packages/babylon-lite/src/engine/render-target").RenderTarget,
         _currentDelta: 0,
         _cbs: [],
-    } as EngineContext;
+    } as unknown as EngineContext;
+    Object.assign(eng, { engine: eng, surfaces: [eng], _surfaces: [eng] });
+    return eng;
 }
 
 function makeRenderingContext(): RenderingContext {

@@ -60,7 +60,7 @@ async function main(): Promise<void> {
         format: engine.format,
         dFormat: "depth24plus-stencil8",
         samples: 1,
-        size: "canvas",
+        size: engine,
     });
     const sourceTask = createRenderTask(
         {
@@ -77,7 +77,7 @@ async function main(): Promise<void> {
         format: engine.format,
         dFormat: "depth24plus-stencil8",
         samples: 1,
-        size: "canvas",
+        size: engine,
     });
     const leftTask = createRenderTask(
         {

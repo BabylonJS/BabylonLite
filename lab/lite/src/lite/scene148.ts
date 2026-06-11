@@ -59,7 +59,7 @@ async function main(): Promise<void> {
         format: engine.format,
         dFormat: "depth24plus-stencil8",
         samples: sampleCount,
-        size: "canvas",
+        size: engine,
     });
     // Single-sample resolve of colorTarget — the depth-of-field source. The
     // render task resolves the MSAA colour into this at end-of-pass (the CoC /
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
         lbl: "scene148-color-resolve",
         format: engine.format,
         samples: 1,
-        size: "canvas",
+        size: engine,
     });
     const scRT = engine.scRT;
 

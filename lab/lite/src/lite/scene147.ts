@@ -56,7 +56,7 @@ async function main(): Promise<void> {
         lbl: "scene147-color",
         format: engine.format,
         samples: sampleCount,
-        size: "canvas",
+        size: engine,
     });
     const scRT = engine.scRT;
 
