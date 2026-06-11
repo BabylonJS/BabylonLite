@@ -41,7 +41,10 @@ function computeLightsVersion(lights: readonly LightBase[]): number {
     return v;
 }
 
-/** Fill a Float32Array with standard light data. Reused by create and refresh paths. */
+/** Fill a Float32Array with standard light data. Reused by create and refresh
+ *  paths. World-space light positions are written precision-only; under
+ *  floating origin the active-camera offset is subtracted afterwards by
+ *  `engine._applyLightFoOffset` (kept out of non-LWR bundles). */
 function fillLightsData(data: Float32Array, lights: readonly LightBase[]): void {
     data.fill(0);
     let count = 0;
@@ -86,10 +89,11 @@ export function ensureSceneLightState(engine: EngineContext, scene: SceneContext
     state?._buffer.destroy();
     const scratch = new F32(byteSize / 4);
     fillLightsData(scratch, scene.lights);
+    engine._applyLightFoOffset?.(scratch, scene);
     state = {
         _buffer: createUniformBuffer(engine, scratch),
         _scratch: scratch,
-        _version: computeLightsVersion(scene.lights),
+        _version: computeLightsVersion(scene.lights) + (engine._lightFoVersion?.(scene) ?? 0),
         _lightCount: scene.lights.length,
         _byteSize: byteSize,
     };
@@ -106,11 +110,12 @@ export function ensureSceneLightState(engine: EngineContext, scene: SceneContext
 /** @internal */
 export function refreshSceneLightsUBO(engine: EngineContext, scene: SceneContext): GPUBuffer {
     const state = ensureSceneLightState(engine, scene);
-    const version = computeLightsVersion(scene.lights);
+    const version = computeLightsVersion(scene.lights) + (engine._lightFoVersion?.(scene) ?? 0);
     if (version !== state._version || scene.lights.length !== state._lightCount) {
         state._version = version;
         state._lightCount = scene.lights.length;
         fillLightsData(state._scratch, scene.lights);
+        engine._applyLightFoOffset?.(state._scratch, scene);
         engine._device.queue.writeBuffer(state._buffer, 0, state._scratch as Float32Array<ArrayBuffer>);
     }
     return state._buffer;
