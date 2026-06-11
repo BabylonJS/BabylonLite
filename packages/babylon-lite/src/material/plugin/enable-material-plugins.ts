@@ -48,5 +48,5 @@ import { registerStdPlugins } from "./std-plugin-bridge.js";
  */
 export function enableMaterialPlugins(scene: SceneContext): void {
     registerPbrPlugins(_registerPbrExt);
-    registerStdPlugins(scene.meshes, scene.engine, _registerStdExt);
+    registerStdPlugins(scene.meshes, scene.surface.engine, _registerStdExt);
 }

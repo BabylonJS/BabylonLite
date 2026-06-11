@@ -129,7 +129,7 @@ export interface PickOptions {
 export async function pickAsync(picker: GpuPicker, x: number, y: number, options?: PickOptions): Promise<PickingInfo> {
     const scene = picker._scene;
     const pickFilter = options?.filter ?? null;
-    const engine = scene.engine;
+    const engine = scene.surface.engine;
     const device = engine._device;
     const canvas = engine.canvas;
     const camera = scene.camera;

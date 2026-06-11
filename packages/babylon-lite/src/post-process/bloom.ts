@@ -296,13 +296,14 @@ function resizeScaledBloomTarget(target: RenderTarget, source: RenderTarget, sca
     };
 }
 
-function resolveSourceSize(source: RenderTarget, engine: EngineContext): { width: number; height: number } {
+function resolveSourceSize(source: RenderTarget, _engine: EngineContext): { width: number; height: number } {
     if (source._width > 0 && source._height > 0) {
         return { width: source._width, height: source._height };
     }
     const desc: RenderTargetDescriptor = source._descriptor;
-    if (desc.size === "canvas") {
-        return { width: engine.canvas.width, height: engine.canvas.height };
+    if ("canvas" in desc.size) {
+        const canvas = desc.size.canvas;
+        return { width: canvas.width, height: canvas.height };
     }
     return desc.size;
 }

@@ -243,8 +243,13 @@ function createInternalTarget(name: string, source: RenderTarget): RenderTarget 
 
 function internalTargetKey(source: RenderTarget): string {
     const desc = source._descriptor;
-    const size = desc.size === "canvas" ? "canvas" : `${desc.size.width}x${desc.size.height}`;
-    return `${desc.format ?? "-"}|${desc.samples ?? 1}|${size}`;
+    const sz = desc.size;
+    // SurfaceContext-keyed sources share a key per surface; explicit-pixel sources key by their dims.
+    const sizeKey =
+        "canvas" in sz
+            ? `surface:${(sz.canvas as { width: number; height: number }).width}x${(sz.canvas as { width: number; height: number }).height}`
+            : `${sz.width}x${sz.height}`;
+    return `${desc.format ?? "-"}|${desc.samples ?? 1}|${sizeKey}`;
 }
 
 function getBindGroupLayout(task: PostProcessTaskInternal, engine: EngineContext): GPUBindGroupLayout {

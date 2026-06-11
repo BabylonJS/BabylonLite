@@ -4,6 +4,8 @@
 // ─── Core ────────────────────────────────────────────────────────────
 export { createEngine, startEngine, stopEngine, renderFrame, resizeEngine, setEngineSize, disposeEngine, VERSION } from "./engine/engine.js";
 export type { EngineContext, EngineOptions, RenderCanvas } from "./engine/engine.js";
+export { createSurface, disposeSurface, resizeSurface, setSurfaceSize } from "./engine/surface.js";
+export type { SurfaceContext, SurfaceOptions } from "./engine/surface.js";
 export {
     createSceneContext,
     createDefaultCamera,
@@ -83,8 +85,6 @@ export { createBloomPostProcessTask } from "./post-process/bloom.js";
 export type { BloomPostProcessTask, BloomPostProcessTaskConfig } from "./post-process/bloom.js";
 export { createDepthOfFieldPostProcessTask, DepthOfFieldBlurLevel } from "./post-process/depth-of-field.js";
 export type { DepthOfFieldPostProcessTask, DepthOfFieldPostProcessTaskConfig } from "./post-process/depth-of-field.js";
-export { createSsgiPostProcessTask } from "./post-process/ssgi.js";
-export type { SsgiPostProcessTask, SsgiPostProcessTaskConfig } from "./post-process/ssgi.js";
 
 // ─── Camera ──────────────────────────────────────────────────────────
 export { createArcRotateCamera } from "./camera/arc-rotate.js";
@@ -236,7 +236,6 @@ export { mat4Identity } from "./math/mat4-identity.js";
 export { mat4Scale } from "./math/mat4-scale.js";
 export { mat4Compose } from "./math/mat4-compose.js";
 export { mat4Invert } from "./math/mat4-invert.js";
-export { mat4InvertInto } from "./math/mat4-invert-into.js";
 export type { Vec3, Vec3Tuple, Mat4 } from "./math/types.js";
 
 // ─── Color ───────────────────────────────────────────────────────────
