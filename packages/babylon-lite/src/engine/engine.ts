@@ -3,7 +3,7 @@ import type { Texture2D, Texture2DOptions } from "../texture/texture-2d.js";
 import { _setHpmAllocator } from "../math/_matrix-allocator.js";
 import type { RenderTarget } from "./render-target.js";
 import { createRenderTarget } from "./render-target.js";
-import type { CaptureService } from "./screenshot-readback.js";
+import type { CapturePreFrame, CaptureService } from "./screenshot-readback.js";
 
 /** Babylon Lite version string. */
 export const VERSION = "0.1.0";
@@ -114,12 +114,21 @@ export interface EngineContext {
     _swapchainCopySrc?: boolean;
 
     /** @internal Screenshot readback hook, dynamically installed by `captureScreenshot` on
-     *  first use. `renderFrame` calls it once per frame via optional chaining; it records the
-     *  swapchain copy into the frame encoder (reconfiguring the swapchain with COPY_SRC the
-     *  first time, then copying on the following frame). Kept off `EngineContext` until a
-     *  capture is requested so the copy/unpack code (`screenshot-readback.js`) stays out of
-     *  every bundle that never captures a frame. */
+     *  first use. `renderFrame` calls it once per frame (after the contexts record) via optional
+     *  chaining; it records the swapchain copy into the frame encoder for any queued requests.
+     *  By the time it runs the swapchain is already COPY_SRC-capable (see `_capturePreFrame`), so
+     *  the copy lands in the current frame. Kept off `EngineContext` until a capture is requested
+     *  so the copy/unpack code (`screenshot-readback.js`) stays out of every bundle that never
+     *  captures a frame. */
     _captureService?: CaptureService;
+
+    /** @internal Pre-acquire screenshot hook, installed alongside `_captureService` by
+     *  `captureScreenshot` on first use. `renderFrame` calls it via optional chaining BEFORE
+     *  acquiring this frame's swapchain texture; on the first queued capture it reconfigures the
+     *  swapchain with COPY_SRC (reconfiguring expires the current texture, so it must run before
+     *  acquire, never mid-frame). Kept off `EngineContext` until a capture is requested so the
+     *  reconfigure code stays out of every non-capturing bundle. */
+    _capturePreFrame?: CapturePreFrame;
 
     /** @internal Per-frame floating-origin offset updater. Set when the engine
      *  was created with `useFloatingOrigin: true` (which requires
@@ -532,6 +541,11 @@ export function renderFrame(engine: EngineContext, delta: number): void {
     const encoder = engine._device.createCommandEncoder({ label: "frame" });
     engine._currentEncoder = encoder;
     engine._currentDelta = delta;
+    // A queued screenshot (`captureScreenshot`) needs the swapchain marked COPY_SRC before this
+    // frame's texture is acquired — reconfiguring the context EXPIRES the current canvas texture,
+    // so it cannot run mid-frame. The hook is installed lazily by `captureScreenshot`, so
+    // non-capturing engines ship none of the reconfigure code and pay only this short-circuit.
+    engine._capturePreFrame?.(engine);
     _refreshScRT(engine);
 
     let drawCalls = 0;
