@@ -187,7 +187,14 @@ async function recoverDevice(engine: EngineContext, state: RecoveryState): Promi
             throw new Error(`WebGPU device recovery missing required features: ${missingFeatures.join(", ")}`);
         }
         engine._device = await adapter.requestDevice({ requiredFeatures: state.requiredFeatures });
-        engine._context.configure({ device: engine._device, format: engine.format, alphaMode: engine._alphaMode });
+        // Honour the lazily-enabled screenshot swapchain usage: re-apply COPY_SRC across recovery
+        // only if a capture had already toggled it on, so non-capturing engines stay COPY_SRC-free.
+        engine._context.configure({
+            device: engine._device,
+            format: engine.format,
+            alphaMode: engine._alphaMode,
+            usage: engine._swapchainCopySrc ? TU.RENDER_ATTACHMENT | TU.COPY_SRC : TU.RENDER_ATTACHMENT,
+        });
         // Re-acquire the canvas swapchain texture into engine.scRT after the
         // context is reconfigured against the new device (the previous device's texture
         // is invalid) so the rebuilt frame graph wires a valid color attachment.
