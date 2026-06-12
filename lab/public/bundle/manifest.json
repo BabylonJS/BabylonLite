@@ -2637,5 +2637,15 @@
       "scene219-thin-instance-gpu-ypr26Et9.js",
       "scene219.js"
     ]
+  },
+  "scene225": {
+    "rawKB": 46.3,
+    "gzipKB": 18.6,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene225-standard-renderable-DJttXzRL.js",
+      "scene225-wgsl-helpers-CwHFFXvt.js",
+      "scene225.js"
+    ]
   }
 }
