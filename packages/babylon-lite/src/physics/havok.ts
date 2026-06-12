@@ -371,6 +371,77 @@ export function setPhysicsBodyMass(world: PhysicsWorld, body: PhysicsBody, mass:
     world._hknp.HP_Body_SetMassProperties(body._hkBody, massProps);
 }
 
+// ─── Body control (impulse / velocity / motion type / transform) ─────
+// Runtime body controls used by gameplay: shoot/throw (impulse + velocity), grab (switch a body to
+// ANIMATED/kinematic while held, then back to DYNAMIC on release), and teleport (restore/load/undo).
+
+/**
+ * Apply a one-shot linear impulse (kg·m/s) to a body at a world `point` (defaults to the body's
+ * current position / centre of mass), waking it if asleep. Used to shoot, throw, or shove a prop.
+ * @param world - The physics world.
+ * @param body - The body to push.
+ * @param impulse - World-space impulse vector (kg·m/s).
+ * @param point - World point of application; defaults to the body's current position.
+ */
+export function applyPhysicsImpulse(world: PhysicsWorld, body: PhysicsBody, impulse: Vec3, point?: Vec3): void {
+    const hknp = world._hknp;
+    let loc = point;
+    if (!loc) {
+        const t = hknp.HP_Body_GetQTransform(body._hkBody)[1];
+        loc = { x: t[0][0], y: t[0][1], z: t[0][2] };
+    }
+    hknp.HP_Body_ApplyImpulse(body._hkBody, [loc.x, loc.y, loc.z], [impulse.x, impulse.y, impulse.z]);
+}
+
+/**
+ * Set a body's linear velocity (m/s) directly — e.g. to impart a throw velocity on release.
+ */
+export function setPhysicsBodyLinearVelocity(world: PhysicsWorld, body: PhysicsBody, velocity: Vec3): void {
+    world._hknp.HP_Body_SetLinearVelocity(body._hkBody, [velocity.x, velocity.y, velocity.z]);
+}
+
+/**
+ * Get a body's current linear velocity (m/s).
+ */
+export function getPhysicsBodyLinearVelocity(world: PhysicsWorld, body: PhysicsBody): Vec3 {
+    const v = world._hknp.HP_Body_GetLinearVelocity(body._hkBody)[1];
+    return { x: v[0], y: v[1], z: v[2] };
+}
+
+/**
+ * Set a body's angular velocity (rad/s).
+ */
+export function setPhysicsBodyAngularVelocity(world: PhysicsWorld, body: PhysicsBody, velocity: Vec3): void {
+    world._hknp.HP_Body_SetAngularVelocity(body._hkBody, [velocity.x, velocity.y, velocity.z]);
+}
+
+/**
+ * Switch a body's motion type at runtime (e.g. ANIMATED/kinematic while a prop is grabbed, then
+ * DYNAMIC on release). Mutates `body.motionType` so the per-frame step syncs it the right way
+ * (ANIMATED: node → body before the step; DYNAMIC: body → node after).
+ */
+export function setPhysicsBodyMotionType(world: PhysicsWorld, body: PhysicsBody, motionType: PhysicsMotionType): void {
+    const hknp = world._hknp;
+    const hkMotion =
+        motionType === PhysicsMotionType.STATIC ? hknp.MotionType.STATIC : motionType === PhysicsMotionType.ANIMATED ? hknp.MotionType.KINEMATIC : hknp.MotionType.DYNAMIC;
+    hknp.HP_Body_SetMotionType(body._hkBody, hkMotion);
+    (body as { motionType: PhysicsMotionType }).motionType = motionType;
+}
+
+/**
+ * Teleport a body to a world position + orientation (a pure transform set — velocities are left
+ * unchanged). For grab-follow, save-restore, and undo. Also updates the bound node so a render that
+ * reads the node before the next physics step stays consistent.
+ */
+export function setPhysicsBodyTransform(world: PhysicsWorld, body: PhysicsBody, position: Vec3, rotation: Quat): void {
+    world._hknp.HP_Body_SetQTransform(body._hkBody, [
+        [position.x, position.y, position.z],
+        [rotation.x, rotation.y, rotation.z, rotation.w],
+    ]);
+    body.node.position.set(position.x, position.y, position.z);
+    body.node.rotationQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+}
+
 // ─── Aggregate (convenience) ─────────────────────────────────────────
 
 /**
