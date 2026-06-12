@@ -11,7 +11,6 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 
 const TOTAL_FRAMES = 480;
-const CAPTURE_DEFAULT_FRAME = 300;
 const WIDTH = 200;
 const HEIGHT = 200;
 const BLOCK_SIZE = 4;
@@ -33,7 +32,7 @@ function readCaptureFrame(): number | null {
         const frame = Number(frameValue);
         return Number.isFinite(frame) && frame >= 0 ? Math.round(frame) : null;
     }
-    return CAPTURE_DEFAULT_FRAME;
+    return null;
 }
 
 function rand(seed: { value: number }): number {
@@ -162,6 +161,7 @@ function nearestBlock(blocks: readonly BlockPoint[], p: BlockPoint): BlockPoint 
             captureQueued = true;
             window.setTimeout(() => {
                 canvas.dataset.captureReady = "true";
+                engine.stopRenderLoop();
             }, 0);
         }
         frame++;

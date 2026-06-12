@@ -684,8 +684,8 @@
     ]
   },
   "scene43": {
-    "rawKB": 56.3,
-    "gzipKB": 22.5,
+    "rawKB": 56.4,
+    "gzipKB": 22.6,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene43-standard-renderable-CUtj_viO.js",

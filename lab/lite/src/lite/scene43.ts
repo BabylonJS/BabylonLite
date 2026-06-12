@@ -16,11 +16,11 @@ import {
     setThinInstanceColors,
     setThinInstances,
     startEngine,
+    stopEngine,
     createSceneContext,
 } from "babylon-lite";
 
 const TOTAL_FRAMES = 480;
-const CAPTURE_DEFAULT_FRAME = 300;
 const WIDTH = 200;
 const HEIGHT = 200;
 const BLOCK_SIZE = 4;
@@ -42,7 +42,7 @@ function readCaptureFrame(): number | null {
         const frame = Number(frameValue);
         return Number.isFinite(frame) && frame >= 0 ? Math.round(frame) : null;
     }
-    return CAPTURE_DEFAULT_FRAME;
+    return null;
 }
 
 function rand(seed: { value: number }): number {
@@ -192,6 +192,7 @@ async function main(): Promise<void> {
             captureQueued = true;
             window.setTimeout(() => {
                 canvas.dataset.captureReady = "true";
+                stopEngine(engine);
             }, 0);
         }
         frame++;
