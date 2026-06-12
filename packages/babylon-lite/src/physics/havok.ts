@@ -364,10 +364,14 @@ export function setPhysicsShapeMaterial(world: PhysicsWorld, shape: PhysicsShape
  * @param world - The physics world.
  * @param body - The body to update.
  * @param mass - Mass in kilograms.
+ * @param centerOfMass - Optional body-local centre of mass (defaults to the origin). Use this when the
+ *   collision shape is offset from the body's reference frame (e.g. a prop whose body origin sits at
+ *   its base but whose shape is centred on its middle) so it tumbles around its real centre.
  */
-export function setPhysicsBodyMass(world: PhysicsWorld, body: PhysicsBody, mass: number): void {
+export function setPhysicsBodyMass(world: PhysicsWorld, body: PhysicsBody, mass: number, centerOfMass?: Vec3): void {
+    const com = centerOfMass ?? { x: 0, y: 0, z: 0 };
     // massProperties: [centerOfMass[3], mass, inertia[3], inertiaOrientation[4]]
-    const massProps = [[0, 0, 0], mass, [mass, mass, mass], [0, 0, 0, 1]];
+    const massProps = [[com.x, com.y, com.z], mass, [mass, mass, mass], [0, 0, 0, 1]];
     world._hknp.HP_Body_SetMassProperties(body._hkBody, massProps);
 }
 
