@@ -1652,7 +1652,7 @@
         "name": "Scene 225 — Geospatial Camera",
         "maxMad": 0.2,
         "maxRawKB": 52,
-        "description": "Babylon.js GeospatialCamera port: a globe-orbit camera that anchors to a point on a sphere centred at the world origin and is parameterised by center/yaw/pitch/radius. A blue globe with six coloured surface marker cubes is viewed from a fixed deterministic pose (no controls attached) so the camera's view matrix is compared pixel-for-pixel against the Babylon.js GeospatialCamera oracle. The Lite camera reimplements the same left-handed local-basis + lookAt orientation math in the pure-state idiom.",
+        "description": "Babylon.js GeospatialCamera port: a globe-orbit camera that anchors to a point on a sphere centred at the world origin and is parameterised by center/yaw/pitch/radius. A textured Earth-like globe (procedurally generated oceans, continents and polar ice) lit by a directional sun for a day/night terminator, ringed with eight emissive marker cubes, is viewed from a fixed deterministic pose (no controls attached) so the camera's view matrix is compared pixel-for-pixel against the Babylon.js GeospatialCamera oracle. The Lite camera reimplements the same left-handed local-basis + lookAt orientation math in the pure-state idiom.",
         "tags": ["camera", "geospatial", "globe", "standard"],
         "skipPerf": true
     }

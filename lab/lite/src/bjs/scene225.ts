@@ -1,10 +1,12 @@
 // BJS reference for scene 225 — Babylon.js GeospatialCamera oracle.
 //
-// Mirrors the Lite scene225: a blue globe (sphere radius PLANET_RADIUS at the
-// world origin) orbited by a GeospatialCamera anchored to a surface point, with
-// six coloured marker cubes on the surface to make yaw/pitch/radius observable.
-// The camera is set to the SAME fixed center/radius/yaw/pitch (no controls
-// attached) so both engines render an identical frame.
+// Mirrors the Lite scene225: a lit planet (sphere radius PLANET_RADIUS at the
+// world origin) orbited by a GeospatialCamera anchored to a surface point, with a
+// directional "sun" (day/night terminator + ocean glint), a dim hemispheric fill
+// and emissive marker "cities". The camera is set to the SAME fixed
+// center/radius/yaw/pitch (no controls attached) so both engines render an
+// identical frame. Lighting/material values are kept in lock-step with the Lite
+// scene so the comparison is pixel-for-pixel.
 //
 // IMPORTANT — property order: GeospatialCamera clamps pitch against the effective
 // pitch-max for the CURRENT radius (pitch is disabled as the camera zooms out).
@@ -14,20 +16,26 @@
 
 import { GeospatialCamera } from "@babylonjs/core/Cameras/geospatialCamera";
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Scene } from "@babylonjs/core/scene";
 
 const PLANET_RADIUS = 100;
-const CAMERA_RADIUS = 170;
-const CAMERA_YAW = 0.6;
-const CAMERA_PITCH = 0.85;
-const CENTER_LAT = 20;
-const CENTER_LON = 30;
-const MARKER_SIZE = 18;
+const CAMERA_RADIUS = 235;
+const CAMERA_YAW = 0.55;
+const CAMERA_PITCH = 0.6;
+const CENTER_LAT = 12;
+const CENTER_LON = 22;
+const MARKER_SIZE = 9;
+
+const SUN_DIR: [number, number, number] = [-0.92, -0.1, 0.38];
+
+const EARTH_TEXTURE_URL = "/textures/earth-procedural.png";
 
 interface Marker {
     lat: number;
@@ -36,12 +44,14 @@ interface Marker {
 }
 
 const MARKERS: Marker[] = [
-    { lat: 0, lon: 0, color: [0.9, 0.15, 0.15] },
-    { lat: 20, lon: 30, color: [0.95, 0.85, 0.15] },
-    { lat: 40, lon: 60, color: [0.15, 0.8, 0.25] },
-    { lat: -15, lon: 15, color: [0.85, 0.2, 0.8] },
-    { lat: 10, lon: -20, color: [0.2, 0.75, 0.85] },
-    { lat: 60, lon: 45, color: [0.92, 0.92, 0.92] },
+    { lat: 0, lon: 0, color: [0.95, 0.25, 0.2] },
+    { lat: 25, lon: 40, color: [0.97, 0.8, 0.2] },
+    { lat: 45, lon: 70, color: [0.3, 0.85, 0.35] },
+    { lat: -20, lon: 18, color: [0.85, 0.3, 0.85] },
+    { lat: 12, lon: -25, color: [0.25, 0.8, 0.9] },
+    { lat: 58, lon: 50, color: [0.95, 0.95, 0.95] },
+    { lat: -42, lon: -12, color: [0.98, 0.55, 0.15] },
+    { lat: 33, lon: 108, color: [0.35, 0.75, 0.95] },
 ];
 
 /** Latitude/longitude (degrees) → ECEF position on a sphere of `r`, with +Z = north pole. */
@@ -59,7 +69,7 @@ function ecef(latDeg: number, lonDeg: number, r: number): Vector3 {
     await engine.initAsync();
 
     const scene = new Scene(engine);
-    scene.clearColor = new Color4(0.02, 0.02, 0.05, 1);
+    scene.clearColor = new Color4(0.01, 0.01, 0.03, 1);
 
     const cam = new GeospatialCamera("cam", scene, { planetRadius: PLANET_RADIUS });
     cam.fov = 0.8;
@@ -70,18 +80,33 @@ function ecef(latDeg: number, lonDeg: number, r: number): Vector3 {
     cam.yaw = CAMERA_YAW;
     cam.pitch = CAMERA_PITCH;
 
-    new HemisphericLight("h", new Vector3(0, 1, 0), scene);
+    const sun = new DirectionalLight("sun", new Vector3(SUN_DIR[0], SUN_DIR[1], SUN_DIR[2]), scene);
+    sun.intensity = 1.6;
+    sun.diffuse = new Color3(1.0, 0.95, 0.88);
+    sun.specular = new Color3(1.0, 1.0, 1.0);
+
+    const fill = new HemisphericLight("fill", new Vector3(0, 1, 0), scene);
+    fill.intensity = 0.12;
+    fill.diffuse = new Color3(0.45, 0.55, 0.8);
+    fill.groundColor = new Color3(0.03, 0.04, 0.09);
+    fill.specular = new Color3(0, 0, 0);
 
     const globe = MeshBuilder.CreateSphere("globe", { diameter: PLANET_RADIUS * 2, segments: 64 }, scene);
     const globeMat = new StandardMaterial("globeMat", scene);
-    globeMat.diffuseColor = new Color3(0.2, 0.45, 0.85);
+    globeMat.diffuseColor = new Color3(1, 1, 1);
+    globeMat.diffuseTexture = new Texture(EARTH_TEXTURE_URL, scene, false, true);
+    globeMat.specularColor = new Color3(0.12, 0.14, 0.18);
+    globeMat.specularPower = 96;
+    globeMat.emissiveColor = new Color3(0.02, 0.03, 0.05);
     globe.material = globeMat;
 
     for (let i = 0; i < MARKERS.length; i++) {
         const m = MARKERS[i]!;
         const box = MeshBuilder.CreateBox("marker" + i, { size: MARKER_SIZE }, scene);
         const mat = new StandardMaterial("markerMat" + i, scene);
-        mat.diffuseColor = new Color3(m.color[0], m.color[1], m.color[2]);
+        mat.diffuseColor = new Color3(m.color[0] * 0.2, m.color[1] * 0.2, m.color[2] * 0.2);
+        mat.emissiveColor = new Color3(m.color[0], m.color[1], m.color[2]);
+        mat.specularColor = new Color3(0, 0, 0);
         box.material = mat;
         box.position = ecef(m.lat, m.lon, PLANET_RADIUS + MARKER_SIZE / 2);
     }

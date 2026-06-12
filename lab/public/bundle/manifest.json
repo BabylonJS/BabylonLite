@@ -1618,7 +1618,7 @@
   },
   "scene115": {
     "rawKB": 120,
-    "gzipKB": 48.8,
+    "gzipKB": 48.9,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene115-create-morph-targets-_ECgIusp.js",
@@ -2639,11 +2639,12 @@
     ]
   },
   "scene225": {
-    "rawKB": 46.3,
-    "gzipKB": 18.6,
+    "rawKB": 51.1,
+    "gzipKB": 20.6,
     "ignoredRawKB": 0,
     "runtimeChunks": [
-      "scene225-standard-renderable-DJttXzRL.js",
+      "scene225-generate-mipmaps-BYtttrFj.js",
+      "scene225-standard-renderable-CRW0wIeV.js",
       "scene225-wgsl-helpers-CwHFFXvt.js",
       "scene225.js"
     ]
