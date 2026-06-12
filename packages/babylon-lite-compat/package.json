@@ -1,0 +1,35 @@
+{
+    "name": "@babylonjs/lite-compat",
+    "version": "0.0.1",
+    "license": "Apache-2.0",
+    "type": "module",
+    "description": "Opt-in Babylon.js-shaped compatibility layer implemented on top of the Babylon Lite public API. Provides a migration runway from Babylon.js to Babylon Lite.",
+    "main": "./src/index.ts",
+    "types": "./src/index.ts",
+    "exports": {
+        ".": {
+            "import": "./src/index.ts",
+            "types": "./src/index.ts"
+        },
+        "./math": {
+            "import": "./src/math/index.ts",
+            "types": "./src/math/index.ts"
+        }
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "vite build",
+        "dev": "vite build --watch"
+    },
+    "sideEffects": false,
+    "dependencies": {
+        "babylon-lite": "workspace:*"
+    },
+    "devDependencies": {
+        "@webgpu/types": "^0.1.52",
+        "typescript": "^5.7.0",
+        "vite": "^6.0.0"
+    }
+}
