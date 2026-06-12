@@ -145,7 +145,7 @@ async function main(): Promise<void> {
     if (noShadows) {
         await registerScene(scene);
     } else {
-        await registerSceneWithShadowSupport(engine, scene);
+        await registerSceneWithShadowSupport(scene);
     }
     await startEngine(engine);
     canvas.dataset.drawCalls = String(engine.drawCallCount);

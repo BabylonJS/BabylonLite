@@ -7,6 +7,11 @@ export function isDomCanvas(canvas: RenderCanvas): canvas is HTMLCanvasElement {
     return "clientWidth" in canvas;
 }
 
+/** @internal Monotonic source for {@link SurfaceContext._uniqueId}. Module-scoped so every
+ *  surface created in this runtime (engine primary surfaces + auxiliary surfaces) gets a
+ *  process-unique, stable identifier independent of its canvas size. */
+let _nextSurfaceId = 1;
+
 /**
  * Per-canvas rendering surface — owns the GPU canvas context, swapchain format, MSAA
  * configuration, and the list of `RenderingContext`s (scenes, effect renderers,
@@ -30,6 +35,11 @@ export interface SurfaceContext {
     /** MSAA sample count for the main render pass into this surface (1 or 4). */
     readonly msaaSamples: number;
 
+    /** @internal Process-unique, stable identifier for this surface, assigned at construction
+     *  from a module-scoped counter. Independent of canvas size, so it stays a reliable
+     *  per-surface key even when two surfaces share the same dimensions (e.g. for keying
+     *  cached per-surface GPU resources like post-process internal targets). */
+    _uniqueId: number;
     /**
      * Surface-owned color-only render target that wraps this canvas's swapchain texture.
      * Its `_colorTexture`/`_colorView` are re-acquired from `context.getCurrentTexture()`
@@ -160,6 +170,7 @@ export function _buildSurface(engine: EngineContext, canvas: RenderCanvas, optio
         msaaSamples,
         scRT,
         maxDevicePixelRatio: options?.maxDevicePixelRatio ?? Infinity,
+        _uniqueId: _nextSurfaceId++,
         _context: context,
         _alphaMode: alphaMode,
         _renderingContexts: [],

@@ -452,9 +452,9 @@ export async function registerScene(scene: SceneContext): Promise<void> {
 /**
  * Register a scene with the engine and install the scene-owned shadow frame-graph task.
  * Use only for scenes that generate shadow maps. Like {@link registerScene}, the scene
- * is attached to `scene.surface`.
+ * is attached to `scene.surface` (and its owning engine is `scene.surface.engine`).
  */
-export async function registerSceneWithShadowSupport(engine: EngineContext, scene: SceneContext): Promise<void> {
+export async function registerSceneWithShadowSupport(scene: SceneContext): Promise<void> {
     const ctx = scene as SceneContext;
     const surface = ctx.surface;
     if (isRenderingContextRegistered(surface, ctx)) {
@@ -462,7 +462,7 @@ export async function registerSceneWithShadowSupport(engine: EngineContext, scen
     }
     await buildScene(scene);
     ctx._renderables.sort(byOrder);
-    await ensureShadowTask(engine, ctx);
+    await ensureShadowTask(surface.engine, ctx);
     await Promise.all(ctx._frameGraph._tasks.map((task) => task._preload?.()).filter((preload): preload is Promise<void> => preload !== undefined));
     ctx._frameGraph.build();
     if (surface._renderingContexts.length > 0) {
