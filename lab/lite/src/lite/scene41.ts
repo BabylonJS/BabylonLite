@@ -279,4 +279,10 @@ async function main(): Promise<void> {
     canvas.dataset.ready = "true";
 }
 
-main().catch(console.error);
+main().catch((err) => {
+    const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement | null;
+    if (canvas) {
+        canvas.dataset.error = err instanceof Error ? err.message : String(err);
+    }
+    console.error(err);
+});

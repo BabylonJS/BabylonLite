@@ -104,7 +104,7 @@ export function createPhysicsViewer(scene: SceneContext, world: PhysicsWorld, op
     return viewer;
 }
 
-/** Shows a simplified Physics V2 constraint overlay: pivot-to-pivot line plus local axes. */
+/** Shows a simplified Physics V2 constraint overlay: local axes (with arrowheads) plus angular-limit disks. */
 export function showPhysicsConstraint(viewer: PhysicsViewer, constraint: PhysicsConstraintDebug): Mesh[] {
     const axisLen = 0.4;
     const diskRadius = 0.6;
@@ -215,7 +215,7 @@ function registerViewerUpdate(viewer: PhysicsViewer): void {
 }
 
 function unregisterViewerUpdateIfEmpty(viewer: PhysicsViewer): void {
-    if (viewer._bodies.length === 0) {
+    if (viewer._bodies.length === 0 && viewer._constraintLines.length === 0 && viewer._constraintDisks.length === 0 && viewer._constraintArrowheads.length === 0) {
         unregisterViewerUpdate(viewer);
     }
 }
@@ -275,6 +275,7 @@ function createConstraintAxisMesh(viewer: PhysicsViewer, body: PhysicsBody, pivo
     const line = createConstraintLineMesh(viewer, color, name, { body, pivot }, tip);
     const head = createConstraintArrowheadMesh(viewer, color, `${name}Head`, tip);
     viewer._constraintMeshes.push(head);
+    addToScene(viewer.scene, head);
     return line;
 }
 

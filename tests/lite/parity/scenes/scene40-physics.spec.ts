@@ -8,6 +8,7 @@
  */
 import { test, expect } from "@playwright/test";
 import type { Browser } from "@playwright/test";
+import * as fs from "fs";
 import * as path from "path";
 import { compareImages, getSceneConfig, waitForCanvasReady } from "../compare-utils";
 
@@ -20,6 +21,7 @@ const CAPTURE_QUERY = `?captureFrame=${CAPTURE_FRAME}`;
 test.skip(!!sceneConfig.skipParity, "Scene 40 skipped via skipParity in scene-config.json");
 
 async function captureBjsReference(browser: Browser): Promise<string> {
+    fs.mkdirSync(REFERENCE_DIR, { recursive: true });
     const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     const bjsPage = await context.newPage();
 
