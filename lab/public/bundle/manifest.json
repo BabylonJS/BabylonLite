@@ -648,13 +648,81 @@
     ]
   },
   "scene40": {
-    "rawKB": 46.8,
-    "gzipKB": 18.9,
+    "rawKB": 47.8,
+    "gzipKB": 19.3,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene40-standard-renderable-DPdENwbA.js",
       "scene40-wgsl-helpers-CwHFFXvt.js",
       "scene40.js"
+    ]
+  },
+  "scene41": {
+    "rawKB": 87.8,
+    "gzipKB": 34.7,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene41-generate-mipmaps-B4kb0XoH.js",
+      "scene41-gltf-ext-spec-gloss-D60sFZYX.js",
+      "scene41-gltf-feature-registry-BSbLYf2F.js",
+      "scene41-gltf-glb-parser-CkOP9avo.js",
+      "scene41-point-light-DE4v1E9t.js",
+      "scene41-shader-composer-DlM-8YlO.js",
+      "scene41-standard-renderable-BNV9W2Kk.js",
+      "scene41-wgsl-helpers-CwHFFXvt.js",
+      "scene41.js"
+    ]
+  },
+  "scene42": {
+    "rawKB": 49.4,
+    "gzipKB": 19.7,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene42-standard-renderable-Daux7eZW.js",
+      "scene42-wgsl-helpers-CwHFFXvt.js",
+      "scene42.js"
+    ]
+  },
+  "scene43": {
+    "rawKB": 56.3,
+    "gzipKB": 22.5,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene43-standard-renderable-CUtj_viO.js",
+      "scene43-thin-instance-fragment-CBn2miAC.js",
+      "scene43-thin-instance-gpu-UxO3XtwE.js",
+      "scene43-wgsl-helpers-CwHFFXvt.js",
+      "scene43.js"
+    ]
+  },
+  "scene44": {
+    "rawKB": 48.5,
+    "gzipKB": 19.4,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene44-standard-renderable-cbPCQHf8.js",
+      "scene44-wgsl-helpers-CwHFFXvt.js",
+      "scene44.js"
+    ]
+  },
+  "scene45": {
+    "rawKB": 49.6,
+    "gzipKB": 19.8,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene45-standard-renderable-DhHhViGK.js",
+      "scene45-wgsl-helpers-CwHFFXvt.js",
+      "scene45.js"
+    ]
+  },
+  "scene46": {
+    "rawKB": 52.8,
+    "gzipKB": 20.7,
+    "ignoredRawKB": 0,
+    "runtimeChunks": [
+      "scene46-standard-renderable-6kIFF-t5.js",
+      "scene46-wgsl-helpers-CwHFFXvt.js",
+      "scene46.js"
     ]
   },
   "scene50": {
