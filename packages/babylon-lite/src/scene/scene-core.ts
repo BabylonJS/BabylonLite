@@ -5,6 +5,7 @@ import type { Camera } from "../camera/camera.js";
 import type { LightBase } from "../light/types.js";
 import type { Mesh } from "../mesh/mesh.js";
 import { disposeMeshGpu } from "../mesh/mesh-dispose.js";
+import { registerMeshScene, unregisterMeshScene, enqueueMaterialSwap } from "./mesh-scene-registry.js";
 import type { AnimationGroup } from "../animation/animation-group.js";
 import type { ShadowGenerator } from "../shadow/shadow-generator.js";
 import type { FogConfig } from "../material/standard/standard-material.js";
@@ -133,80 +134,6 @@ export interface SceneContext extends RenderingContext {
 /** Options passed to the scene-context factory. */
 export interface SceneContextOptions {
     defaultRenderTask?: boolean;
-}
-
-/** Per-mesh set of scenes the mesh currently belongs to. Kept OFF the `Mesh` data object
- *  (pillar 4b: a mesh never references the scene) in a lazily-allocated WeakMap (pillar 4:
- *  no module-level side effects). A single `Mesh` instance may live in several scenes (e.g.
- *  multi-canvas `SurfaceContext` rendering), so this set is the one source of truth for both:
- *    1. material-swap notification — the `mesh.material` setter rebuilds the renderable in
- *       EVERY subscribed scene, not just the one it was first added to; and
- *    2. GPU-buffer ref-counting — `disposeMeshGpu` (which frees the mesh's SHARED geometry/
- *       skeleton/morph/thin-instance buffers) only runs on the LAST scene removal. */
-let _meshScenes: WeakMap<Mesh, Set<SceneContext>> | null = null;
-
-/** @internal Register `scene` as an owner of `mesh`. Installs the material setter on the mesh's
- *  first registration only (re-adds just grow the subscriber set, reusing the one setter). */
-function registerMeshScene(scene: SceneContext, mesh: Mesh): void {
-    const map = (_meshScenes ??= new WeakMap());
-    let scenes = map.get(mesh);
-    if (!scenes) {
-        map.set(mesh, (scenes = new Set()));
-        installMaterialSetter(mesh, scenes);
-    }
-    scenes.add(scene);
-}
-
-/** @internal Deregister `scene` from `mesh`. Returns `true` when the mesh now belongs to NO
- *  scene — the signal that the caller may free the mesh's shared GPU buffers (`disposeMeshGpu`).
- *  An untracked mesh (never registered) also returns `true` so its buffers are still released. */
-export function unregisterMeshScene(scene: SceneContext, mesh: Mesh): boolean {
-    const scenes = _meshScenes?.get(mesh);
-    if (!scenes) {
-        return true;
-    }
-    scenes.delete(scene);
-    return scenes.size === 0;
-}
-
-/** Queue a mesh for renderable (re)build on the next frame's material-swap drain.
- *  Shared by the material setter (runtime material change) and addToScene (runtime
- *  mesh add). Dedup is per-(scene, mesh) via swap-queue membership — a single shared
- *  mesh may be queued in several scenes at once. Lazily loads the swap processor so
- *  scenes that never mutate at runtime don't pull it into their bundle. */
-function enqueueMaterialSwap(scene: SceneContext, mesh: Mesh): void {
-    if (scene._materialSwapQueue.indexOf(mesh) >= 0) {
-        return;
-    }
-    scene._materialSwapQueue.push(mesh);
-    if (!scene._processSwaps) {
-        void import("./scene-material-swap.js").then((m) => {
-            scene._processSwaps = m.processMaterialSwaps;
-        });
-    }
-}
-
-/** Install a property setter on `mesh.material` that, on reassignment, enqueues a renderable
- *  rebuild in EVERY scene currently subscribed via `scenes`. Installed exactly once per mesh
- *  (the captured `scenes` set is mutated in place by register/unregister), so a mesh shared
- *  across scenes notifies all of them rather than only its most-recently-added scene. */
-function installMaterialSetter(mesh: Mesh, scenes: Set<SceneContext>): void {
-    let _mat = mesh.material;
-    Object.defineProperty(mesh, "material", {
-        get() {
-            return _mat;
-        },
-        set(v) {
-            if (v !== _mat) {
-                _mat = v;
-                for (const scene of scenes) {
-                    enqueueMaterialSwap(scene, mesh);
-                }
-            }
-        },
-        configurable: true,
-        enumerable: true,
-    });
 }
 
 /** Create an empty scene context bound to the given `surface`. The default render task

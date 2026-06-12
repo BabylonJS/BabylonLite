@@ -1,5 +1,5 @@
 import type { SceneContext } from "./scene-core.js";
-import { unregisterMeshScene } from "./scene-core.js";
+import { unregisterMeshScene } from "./mesh-scene-registry.js";
 import type { Mesh } from "../mesh/mesh.js";
 import { disposeMeshGpu } from "../mesh/mesh-dispose.js";
 import { removeMeshFromTask } from "../frame-graph/render-task.js";
