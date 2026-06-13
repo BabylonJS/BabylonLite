@@ -26,8 +26,8 @@ for reader context but are not part of the audited surface.
 
 ## Status legend
 
-| Status             | Meaning                                                                          |
-| ------------------ | -------------------------------------------------------------------------------- |
+| Status            | Meaning                                                                          |
+| ----------------- | -------------------------------------------------------------------------------- |
 | ✅ Full            | Common surface implemented and tested where possible                             |
 | ⚡ Partial         | A practical subset is implemented; some properties/overloads throw or are absent |
 | 🔧 Needs Lite core | Implementable only with a small additive Babylon Lite core change                |
@@ -47,8 +47,8 @@ for reader context but are not part of the audited surface.
 
 ## Math
 
-| BJS API                                            | Status     | Module                                                                                           |
-| -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------ |
+| BJS API                                            | Status    | Module                                                                                           |
+| -------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------ |
 | `Vector2` / `Vector3` / `Vector4`                  | ✅ Full    | [math/vector.ts](src/math/vector.ts)                                                             |
 | `Color3` / `Color4`                                | ✅ Full    | [math/color.ts](src/math/color.ts)                                                               |
 | `Quaternion`                                       | ✅ Full    | [math/quaternion.ts](src/math/quaternion.ts)                                                     |
@@ -65,8 +65,8 @@ for reader context but are not part of the audited surface.
 
 ## Core
 
-| BJS API                                                                   | Status             | Module                                                                    |
-| ------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------- |
+| BJS API                                                                   | Status            | Module                                                                    |
+| ------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------- |
 | `WebGPUEngine` / `Engine`                                                 | ⚡ Partial         | [engine/engine.ts](src/engine/engine.ts)                                  |
 | `engine.runRenderLoop` / `stopRenderLoop`                                 | ⚡ Partial         | engine (async startup; N callbacks)                                       |
 | `engine.resize` / `setSize` / `dispose` / `getRenderingCanvas`            | ✅ Full            | engine                                                                    |
@@ -92,15 +92,15 @@ for reader context but are not part of the audited surface.
 
 ## Culling & Collisions
 
-| BJS API                                           | Status     | Module                                         |
-| ------------------------------------------------- | ---------- | ---------------------------------------------- |
+| BJS API                                           | Status    | Module                                         |
+| ------------------------------------------------- | --------- | ---------------------------------------------- |
 | `BoundingBox` / `BoundingSphere` / `BoundingInfo` | ✅ Full    | [culling/bounding.ts](src/culling/bounding.ts) |
 | `PickingInfo` / `IntersectionInfo`                | ⚡ Partial | surfaced via `GPUPicker`                       |
 
 ## Cameras
 
-| BJS API                                           | Status           | Module                                       |
-| ------------------------------------------------- | ---------------- | -------------------------------------------- |
+| BJS API                                           | Status          | Module                                       |
+| ------------------------------------------------- | --------------- | -------------------------------------------- |
 | `Camera` (base, extends `Node`)                   | ✅ Full          | [cameras/cameras.ts](src/cameras/cameras.ts) |
 | `camera.getViewMatrix` / `getProjectionMatrix`    | ✅ Full          | cameras (over Lite matrix accessors)         |
 | `ArcRotateCamera`                                 | ✅ Full          | cameras                                      |
@@ -113,8 +113,8 @@ for reader context but are not part of the audited surface.
 
 ## Lights
 
-| BJS API                                               | Status             | Module                                   |
-| ----------------------------------------------------- | ------------------ | ---------------------------------------- |
+| BJS API                                               | Status            | Module                                   |
+| ----------------------------------------------------- | ----------------- | ---------------------------------------- |
 | `HemisphericLight`                                    | ✅ Full            | [lights/lights.ts](src/lights/lights.ts) |
 | `DirectionalLight`                                    | ✅ Full            | lights                                   |
 | `PointLight`                                          | ✅ Full            | lights                                   |
@@ -125,8 +125,8 @@ for reader context but are not part of the audited surface.
 
 ## Shadows
 
-| BJS API                                           | Status     | Module                                                         |
-| ------------------------------------------------- | ---------- | -------------------------------------------------------------- |
+| BJS API                                           | Status    | Module                                                         |
+| ------------------------------------------------- | --------- | -------------------------------------------------------------- |
 | `ShadowGenerator` (directional ESM/PCF, spot PCF) | ⚡ Partial | [shadows/shadow-generator.ts](src/shadows/shadow-generator.ts) |
 | `addShadowCaster` / `getShadowMap().renderList`   | ✅ Full    | shadows (over Lite shadow factories)                           |
 | `mesh.receiveShadows`                             | ✅ Full    | meshes                                                         |
@@ -134,31 +134,31 @@ for reader context but are not part of the audited surface.
 
 ## Meshes & Geometry
 
-| BJS API                                                              | Status             | Module                                     |
-| -------------------------------------------------------------------- | ------------------ | ------------------------------------------ |
-| `Node` (base) + `getScene`/`getClassName`/`parent`/`metadata`        | ⚡ Partial         | [node/node.ts](src/node/node.ts)           |
-| Class chain `Mesh → AbstractMesh → TransformNode → Node`             | ✅ Full            | node + meshes (real inheritance)           |
-| `MeshBuilder.CreateBox/Sphere/Ground/Plane/Cylinder`                 | ⚡ Partial         | [meshes/meshes.ts](src/meshes/meshes.ts)   |
-| `MeshBuilder.CreateTorus/TorusKnot/Disc/Polyhedron`                  | ⚡ Partial         | meshes (Lite-backed)                       |
-| `Mesh.CreateSphere/Box/Ground/Plane/Cylinder/Torus` (legacy statics) | ✅ Full            | meshes (delegate to `MeshBuilder`)         |
-| `MeshBuilder.CreateRibbon/Tube/ExtrudeShape`                         | ⚡ Partial         | — (Lite factories exist; wrappers planned) |
-| `MeshBuilder.CreateLines` / `CreateDecal` / `CreateText`             | ❌ Not supported   | throwing stub; not in Lite                 |
-| `Mesh` / `AbstractMesh` (transform, material, visibility)            | ⚡ Partial         | meshes                                     |
-| `GroundMesh`                                                         | ⚡ Partial         | meshes (no CPU height query)               |
-| `InstancedMesh`                                                      | ❌ Not supported   | throwing stub; use thin instances          |
-| `VertexData`                                                         | ⚡ Partial         | meshes (CPU data container)                |
-| `mesh.position/rotation/scaling` (live mutation)                     | ✅ Full            | meshes                                     |
-| `mesh.dispose` / `setEnabled` / `isEnabled` / `isDisposed`           | ✅ Full            | meshes + node                              |
-| `mesh.thinInstanceSetBuffer`                                         | ⚡ Partial         | — (planned wrapper)                        |
-| `mesh.clone` / `createInstance`                                      | ⚡ Partial         | throwing stub                              |
-| `TransformNode`                                                      | ✅ Full            | meshes                                     |
-| `mesh.getBoundingInfo`                                               | 🔧 Needs Lite core | bounds accessor                            |
-| LOD / `EdgesRenderer` / `OutlineRenderer`                            | ❌ Not supported   | throwing stub; not in Lite                 |
+| BJS API                                                              | Status            | Module                                            |
+| -------------------------------------------------------------------- | ----------------- | ------------------------------------------------- |
+| `Node` (base) + `getScene`/`getClassName`/`parent`/`metadata`        | ⚡ Partial         | [node/node.ts](src/node/node.ts)                  |
+| Class chain `Mesh → AbstractMesh → TransformNode → Node`             | ✅ Full            | node + meshes (real inheritance)                  |
+| `MeshBuilder.CreateBox/Sphere/Ground/Plane/Cylinder`                 | ⚡ Partial         | [meshes/meshes.ts](src/meshes/meshes.ts)          |
+| `MeshBuilder.CreateTorus/TorusKnot/Disc/Polyhedron`                  | ⚡ Partial         | meshes (Lite-backed)                              |
+| `Mesh.CreateSphere/Box/Ground/Plane/Cylinder/Torus` (legacy statics) | ✅ Full            | meshes (delegate to `MeshBuilder`)                |
+| `MeshBuilder.CreateRibbon/Tube/ExtrudeShape`                         | ⚡ Partial         | — (Lite factories exist; wrappers planned)        |
+| `MeshBuilder.CreateLines` / `CreateDecal` / `CreateText`             | ❌ Not supported   | throwing stub; not in Lite                        |
+| `Mesh` / `AbstractMesh` (transform, material, visibility)            | ⚡ Partial         | meshes                                            |
+| `GroundMesh`                                                         | ⚡ Partial         | meshes (no CPU height query)                      |
+| `InstancedMesh`                                                      | ❌ Not supported   | throwing stub; use thin instances                 |
+| `VertexData`                                                         | ⚡ Partial         | meshes (CPU data container)                       |
+| `mesh.position/rotation/scaling` (live mutation)                     | ✅ Full            | meshes                                            |
+| `mesh.dispose` / `setEnabled` / `isEnabled` / `isDisposed`           | ✅ Full            | meshes + node                                     |
+| `mesh.thinInstanceSetBuffer`                                         | ⚡ Partial         | meshes (`matrix` + `color` → Lite thin instances) |
+| `mesh.clone` / `createInstance`                                      | ⚡ Partial         | throwing stub                                     |
+| `TransformNode`                                                      | ✅ Full            | meshes                                            |
+| `mesh.getBoundingInfo`                                               | 🔧 Needs Lite core | bounds accessor                                   |
+| LOD / `EdgesRenderer` / `OutlineRenderer`                            | ❌ Not supported   | throwing stub; not in Lite                        |
 
 ## Gizmos
 
-| BJS API                                                               | Status     | Module                                   |
-| --------------------------------------------------------------------- | ---------- | ---------------------------------------- |
+| BJS API                                                               | Status    | Module                                   |
+| --------------------------------------------------------------------- | --------- | ---------------------------------------- |
 | `UtilityLayerRenderer`                                                | ✅ Full    | [gizmos/gizmos.ts](src/gizmos/gizmos.ts) |
 | `PositionGizmo` / `RotationGizmo` / `ScaleGizmo` / `BoundingBoxGizmo` | ⚡ Partial | gizmos (over Lite gizmo suite)           |
 | `LightGizmo` / `CameraGizmo`                                          | ⚡ Partial | gizmos                                   |
@@ -166,8 +166,8 @@ for reader context but are not part of the audited surface.
 
 ## Behaviors
 
-| BJS API                                      | Status             | Module                                               |
-| -------------------------------------------- | ------------------ | ---------------------------------------------------- |
+| BJS API                                      | Status            | Module                                               |
+| -------------------------------------------- | ----------------- | ---------------------------------------------------- |
 | `Behavior<T>` interface                      | ✅ Full            | [behaviors/behaviors.ts](src/behaviors/behaviors.ts) |
 | `AutoRotationBehavior`                       | ✅ Full            | behaviors                                            |
 | `BouncingBehavior` / `FramingBehavior`       | ⚡ Partial         | behaviors (no tweened animation)                     |
@@ -175,16 +175,16 @@ for reader context but are not part of the audited surface.
 
 ## Actions
 
-| BJS API                                                          | Status     | Module                                       |
-| ---------------------------------------------------------------- | ---------- | -------------------------------------------- |
+| BJS API                                                          | Status    | Module                                       |
+| ---------------------------------------------------------------- | --------- | -------------------------------------------- |
 | `ActionManager` (manual `processTrigger`; auto-dispatch pending) | ⚡ Partial | [actions/actions.ts](src/actions/actions.ts) |
 | `ExecuteCodeAction` / `SetValueAction` / `IncrementValueAction`  | ✅ Full    | actions                                      |
 | `ValueCondition` / `PredicateCondition`                          | ✅ Full    | actions                                      |
 
 ## Misc utilities
 
-| BJS API                                    | Status  | Module                                       |
-| ------------------------------------------ | ------- | -------------------------------------------- |
+| BJS API                                    | Status | Module                                       |
+| ------------------------------------------ | ------ | -------------------------------------------- |
 | `Observable`                               | ✅ Full | [misc/observable.ts](src/misc/observable.ts) |
 | `Tools` (subset)                           | ✅ Full | [misc/tools.ts](src/misc/tools.ts)           |
 | `SmartArray` / `StringDictionary` / `Tags` | ✅ Full | [misc/misc-utils.ts](src/misc/misc-utils.ts) |
@@ -193,8 +193,8 @@ for reader context but are not part of the audited surface.
 
 ## Materials
 
-| BJS API                                                   | Status           | Module                                                                                            |
-| --------------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------- |
+| BJS API                                                   | Status          | Module                                                                                            |
+| --------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------- |
 | `StandardMaterial` (common subset)                        | ⚡ Partial       | [materials/materials.ts](src/materials/materials.ts)                                              |
 | `PBRMaterial` (common subset)                             | ⚡ Partial       | materials                                                                                         |
 | `Material` / `PushMaterial` (base chain)                  | ⚡ Partial       | materials                                                                                         |
@@ -210,8 +210,8 @@ for reader context but are not part of the audited surface.
 
 ## Textures
 
-| BJS API                                                                    | Status           | Module                                                                         |
-| -------------------------------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------ |
+| BJS API                                                                    | Status          | Module                                                                         |
+| -------------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------ |
 | `Texture` (2D, URL)                                                        | ✅ Full          | [textures/textures.ts](src/textures/textures.ts) (async load awaited at build) |
 | `RawTexture`                                                               | ✅ Full          | textures (Lite pixel texture)                                                  |
 | `DynamicTexture` (canvas-backed)                                           | ✅ Full          | textures                                                                       |
@@ -222,8 +222,8 @@ for reader context but are not part of the audited surface.
 
 ## Loaders
 
-| BJS API                                                                   | Status           | Module                                                     |
-| ------------------------------------------------------------------------- | ---------------- | ---------------------------------------------------------- |
+| BJS API                                                                   | Status          | Module                                                     |
+| ------------------------------------------------------------------------- | --------------- | ---------------------------------------------------------- |
 | `SceneLoader.ImportMeshAsync` / `AppendAsync` / `LoadAssetContainerAsync` | ⚡ Partial       | [loading/scene-loader.ts](src/loading/scene-loader.ts)     |
 | glTF 2.0 + extensions                                                     | ✅ Full          | via Lite `loadGltf`                                        |
 | `.babylon`                                                                | ✅ Full          | via Lite `loadBabylon`                                     |
@@ -233,8 +233,8 @@ for reader context but are not part of the audited surface.
 
 ## Animation
 
-| BJS API                                                     | Status     | Module                                                   |
-| ----------------------------------------------------------- | ---------- | -------------------------------------------------------- |
+| BJS API                                                     | Status    | Module                                                   |
+| ----------------------------------------------------------- | --------- | -------------------------------------------------------- |
 | Easing functions (`SineEase`, `CubicEase`, `BounceEase`, …) | ✅ Full    | [animations/easing.ts](src/animations/easing.ts)         |
 | `Animation` (keyframe model + CPU `evaluate`)               | ✅ Full    | [animations/animation.ts](src/animations/animation.ts)   |
 | `Animatable` / `scene.beginDirectAnimation`                 | ⚡ Partial | animation (CPU per-frame evaluation; no weight blending) |
@@ -243,57 +243,57 @@ for reader context but are not part of the audited surface.
 
 ## Bones / Skeletons / Morph
 
-| BJS API                              | Status           | Notes                                                   |
-| ------------------------------------ | ---------------- | ------------------------------------------------------- |
+| BJS API                              | Status          | Notes                                                   |
+| ------------------------------------ | --------------- | ------------------------------------------------------- |
 | `Skeleton` / `Bone`                  | ❌ Not supported | throwing stub; produced by glTF loader, not constructed |
 | `MorphTarget` / `MorphTargetManager` | ❌ Not supported | throwing stub; use native `createMorphTargets`          |
 
 ## Sprites
 
-| BJS API                                                          | Status           | Notes                                      |
-| ---------------------------------------------------------------- | ---------------- | ------------------------------------------ |
+| BJS API                                                          | Status          | Notes                                      |
+| ---------------------------------------------------------------- | --------------- | ------------------------------------------ |
 | `Sprite` / `SpriteManager` / `SpriteMap` / `SpritePackedManager` | ❌ Not supported | throwing stub; use native Lite sprite APIs |
 
 ## Particles
 
-| BJS API                                                        | Status           | Notes                      |
-| -------------------------------------------------------------- | ---------------- | -------------------------- |
+| BJS API                                                        | Status          | Notes                      |
+| -------------------------------------------------------------- | --------------- | -------------------------- |
 | `ParticleSystem` / `GPUParticleSystem` / `SolidParticleSystem` | ❌ Not supported | throwing stub; not in Lite |
 | `ParticleHelper` / `ParticleSystemSet` / `PointsCloudSystem`   | ❌ Not supported | throwing stub              |
 
 ## Post-processes
 
-| BJS API                                                            | Status           | Notes                                                |
-| ------------------------------------------------------------------ | ---------------- | ---------------------------------------------------- |
+| BJS API                                                            | Status          | Notes                                                |
+| ------------------------------------------------------------------ | --------------- | ---------------------------------------------------- |
 | `PostProcess` (base) + `DefaultRenderingPipeline`                  | ❌ Not supported | throwing stub; use native frame-graph tasks          |
 | `Bloom` / `Blur` / `BlackAndWhite` / `ChromaticAberration` / `DoF` | ❌ Not supported | throwing stub; effects exist as native `create*Task` |
 | `FxaaPostProcess` / `SSAO2RenderingPipeline`                       | ❌ Not supported | throwing stub; not in Lite                           |
 
 ## Probes / Layers / Rendering
 
-| BJS API                                                            | Status           | Notes                                          |
-| ------------------------------------------------------------------ | ---------------- | ---------------------------------------------- |
+| BJS API                                                            | Status          | Notes                                          |
+| ------------------------------------------------------------------ | --------------- | ---------------------------------------------- |
 | `ReflectionProbe`                                                  | ❌ Not supported | throwing stub                                  |
 | `Layer` / `EffectLayer` / `HighlightLayer` / `GlowLayer`           | ❌ Not supported | throwing stub; not in Lite                     |
 | `DepthRenderer` / `GeometryBufferRenderer` / `BoundingBoxRenderer` | ❌ Not supported | throwing stub; use native geometry/depth tasks |
 
 ## Physics
 
-| BJS API                                                             | Status           | Notes                                        |
-| ------------------------------------------------------------------- | ---------------- | -------------------------------------------- |
+| BJS API                                                             | Status          | Notes                                        |
+| ------------------------------------------------------------------- | --------------- | -------------------------------------------- |
 | `HavokPlugin` / `PhysicsAggregate` / `PhysicsBody` / `PhysicsShape` | ❌ Not supported | throwing stub; use native Havok-V2 functions |
 | `CannonJSPlugin` / `AmmoJSPlugin`                                   | ❌ Not supported | throwing stub; Lite is Havok-V2 only         |
 
 ## Navigation
 
-| BJS API          | Status           | Notes                                              |
-| ---------------- | ---------------- | -------------------------------------------------- |
+| BJS API          | Status          | Notes                                              |
+| ---------------- | --------------- | -------------------------------------------------- |
 | `RecastJSPlugin` | ❌ Not supported | throwing stub; use native Recast-V2 navigation API |
 
 ## Audio
 
-| BJS API                                   | Status           | Notes                                 |
-| ----------------------------------------- | ---------------- | ------------------------------------- |
+| BJS API                                   | Status          | Notes                                 |
+| ----------------------------------------- | --------------- | ------------------------------------- |
 | `Sound` / `AudioEngine` / `WeightedSound` | ❌ Not supported | throwing stub; use Web Audio directly |
 
 ## Not yet wrapped (Lite supports — wrappers planned)
@@ -308,8 +308,8 @@ candidate rows for the next audit passes — until wrapped they either carry a
 
 ## Out of scope
 
-| BJS API                                        | Status                                     |
-| ---------------------------------------------- | ------------------------------------------ |
+| BJS API                                        | Status                                    |
+| ---------------------------------------------- | ----------------------------------------- |
 | `BABYLON.*` global namespace                   | ⛔ Out of scope (no `globalThis` mutation) |
 | `SceneLoader.RegisterPlugin` / `RegisterClass` | ⛔ Out of scope (side-effectful)           |
 | `Inspector` / `NodeMaterialEditor`             | ⛔ Out of scope                            |
@@ -319,3 +319,60 @@ candidate rows for the next audit passes — until wrapped they either carry a
 | WebXR                                          | ❌ Not supported (no XR in Lite)           |
 | `HighlightLayer` / `GlowLayer` / `Decal`       | ❌ Not supported (not in Lite)             |
 | `SceneSerializer`                              | ❌ Not supported                           |
+
+---
+
+## Lab scene coverage
+
+The repo's lab renders the Babylon.js oracle scenes (`lab/lite/src/bjs/sceneN.ts`)
+through the compat layer at `/compat/sceneN.html` (see the **Compat** tab). This
+section records which of those scenes currently render at pixel parity with the
+native Babylon Lite port, and the blocker for the ones that don't. It is a
+behavioural cross-check of the API surface above, not a separate contract.
+
+> Snapshot date: 2026-06-12. Method: in-browser MAD diff of `/compat/sceneN`
+> vs `/lite/sceneN`. "Working" = renders with MAD ≈ 0 (matches the Lite port).
+> Scenes opted into the Compat tab carry `"compatParity": true` in
+> [scene-config.json](../../scene-config.json).
+
+### ✅ Working (36 scenes, MAD ≈ 0)
+
+`1`, `2`, `5`, `9`, `10`, `13`, `15`, `16`, `18`, `28`, `29`, `30`, `31`, `32`,
+`33`, `34`, `35`, `37`, `60`, `61`, `62`, `63`, `77`, `78`, `79`, `80`, `82`,
+`83`, `85`, `88`, `89`, `150`, `151`, `200`, `210`, `216`
+
+Covers: StandardMaterial + PBR (factor + IBL), glTF / `.babylon` model loading,
+default-environment IBL, fog, spot/directional PCF + ESM shadows, thin instances,
+NME node materials, and CPU keyframe animation.
+
+### ❌ Not working — grouped by blocker
+
+| Blocker                                                  | Scenes                                                                                                    | Notes                                                                                                            |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `SpriteManager` / `SpriteRenderer` (sprites)             | 50, 52, 53, 54, 55, 58, 59, 92, 93, 94, 95, 96, 98, 205                                                   | Sprite system not wrapped; Lite has a different sprite API                                                       |
+| `NodeMaterial` shadow/PBR layers (renders, diverges)     | 65, 66, 67, 68, 69, 70, 71, 72, 73, 84, 87                                                                | Render at MAD ≈ 0.4–1.5; advanced NME-PBR (clearcoat/sheen/SSS/env) not exact                                    |
+| `PostProcess` / rendering pipelines                      | 142, 143, 144, 145, 146                                                                                   | No post-process pipeline; use native frame-graph tasks                                                           |
+| Missing `Effect` / `EffectRenderer` exports              | 74, 75, 76, 116, 127, 128, 159, 160, 161, 162, 163                                                        | Low-level shader-effect API not wrapped                                                                          |
+| Missing `VertexBuffer` export / custom geometry          | 56, 64, 86, 114, 170, 213                                                                                 | Manual vertex-buffer authoring not wrapped                                                                       |
+| glTF model framing (`result.meshes` + `getBoundingInfo`) | 11, 152, 157, 158, 172, 173, 218, 219                                                                     | 🔧 Needs a Lite-core public mesh-bounds accessor                                                                  |
+| Floating-origin / large-world rendering (LWR)            | 201, 202, 203, 204, 206, 207                                                                              | Lite floating-origin not surfaced through compat                                                                 |
+| `.dds` environment / advanced reflection                 | 17, 19, 21, 23, 176, 177, 178, 212                                                                        | `loadEnvironment` consumes `.env`; `.dds` cube + skybox PBR diverge                                              |
+| Heightmap ground (`CreateGroundFromHeightMap`)           | 4, 22                                                                                                     | Async heightmap mesh builder not wrapped                                                                         |
+| `VertexData.applyToMesh` (build mesh from CPU data)      | 57                                                                                                        | Needs an empty-`Mesh(name, scene)` + apply path                                                                  |
+| Gaussian splatting / point clouds                        | 120, 121, 122, 123, 124, 125, 126, 129                                                                    | `.ply`/`.spz`/splat formats not parsed by Lite                                                                   |
+| Navigation meshes (Recast)                               | 171, 174, 175                                                                                             | Recast nav not wrapped                                                                                           |
+| Basis Universal textures                                 | 36                                                                                                        | `.basis` transcode not wrapped                                                                                   |
+| CSG / CSG2                                               | 90, 91                                                                                                    | Constructive solid geometry not wrapped                                                                          |
+| Physics (Havok)                                          | 40                                                                                                        | `PhysicsAggregate`/`PhysicsShapeType` not wrapped                                                                |
+| `CascadedShadowGenerator` (true CSM)                     | 214, 215                                                                                                  | Falls back to single-cascade directional; cascades diverge                                                       |
+| Weighted `AnimationGroup` blending (`group.start`)       | 155, 156                                                                                                  | Weighted cross-fade not modelled                                                                                 |
+| Misc single-API gaps                                     | 8, 12, 20, 25, 26, 27, 38, 113, 140, 147, 148, 149, 153, 154, 165, 179, 211, 217, 221, 222, 223, 224, 225 | e.g. `HDRCubeTexture`, `engine.getCaps`, `NullEngine`, `MaterialPluginBase`, `GeospatialCamera`, gizmo internals |
+| Silent no-render (no throw, blank frame)                 | 14, 24, 112                                                                                               | Under investigation                                                                                              |
+| Hangs the main thread (runaway loop)                     | 180, 181, 227, 228                                                                                        | Likely a Lite-core loop bug; needs separate fix                                                                  |
+| Sync `scene.pick`                                        | 113                                                                                                       | ❌ by design — use async `GPUPicker`                                                                              |
+
+Adding a missing export usually only advances a scene to its _next_ blocker
+rather than fixing it outright (e.g. several NME-PBR scenes resolve `NodeMaterial`
+but then diverge on clearcoat/sheen lighting). The highest-leverage remaining work
+is a Lite-core mesh-bounds accessor (unblocks the glTF model-framing cluster) and
+the sprite / post-process subsystems.
