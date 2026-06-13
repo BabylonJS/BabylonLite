@@ -65,30 +65,31 @@ for reader context but are not part of the audited surface.
 
 ## Core
 
-| BJS API                                                                   | Status            | Module                                                                    |
-| ------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------- |
-| `WebGPUEngine` / `Engine`                                                 | ⚡ Partial         | [engine/engine.ts](src/engine/engine.ts)                                  |
-| `engine.runRenderLoop` / `stopRenderLoop`                                 | ⚡ Partial         | engine (async startup; N callbacks)                                       |
-| `engine.resize` / `setSize` / `dispose` / `getRenderingCanvas`            | ✅ Full            | engine                                                                    |
-| `engine.beginFrame` / `endFrame`                                          | ❌ Not supported   | —                                                                         |
-| `Scene`                                                                   | ⚡ Partial         | [scene/scene.ts](src/scene/scene.ts)                                      |
-| `scene.clearColor` / `activeCamera` / `imageProcessingConfiguration`      | ✅ Full            | scene                                                                     |
-| `scene.fogMode/fogStart/fogEnd/fogDensity/fogColor` + `FOGMODE_*`         | ✅ Full            | scene (over Lite `setFog`)                                                |
-| `scene.environmentTexture` / `createDefaultEnvironment`                   | ⚡ Partial         | scene (over Lite `loadEnvironment`; BJS default assets)                   |
-| `scene.createDefaultCameraOrLight`                                        | ✅ Full            | scene                                                                     |
-| `scene.performancePriority`                                               | ⚡ Partial         | accepted for parity (Lite self-tunes)                                     |
-| `scene.onBeforeRenderObservable` / `onDisposeObservable`                  | ✅ Full            | scene + [misc/observable.ts](src/misc/observable.ts)                      |
-| `scene.onAfterRenderObservable`                                           | ⚡ Partial         | fires one frame late (Lite has no after-render hook)                      |
-| `scene.whenReadyAsync` / `isReady`                                        | ✅ Full            | resolve-immediately (Lite builds synchronously)                           |
-| `scene.createDefaultCamera`                                               | ✅ Full            | scene                                                                     |
-| `scene.animationGroups` / `scene.animatables`                             | ⚡ Partial         | arrays for iteration/pause (Lite drives playback)                         |
-| `ScenePerformancePriority` / `ImageProcessingConfiguration` / `Constants` | ✅ Full            | [misc/engine-constants.ts](src/misc/engine-constants.ts) (numeric values) |
-| `scene.render()` (manual single frame)                                    | ❌ Not supported   | no-op under Lite loop                                                     |
-| `scene.getMeshByName` / `scene.meshes` enumeration                        | 🔧 Needs Lite core | public scene accessors                                                    |
-| `scene.pick` (sync)                                                       | ❌ Not supported   | sync CPU picking; use `GPUPicker` (async) instead                         |
-| `GPUPicker` (async GPU picking)                                           | ⚡ Partial         | [picking/gpu-picker.ts](src/picking/gpu-picker.ts)                        |
-| `Observable`                                                              | ✅ Full            | [misc/observable.ts](src/misc/observable.ts)                              |
-| `Tools` (subset)                                                          | ✅ Full            | [misc/tools.ts](src/misc/tools.ts)                                        |
+| BJS API                                                                     | Status            | Module                                                                                                        |
+| --------------------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| `WebGPUEngine` / `Engine`                                                   | ⚡ Partial         | [engine/engine.ts](src/engine/engine.ts)                                                                      |
+| `engine.useLargeWorldRendering` → floating origin / `useReverseDepthBuffer` | ⚡ Partial         | engine (BJS `useLargeWorldRendering` maps to Lite `useHighPrecisionMatrix` + `useFloatingOrigin`)             |
+| `engine.runRenderLoop` / `stopRenderLoop`                                   | ⚡ Partial         | engine (async startup; N callbacks)                                                                           |
+| `engine.resize` / `setSize` / `dispose` / `getRenderingCanvas`              | ✅ Full            | engine                                                                                                        |
+| `engine.beginFrame` / `endFrame`                                            | ❌ Not supported   | —                                                                                                             |
+| `Scene`                                                                     | ⚡ Partial         | [scene/scene.ts](src/scene/scene.ts)                                                                          |
+| `scene.clearColor` / `activeCamera` / `imageProcessingConfiguration`        | ✅ Full            | scene                                                                                                         |
+| `scene.fogMode/fogStart/fogEnd/fogDensity/fogColor` + `FOGMODE_*`           | ✅ Full            | scene (over Lite `setFog`)                                                                                    |
+| `scene.environmentTexture` / `createDefaultEnvironment`                     | ⚡ Partial         | scene (over Lite `loadEnvironment`; BJS default assets)                                                       |
+| `scene.createDefaultCameraOrLight`                                          | ✅ Full            | scene                                                                                                         |
+| `scene.performancePriority`                                                 | ⚡ Partial         | accepted for parity (Lite self-tunes)                                                                         |
+| `scene.onBeforeRenderObservable` / `onDisposeObservable`                    | ✅ Full            | scene + [misc/observable.ts](src/misc/observable.ts)                                                          |
+| `scene.onAfterRenderObservable`                                             | ⚡ Partial         | fires one frame late (Lite has no after-render hook)                                                          |
+| `scene.whenReadyAsync` / `isReady`                                          | ✅ Full            | resolve-immediately (Lite builds synchronously)                                                               |
+| `scene.createDefaultCamera`                                                 | ✅ Full            | scene                                                                                                         |
+| `scene.animationGroups` / `scene.animatables`                               | ⚡ Partial         | scene (returns `AnimationGroup[]` over Lite loaded groups — `goToFrame`/`play`/`pause`/`stop` to seek/freeze) |
+| `ScenePerformancePriority` / `ImageProcessingConfiguration` / `Constants`   | ✅ Full            | [misc/engine-constants.ts](src/misc/engine-constants.ts) (numeric values)                                     |
+| `scene.render()` (manual single frame)                                      | ❌ Not supported   | no-op under Lite loop                                                                                         |
+| `scene.getMeshByName` / `scene.meshes` enumeration                          | 🔧 Needs Lite core | public scene accessors                                                                                        |
+| `scene.pick` (sync)                                                         | ❌ Not supported   | sync CPU picking; use `GPUPicker` (async) instead                                                             |
+| `GPUPicker` (async GPU picking)                                             | ⚡ Partial         | [picking/gpu-picker.ts](src/picking/gpu-picker.ts)                                                            |
+| `Observable`                                                                | ✅ Full            | [misc/observable.ts](src/misc/observable.ts)                                                                  |
+| `Tools` (subset)                                                            | ✅ Full            | [misc/tools.ts](src/misc/tools.ts)                                                                            |
 
 ## Culling & Collisions
 
@@ -141,7 +142,7 @@ for reader context but are not part of the audited surface.
 | `MeshBuilder.CreateBox/Sphere/Ground/Plane/Cylinder`                 | ⚡ Partial         | [meshes/meshes.ts](src/meshes/meshes.ts)          |
 | `MeshBuilder.CreateTorus/TorusKnot/Disc/Polyhedron`                  | ⚡ Partial         | meshes (Lite-backed)                              |
 | `Mesh.CreateSphere/Box/Ground/Plane/Cylinder/Torus` (legacy statics) | ✅ Full            | meshes (delegate to `MeshBuilder`)                |
-| `MeshBuilder.CreateRibbon/Tube/ExtrudeShape`                         | ⚡ Partial         | — (Lite factories exist; wrappers planned)        |
+| `MeshBuilder.CreateRibbon/Tube/ExtrudeShape`                         | ⚡ Partial         | meshes (Lite-backed)                              |
 | `MeshBuilder.CreateLines` / `CreateDecal` / `CreateText`             | ❌ Not supported   | throwing stub; not in Lite                        |
 | `Mesh` / `AbstractMesh` (transform, material, visibility)            | ⚡ Partial         | meshes                                            |
 | `GroundMesh`                                                         | ⚡ Partial         | meshes (no CPU height query)                      |
@@ -222,24 +223,24 @@ for reader context but are not part of the audited surface.
 
 ## Loaders
 
-| BJS API                                                                   | Status          | Module                                                     |
-| ------------------------------------------------------------------------- | --------------- | ---------------------------------------------------------- |
-| `SceneLoader.ImportMeshAsync` / `AppendAsync` / `LoadAssetContainerAsync` | ⚡ Partial       | [loading/scene-loader.ts](src/loading/scene-loader.ts)     |
-| glTF 2.0 + extensions                                                     | ✅ Full          | via Lite `loadGltf`                                        |
-| `.babylon`                                                                | ✅ Full          | via Lite `loadBabylon`                                     |
-| `AssetContainer`                                                          | ⚡ Partial       | loading (no flat mesh list yet)                            |
-| `AssetsManager`                                                           | ✅ Full          | [loading/assets-manager.ts](src/loading/assets-manager.ts) |
-| `OBJ` / `STL` / `FBX` / `BVH` loaders                                     | ❌ Not supported | throwing stub; not in Lite (convert to glTF)               |
+| BJS API                                                                   | Status          | Module                                                            |
+| ------------------------------------------------------------------------- | --------------- | ----------------------------------------------------------------- |
+| `SceneLoader.ImportMeshAsync` / `AppendAsync` / `LoadAssetContainerAsync` | ⚡ Partial       | [loading/scene-loader.ts](src/loading/scene-loader.ts)            |
+| glTF 2.0 + extensions                                                     | ✅ Full          | via Lite `loadGltf`                                               |
+| `.babylon`                                                                | ✅ Full          | via Lite `loadBabylon`                                            |
+| `AssetContainer`                                                          | ⚡ Partial       | loading (`.meshes` returns `LoadedMesh[]` with `getBoundingInfo`) |
+| `AssetsManager`                                                           | ✅ Full          | [loading/assets-manager.ts](src/loading/assets-manager.ts)        |
+| `OBJ` / `STL` / `FBX` / `BVH` loaders                                     | ❌ Not supported | throwing stub; not in Lite (convert to glTF)                      |
 
 ## Animation
 
-| BJS API                                                     | Status    | Module                                                   |
-| ----------------------------------------------------------- | --------- | -------------------------------------------------------- |
-| Easing functions (`SineEase`, `CubicEase`, `BounceEase`, …) | ✅ Full    | [animations/easing.ts](src/animations/easing.ts)         |
-| `Animation` (keyframe model + CPU `evaluate`)               | ✅ Full    | [animations/animation.ts](src/animations/animation.ts)   |
-| `Animatable` / `scene.beginDirectAnimation`                 | ⚡ Partial | animation (CPU per-frame evaluation; no weight blending) |
-| `AnimationGroup`                                            | ⚡ Partial | animation (structural; native manager drives playback)   |
-| Animation weights / cross-fade / additive                   | ⚡ Partial | native APIs                                              |
+| BJS API                                                     | Status    | Module                                                                   |
+| ----------------------------------------------------------- | --------- | ------------------------------------------------------------------------ |
+| Easing functions (`SineEase`, `CubicEase`, `BounceEase`, …) | ✅ Full    | [animations/easing.ts](src/animations/easing.ts)                         |
+| `Animation` (keyframe model + CPU `evaluate`)               | ✅ Full    | [animations/animation.ts](src/animations/animation.ts)                   |
+| `Animatable` / `scene.beginDirectAnimation`                 | ⚡ Partial | animation (CPU per-frame evaluation; no weight blending)                 |
+| `AnimationGroup` (single BJS type; structural + loaded)     | ⚡ Partial | animation (loaded groups seek/freeze via Lite; structural state tracked) |
+| Animation weights / cross-fade / additive                   | ⚡ Partial | native APIs                                                              |
 
 ## Bones / Skeletons / Morph
 
@@ -298,10 +299,8 @@ for reader context but are not part of the audited surface.
 
 ## Not yet wrapped (Lite supports — wrappers planned)
 
-Thin instances, geospatial camera, the ribbon/tube/extrude `MeshBuilder`
-primitives, `VertexData.applyToMesh` (build a mesh from CPU vertex data),
-loader-populated `result.meshes` + per-mesh `getBoundingInfo` (for model-framing
-scenes), weighted `AnimationGroup` blending, and an auto-dispatching
+Geospatial camera, `VertexData.applyToMesh` (build a mesh from CPU vertex data),
+weighted / additive `AnimationGroup` blending, and an auto-dispatching
 `ActionManager` (needs a unified Lite pointer pipe). These exist in Lite and are
 candidate rows for the next audit passes — until wrapped they either carry a
 `🔧`/`⚡` row or none, which the skill's completeness gate flags.
