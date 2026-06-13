@@ -1,3 +1,5 @@
+import { F32 } from "../engine/typed-arrays.js";
+import { BU } from "../engine/gpu-flags.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { RenderTargetSignature } from "../engine/render-target.js";
 import type { DrawBinding, DrawUpdateContext, Renderable } from "../render/renderable.js";
@@ -69,7 +71,7 @@ interface BillboardRenderableInternal extends Renderable {
 }
 
 export function buildBillboardRenderable(engine: EngineContext, system: BillboardSpriteSystem): { renderable: Renderable; dispose: () => void } {
-    const indexBuffer = createMappedBuffer(engine, BILLBOARD_INDEX_DATA, GPUBufferUsage.INDEX);
+    const indexBuffer = createMappedBuffer(engine, BILLBOARD_INDEX_DATA, BU.INDEX);
     const uniformBuffer = createEmptyUniformBuffer(engine, BILLBOARD_SYSTEM_UBO_BYTES, `${system._orientation}-billboard-system-ubo`);
     const instanceBuffer = createBillboardInstanceBuffer(engine._device, system, `${system._orientation}-billboard-instances`);
     const fx = _getBillboardFxHook()?.createLayerFx(engine, `${system._orientation}-billboard-fx-ubo`, system) ?? null;
@@ -94,8 +96,8 @@ export function buildBillboardRenderable(engine: EngineContext, system: Billboar
         _centerVersion: -1,
         _drawableCount: 0,
         _uboUploaded: false,
-        _lastUbo: new Float32Array(BILLBOARD_SYSTEM_UBO_BYTES / 4),
-        _scratchUbo: new Float32Array(BILLBOARD_SYSTEM_UBO_BYTES / 4),
+        _lastUbo: new F32(BILLBOARD_SYSTEM_UBO_BYTES / 4),
+        _scratchUbo: new F32(BILLBOARD_SYSTEM_UBO_BYTES / 4),
         _fx: fx,
         _disposed: false,
         _worldCenter: [0, 0, 0],
@@ -178,6 +180,16 @@ function uploadSystem(renderable: BillboardRenderableInternal, context: DrawUpda
         renderable._uploadedSorted = false;
     }
     const camera = context._camera;
+    const useFloatingOrigin = renderable._engine.useFloatingOrigin && camera != null;
+    let foX = 0;
+    let foY = 0;
+    let foZ = 0;
+    if (useFloatingOrigin) {
+        const wm = camera!.worldMatrix;
+        foX = wm[12]!;
+        foY = wm[13]!;
+        foZ = wm[14]!;
+    }
     if (renderable._system._depthMode === "transparent" && camera) {
         const cameraViewMatrix = getViewMatrix(camera);
         if (
@@ -186,17 +198,45 @@ function uploadSystem(renderable: BillboardRenderableInternal, context: DrawUpda
             renderable._uploadedCamera !== camera ||
             renderable._uploadedCameraViewVersion !== camera.worldMatrixVersion
         ) {
-            uploadSortedBillboardInstances(renderable._engine._device, renderable._system, renderable._instanceBuffer, renderable._instanceSortScratch, cameraViewMatrix);
+            uploadSortedBillboardInstances(
+                renderable._engine._device,
+                renderable._system,
+                renderable._instanceBuffer,
+                renderable._instanceSortScratch,
+                cameraViewMatrix,
+                foX,
+                foY,
+                foZ
+            );
             renderable._uploadedVersion = renderable._system._version;
             renderable._uploadedCamera = camera;
             renderable._uploadedCameraViewVersion = camera.worldMatrixVersion;
             renderable._uploadedSorted = true;
         }
     } else {
-        const uploadedVersion = renderable._uploadedSorted ? -1 : renderable._uploadedVersion;
-        renderable._uploadedVersion = uploadBillboardInstances(renderable._engine._device, renderable._system, renderable._instanceBuffer, uploadedVersion);
-        renderable._uploadedCamera = null;
-        renderable._uploadedCameraViewVersion = -1;
+        let uploadedVersion = renderable._uploadedSorted ? -1 : renderable._uploadedVersion;
+        // Under floating origin the eye-relative anchors depend on the live camera
+        // offset, so force a full re-upload whenever the camera (offset) has moved.
+        if (useFloatingOrigin && (renderable._uploadedCamera !== camera || renderable._uploadedCameraViewVersion !== camera!.worldMatrixVersion)) {
+            uploadedVersion = -1;
+        }
+        renderable._uploadedVersion = uploadBillboardInstances(
+            renderable._engine._device,
+            renderable._system,
+            renderable._instanceBuffer,
+            uploadedVersion,
+            foX,
+            foY,
+            foZ,
+            renderable._instanceSortScratch
+        );
+        if (useFloatingOrigin) {
+            renderable._uploadedCamera = camera!;
+            renderable._uploadedCameraViewVersion = camera!.worldMatrixVersion;
+        } else {
+            renderable._uploadedCamera = null;
+            renderable._uploadedCameraViewVersion = -1;
+        }
         renderable._uploadedSorted = false;
     }
     buildBillboardSystemUbo(renderable._system, renderable._scratchUbo);

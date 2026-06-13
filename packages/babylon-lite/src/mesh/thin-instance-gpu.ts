@@ -1,6 +1,8 @@
 /** Thin instance GPU buffer sync — dynamically loaded only by scenes with thin instances.
  *  Keeps the standard renderable chunk unchanged for scenes without thin instances. */
 
+import { F32 } from "../engine/typed-arrays.js";
+import { BU } from "../engine/gpu-flags.js";
 import type { ThinInstanceData } from "./thin-instance.js";
 import type { EngineContext } from "../engine/engine.js";
 import { packMat4IntoF32 } from "../math/pack-mat4-into-f32.js";
@@ -26,7 +28,7 @@ export function syncThinInstanceGpuData(engine: EngineContext, ti: ThinInstanceD
                 // buffer as a read-only storage buffer for thin-instance picking,
                 // so it must be storage-capable even when compute culling is off
                 // (otherwise the whole pick pass is invalidated → nothing is pickable).
-                usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE,
+                usage: BU.VERTEX | BU.COPY_DST | BU.STORAGE,
             });
             ti._gpuBufferStorage = needsStorage;
             bufferRecreated = true;
@@ -37,7 +39,7 @@ export function syncThinInstanceGpuData(engine: EngineContext, ti: ThinInstanceD
         if (dirtyMax > dirtyMin) {
             const minByte = dirtyMin * 64;
             const maxByte = dirtyMax * 64;
-            if (ti.matrices instanceof Float32Array) {
+            if (ti.matrices instanceof F32) {
                 // Fast path: F32 source — direct byte copy, no per-instance pack.
                 device.queue.writeBuffer(ti._gpuBuffer, minByte, ti.matrices.buffer, ti.matrices.byteOffset + minByte, maxByte - minByte);
             } else {
@@ -47,7 +49,7 @@ export function syncThinInstanceGpuData(engine: EngineContext, ti: ThinInstanceD
                 // and grown when capacity grows; never per-frame allocated.
                 const neededFloats = ti._capacity * 16;
                 if (!ti._uploadF32 || ti._uploadF32.length < neededFloats) {
-                    ti._uploadF32 = new Float32Array(neededFloats);
+                    ti._uploadF32 = new F32(neededFloats);
                 }
                 const upload = ti._uploadF32;
                 for (let i = dirtyMin; i < dirtyMax; i++) {
@@ -64,15 +66,24 @@ export function syncThinInstanceGpuData(engine: EngineContext, ti: ThinInstanceD
     if (hasColor && ti.colors) {
         if (ti._colorVersion !== ti._colorGpuVersion || ti._colorGpuBufferStorage !== needsStorage) {
             const colorByteSize = ti.count * 16;
+            let colorRecreated = false;
             if (!ti._colorGpuBuffer || ti._colorGpuBuffer.size < colorByteSize || ti._colorGpuBufferStorage !== needsStorage) {
                 ti._colorGpuBuffer?.destroy();
                 ti._colorGpuBuffer = device.createBuffer({
                     size: Math.max(ti._capacity * 16, 4),
-                    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST | (needsStorage ? GPUBufferUsage.STORAGE : 0),
+                    usage: BU.VERTEX | BU.COPY_DST | (needsStorage ? BU.STORAGE : 0),
                 });
                 ti._colorGpuBufferStorage = needsStorage;
+                colorRecreated = true;
             }
-            device.queue.writeBuffer(ti._colorGpuBuffer, 0, ti.colors.buffer, ti.colors.byteOffset, colorByteSize);
+            // Upload only the dirty colour range (mirrors the matrix path) — full range on (re)create.
+            const cMin = colorRecreated ? 0 : ti._colorDirtyMin;
+            const cMax = colorRecreated ? ti.count : Math.min(ti._colorDirtyMax, ti.count);
+            if (cMax > cMin) {
+                device.queue.writeBuffer(ti._colorGpuBuffer, cMin * 16, ti.colors.buffer, ti.colors.byteOffset + cMin * 16, (cMax - cMin) * 16);
+            }
+            ti._colorDirtyMin = ti.count;
+            ti._colorDirtyMax = 0;
             ti._colorGpuVersion = ti._colorVersion;
         }
     }

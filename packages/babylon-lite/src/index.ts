@@ -2,8 +2,12 @@
 // Tree-shakable: import only what you use.
 
 // ─── Core ────────────────────────────────────────────────────────────
-export { createEngine, startEngine, stopEngine, resizeEngine, setEngineSize, disposeEngine, VERSION } from "./engine/engine.js";
+export { createEngine, startEngine, stopEngine, renderFrame, resizeEngine, setEngineSize, disposeEngine, VERSION } from "./engine/engine.js";
 export type { EngineContext, EngineOptions, RenderCanvas } from "./engine/engine.js";
+export { createSurface, disposeSurface, resizeSurface, setSurfaceSize } from "./engine/surface.js";
+export type { SurfaceContext, SurfaceOptions } from "./engine/surface.js";
+export { captureScreenshot } from "./engine/screenshot.js";
+export type { Screenshot } from "./engine/screenshot.js";
 export {
     createSceneContext,
     createDefaultCamera,
@@ -42,11 +46,23 @@ export { createRenderTask, removeMeshFromTask } from "./frame-graph/render-task.
 export { createImageProcessingTask } from "./frame-graph/image-processing-task.js";
 export type { ImageProcessingSource, ImageProcessingTaskConfig } from "./frame-graph/image-processing-task.js";
 export type { PostProcessTask, PostProcessTaskSettings, PostProcessAlphaMode, PostProcessSamplingMode } from "./frame-graph/post-process-task.js";
+export { createCopyToTextureTask } from "./frame-graph/copy-to-texture-task.js";
+export type { CopyToTextureTask, CopyToTextureTaskConfig } from "./frame-graph/copy-to-texture-task.js";
+export { createGeometryRendererTask } from "./frame-graph/geometry-renderer-task.js";
+export type { GeometryRendererTask, GeometryRendererTaskConfig, GeometryRendererTextureDescription } from "./frame-graph/geometry-renderer-task.js";
+export { GeometryTextureType } from "./frame-graph/geometry-types.js";
 export { createShadowTask } from "./frame-graph/shadow-task.js";
 export type { ShadowTask } from "./frame-graph/shadow-task.js";
 export type { RenderTarget, RenderTargetDescriptor } from "./engine/render-target.js";
 export { createRenderTarget } from "./engine/render-target.js";
 export { createRenderTargetTexture } from "./texture/rtt.js";
+// Pooled GPU samplers (same descriptor → same GPUSampler). Public so consumers building their own
+// sampled-texture wrappers around managed render targets don't have to reach into `engine._device`.
+export { getOrCreateSampler, clearSamplerCache } from "./resource/gpu-pool.js";
+// acquireTexture/releaseTexture let a consumer register the lifetime of its OWN GPU texture in Lite's
+// ref-count pool, so a texture it creates (e.g. a mipped render texture for a Hi-Z pyramid) survives a
+// ShaderMaterial's per-version release/acquire cycle instead of being destroyed at count 0.
+export { acquireTexture, releaseTexture } from "./resource/gpu-pool.js";
 export { enableSceneTransmission, enableRenderTaskTransmission } from "./frame-graph/transmission.js";
 export type { TransmissionOptions, SceneColorGrab } from "./frame-graph/transmission.js";
 
@@ -69,15 +85,37 @@ export { createExtractHighlightsPostProcessTask } from "./post-process/extract-h
 export type { ExtractHighlightsPostProcessTask, ExtractHighlightsPostProcessTaskConfig } from "./post-process/extract-highlights.js";
 export { createChromaticAberrationPostProcessTask } from "./post-process/chromatic-aberration.js";
 export type { ChromaticAberrationPostProcessTask, ChromaticAberrationPostProcessTaskConfig } from "./post-process/chromatic-aberration.js";
+export { createCircleOfConfusionPostProcessTask } from "./post-process/circle-of-confusion.js";
+export type { CircleOfConfusionPostProcessTask, CircleOfConfusionPostProcessTaskConfig } from "./post-process/circle-of-confusion.js";
 export { createBloomPostProcessTask } from "./post-process/bloom.js";
 export type { BloomPostProcessTask, BloomPostProcessTaskConfig } from "./post-process/bloom.js";
+export { createDepthOfFieldPostProcessTask, DepthOfFieldBlurLevel } from "./post-process/depth-of-field.js";
+export type { DepthOfFieldPostProcessTask, DepthOfFieldPostProcessTaskConfig } from "./post-process/depth-of-field.js";
 
 // ─── Camera ──────────────────────────────────────────────────────────
 export { createArcRotateCamera } from "./camera/arc-rotate.js";
 export { attachControl, setCameraLimits } from "./camera/arc-rotate-controls.js";
-export type { ArcRotateCameraLimits } from "./camera/arc-rotate-controls.js";
+export type { AttachControlOptions, ArcRotateCameraLimits } from "./camera/arc-rotate-controls.js";
 export { createFreeCamera } from "./camera/free-camera.js";
 export { attachFreeControl } from "./camera/free-camera-controls.js";
+
+// Geospatial (globe-orbit) camera
+export {
+    createGeospatialCamera,
+    setGeospatialOrientation,
+    computeLocalBasis,
+    computeLookAtFromYawPitch,
+    computeYawPitchFromLookAt,
+    clampCenterFromPoles,
+    normalizeRadians,
+} from "./camera/geospatial-camera.js";
+export type { GeospatialCamera, GeospatialCameraOptions, GeospatialOrientation } from "./camera/geospatial-camera.js";
+export { createGeospatialLimits, getEffectivePitchMax, clampZoomDistance } from "./camera/geospatial-limits.js";
+export type { GeospatialLimits } from "./camera/geospatial-limits.js";
+export { attachGeospatialControls } from "./camera/geospatial-camera-controls.js";
+export type { GeospatialControlOptions } from "./camera/geospatial-camera-controls.js";
+export { flyGeospatialCameraToAsync } from "./camera/geospatial-camera-fly.js";
+export type { GeospatialFlyOptions } from "./camera/geospatial-camera-fly.js";
 
 // ─── Lights ──────────────────────────────────────────────────────────
 export { createHemisphericLight } from "./light/hemispheric.js";
@@ -107,9 +145,18 @@ export {
     createExtrudeShape,
     createMeshFromData,
     updateMeshPositions,
+    updateMeshNormals,
+    updateMeshColors,
+    updateMeshUvs,
+    updateMeshUv2,
+    updateMeshTangents,
+    resizeMeshGeometry,
+    invalidateRenderBundles,
 } from "./mesh/mesh-factories.js";
 export { createSphereData } from "./mesh/create-sphere.js";
 export type { SphereMeshData } from "./mesh/create-sphere.js";
+export { createCylinderData } from "./mesh/create-cylinder.js";
+export type { CylinderData } from "./mesh/create-cylinder.js";
 export { createTorusKnotData } from "./mesh/create-torus-knot.js";
 export type { TorusKnotData, TorusKnotOptions } from "./mesh/create-torus-knot.js";
 export { createCsgFromMesh, csgSubtract, csgIntersect, csgUnion, createMeshFromCsg } from "./mesh/csg.js";
@@ -119,8 +166,8 @@ export type { Csg2Solid } from "./mesh/csg2.js";
 
 // ─── Textures ────────────────────────────────────────────────────────
 export { createSolidTexture2D } from "./texture/solid-texture.js";
-export { createTexture2DFromPixels, updateTexture2DFromPixels } from "./texture/pixels-texture.js";
-export type { PixelsTexture2DOptions } from "./texture/pixels-texture.js";
+export { createTexture2DFromPixels, updateTexture2DFromPixels, createRenderTexture2D } from "./texture/pixels-texture.js";
+export type { PixelsTexture2DOptions, RenderTexture2DOptions } from "./texture/pixels-texture.js";
 export { loadKtxTexture2D } from "./texture/ktx-loader.js";
 export { loadBasisTexture2D } from "./texture/basis-loader.js";
 
@@ -129,10 +176,12 @@ export { createStandardMaterial } from "./material/standard/create-standard-mate
 export { createStandardNoColorMaterialView } from "./material/standard/no-color-view.js";
 export { createPbrMaterial } from "./material/pbr/pbr-material.js";
 export { createShaderMaterial, setShaderUniform, setShaderTexture, setShaderFloat, setShaderVector3, setShaderMatrix } from "./material/shader/shader-material.js";
+export { createShaderNoColorMaterialView } from "./material/shader/no-color-view.js";
 export { createGridMaterial } from "./material/grid/grid-material.js";
 export type { GridMaterialOptions, GridVec3 } from "./material/grid/grid-material.js";
 export { createPbrNoColorMaterialView } from "./material/pbr/no-color-view.js";
 export { parseNodeMaterialFromSnippet } from "./material/node/node-material.js";
+export { loadNodeBlockEmitterWithGeometry } from "./material/node/node-geometry-block-loader.js";
 export { createNodeNoColorMaterialView } from "./material/node/no-color-view.js";
 export type { NodeMaterial, NodeInputHandle, ParseNodeMaterialOptions } from "./material/node/node-material.js";
 export { createMaterialView } from "./material/material-view.js";
@@ -204,6 +253,8 @@ export { createPropertyAnimationClip, createPropertyAnimationGroup } from "./ani
 export type { AnimationTask, AnimationTaskCategoryHandler, AnimationTaskOptions, AnimationTaskUpdate } from "./animation/animation-manager.js";
 export { createMorphTargets, setMorphTargetWeights } from "./morph/create-morph-targets.js";
 export type { MorphTargetData } from "./animation/types.js";
+export { bakeVat, attachVat } from "./vat/vat-baker.js";
+export type { VatBakeResult, VatClip, VatHandle } from "./vat/vat-baker.js";
 
 // ─── Math ────────────────────────────────────────────────────────────
 export { normalizeVec3 } from "./math/normalize-vec3.js";
@@ -214,14 +265,19 @@ export { mat4Compose } from "./math/mat4-compose.js";
 export { mat4Invert } from "./math/mat4-invert.js";
 export type { Vec3, Vec3Tuple, Mat4 } from "./math/types.js";
 
+// ─── Color ───────────────────────────────────────────────────────────
+export { linearToSrgbByte, srgbByteToLinear, packedSrgbToLinearRgba } from "./math/color.js";
+
 // ─── Thin Instances ──────────────────────────────────────────────────
 export {
     addThinInstance,
     removeThinInstance,
     setThinInstanceMatrix,
     setThinInstances,
+    setThinInstanceCount,
     flushThinInstances,
     setThinInstanceColors,
+    setThinInstanceColor,
     enableThinInstanceGpuCulling,
 } from "./mesh/thin-instance.js";
 export type { ThinInstanceData } from "./mesh/thin-instance.js";
@@ -302,10 +358,36 @@ export { CAP_NONE, CAP_START, CAP_END, CAP_ALL } from "./mesh/create-tube.js";
 
 // ─── Picking ─────────────────────────────────────────────────────────
 export { createGpuPicker, pickAsync, disposePicker } from "./picking/gpu-picker.js";
-export type { GpuPicker } from "./picking/gpu-picker.js";
+export type { GpuPicker, PickOptions } from "./picking/gpu-picker.js";
 export type { PickingInfo } from "./picking/picking-info.js";
 export { enableDetailedPicking } from "./picking/detailed-picking.js";
 export { getPickedNormal, getPickedUV } from "./picking/picking-helpers.js";
+
+// ─── Gizmos ──────────────────────────────────────────────────────────
+export { createUtilityLayer, registerUtilityLayer, disposeUtilityLayer } from "./gizmo/utility-layer.js";
+export type { UtilityLayer, UtilityLayerOptions } from "./gizmo/utility-layer.js";
+export { createPointerDrag, registerPointerDrag, isGizmoInteracting, isGizmoDragging, isGizmoPickPending } from "./gizmo/pointer-drag.js";
+export type { PointerDrag, PointerDragOptions, PointerDragStartEvent, PointerDragMoveEvent, PointerDragEndEvent } from "./gizmo/pointer-drag.js";
+export { createAxisDragGizmo, attachAxisDragGizmoToNode, disposeAxisDragGizmo } from "./gizmo/axis-drag-gizmo.js";
+export type { AxisDragGizmo, AxisDragGizmoOptions } from "./gizmo/axis-drag-gizmo.js";
+export { createPlaneDragGizmo, attachPlaneDragGizmoToNode, disposePlaneDragGizmo } from "./gizmo/plane-drag-gizmo.js";
+export type { PlaneDragGizmo, PlaneDragGizmoOptions } from "./gizmo/plane-drag-gizmo.js";
+export { createPlaneRotationGizmo, attachPlaneRotationGizmoToNode, disposePlaneRotationGizmo } from "./gizmo/plane-rotation-gizmo.js";
+export type { PlaneRotationGizmo, PlaneRotationGizmoOptions } from "./gizmo/plane-rotation-gizmo.js";
+export { createAxisScaleGizmo, attachAxisScaleGizmoToNode, disposeAxisScaleGizmo } from "./gizmo/axis-scale-gizmo.js";
+export type { AxisScaleGizmo, AxisScaleGizmoOptions } from "./gizmo/axis-scale-gizmo.js";
+export { createPositionGizmo, attachPositionGizmoToNode, setPositionGizmoLocalCoordinates, disposePositionGizmo } from "./gizmo/composite-gizmos.js";
+export type { PositionGizmo, PositionGizmoOptions } from "./gizmo/composite-gizmos.js";
+export { createRotationGizmo, attachRotationGizmoToNode, setRotationGizmoLocalCoordinates, disposeRotationGizmo } from "./gizmo/composite-gizmos.js";
+export type { RotationGizmo, RotationGizmoOptions } from "./gizmo/composite-gizmos.js";
+export { createScaleGizmo, attachScaleGizmoToNode, setScaleGizmoLocalCoordinates, disposeScaleGizmo } from "./gizmo/composite-gizmos.js";
+export type { ScaleGizmo, ScaleGizmoOptions } from "./gizmo/composite-gizmos.js";
+export { createCameraGizmo, attachCameraGizmoToCamera, disposeCameraGizmo } from "./gizmo/camera-gizmo.js";
+export type { CameraGizmo, CameraGizmoOptions } from "./gizmo/camera-gizmo.js";
+export { createLightGizmo, attachLightGizmoToLight, disposeLightGizmo } from "./gizmo/light-gizmo.js";
+export type { LightGizmo, LightGizmoOptions } from "./gizmo/light-gizmo.js";
+export { createBoundingBoxGizmo, attachBoundingBoxGizmoToNode, disposeBoundingBoxGizmo } from "./gizmo/bounding-box-gizmo.js";
+export type { BoundingBoxGizmo, BoundingBoxGizmoOptions } from "./gizmo/bounding-box-gizmo.js";
 
 // ─── Low-level (for advanced/custom rendering) ──────────────────────
 export type { EnvironmentTextures } from "./loader-env/load-env.js";
@@ -316,7 +398,7 @@ export type { RenderTargetSignature } from "./engine/render-target.js";
 export type { SpriteAtlas, SpriteFrame, SpriteSampling, GridAtlasOptions, LoadAtlasOptions } from "./sprite/shared/sprite-atlas.js";
 export { createGridSpriteAtlas, loadSpriteAtlas } from "./sprite/shared/sprite-atlas.js";
 export type { SpriteAtlasFrameSource, SpriteAtlasPackOptions } from "./sprite/shared/sprite-atlas-packer.js";
-export { createSpriteAtlasFromFrames } from "./sprite/shared/sprite-atlas-packer.js";
+export { appendSpriteAtlasFrames, createSpriteAtlasFromFrames } from "./sprite/shared/sprite-atlas-packer.js";
 export type { Sprite2DLayer, Sprite2DLayerOptions, Sprite2DProps, Sprite2DView, Sprite2DDepthMode, SpriteBlendMode } from "./sprite/sprite-2d.js";
 export type { SpriteBlendDescriptor } from "./sprite/sprite-blend.js";
 export { spriteBlendAlpha, spriteBlendPremultiplied, spriteBlendAdditive, spriteBlendMultiply } from "./sprite/sprite-blend.js";
@@ -404,12 +486,39 @@ export {
     removeSpriteRendererLayer,
     registerSpriteRenderer,
     unregisterSpriteRenderer,
+    setSpriteRendererTarget,
     disposeSpriteRenderer,
 } from "./sprite/sprite-renderer.js";
+
+// ─── Text ────────────────────────────────────────────────────────────
+export type { Font } from "./text/font.js";
+export { loadFont, createFontFromBuffer } from "./text/font.js";
+export { extractGlyphCurves, cubicToQuadratics } from "./text/glyph-extraction.js";
+export type { TextLayoutOptions } from "./text/layout.js";
+export type { GlyphStorage, CurveSetId, QuadCurve, GlyphBounds, GlyphCurves } from "./text/glyph-storage.js";
+export { createGlyphStorage, updateGlyphStorage, disposeGlyphStorage } from "./text/glyph-storage.js";
+export type { TextData, PlacedGlyph, GlyphRun, TextDataUpdate } from "./text/text-data.js";
+export { createTextData, updateTextData, disposeTextData } from "./text/text-data.js";
+export type { DefaultTextData } from "./text/default-text-data.js";
+export { createDefaultTextData, updateDefaultTextData, disposeDefaultTextData } from "./text/default-text-data.js";
+export type { TextRenderableOptions, TextRenderable } from "./text/text-renderable.js";
+export { createTextRenderable, disposeTextRenderable, addTextRenderable } from "./text/text-renderable.js";
+export type { TextLayer, TextLayerOptions, TextRenderer, TextRendererOptions } from "./text/text-renderer.js";
+export {
+    createTextLayer,
+    setTextLayerPosition,
+    createTextRenderer,
+    addTextRendererLayer,
+    removeTextRendererLayer,
+    registerTextRenderer,
+    unregisterTextRenderer,
+    disposeTextRenderer,
+} from "./text/text-renderer.js";
 
 // ─── Physics ─────────────────────────────────────────────────────────
 export {
     createHavokWorld,
+    enableHavokFloatingOrigin,
     createPhysicsBody,
     createPhysicsShape,
     createPhysicsAggregate,
@@ -422,6 +531,14 @@ export {
     setPhysicsBodyShape,
     setPhysicsShapeMaterial,
     setPhysicsBodyMass,
+    applyPhysicsImpulse,
+    setPhysicsBodyLinearVelocity,
+    getPhysicsBodyLinearVelocity,
+    setPhysicsBodyAngularVelocity,
+    setPhysicsBodyMotionType,
+    setPhysicsBodyTransform,
+    removePhysicsBody,
+    releasePhysicsShape,
     disposePhysics,
     PhysicsShapeType,
     PhysicsMotionType,

@@ -29,7 +29,7 @@
 - Significantly faster and smaller than standard Babylon.js.
 - Avoid heavy OOP overhead where data-oriented design or flat arrays serve GPU buffer transfers better.
 - **We do NOT copy Babylon.js code.** We understand the math, then write the minimum code that produces identical pixels.
-- **Bundle size = runtime bytes only, excluding local NME payload modules.** The bundle size tests measure JS bytes actually fetched at runtime via Playwright network interception, then subtract local `*-nme.ts` graph payload modules so scene-specific checked-in NME data is not counted as engine/runtime code. Dynamic-import chunks that are never loaded (e.g. animation-group for a static model, pbr-reflectance-ext when no reflectance textures) are correctly excluded. Unused chunks in the build output are fine — only fetched counted bytes matter.
+- **Bundle size = runtime bytes only, excluding local NME payload modules and the `text-shaper` vendor dependency.** The bundle size tests measure JS bytes actually fetched at runtime via Playwright network interception, then subtract (a) local `*-nme.ts` graph payload modules so scene-specific checked-in NME data is not counted as engine/runtime code, and (b) the `text-shaper` shaping library so the default-layout text path is not charged for an upstream vendor blob (callers using `GlyphStorage` + `TextData` with their own layout pay zero for it). Dynamic-import chunks that are never loaded (e.g. animation-group for a static model, pbr-reflectance-ext when no reflectance textures) are correctly excluded. Unused chunks in the build output are fine — only fetched counted bytes matter.
 - **WGSL minification in production bundles.** The bundle build (scripts/bundle-scenes-core.ts) uses a Vite plugin that strips comments, `\r`, leading whitespace, and blank lines from `?raw` WGSL imports. Inline WGSL template strings in TypeScript source should also use minimal whitespace (no leading indentation). This keeps production bundles lean while source stays readable.
 - **Never parse emitted WGSL strings for structured data.** The WGSL minification plugin rewrites inline template-literal content (collapses whitespace, strips newlines). Code that splits WGSL strings on `\n` or uses regex to extract field names WILL break in production bundles even if it works in dev mode. Always use typed interfaces (e.g. `UboField[]`, `BindingDecl[]`) for structured data; reserve WGSL strings for shader code only.
 - **Zero module-level side effects.** No module may execute code at import time (no `register*()` calls, no `globalThis` mutations, no `new Map()`, no `new WeakMap()`, no `new Set()`). Module-level `const cache = new Map()` **kills tree-shaking** — the bundler treats the allocation as a side-effect and cannot eliminate the module even when nothing is imported from it. Use lazy-init instead: `let cache: Map | null = null; function getCache() { if (!cache) cache = new Map(); return cache; }`. Typed-array constants (`new Float32Array([...])`) are safe — bundlers treat them as pure. Caches must auto-invalidate on device change (compare `device !== _cachedDevice`). Material-swap rebuilders are discovered via `_buildGroup._rebuildSingle` property, not a global registry.
@@ -46,7 +46,7 @@
 
 - **All public interfaces are pure state — no attached methods.**
 - `EngineContext`, `SceneContext`, `Camera`, `ArcRotateCamera`, `FreeCamera`, `Mesh`, `LightBase`, etc. are plain data objects.
-- Behaviour is provided by standalone functions that accept the interface as their first argument: `registerScene(engine, scene)`, `startEngine(engine)`, `addToScene(scene, entity)`, `getViewMatrix(camera)`, etc.
+- Behaviour is provided by standalone functions that accept the interface as their first argument: `registerScene(scene)`, `startEngine(engine)`, `addToScene(scene, entity)`, `getViewMatrix(camera)`, etc.
 - This maximises tree-shakability: unused functions are fully eliminated. Methods on interfaces cannot be tree-shaken.
 - **Do NOT split a type into a public `Foo` + a `FooInternal` companion** just to hide implementation details. Put the internal members directly on `Foo` and tag each with `/** @internal */`. The build's d.ts trimming pass (`vite.config.ts` → `trim-internal-dts`) re-runs api-extractor with `publicTrimmedFilePath` to strip every `@internal` declaration — and any top-level imports kept alive only by them — from `dist/index.d.ts`. Public consumers see a clean type; internal code reads the field directly with full TypeScript typing. File-local `*Internal` interfaces are still fine for cases where the internal shape is genuinely a separate concrete type (e.g. an internal subtype not tied 1:1 to the public type), but the "two types for one thing" pattern is forbidden.
 - **When a property needs a different access modifier in the public API than internally** (e.g. `readonly` externally but mutable internally), expose **two fields on the same object** that alias the same value: a public `foo` with the public-facing modifier and an `@internal` `_foo` with the internal one. Both point to the same underlying storage (typically the same array/object reference). Example: `SpriteRenderer.layers: readonly Sprite2DLayer[]` paired with `_layers: Sprite2DLayer[]`, where the factory sets `layers = _layers = opts.layers.slice()`. Internal mutation goes through `sr._layers.push(...)`; public consumers can only read `sr.layers`. The d.ts trim pass strips `_layers` entirely. Avoid this pattern unless you actually need divergent modifiers — most internal members just need `@internal`.
@@ -91,6 +91,16 @@
 
 - Always aim for the long term solution. Never hack a fix
 
+### 8. Y-Orientation Convention (Mandatory)
+
+Babylon Lite uses BJS Y-up UVs throughout the mesh and shader stack (V=1 is top of texture). WebGPU samplers are Y-down (V=0 is row 0 = top of texture in storage). A V-axis conversion is therefore required somewhere on every textured surface. The codebase performs that conversion through exactly **two paths**; do not invent new ones:
+
+1. **Raster upload-flip.** `texture-2d.ts` calls `copyExternalImageToTexture({ flipY: invertY=true })` on image-decoded uploads (PNG/JPG/HTMLImage/Bitmap). The decoded image data is row 0 = top; the upload writes row 0 = bottom into the GPU texture, so subsequent `textureSample(uv)` with V=1=top reads back upright. This is the default for raster `loadTexture2D`.
+
+2. **Material-side V-flip via `invertY`.** Codec-decoded textures (ktx2/basis) store data row 0 = top in the GPU texture (no upload flip) and set `Texture2D.invertY = true`. Standard/PBR pipelines see this flag and emit a UV V-flip in the material shader (`v = 1 - v`, implemented as a `(scaleY, offsetY)` UV uniform in `standard-pipeline.ts`). This works for clamp/repeat/mirror-repeat where UVs land in `[0, 1]`; for clamp-to-edge with UVs outside `[0, 1]` the V-flip is still safe by codebase convention (atlases always stay in `[0, 1]`).
+
+Offscreen render targets are **not** a third path. As of PR #192 they render **upright** (Y-up, no projection flip, `frontFace = "ccw"` throughout) — the old per-RT Y-flip convention (`RenderTargetDescriptor.flipY` / `RenderTargetSignature._flipY`, `viewProj` row-1 negation, `frontFace = "cw"`) has been removed. Downstream sampling of an RT is handled uniformly by the copy-to-texture / post-process vertex shaders' single unconditional UV convention, so there is no per-RT `flipY` field to set or override.
+
 ---
 
 ## Target API Shape
@@ -111,7 +121,7 @@ async function main(): Promise<void> {
     camera.alpha += Math.PI;
 
     // Materials own their renderable builders — no explicit pipeline building
-    await registerScene(engine, scene); // builds deferred work, partitions renderables
+    await registerScene(scene); // builds deferred work, partitions renderables
     await startEngine(engine); // resolves after first frame rendered; renders all registered scenes
 }
 ```

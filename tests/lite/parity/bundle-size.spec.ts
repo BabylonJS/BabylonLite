@@ -3,9 +3,10 @@
  *
  * Loads each bundle-sceneN.html in a real browser via Playwright, intercepts
  * network responses, and measures only the JS bytes actually fetched at
- * runtime, minus local *-nme.ts graph payload modules. Dynamic-import chunks
- * that are never loaded (e.g. animation-group for a static model) are correctly
- * excluded.
+ * runtime, minus (a) local *-nme.ts graph payload modules and (b) the
+ * `text-shaper` shaping library (vendor dep that callers using their own
+ * layout pay zero for). Dynamic-import chunks that are never loaded
+ * (e.g. animation-group for a static model) are correctly excluded.
  *
  * Requires pre-built bundles in lab/public/bundle/.
  * The Playwright webServer config (playwright.config.ts) starts the dev server
@@ -178,7 +179,7 @@ for (const scene of SCENES) {
         // Mesh-only / non-sprite 3D scenes must NOT pull in any sprite code.
         // List excludes the sprite-using scenes (50-59 and the 92-95 custom-shader scenes). 60-series are
         // NME demos with no sprites; 1-40 are core 3D.
-        const SPRITE_USING_IDS = new Set([50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 92, 93, 94, 95, 96, 97, 98]);
+        const SPRITE_USING_IDS = new Set([50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 92, 93, 94, 95, 96, 97, 98, 205, 206]);
         if (!SPRITE_USING_IDS.has(scene.id)) {
             const offenders = runtimeModules.filter((id) => /\/sprite\/.*\.ts$/.test(id));
             expect(offenders, `non-sprite ${scene.slug} must not load sprite modules; found: ${offenders.join(", ")}`).toEqual([]);

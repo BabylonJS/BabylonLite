@@ -1,5 +1,8 @@
+import { U8 } from "../engine/typed-arrays.js";
+import { BU, SS } from "../engine/gpu-flags.js";
 import { registerRenderingContext, unregisterRenderingContext } from "../engine/engine.js";
 import type { EngineContext, RenderingContext } from "../engine/engine.js";
+import type { SurfaceContext } from "../engine/surface.js";
 import type { RenderTarget, RenderTargetSignature } from "../engine/render-target.js";
 import { buildRenderTarget, createRenderTarget, disposeRenderTarget, targetSignatureKey } from "../engine/render-target.js";
 import type { SceneContext } from "../scene/scene-core.js";
@@ -121,7 +124,7 @@ export interface EffectRenderer extends RenderingContext {
 }
 
 interface EffectRendererInternal extends EffectRenderer {
-    _engine: EngineContext;
+    _surface: SurfaceContext;
     _effect: EffectWrapperInternal;
     _clear: boolean;
     _rt: RenderTarget;
@@ -212,9 +215,9 @@ export function createEffectRenderTask(config: EffectRenderTaskConfig, engine: E
     const effect = config.effect as EffectWrapperInternal;
     const rt = config.target;
     config.clearColor ??= { r: 0, g: 0, b: 0, a: 1 };
-    const sampleCount = rt._descriptor.sampleCount ?? 1;
+    const sampleCount = rt._descriptor.samples ?? 1;
     const targetSignature: RenderTargetSignature = {
-        _colorFormat: rt._descriptor.colorFormat,
+        _colorFormat: rt._descriptor.format,
         _sampleCount: sampleCount,
     };
     const colorAttachment = { loadOp: "clear", storeOp: "store" } as GPURenderPassColorAttachment;
@@ -241,7 +244,7 @@ export function createEffectRenderTask(config: EffectRenderTaskConfig, engine: E
                 throw new Error(`EffectRenderTask "${task.name}" executed before record().`);
             }
             task._bindGroup = getEffectBindGroup(effect);
-            applyColorAttachmentState(task._colorAttachment, rt, eng, task._config.clear !== false, task._config.clearColor!);
+            applyColorAttachmentState(task._colorAttachment, rt, undefined, task._config.clear !== false, task._config.clearColor!);
             const pass = eng._currentEncoder.beginRenderPass(task._renderPassDescriptor);
             pass.setPipeline(pipeline);
             if (task._bindGroup) {
@@ -286,25 +289,23 @@ export function disposeEffectWrapper(wrapper: EffectWrapper): void {
  * Call `registerEffectRenderer` to start rendering, `unregisterEffectRenderer`
  * to pause, and `disposeEffectRenderer` to free GPU resources.
  */
-export function createEffectRenderer(engine: EngineContext, effect: EffectWrapper, options?: EffectRendererOptions): EffectRenderer {
-    const eng = engine as EngineContext;
+export function createEffectRenderer(surface: SurfaceContext, effect: EffectWrapper, options?: EffectRendererOptions): EffectRenderer {
+    const eng = surface.engine;
     const ew = effect as EffectWrapperInternal;
     const name = options?.name ?? effect.name;
     const clear = options?.clear !== false;
     const clearColor: GPUColorDict = options?.clearColor ?? { r: 0, g: 0, b: 0, a: 1 };
     const update = options?.update;
 
-    const rt = createRenderTarget({
-        label: `${name}-swapchain`,
-        colorFormat: eng.format,
-        sampleCount: eng.msaaSamples,
-        size: "canvas",
-        resolveToSwapchain: true,
-    });
+    // No MSAA → render straight into the single-sample surface scRT; MSAA →
+    // render into an MSAA colour RT and resolve into the scRT at end-of-pass.
+    const useMsaa = surface.msaaSamples > 1;
+    const rt = useMsaa ? createRenderTarget({ lbl: `${name}-msaa`, format: surface.format, samples: surface.msaaSamples, size: surface }) : surface.scRT;
+    const resolveRt = useMsaa ? surface.scRT : undefined;
 
     const targetSignature: RenderTargetSignature = {
-        _colorFormat: rt._descriptor.colorFormat,
-        _sampleCount: rt._descriptor.sampleCount ?? 1,
+        _colorFormat: rt._descriptor.format,
+        _sampleCount: rt._descriptor.samples ?? 1,
     };
 
     const colorAttachment: GPURenderPassColorAttachment = {
@@ -318,7 +319,7 @@ export function createEffectRenderer(engine: EngineContext, effect: EffectWrappe
         name,
         clearColor,
         _drawCallsPre: 0,
-        _engine: eng,
+        _surface: surface,
         _effect: ew,
         _clear: clear,
         _rt: rt,
@@ -335,9 +336,9 @@ export function createEffectRenderer(engine: EngineContext, effect: EffectWrappe
             if (er._disposed) {
                 return 0;
             }
-            ensureRtCanvasSize(er._rt, er._engine);
-            applyColorAttachmentState(er._colorAttachment, er._rt, er._engine, er._clear, er.clearColor);
-            const encoder = er._engine._currentEncoder;
+            ensureRtCanvasSize(er._rt);
+            applyColorAttachmentState(er._colorAttachment, er._rt, resolveRt, er._clear, er.clearColor);
+            const encoder = er._surface.engine._currentEncoder;
             if (!encoder) {
                 return 0;
             }
@@ -358,22 +359,22 @@ export function createEffectRenderer(engine: EngineContext, effect: EffectWrappe
             if (er._disposed) {
                 return;
             }
-            buildRenderTarget(er._rt, er._engine);
+            buildRenderTarget(er._rt, er._surface.engine);
         },
     };
     return er;
 }
 
-/** Register the effect renderer with its engine. Idempotent — a second call is a no-op. */
+/** Register the effect renderer with its surface. Idempotent — a second call is a no-op. */
 export function registerEffectRenderer(er: EffectRenderer): void {
     const internal = er as EffectRendererInternal;
     prepareEffectRenderer(internal);
-    registerRenderingContext(internal._engine, er);
+    registerRenderingContext(internal._surface, er);
 }
 
-/** Unregister the effect renderer from its engine. No-op if not registered. */
+/** Unregister the effect renderer from its surface. No-op if not registered. */
 export function unregisterEffectRenderer(er: EffectRenderer): void {
-    unregisterRenderingContext((er as EffectRendererInternal)._engine, er);
+    unregisterRenderingContext((er as EffectRendererInternal)._surface, er);
 }
 
 /** Unregister and free all GPU resources owned by the renderer. */
@@ -400,7 +401,7 @@ function createBindingSlots(wrapper: EffectWrapperInternal): void {
             const buffer = wrapper._engine._device.createBuffer({
                 label: `${wrapper.name}-${layout.name ?? layout.binding}-ubo`,
                 size: byteLength,
-                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+                usage: BU.UNIFORM | BU.COPY_DST,
             });
             wrapper._uniforms.push({ layout, buffer, byteLength });
         } else if (layout.kind === "texture") {
@@ -409,31 +410,26 @@ function createBindingSlots(wrapper: EffectWrapperInternal): void {
     }
 }
 
-function applyColorAttachmentState(att: GPURenderPassColorAttachment, rt: RenderTarget, eng: EngineContext, clear: boolean, clearColor: GPUColorDict): void {
+function applyColorAttachmentState(att: GPURenderPassColorAttachment, rt: RenderTarget, resolveRt: RenderTarget | undefined, clear: boolean, clearColor: GPUColorDict): void {
     att.clearValue = clearColor;
     att.loadOp = clear ? "clear" : "load";
-    if (rt._descriptor.resolveToSwapchain === true) {
-        if ((rt._descriptor.sampleCount ?? 1) > 1) {
-            att.view = rt._colorView!;
-            att.resolveTarget = eng._swapchainView;
-        } else {
-            att.view = eng._swapchainView;
-            att.resolveTarget = undefined;
-        }
-    } else {
-        att.view = rt._colorView!;
-        att.resolveTarget = undefined;
-    }
+    // Re-read each frame so a swapchain target (used as `rt` when single-sample, or as
+    // the MSAA `resolveRt`) picks up its fresh per-frame view.
+    att.view = rt._colorView!;
+    att.resolveTarget = resolveRt?._colorView ?? undefined;
 }
 
-function ensureRtCanvasSize(rt: RenderTarget, eng: EngineContext): void {
-    if (rt._descriptor.size !== "canvas") {
+function ensureRtCanvasSize(rt: RenderTarget): void {
+    const size = rt._descriptor.size;
+    if (!("canvas" in size)) {
         return;
     }
-    if (rt._width === eng.canvas.width && rt._height === eng.canvas.height) {
+    // Surface-sized RT: rebuild when the surface's canvas backing-store has resized.
+    const canvas = size.canvas;
+    if (rt._width === canvas.width && rt._height === canvas.height) {
         return;
     }
-    buildRenderTarget(rt, eng);
+    buildRenderTarget(rt, size.engine);
 }
 
 function getEffectPipeline(wrapper: EffectWrapperInternal, targetSignature: RenderTargetSignature): GPURenderPipeline {
@@ -497,7 +493,7 @@ function getBindGroupLayout(wrapper: EffectWrapperInternal): GPUBindGroupLayout 
 }
 
 function bindingLayoutEntry(layout: EffectBindingLayout): GPUBindGroupLayoutEntry {
-    const visibility = layout.visibility ?? GPUShaderStage.FRAGMENT;
+    const visibility = layout.visibility ?? SS.FRAGMENT;
     if (layout.kind === "uniform") {
         return { binding: layout.binding, visibility, buffer: { type: "uniform" } };
     }
@@ -580,9 +576,9 @@ function writeUniformSlot(wrapper: EffectWrapperInternal, slot: EffectUniformSlo
 
 function toBytes(data: ArrayBuffer | ArrayBufferView): Uint8Array {
     if (data instanceof ArrayBuffer) {
-        return new Uint8Array(data);
+        return new U8(data);
     }
-    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    return new U8(data.buffer, data.byteOffset, data.byteLength);
 }
 
 function isBufferData(data: ArrayBuffer | ArrayBufferView | Record<string | number, ArrayBuffer | ArrayBufferView>): data is ArrayBuffer | ArrayBufferView {

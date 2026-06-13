@@ -15,6 +15,8 @@
  *  (`createEsmDirectionalShadowGenerator` → directional ESM, `createPcfSpotlightShadowGenerator` → spot PCF).
  */
 
+import { F32 } from "../engine/typed-arrays.js";
+import { TU } from "../engine/gpu-flags.js";
 import type { DirectionalLight } from "../light/directional-light.js";
 import type { Mesh } from "../mesh/mesh.js";
 import type { EngineContext } from "../engine/engine.js";
@@ -24,9 +26,22 @@ import { ensurePcfShadowTaskState, preloadPcfShadowTaskState, renderPcfShadowMap
 
 // ─── Internal helpers ───────────────────────────────────────────────
 
-/** @internal Compute the PCF directional light view/projection matrix for ShadowTask. */
-function _computeDirectionalLightMatrix(light: DirectionalLight, casterMeshes: readonly Mesh[], orthoMinZ: number, orthoMaxZ: number): PcfLightMatrix {
-    const view = buildLightViewMatrix(light.direction.x, light.direction.y, light.direction.z, light.position.x, light.position.y, light.position.z);
+/** @internal Compute the PCF directional light view/projection matrix for ShadowTask.
+ *  Under floating-origin (`offX/offY/offZ` ≠ 0) the light view is built eye-relative
+ *  (offset subtracted from the light position) and the caster AABB corners are made
+ *  eye-relative too, so the returned view/viewProj match the eye-relative mesh world
+ *  matrices used by both the caster pass and the receiver shader. The projection bounds
+ *  are invariant under the offset (both light pos and corners shift by the same amount). */
+function _computeDirectionalLightMatrix(
+    light: DirectionalLight,
+    casterMeshes: readonly Mesh[],
+    orthoMinZ: number,
+    orthoMaxZ: number,
+    offX = 0,
+    offY = 0,
+    offZ = 0
+): PcfLightMatrix {
+    const view = buildLightViewMatrix(light.direction.x, light.direction.y, light.direction.z, light.position.x - offX, light.position.y - offY, light.position.z - offZ);
     let lMinX = Infinity,
         lMaxX = -Infinity,
         lMinY = Infinity,
@@ -39,9 +54,9 @@ function _computeDirectionalLightMatrix(light: DirectionalLight, casterMeshes: r
             const lx = ci & 1 ? bmax[0] : bmin[0];
             const ly = ci & 2 ? bmax[1] : bmin[1];
             const lz = ci & 4 ? bmax[2] : bmin[2];
-            const wx = world[0]! * lx + world[4]! * ly + world[8]! * lz + world[12]!;
-            const wy = world[1]! * lx + world[5]! * ly + world[9]! * lz + world[13]!;
-            const wz = world[2]! * lx + world[6]! * ly + world[10]! * lz + world[14]!;
+            const wx = world[0]! * lx + world[4]! * ly + world[8]! * lz + world[12]! - offX;
+            const wy = world[1]! * lx + world[5]! * ly + world[9]! * lz + world[13]! - offY;
+            const wz = world[2]! * lx + world[6]! * ly + world[10]! * lz + world[14]! - offZ;
             const vx = view[0]! * wx + view[4]! * wy + view[8]! * wz + view[12]!;
             const vy = view[1]! * wx + view[5]! * wy + view[9]! * wz + view[13]!;
             lMinX = Math.min(lMinX, vx);
@@ -65,7 +80,7 @@ function _computeDirectionalLightMatrix(light: DirectionalLight, casterMeshes: r
 
     const near = orthoMinZ;
     const far = orthoMaxZ;
-    const proj = new Float32Array(16);
+    const proj = new F32(16);
     proj[0] = 2 / (lMaxX - lMinX);
     proj[5] = 2 / (lMaxY - lMinY);
     proj[10] = 1 / (far - near);
@@ -107,9 +122,9 @@ export function createPcfDirectionalShadowGenerator(engine: EngineContext, _ligh
     const orthoMaxZ = cfg.orthoMaxZ ?? 10000;
     const forceRefreshEveryFrame = cfg.forceRefreshEveryFrame ?? false;
 
-    const _lightMatrix = new Float32Array(16);
-    const _shadowsInfo = new Float32Array([darkness, mapSize, 1.0 / mapSize, 0]);
-    const _depthValues = new Float32Array([0, 1]);
+    const _lightMatrix = new F32(16);
+    const _shadowsInfo = new F32([darkness, mapSize, 1.0 / mapSize, 0]);
+    const _depthValues = new F32([0, 1]);
     const { ubo: _shadowUBO } = createSharedShadowUBO(engine, _lightMatrix, _depthValues, _shadowsInfo);
     const _config: ShadowGenerator["_config"] = {
         _mapSize: mapSize,
@@ -125,7 +140,7 @@ export function createPcfDirectionalShadowGenerator(engine: EngineContext, _ligh
         _depthTexture: device.createTexture({
             size: { width: mapSize, height: mapSize },
             format: "depth32float",
-            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+            usage: TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING,
         }),
         _depthSampler: device.createSampler({
             compare: "less",
@@ -147,7 +162,9 @@ export function createPcfDirectionalShadowGenerator(engine: EngineContext, _ligh
         return state;
     };
     sg._renderShadowMap = (engine, state) => {
-        return renderPcfShadowMap(engine, sg, state as PcfTaskState, (casterMeshes) => _computeDirectionalLightMatrix(_light, casterMeshes, orthoMinZ, orthoMaxZ));
+        return renderPcfShadowMap(engine, sg, state as PcfTaskState, (casterMeshes, offX, offY, offZ) =>
+            _computeDirectionalLightMatrix(_light, casterMeshes, orthoMinZ, orthoMaxZ, offX, offY, offZ)
+        );
     };
     return sg;
 }

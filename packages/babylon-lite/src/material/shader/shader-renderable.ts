@@ -1,3 +1,5 @@
+import { F32, U32, I32, U8 } from "../../engine/typed-arrays.js";
+import { BU } from "../../engine/gpu-flags.js";
 import type { EngineContext } from "../../engine/engine.js";
 import type { SceneContext } from "../../scene/scene.js";
 import type { Mesh, MeshGPU } from "../../mesh/mesh.js";
@@ -105,7 +107,7 @@ function buildSingleShaderRenderable(scene: SceneContext, mesh: Mesh, material: 
 }
 
 function buildMaterialRenderables(scene: SceneContext, material: ShaderMaterial, meshes: readonly Mesh[], isOverride = false): Renderable[] {
-    const engine = scene.engine;
+    const engine = scene.surface.engine;
     const bindings = getOrCreateShaderPipelineBindings(engine, material);
     ensureCustomUbo(engine, material, bindings.customSpec);
     const packets = meshes.map((mesh) => createPacket(scene, material, bindings.systemSpec, mesh));
@@ -117,9 +119,9 @@ function buildMaterialRenderables(scene: SceneContext, material: ShaderMaterial,
 }
 
 function createPacket(scene: SceneContext, material: ShaderMaterial, systemSpec: UboSpec, mesh: Mesh): ShaderPacket {
-    const engine = scene.engine;
+    const engine = scene.surface.engine;
     const systemUBO = createEmptyUniformBuffer(engine, systemSpec._totalBytes, "shader-system-ubo");
-    const systemData = new Float32Array(systemSpec._totalBytes / 4);
+    const systemData = new F32(systemSpec._totalBytes / 4);
     writeSystemUniforms(systemData, systemSpec, material, mesh, scene.camera, engine.canvas.width || 1, engine.canvas.height || 1);
     engine._device.queue.writeBuffer(systemUBO, 0, systemData);
     const packet: ShaderPacket = {
@@ -146,7 +148,7 @@ function createOpaqueRenderable(scene: SceneContext, material: ShaderMaterial, p
         }
     }
     const update = (context: DrawUpdateContext): void => {
-        updateCustomUbo(scene.engine, material);
+        updateCustomUbo(scene.surface.engine, material);
         for (const packet of packets) {
             if (packet._disposed) {
                 continue;
@@ -193,7 +195,7 @@ function createTransparentRenderable(scene: SceneContext, material: ShaderMateri
         if (!isOverride && packet.mesh.material !== material) {
             return;
         }
-        updateCustomUbo(scene.engine, material);
+        updateCustomUbo(scene.surface.engine, material);
         updatePacket(scene, material, packet, context);
         const m = packet.mesh.worldMatrix as unknown as ArrayLike<number>;
         sortCenter[0] = m[12]!;
@@ -225,7 +227,7 @@ function createTransparentRenderable(scene: SceneContext, material: ShaderMateri
 }
 
 function updatePacket(scene: SceneContext, material: ShaderMaterial, packet: ShaderPacket, context: DrawUpdateContext): void {
-    const engine = scene.engine;
+    const engine = scene.surface.engine;
     const state = material as ShaderMaterialRenderState;
     writeSystemUniforms(packet.systemData, state._shaderBindings!.systemSpec, material, packet.mesh, context._camera ?? scene.camera, context.targetWidth, context.targetHeight);
     engine._device.queue.writeBuffer(packet.systemUBO, 0, packet.systemData as Float32Array<ArrayBuffer>);
@@ -278,7 +280,7 @@ function updateCustomUbo(engine: EngineContext, material: ShaderMaterial): void 
     if (!customSpec || !customUbo || !customData || state._shaderCustomVersion === material._uniformVersion) {
         return;
     }
-    const bytes = new Uint8Array(customData);
+    const bytes = new U8(customData);
     bytes.fill(0);
     for (const [name, slot] of material._uniformValues) {
         if (_isShaderSystemUniform(name)) {
@@ -295,14 +297,14 @@ function updateCustomUbo(engine: EngineContext, material: ShaderMaterial): void 
 
 function writeTypedValue(data: ArrayBuffer, offset: number, type: ShaderUniformType, value: Float32Array): void {
     if (type === "u32") {
-        new Uint32Array(data, offset, 1)[0] = value[0]!;
+        new U32(data, offset, 1)[0] = value[0]!;
         return;
     }
     if (type === "i32") {
-        new Int32Array(data, offset, 1)[0] = value[0]!;
+        new I32(data, offset, 1)[0] = value[0]!;
         return;
     }
-    new Float32Array(data, offset, value.length).set(value);
+    new F32(data, offset, value.length).set(value);
 }
 
 function createShaderBindGroup(engine: EngineContext, material: ShaderMaterial, systemUBO: GPUBuffer): GPUBindGroup {
@@ -435,7 +437,7 @@ function getZeroAttrBuffer(engine: EngineContext, gpu: MeshGPU, name: string): G
     }
     const vertexCount = gpu.positionBuffer.size / 12;
     const stride = name === "uv" || name === "uv2" ? 8 : name === "normal" ? 12 : 16;
-    const buffer = engine._device.createBuffer({ label: `shader-zero-${name}`, size: vertexCount * stride, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+    const buffer = engine._device.createBuffer({ label: `shader-zero-${name}`, size: vertexCount * stride, usage: BU.VERTEX | BU.COPY_DST });
     cache.set(name, buffer);
     return buffer;
 }

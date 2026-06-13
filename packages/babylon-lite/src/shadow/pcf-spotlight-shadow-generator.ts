@@ -15,6 +15,8 @@
  *   - usePercentageCloserFiltering = true (SM_PCF / shadow5 quality)
  */
 
+import { F32 } from "../engine/typed-arrays.js";
+import { TU } from "../engine/gpu-flags.js";
 import type { SpotLight } from "../light/spot-light.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { ShadowGenerator } from "./shadow-generator.js";
@@ -35,11 +37,14 @@ export interface PcfSpotlightShadowGeneratorConfig {
     forceRefreshEveryFrame?: boolean;
 }
 
-/** @internal Compute the PCF spot-light view/projection matrix for ShadowTask. */
-export function _computeSpotLightMatrix(light: SpotLight, near: number, far: number): PcfLightMatrix {
-    const view = buildLightViewMatrix(light.direction.x, light.direction.y, light.direction.z, light.position.x, light.position.y, light.position.z);
+/** @internal Compute the PCF spot-light view/projection matrix for ShadowTask.
+ *  Under floating-origin (`offX/offY/offZ` ≠ 0) the light view is built eye-relative
+ *  (offset subtracted from the spot position) so the returned view/viewProj match the
+ *  eye-relative mesh world matrices used by both the caster pass and the receiver shader. */
+export function _computeSpotLightMatrix(light: SpotLight, near: number, far: number, offX = 0, offY = 0, offZ = 0): PcfLightMatrix {
+    const view = buildLightViewMatrix(light.direction.x, light.direction.y, light.direction.z, light.position.x - offX, light.position.y - offY, light.position.z - offZ);
     const f = 1.0 / Math.tan(light.angle * 0.5);
-    const proj = new Float32Array(16);
+    const proj = new F32(16);
     proj[0] = f;
     proj[5] = f;
     proj[10] = far / (far - near);
@@ -69,7 +74,7 @@ export function createPcfSpotlightShadowGenerator(engine: EngineContext, _light:
     const _depthTexture = device.createTexture({
         size: { width: mapSize, height: mapSize },
         format: "depth32float",
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        usage: TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING,
     });
     // --- Comparison sampler for PCF ---
     const _depthSampler = device.createSampler({
@@ -81,9 +86,9 @@ export function createPcfSpotlightShadowGenerator(engine: EngineContext, _light:
     // Shadow params UBO (depthScale slot reused as texel size for PCF offsets)
     const _shadowParamsUBO = createShadowParamsUBO(engine, bias, 1.0 / mapSize);
 
-    const _lightMatrix = new Float32Array(16);
-    const _shadowsInfo = new Float32Array([darkness, mapSize, 1.0 / mapSize, 0]);
-    const _depthValues = new Float32Array([0, far]);
+    const _lightMatrix = new F32(16);
+    const _shadowsInfo = new F32([darkness, mapSize, 1.0 / mapSize, 0]);
+    const _depthValues = new F32([0, far]);
 
     // Shared shadow UBO for all receiver meshes (96 bytes)
     const { ubo: _shadowUBO } = createSharedShadowUBO(engine, _lightMatrix, _depthValues, _shadowsInfo);
@@ -113,7 +118,7 @@ export function createPcfSpotlightShadowGenerator(engine: EngineContext, _light:
         return state;
     };
     sg._renderShadowMap = (engine, state) => {
-        return renderPcfShadowMap(engine, sg, state as PcfTaskState, () => _computeSpotLightMatrix(_light, near, far));
+        return renderPcfShadowMap(engine, sg, state as PcfTaskState, (_casterMeshes, offX, offY, offZ) => _computeSpotLightMatrix(_light, near, far, offX, offY, offZ));
     };
     return sg;
 }

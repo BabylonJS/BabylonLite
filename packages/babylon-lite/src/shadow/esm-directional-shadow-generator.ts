@@ -5,6 +5,8 @@
  * task hooks used by frame-graph/shadow-task.ts.
  */
 
+import { F32 } from "../engine/typed-arrays.js";
+import { TU, SS } from "../engine/gpu-flags.js";
 import type { Camera } from "../camera/camera.js";
 import type { EngineContext } from "../engine/engine.js";
 import type { DirectionalLight } from "../light/directional-light.js";
@@ -81,7 +83,11 @@ interface EsmTaskState extends ShadowTaskInternalState {
     _cameraVersion: number;
     _lastCasterVersion: number;
     _lastLightVersion: number;
+    /** @internal Floating-origin offset version (active camera worldMatrixVersion) at last shadow-map render; -1 when never rendered. */
+    _lastFoVersion: number;
     _casterMeshes: readonly Mesh[];
+    /** @internal Owning scene — used to read the live floating-origin offset (camera world position). */
+    _scene: SceneContext;
 }
 
 type StandardEsmFactory = typeof import("../material/standard/esm-shadow-view.js").createStandardEsmShadowMaterialView;
@@ -142,8 +148,16 @@ async function preloadEsmShadowTaskState(casterMeshes: readonly Mesh[]): Promise
 }
 
 /** @internal Compute the ESM directional light view/projection matrix for ShadowTask. */
-function _computeDirectionalLightMatrix(light: DirectionalLight, casterMeshes: readonly Mesh[], orthoMinZ: number, orthoMaxZ: number): EsmLightMatrix {
-    const view = buildLightViewMatrix(light.direction.x, light.direction.y, light.direction.z, light.position.x, light.position.y, light.position.z);
+function _computeDirectionalLightMatrix(
+    light: DirectionalLight,
+    casterMeshes: readonly Mesh[],
+    orthoMinZ: number,
+    orthoMaxZ: number,
+    offX = 0,
+    offY = 0,
+    offZ = 0
+): EsmLightMatrix {
+    const view = buildLightViewMatrix(light.direction.x, light.direction.y, light.direction.z, light.position.x - offX, light.position.y - offY, light.position.z - offZ);
     let lMinX = Infinity;
     let lMaxX = -Infinity;
     let lMinY = Infinity;
@@ -156,9 +170,9 @@ function _computeDirectionalLightMatrix(light: DirectionalLight, casterMeshes: r
             const lx = ci & 1 ? bmax[0]! : bmin[0]!;
             const ly = ci & 2 ? bmax[1]! : bmin[1]!;
             const lz = ci & 4 ? bmax[2]! : bmin[2]!;
-            const wx = world[0]! * lx + world[4]! * ly + world[8]! * lz + world[12]!;
-            const wy = world[1]! * lx + world[5]! * ly + world[9]! * lz + world[13]!;
-            const wz = world[2]! * lx + world[6]! * ly + world[10]! * lz + world[14]!;
+            const wx = world[0]! * lx + world[4]! * ly + world[8]! * lz + world[12]! - offX;
+            const wy = world[1]! * lx + world[5]! * ly + world[9]! * lz + world[13]! - offY;
+            const wz = world[2]! * lx + world[6]! * ly + world[10]! * lz + world[14]! - offZ;
             const vx = view[0]! * wx + view[4]! * wy + view[8]! * wz + view[12]!;
             const vy = view[1]! * wx + view[5]! * wy + view[9]! * wz + view[13]!;
             lMinX = Math.min(lMinX, vx);
@@ -182,7 +196,7 @@ function _computeDirectionalLightMatrix(light: DirectionalLight, casterMeshes: r
 
     const near = orthoMinZ;
     const far = orthoMaxZ;
-    const proj = new Float32Array(16);
+    const proj = new F32(16);
     proj[0] = 2 / (lMaxX - lMinX);
     proj[5] = 2 / (lMaxY - lMinY);
     proj[10] = 1 / (far - near);
@@ -303,7 +317,9 @@ function ensureEsmShadowTaskState(
         _cameraVersion: 0,
         _lastCasterVersion: -1,
         _lastLightVersion: -1,
+        _lastFoVersion: -1,
         _casterMeshes: casterMeshes,
+        _scene: scene,
     };
 
     for (const mesh of casterMeshes) {
@@ -324,11 +340,16 @@ function renderEsmShadowMap(engine: EngineContext, sg: ShadowGenerator, state: E
     const casterMeshes = state._casterMeshes;
     const casterVersion = casterVersionSum(casterMeshes);
     const lightVersion = sg._light.worldMatrixVersion;
-    if (!sg._config._forceRefreshEveryFrame && casterVersion === state._lastCasterVersion && lightVersion === state._lastLightVersion) {
+    const foCam = engine.useFloatingOrigin ? state._scene.camera : null;
+    const foVersion = foCam ? foCam.worldMatrixVersion : 0;
+    const offX = foCam ? foCam.worldMatrix[12]! : 0;
+    const offY = foCam ? foCam.worldMatrix[13]! : 0;
+    const offZ = foCam ? foCam.worldMatrix[14]! : 0;
+    if (!sg._config._forceRefreshEveryFrame && casterVersion === state._lastCasterVersion && lightVersion === state._lastLightVersion && foVersion === state._lastFoVersion) {
         return 0;
     }
 
-    const matrix = _computeDirectionalLightMatrix(sg._light as DirectionalLight, casterMeshes, sg._config._orthoMinZ!, sg._config._orthoMaxZ!);
+    const matrix = _computeDirectionalLightMatrix(sg._light as DirectionalLight, casterMeshes, sg._config._orthoMinZ!, sg._config._orthoMaxZ!, offX, offY, offZ);
     if (shadowMatrixChanged(sg._lightMatrix, matrix._viewProj)) {
         packMat4IntoF32(sg._lightMatrix, matrix._viewProj, 0);
         sg._version++;
@@ -338,6 +359,7 @@ function renderEsmShadowMap(engine: EngineContext, sg: ShadowGenerator, state: E
     updateShadowCamera(state, matrix);
     state._lastCasterVersion = casterVersion;
     state._lastLightVersion = lightVersion;
+    state._lastFoVersion = foVersion;
 
     let draws = state._task.execute?.() ?? 0;
     const encoder = engine._currentEncoder;
@@ -441,31 +463,31 @@ export function createEsmDirectionalShadowGenerator(engine: EngineContext, _ligh
     const esmTexture = device.createTexture({
         size: { width: mapSize, height: mapSize },
         format: "rgba16float",
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        usage: TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING,
     });
     const depthBuf = device.createTexture({
         size: { width: mapSize, height: mapSize },
         format: "depth32float",
-        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        usage: TU.RENDER_ATTACHMENT,
     });
     const blurTexH = device.createTexture({
         size: { width: blurSize, height: blurSize },
         format: "rgba16float",
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        usage: TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING,
     });
     const blurTexV = device.createTexture({
         size: { width: blurSize, height: blurSize },
         format: "rgba16float",
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        usage: TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING,
     });
 
     const blurVert = device.createShaderModule({ code: blurVertSrc });
     const blurFrag = device.createShaderModule({ code: createShadowBlurFragmentWGSL(blurKernel) });
     const blurBGL = device.createBindGroupLayout({
         entries: [
-            { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
-            { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
-            { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+            { binding: 0, visibility: SS.VERTEX | SS.FRAGMENT, buffer: { type: "uniform" } },
+            { binding: 1, visibility: SS.FRAGMENT, texture: { sampleType: "float" } },
+            { binding: 2, visibility: SS.FRAGMENT, sampler: { type: "filtering" } },
         ],
     });
     const blurPipeline = device.createRenderPipeline({
@@ -476,7 +498,7 @@ export function createEsmDirectionalShadowGenerator(engine: EngineContext, _ligh
     });
 
     const blurSampler = getBilinearSampler(engine);
-    const blurHData = new Float32Array([1.0 / blurSize, 0, 0, 0]);
+    const blurHData = new F32([1.0 / blurSize, 0, 0, 0]);
     const blurHUBO = createUniformBuffer(engine, blurHData);
     const blurHBG = device.createBindGroup({
         layout: blurBGL,
@@ -486,7 +508,7 @@ export function createEsmDirectionalShadowGenerator(engine: EngineContext, _ligh
             { binding: 2, resource: blurSampler },
         ],
     });
-    const blurVData = new Float32Array([0, 1.0 / blurSize, 0, 0]);
+    const blurVData = new F32([0, 1.0 / blurSize, 0, 0]);
     const blurVUBO = createUniformBuffer(engine, blurVData);
     const blurVBG = device.createBindGroup({
         layout: blurBGL,
@@ -497,9 +519,9 @@ export function createEsmDirectionalShadowGenerator(engine: EngineContext, _ligh
         ],
     });
 
-    const _lightMatrix = new Float32Array(16);
-    const _shadowsInfo = new Float32Array([darkness, 0, depthScale, frustumEdgeFalloff]);
-    const _depthValues = new Float32Array([0, 1]);
+    const _lightMatrix = new F32(16);
+    const _shadowsInfo = new F32([darkness, 0, depthScale, frustumEdgeFalloff]);
+    const _depthValues = new F32([0, 1]);
     const { ubo: _shadowUBO, data: shadowUboData } = createSharedShadowUBO(engine, _lightMatrix, _depthValues, _shadowsInfo);
     const _depthTexture = blurTexV;
     const _depthSampler = blurSampler;

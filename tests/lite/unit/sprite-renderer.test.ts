@@ -115,10 +115,21 @@ function makeMockEngine(): { engine: EngineContext; counters: MockCounters } {
         _renderFn: null,
         _renderingContexts: [],
         _currentEncoder: {} as GPUCommandEncoder,
-        _swapchainView: {} as GPUTextureView,
+        scRT: {
+            _colorView: {},
+            _colorTexture: {},
+            _depthTexture: null,
+            _depthView: null,
+            _descriptor: { format: "bgra8unorm", samples: 1, size: { width: 800, height: 600 } },
+            _width: 0,
+            _height: 0,
+            _eager: true,
+        } as unknown as import("../../../packages/babylon-lite/src/engine/render-target").RenderTarget,
         _currentDelta: 0,
         _cbs: [],
-    } as EngineContext;
+    } as unknown as EngineContext;
+    const _surfaces = [eng];
+    Object.assign(eng, { engine: eng, surfaces: _surfaces, _surfaces });
 
     return { engine: eng, counters };
 }

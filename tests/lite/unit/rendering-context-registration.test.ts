@@ -37,7 +37,7 @@ function makeMockEngine(): EngineContext {
         },
     } as unknown as GPUDevice;
 
-    return {
+    const eng = {
         canvas: {} as HTMLCanvasElement,
         msaaSamples: 4,
         drawCallCount: 0,
@@ -52,10 +52,22 @@ function makeMockEngine(): EngineContext {
         _renderFn: null,
         _renderingContexts: [],
         _currentEncoder: {} as GPUCommandEncoder,
-        _swapchainView: {} as GPUTextureView,
+        scRT: {
+            _colorView: {},
+            _colorTexture: {},
+            _depthTexture: null,
+            _depthView: null,
+            _descriptor: { format: "bgra8unorm", samples: 1, size: { width: 800, height: 600 } },
+            _width: 0,
+            _height: 0,
+            _eager: true,
+        } as unknown as import("../../../packages/babylon-lite/src/engine/render-target").RenderTarget,
         _currentDelta: 0,
         _cbs: [],
-    } as EngineContext;
+    } as unknown as EngineContext;
+    const _surfaces = [eng];
+    Object.assign(eng, { engine: eng, surfaces: _surfaces, _surfaces });
+    return eng;
 }
 
 function makeRenderingContext(): RenderingContext {
@@ -96,12 +108,12 @@ describe("registerScene / unregisterScene", () => {
         const scene = createSceneContext(engine);
         const list = engine._renderingContexts;
 
-        await registerScene(engine, scene);
-        await registerScene(engine, scene);
+        await registerScene(scene);
+        await registerScene(scene);
 
         expect(list).toEqual([scene]);
 
-        unregisterScene(engine, scene);
+        unregisterScene(scene);
 
         expect(list).toEqual([]);
     });
@@ -111,7 +123,7 @@ describe("registerScene / unregisterScene", () => {
         const scene = createSceneContext(engine);
         const list = engine._renderingContexts;
 
-        await registerScene(engine, scene);
+        await registerScene(scene);
         disposeScene(scene);
 
         expect(list).toEqual([]);
@@ -135,7 +147,7 @@ describe("registerScene / unregisterScene", () => {
         };
 
         addTaskAtStart(scene, task);
-        await registerScene(engine, scene);
+        await registerScene(scene);
 
         expect(recorded).toBe(true);
     });

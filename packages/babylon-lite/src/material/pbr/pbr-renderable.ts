@@ -5,6 +5,7 @@
  *  work to `buildSinglePbrRenderable`. Both initial build and material-swap
  *  rebuilds go through the same single-mesh function. */
 
+import { F32 } from "../../engine/typed-arrays.js";
 import type { EngineContext } from "../../engine/engine.js";
 import type { SceneContext } from "../../scene/scene.js";
 import type { Mesh } from "../../mesh/mesh.js";
@@ -50,7 +51,7 @@ interface SingleLightWgslModule {
 
 /** Build PBR Renderable(s) + a SceneUniformUpdater from PBR meshes. */
 export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], envTextures: EnvironmentTextures | undefined): Promise<MeshGroupBuildResult> {
-    const engine = scene.engine;
+    const engine = scene.surface.engine;
     const device = engine._device;
     // Per-size scratch buffers for material UBO re-writes (zero allocation per frame).
     const materialScratch = new Map<number, Float32Array>();
@@ -328,7 +329,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         const bindings = getOrCreatePbrBindings(engine, features, features2, meshFeatures, sceneFeatures, composed, `${lightMode}:${singleLightType}${vbKey}`);
 
         // Mesh UBO (world matrix at offset 0; spec.totalBytes covers any extra fields).
-        const meshUboData = new Float32Array(composed._meshUboSpec._totalBytes / 4);
+        const meshUboData = new F32(composed._meshUboSpec._totalBytes / 4);
         const _packMeshWorld = engine._makePackMeshWorld?.(s as SceneContext) ?? packMat4IntoF32;
         _packMeshWorld(meshUboData, mesh.worldMatrix, 0, 0);
         writeMeshLightSelection(mesh, s.lights, meshUboData);
@@ -336,8 +337,8 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
 
         // Material UBO.
         const materialSpec = composed._materialUboSpec!;
-        const matInitData = new Float32Array(materialSpec._totalBytes / 4);
-        writeMaterialData(matInitData, mat, materialSpec);
+        const matInitData = new F32(materialSpec._totalBytes / 4);
+        _writeMaterialData(matInitData, mat, materialSpec);
         const materialUBO = createUniformBuffer(engine, matInitData);
 
         const needsTaskRefraction = !!mat.transmissive && (features2 & PBR2_HAS_REFRACTION) !== 0;
@@ -410,12 +411,12 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
                 _lastUboVersion = uboVersion;
                 let data = materialScratch.get(materialSpec._totalBytes);
                 if (!data) {
-                    data = new Float32Array(materialSpec._totalBytes / 4);
+                    data = new F32(materialSpec._totalBytes / 4);
                     materialScratch.set(materialSpec._totalBytes, data);
                 } else {
                     data.fill(0);
                 }
-                writeMaterialData(data, mat, materialSpec);
+                _writeMaterialData(data, mat, materialSpec);
                 device.queue.writeBuffer(materialUBO, 0, data.buffer, 0, data.byteLength);
             }
             // Upload any dirty thin-instance matrices/colors every frame (version-gated; see the
@@ -462,12 +463,14 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
             if (hasVertexColor && gpu.colorBuffer) {
                 pass.setVertexBuffer(slot++, gpu.colorBuffer, vb?._c?._offset);
             }
-            if (mesh.skeleton) {
-                pass.setVertexBuffer(slot++, mesh.skeleton.jointsBuffer);
-                pass.setVertexBuffer(slot++, mesh.skeleton.weightsBuffer);
-                if (mesh.skeleton.joints1Buffer && mesh.skeleton.weights1Buffer) {
-                    pass.setVertexBuffer(slot++, mesh.skeleton.joints1Buffer);
-                    pass.setVertexBuffer(slot++, mesh.skeleton.weights1Buffer);
+            // Skinning vertex buffers: live skeleton OR baked VAT (same field names, mutually exclusive).
+            const skin = mesh.skeleton ?? mesh.vat;
+            if (skin) {
+                pass.setVertexBuffer(slot++, skin.jointsBuffer);
+                pass.setVertexBuffer(slot++, skin.weightsBuffer);
+                if (skin.joints1Buffer && skin.weights1Buffer) {
+                    pass.setVertexBuffer(slot++, skin.joints1Buffer);
+                    pass.setVertexBuffer(slot++, skin.weights1Buffer);
                 }
             }
 
@@ -516,12 +519,46 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
 
     const renderables = meshes.map((m) => rebuildSingle(scene, m));
 
+    // Stash the per-scene PBR context on the scene so the PBR geometry-renderer
+    // path can reuse the same composer / env / shadow setup without re-running
+    // the scene-wide scan above. Stored on the scene (not on pbrGroupBuilder)
+    // to avoid a static cycle: pbrGroupBuilder lives in pbr-material.ts which
+    // already dynamic-imports this module.
+    (scene as SceneContext & { _pbrGeomContext?: _PbrGeometryContext })._pbrGeomContext = {
+        _composePbr: composePbr,
+        _sceneFeatures: sceneFeatures,
+        _envTextures: envTextures ?? null,
+        _shadowLights: shadowLights,
+        _syncThinInstanceBuffers: _syncThinInstanceBuffers,
+    };
+
     scene._disposables.push(
         () => clearPbrPipelineCache(),
         () => clearSamplerCache(engine)
     );
 
     return { renderables, rebuildSingle };
+}
+
+/** @internal Per-scene PBR context stashed on the singleton `pbrGroupBuilder`
+ *  after `buildPbrRenderables` runs. Consumed by the PBR geometry-renderer
+ *  module — the only way to reuse the per-scene `composePbr` closure (env,
+ *  shadows, lights, anisotropy, sub-features) without duplicating the heavy
+ *  scene-wide dep-gathering scan. Overwritten on each scene build, matching
+ *  the same pattern used for `_rebuildSingle`. */
+export interface _PbrGeometryContext {
+    /** @internal */
+    readonly _composePbr: ReturnType<typeof createPbrComposer>;
+    /** @internal */
+    readonly _sceneFeatures: number;
+    /** @internal */
+    readonly _envTextures: EnvironmentTextures | null;
+    /** @internal */
+    readonly _shadowLights: readonly { readonly lightIndex: number; readonly shadowType: "esm" | "pcf" | "csm"; readonly gen: ShadowGenerator }[];
+    /** @internal */
+    readonly _syncThinInstanceBuffers:
+        | ((engine: EngineContext, ti: ThinInstanceData, pass: GPURenderPassEncoder | GPURenderBundleEncoder, slot: number, hasColor: boolean) => number)
+        | null;
 }
 
 function toSingleLightType(type: string): SingleLightType {
@@ -555,10 +592,10 @@ async function importSingleLightWgsl(type: SingleLightType): Promise<SingleLight
     return import("./fragments/singlelight-point-wgsl.js");
 }
 
-/** Write material properties into a pre-allocated Float32Array.
+/** @internal Write material properties into a pre-allocated Float32Array.
  *  Core fields only; per-extension slices are contributed by registered
- *  writers. */
-function writeMaterialData(data: Float32Array, material: PbrMaterialProps, spec: import("../../shader/fragment-types.js").UboSpec): void {
+ *  writers. Exported for the PBR geometry-renderer path. */
+export function _writeMaterialData(data: Float32Array, material: PbrMaterialProps, spec: import("../../shader/fragment-types.js").UboSpec): void {
     data[0] = material.environmentIntensity ?? 1.0;
     data[1] = material.directIntensity ?? 1.0;
     data[2] = material.reflectance ?? 0.04;

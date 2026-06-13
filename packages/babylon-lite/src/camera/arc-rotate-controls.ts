@@ -1,6 +1,33 @@
 import type { ArcRotateCamera } from "./arc-rotate.js";
 import type { SceneContext } from "../scene/scene.js";
 
+/**
+ * Optional hooks that let an {@link attachControl} caller defer pointer
+ * gestures to an external interactor (typically a gizmo pointer-drag
+ * dispatcher) so the camera doesn't orbit when the user is interacting with
+ * something else on top of it.  All fields are optional; omit them to keep
+ * the default behavior (the camera always handles its own pointer input).
+ */
+export interface AttachControlOptions {
+    /** Optional predicate consulted on every pointer-down.  When it returns
+     *  false the camera ignores that gesture (no rotate / pan).  Used to defer
+     *  to gizmo interaction so pressing or dragging a gizmo doesn't also orbit
+     *  the camera. */
+    shouldHandlePointerDown?: (event: PointerEvent) => boolean;
+    /** Optional predicate consulted on pointer-move while a camera drag is in
+     *  progress.  When it returns true the camera ABORTS the current drag.
+     *  Because gizmo picking is async, a press on a gizmo may not be known at
+     *  pointer-down time (so the camera optimistically starts orbiting); once
+     *  the gizmo drag is recognised a frame later this lets the gizmo reclaim
+     *  the gesture and undo the (not-yet-applied) orbit. */
+    isExternalDragActive?: () => boolean;
+    /** Optional predicate consulted on pointer-move.  While it returns true the
+     *  camera DEFERS its orbit (consumes the move without applying it) — used
+     *  to wait out an in-flight async gizmo pick so a press that lands on a
+     *  gizmo never produces a stray orbit, regardless of pick latency. */
+    isExternalPickPending?: () => boolean;
+}
+
 /** Orbit limits for an {@link ArcRotateCamera}. Omit a field to leave that bound
  *  unbounded; pass an explicit `undefined` to clear a previously-set bound. */
 export interface ArcRotateCameraLimits {
@@ -128,7 +155,7 @@ export function setCameraLimits(camera: ArcRotateCamera, limits: ArcRotateCamera
  * Camera stays plain data — this function reads/writes its properties.
  * Returns a cleanup function to remove all listeners and the beforeRender hook.
  */
-export function attachControl(camera: ArcRotateCamera, canvas: HTMLCanvasElement, scene?: SceneContext): () => void {
+export function attachControl(camera: ArcRotateCamera, canvas: HTMLCanvasElement, scene?: SceneContext, options?: AttachControlOptions): () => void {
     const angularSensibility = 1000; // Babylon default
     const panningSensibility = 50; // Babylon default (pixels per unit)
     const wheelPrecision = 3; // Babylon default
@@ -148,6 +175,11 @@ export function attachControl(camera: ArcRotateCamera, canvas: HTMLCanvasElement
     let pinchStartRadius = 0;
 
     function onPointerDown(e: PointerEvent): void {
+        // Defer to gizmo interaction (or any other guard) when requested — the
+        // camera shouldn't orbit when the press lands on a gizmo.
+        if (options?.shouldHandlePointerDown && !options.shouldHandlePointerDown(e)) {
+            return;
+        }
         canvas.setPointerCapture(e.pointerId);
         lastX = e.clientX;
         lastY = e.clientY;
@@ -176,6 +208,26 @@ export function attachControl(camera: ArcRotateCamera, canvas: HTMLCanvasElement
         }
 
         if (!isDragging && !isPanning) {
+            return;
+        }
+
+        // A gizmo drag was recognised (asynchronously) after we optimistically
+        // started orbiting — abort and discard any pending inertial offset so
+        // the camera doesn't move on top of the gizmo interaction.
+        if (options?.isExternalDragActive?.()) {
+            isDragging = false;
+            isPanning = false;
+            camera.inertialAlphaOffset = 0;
+            camera.inertialBetaOffset = 0;
+            camera.inertialPanningX = 0;
+            camera.inertialPanningY = 0;
+            return;
+        }
+        // A gizmo pointer-down pick is still in flight — defer (consume this
+        // move without orbiting) until we know whether the press hit a gizmo.
+        // lastX/Y are already advanced above so no delta is applied once it
+        // resolves.
+        if (options?.isExternalPickPending?.()) {
             return;
         }
 

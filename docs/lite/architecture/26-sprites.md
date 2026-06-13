@@ -11,7 +11,7 @@
 >
 > The engine grows a small registration list. Two kinds of things implement
 > `RenderingContext` and can be registered with an engine: a `SceneContext`
-> (via `registerScene(engine, scene)`) and a `SpriteRenderer` (via
+> (via `registerScene(scene)`) and a `SpriteRenderer` (via
 > `registerSpriteRenderer(sr)`). Each is driven once per frame by
 > `startEngine(engine)` in registration order. Pure-2D experiences
 > (Lottie/Rive-class apps) create one or more `SpriteRenderer`s and
@@ -219,7 +219,7 @@ are just `createAxisLockedBillboardSystem(atlas, [0, 1, 0], opts)`.
 
 **Decision: the engine has a single registration list. Two kinds of
 things implement `RenderingContext` and can be registered with an
-engine: a `SceneContext` (via `registerScene(engine, scene)`) and a
+engine: a `SceneContext` (via `registerScene(scene)`) and a
 `SpriteRenderer` (via `registerSpriteRenderer(sr)`). `startEngine(engine)`
 walks `engine._renderingContexts` once per frame. The engine owns the
 command encoder and swapchain view for the frame; each context runs
@@ -316,6 +316,9 @@ export function removeSpriteRendererLayer(sr: SpriteRenderer, layer: Sprite2DLay
 export function registerSpriteRenderer(sr: SpriteRenderer): void;
 export function unregisterSpriteRenderer(sr: SpriteRenderer): void;
 export function disposeSpriteRenderer(sr: SpriteRenderer): void;
+/** Redirect output to an offscreen render texture (render-to-texture), or null = swapchain.
+ *  See "Offscreen render target" below. */
+export function setSpriteRendererTarget(sr: SpriteRenderer, target: Texture2D | null): void;
 ```
 
 A `SpriteRenderer` does **not** own persistent color/depth attachments.
@@ -353,6 +356,60 @@ logic. Depth-hosted Sprite2D layers (`depth: "test" | "test-write"`) do
 not go through it — they are drawn by an independent `Renderable`
 produced by `sprite-renderable.ts` (see "Caller 2" below).
 
+### Offscreen render target (render-to-texture)
+
+By default a `SpriteRenderer` records its pass on the per-frame swapchain view
+(`rr._targetView ?? eng._swapchainView`). Two small, **opt-in, tree-shakable**
+additions let a renderer draw into an offscreen texture instead, which is the
+building block for full-screen post-processing (the platformer demo's CRT/scanline
+effect is built entirely on these — no bespoke engine pass):
+
+```typescript
+// src/texture/pixels-texture.ts
+export interface RenderTexture2DOptions {
+    addressModeU?: GPUAddressMode; // default 'clamp-to-edge'
+    addressModeV?: GPUAddressMode; // default 'clamp-to-edge'
+    minFilter?: GPUFilterMode;     // default 'linear'
+    magFilter?: GPUFilterMode;     // default 'linear'
+    format?: GPUTextureFormat;     // default engine.format (REQUIRED for a SpriteRenderer target)
+}
+/** An empty Texture2D usable as BOTH a render target and a sampled texture
+ *  (RENDER_ATTACHMENT | TEXTURE_BINDING | COPY_DST). */
+export function createRenderTexture2D(engine: EngineContext, width: number, height: number, options?: RenderTexture2DOptions): Texture2D;
+
+// src/sprite/sprite-renderer.ts
+/** Point a renderer at an offscreen render texture (`Texture2D`), or null for the swapchain (default). */
+export function setSpriteRendererTarget(sr: SpriteRenderer, target: Texture2D | null): void;
+```
+
+Both default to the swapchain / swapchain format, so **every existing scene and
+demo is byte-for-byte unaffected**, and the whole capability tree-shakes away when
+unused (`createRenderTexture2D` is a separate import; `_targetView` defaults to
+`null`).
+
+> **Format constraint:** a `SpriteRenderer` target must use `engine.format`. Sprite
+> pipelines are created with that format, and WebGPU rejects a render pass whose color
+> attachment format differs from the bound pipeline (validation error at pass begin).
+> So leave `RenderTexture2DOptions.format` at its default for any texture you pass to
+> `setSpriteRendererTarget`; a custom format is only for offscreen targets driven by a
+> different pass (e.g. an `EffectRenderer`).
+
+The render-to-texture pattern is two registered renderers, ordered:
+
+1. **Scene pass** → `setSpriteRendererTarget(scene, rt)` so it draws into an
+   offscreen `rt = createRenderTexture2D(engine, w, h)` (sized to the canvas backing
+   store, swapchain format so it can be sampled and presented).
+2. **Present pass** → a second `SpriteRenderer` owning one full-screen layer whose
+   atlas IS `rt` (via `createGridSpriteAtlas`), drawn with a custom-shader fragment
+   (e.g. CRT curvature + scanlines). It targets the swapchain (`target = null`) and is
+   registered **after** the scene pass, so it runs second and samples the finished
+   frame. Toggling the effect off is `setSpriteRendererTarget(scene, null)` +
+   unregistering the present pass — restoring the direct path for zero overhead.
+
+The offscreen texture and present layer must be rebuilt on canvas resize (the RT is
+a fixed-size GPU texture). See `lab/lite/src/demos/platformer/crt.ts` for a complete,
+toggle-able implementation.
+
 ### Caller 1: pure-2D — no `SceneContext`
 
 A Lottie/Rive-class app never creates a scene. It creates a
@@ -386,15 +443,15 @@ project against. They require the scene-based path below.
 
 ### Caller 2: scene-based — `registerScene` + `addToScene` + a separate HUD `SpriteRenderer`
 
-The new `registerScene(engine, scene)` is the scene-side analogue of
+The new `registerScene(scene)` is the scene-side analogue of
 `registerSpriteRenderer`. It runs the scene's deferred builders and
 registers the scene as a `RenderingContext` on the engine. After that,
 `startEngine(engine)` drives the scene each frame just like it drives
 any other registered context.
 
 ```typescript
-export function registerScene(engine: EngineContext, scene: SceneContext): Promise<void>;
-export function unregisterScene(engine: EngineContext, scene: SceneContext): void;
+export function registerScene(scene: SceneContext): Promise<void>;
+export function unregisterScene(scene: SceneContext): void;
 
 /** Register a callback to fire when `disposeScene(scene)` is called.
  *  Used to tie user-owned GPU resources (e.g. a HUD `SpriteRenderer`)
@@ -429,7 +486,7 @@ The existing `"billboard-sprite-system"` branch stays as today (with its
 own `_deferredBuild` hook); billboards are pushed into the existing
 scene-level renderable arrays.
 
-`registerScene(engine, scene)` does exactly two things: runs each
+`registerScene(scene)` does exactly two things: runs each
 queued `_deferredBuild` (so depth-hosted sprite renderables are wired
 into the scene's `_renderables` list), then calls
 `registerRenderingContext(engine, scene)`. **It does not create or
@@ -458,7 +515,7 @@ addAnchoredSprite2D(labels, {
 });
 addDepthHostedSpriteLayer(scene, labels);
 
-await registerScene(engine, scene);
+await registerScene(scene);
 
 // HUD overlay: separate Sprite2DLayer with depth:"none", drawn by a
 // separate SpriteRenderer registered AFTER the scene so it draws on top.
@@ -1171,10 +1228,10 @@ Layers created with `uvScroll: true` append two more floats (`uvOffset.xy`) *aft
 layout, orthogonally to depth. The wider stride, the extra `@location(7)` attribute, and the
 `+ iUvOffset` WGSL are gated on the per-layer flag, so non-scroll scenes ship none of it.
 
-| Layout                | Stride        | Slot     | Field      | Vertex attr          | Notes                                  |
-| --------------------- | ------------- | -------- | ---------- | -------------------- | -------------------------------------- |
-| pure-2D + `uvScroll`  | 60 B / 15 fl  | [13..14] | `uvOffset` | `@location(7)` f32×2 | `uvOffset.xy` at byte offset 52        |
-| depth + `uvScroll`    | 64 B / 16 fl  | [14..15] | `uvOffset` | `@location(7)` f32×2 | base 56 B + `uvOffset.xy` at offset 56 |
+| Layout               | Stride       | Slot     | Field      | Vertex attr          | Notes                                  |
+| -------------------- | ------------ | -------- | ---------- | -------------------- | -------------------------------------- |
+| pure-2D + `uvScroll` | 60 B / 15 fl | [13..14] | `uvOffset` | `@location(7)` f32×2 | `uvOffset.xy` at byte offset 52        |
+| depth + `uvScroll`   | 64 B / 16 fl | [14..15] | `uvOffset` | `@location(7)` f32×2 | base 56 B + `uvOffset.xy` at offset 56 |
 
 The vertex stage adds `in.iUvOffset` to the sampled UV (`let uv = mix(uvMin, uvMax, corner) + in.iUvOffset`),
 and the pipeline key gains a `:uv${uvKey}` segment so scroll/non-scroll variants never collide.
@@ -1848,7 +1905,7 @@ separate `SpriteRenderer` and register it on the engine after
 
 ### Build (at `registerScene`)
 
-`registerScene(engine, scene)` runs each `_deferredBuild`. The sprite deferred builder
+`registerScene(scene)` runs each `_deferredBuild`. The sprite deferred builder
 calls the statically imported `buildSpriteRenderable`, builds the pipeline (cache-keyed),
 allocates the per-layer GPU instance buffer + UBO, and creates bind groups. The
 depth-hosted `Renderable` (one per Sprite2D layer added through
@@ -2110,9 +2167,9 @@ never reaches into layer internals.
 | `mesh.billboardMode = BILLBOARDMODE_Y`            | `createAxisLockedBillboardSystem(atlas, [0,1,0])`                     | World-Y is the yaw-locked special case                                            |
 | `mesh.billboardMode = BILLBOARDMODE_X/Z`          | `createAxisLockedBillboardSystem(atlas, [1,0,0])`                     | Same factory covers all lock axes                                                 |
 | `SpriteManager.disableDepthWrite`                 | `Sprite2DLayer.depth` (`"test"` / `"test-write"`) + `SpriteBlendMode` | Composer-baked per layer                                                          |
-| `sprite.blendMode` (ADD / MULTIPLY / etc.)        | Importable `spriteBlend*` / `billboardBlend*` descriptor values        | Tree-shakable; no string lookup table                                            |
-| Custom `ShaderMaterial` on a sprite               | `createSprite2DCustomShader` / `createBillboardCustomShader`           | WGSL fragment body + `fx.time` / `fx.params` / extra textures                    |
-| Animated/scrolling texture (`uOffset`/`vOffset`)  | `Sprite2DLayerOptions.uvScroll` + per-sprite `uvOffset`                | Opt-in per-sprite UV offset (parallax)                                           |
+| `sprite.blendMode` (ADD / MULTIPLY / etc.)        | Importable `spriteBlend*` / `billboardBlend*` descriptor values       | Tree-shakable; no string lookup table                                             |
+| Custom `ShaderMaterial` on a sprite               | `createSprite2DCustomShader` / `createBillboardCustomShader`          | WGSL fragment body + `fx.time` / `fx.params` / extra textures                     |
+| Animated/scrolling texture (`uOffset`/`vOffset`)  | `Sprite2DLayerOptions.uvScroll` + per-sprite `uvOffset`               | Opt-in per-sprite UV offset (parallax)                                            |
 | `AdvancedDynamicTexture` + `Image`                | `Sprite2DLayer` overlay on a 3D `SceneContext`                        | Different scope — no GUI tree                                                     |
 | `scene.pickSprite(x, y)`                          | Roadmap `pickSprite2D` / `pickBillboardSprite`                        | Picking is not in the current root exports                                        |
 | `SpriteMap` (tile maps)                           | Out of scope                                                          | Future module                                                                     |

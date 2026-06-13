@@ -15,6 +15,7 @@ import type { Vec3, Quat } from "../math/types.js";
 import type { SceneNode } from "../scene/scene-node.js";
 import type { SceneContext } from "../scene/scene-core.js";
 import type { Mesh } from "../mesh/mesh.js";
+import type { HavokFloatingOriginContext, WorldRegion } from "./havok-floating-origin.js";
 import { onBeforeRender } from "../scene/scene-core.js";
 
 // ─── Enums ───────────────────────────────────────────────────────────
@@ -78,6 +79,8 @@ export interface PhysicsBody {
     /** @internal */ readonly _hkBody: any;
     readonly node: SceneNode;
     readonly motionType: PhysicsMotionType;
+    /** @internal The floating-origin region this body lives in; set only under floating origin. */
+    _region?: WorldRegion;
 }
 
 /** Opaque handle to a Havok collision shape. */
@@ -99,6 +102,10 @@ export interface PhysicsWorld {
     /** @internal */ readonly _hkWorld: any;
     /** @internal */ readonly _bodies: PhysicsBody[];
     /** @internal */ _timestep: number;
+    /** @internal World-wide gravity `[x, y, z]` set at creation; used to seed floating-origin regions. */
+    _gravity: number[];
+    /** @internal Floating-origin runtime; present only after `enableHavokFloatingOrigin` is called. */
+    _fo?: HavokFloatingOriginContext;
 }
 
 // ─── Factory ─────────────────────────────────────────────────────────
@@ -112,6 +119,9 @@ export interface PhysicsWorld {
  *   const hknp = await HavokPhysics({ locateFile: () => "/HavokPhysics.wasm" });
  *   const world = createHavokWorld(scene, hknp);
  * ```
+ *
+ * For Large World Rendering, call {@link enableHavokFloatingOrigin} on the returned world (before
+ * creating any bodies) to opt into multi-region floating-origin simulation.
  */
 export function createHavokWorld(scene: SceneContext, hknp: any, gravity?: Vec3): PhysicsWorld {
     const hkWorld = hknp.HP_World_Create()[1];
@@ -124,6 +134,7 @@ export function createHavokWorld(scene: SceneContext, hknp: any, gravity?: Vec3)
         _hkWorld: hkWorld,
         _bodies: [],
         _timestep: 1 / 60,
+        _gravity: [g.x, g.y, g.z],
     };
 
     // Register per-frame physics step
@@ -134,12 +145,38 @@ export function createHavokWorld(scene: SceneContext, hknp: any, gravity?: Vec3)
     return world;
 }
 
+/**
+ * Opt a Havok world into multi-region floating-origin simulation (Large World Rendering).
+ *
+ * Loads the floating-origin runtime on demand (`physics/havok-floating-origin.ts`) so worlds that
+ * never call this — i.e. ordinary near-origin physics scenes — never pull that code into their
+ * bundle. Once enabled, bodies far apart in world space are simulated in separate regions (each
+ * within `floatingOriginWorldRadius` of its origin) so the float32 Havok solver keeps full
+ * precision. Node transforms remain true world coordinates; eye-relative rendering is handled
+ * independently by the floating-origin render path.
+ *
+ * Must be called **before** creating any bodies in the world. Pair it with an engine created with
+ * `useFloatingOrigin: true` so rendering and physics share the same far-from-origin handling.
+ * @param world - The physics world to enable floating origin on.
+ * @param floatingOriginWorldRadius - Region capture radius in metres (default 100000, matching Babylon.js).
+ */
+export async function enableHavokFloatingOrigin(world: PhysicsWorld, floatingOriginWorldRadius = 100000): Promise<void> {
+    const fo = await import("./havok-floating-origin.js");
+    world._fo = fo.createHavokFloatingOriginContext(world._hkWorld, world._gravity, floatingOriginWorldRadius);
+}
+
 // ─── Per-frame stepping ──────────────────────────────────────────────
 
 function _stepWorld(world: PhysicsWorld, deltaMs: number): void {
     const { _hknp: hknp, _hkWorld: hkWorld, _bodies: bodies } = world;
     const dt = Math.min(deltaMs / 1000, 0.1);
     if (dt <= 0) {
+        return;
+    }
+
+    // Floating-origin worlds run a multi-region step (loaded on demand).
+    if (world._fo) {
+        world._fo.step(world);
         return;
     }
 
@@ -184,20 +221,31 @@ function _syncNodeToBody(hknp: any, body: PhysicsBody): void {
 // ─── Gravity ─────────────────────────────────────────────────────────
 
 /**
- * Sets the world's gravity vector.
+ * Sets gravity for the world, or for a single region when `worldPosition` is given.
+ * Passing a position is useful for planetary scenarios where gravity direction varies by location.
  * @param world - The physics world.
  * @param gravity - Gravity acceleration in m/s².
+ * @param worldPosition - Optional world position selecting the region to update; omit to update all regions.
  */
-export function setPhysicsGravity(world: PhysicsWorld, gravity: Vec3): void {
+export function setPhysicsGravity(world: PhysicsWorld, gravity: Vec3, worldPosition?: Vec3): void {
+    if (world._fo) {
+        world._fo.setGravity(world, [gravity.x, gravity.y, gravity.z], worldPosition);
+        return;
+    }
     world._hknp.HP_World_SetGravity(world._hkWorld, [gravity.x, gravity.y, gravity.z]);
 }
 
 /**
- * Returns the world's current gravity vector.
+ * Returns the world's current gravity vector, or a specific region's when `worldPosition` is given.
  * @param world - The physics world.
+ * @param worldPosition - Optional world position selecting the region to read; omit for the world-wide gravity.
  * @returns Gravity acceleration in m/s².
  */
-export function getPhysicsGravity(world: PhysicsWorld): Vec3 {
+export function getPhysicsGravity(world: PhysicsWorld, worldPosition?: Vec3): Vec3 {
+    if (worldPosition && world._fo) {
+        const g = world._fo.getRegionGravity(world, worldPosition);
+        return { x: g[0]!, y: g[1]!, z: g[2]! };
+    }
     const g = world._hknp.HP_World_GetGravity(world._hkWorld)[1];
     return { x: g[0], y: g[1], z: g[2] };
 }
@@ -231,6 +279,10 @@ export function getPhysicsTimestep(world: PhysicsWorld): number {
  * @param maxAngular - Maximum angular speed.
  */
 export function setPhysicsVelocityLimits(world: PhysicsWorld, maxLinear: number, maxAngular: number): void {
+    if (world._fo) {
+        world._fo.setVelocityLimits(world, maxLinear, maxAngular);
+        return;
+    }
     world._hknp.HP_World_SetSpeedLimit(world._hkWorld, maxLinear, maxAngular);
 }
 
@@ -264,21 +316,27 @@ export function createPhysicsBody(world: PhysicsWorld, node: SceneNode, motionTy
         motionType === PhysicsMotionType.STATIC ? hknp.MotionType.STATIC : motionType === PhysicsMotionType.ANIMATED ? hknp.MotionType.KINEMATIC : hknp.MotionType.DYNAMIC;
     hknp.HP_Body_SetMotionType(hkBody, hkMotion);
 
-    // Add to world first, then set transform (Havok resets transform on add)
-    hknp.HP_World_AddBody(hkWorld, hkBody, startsAsleep);
-
-    const p = node.position;
-    const q = node.rotationQuaternion;
-    hknp.HP_Body_SetQTransform(hkBody, [
-        [p.x, p.y, p.z],
-        [q.x, q.y, q.z, q.w],
-    ]);
-
     const body: PhysicsBody = {
         _hkBody: hkBody,
         node,
         motionType,
     };
+
+    if (world._fo) {
+        // Floating origin: place the body in its region, storing it in region-local coordinates.
+        world._fo.placeBody(world, body, startsAsleep);
+    } else {
+        // Add to world first, then set transform (Havok resets transform on add)
+        hknp.HP_World_AddBody(hkWorld, hkBody, startsAsleep);
+
+        const p = node.position;
+        const q = node.rotationQuaternion;
+        hknp.HP_Body_SetQTransform(hkBody, [
+            [p.x, p.y, p.z],
+            [q.x, q.y, q.z, q.w],
+        ]);
+    }
+
     world._bodies.push(body);
     return body;
 }
@@ -364,11 +422,118 @@ export function setPhysicsShapeMaterial(world: PhysicsWorld, shape: PhysicsShape
  * @param world - The physics world.
  * @param body - The body to update.
  * @param mass - Mass in kilograms.
+ * @param centerOfMass - Optional body-local centre of mass (defaults to the origin). Use this when the
+ *   collision shape is offset from the body's reference frame (e.g. a prop whose body origin sits at
+ *   its base but whose shape is centred on its middle) so it tumbles around its real centre.
  */
-export function setPhysicsBodyMass(world: PhysicsWorld, body: PhysicsBody, mass: number): void {
+export function setPhysicsBodyMass(world: PhysicsWorld, body: PhysicsBody, mass: number, centerOfMass?: Vec3): void {
+    const com = centerOfMass ?? { x: 0, y: 0, z: 0 };
     // massProperties: [centerOfMass[3], mass, inertia[3], inertiaOrientation[4]]
-    const massProps = [[0, 0, 0], mass, [mass, mass, mass], [0, 0, 0, 1]];
+    const massProps = [[com.x, com.y, com.z], mass, [mass, mass, mass], [0, 0, 0, 1]];
     world._hknp.HP_Body_SetMassProperties(body._hkBody, massProps);
+}
+
+// ─── Body control (impulse / velocity / motion type / transform) ─────
+// Runtime body controls used by gameplay: shoot/throw (impulse + velocity), grab (switch a body to
+// ANIMATED/kinematic while held, then back to DYNAMIC on release), and teleport (restore/load/undo).
+
+/**
+ * Apply a one-shot linear impulse (kg·m/s) to a body at a world `point` (defaults to the body's
+ * current position / centre of mass), waking it if asleep. Used to shoot, throw, or shove a prop.
+ * @param world - The physics world.
+ * @param body - The body to push.
+ * @param impulse - World-space impulse vector (kg·m/s).
+ * @param point - World point of application; defaults to the body's current position.
+ */
+export function applyPhysicsImpulse(world: PhysicsWorld, body: PhysicsBody, impulse: Vec3, point?: Vec3): void {
+    const hknp = world._hknp;
+    let loc = point;
+    if (!loc) {
+        const t = hknp.HP_Body_GetQTransform(body._hkBody)[1];
+        loc = { x: t[0][0], y: t[0][1], z: t[0][2] };
+    }
+    hknp.HP_Body_ApplyImpulse(body._hkBody, [loc.x, loc.y, loc.z], [impulse.x, impulse.y, impulse.z]);
+}
+
+/**
+ * Set a body's linear velocity (m/s) directly — e.g. to impart a throw velocity on release.
+ */
+export function setPhysicsBodyLinearVelocity(world: PhysicsWorld, body: PhysicsBody, velocity: Vec3): void {
+    world._hknp.HP_Body_SetLinearVelocity(body._hkBody, [velocity.x, velocity.y, velocity.z]);
+}
+
+/**
+ * Get a body's current linear velocity (m/s).
+ */
+export function getPhysicsBodyLinearVelocity(world: PhysicsWorld, body: PhysicsBody): Vec3 {
+    const v = world._hknp.HP_Body_GetLinearVelocity(body._hkBody)[1];
+    return { x: v[0], y: v[1], z: v[2] };
+}
+
+/**
+ * Set a body's angular velocity (rad/s).
+ */
+export function setPhysicsBodyAngularVelocity(world: PhysicsWorld, body: PhysicsBody, velocity: Vec3): void {
+    world._hknp.HP_Body_SetAngularVelocity(body._hkBody, [velocity.x, velocity.y, velocity.z]);
+}
+
+/**
+ * Switch a body's motion type at runtime (e.g. ANIMATED/kinematic while a prop is grabbed, then
+ * DYNAMIC on release). Mutates `body.motionType` so the per-frame step syncs it the right way
+ * (ANIMATED: node → body before the step; DYNAMIC: body → node after).
+ */
+export function setPhysicsBodyMotionType(world: PhysicsWorld, body: PhysicsBody, motionType: PhysicsMotionType): void {
+    const hknp = world._hknp;
+    const hkMotion =
+        motionType === PhysicsMotionType.STATIC ? hknp.MotionType.STATIC : motionType === PhysicsMotionType.ANIMATED ? hknp.MotionType.KINEMATIC : hknp.MotionType.DYNAMIC;
+    hknp.HP_Body_SetMotionType(body._hkBody, hkMotion);
+    (body as { motionType: PhysicsMotionType }).motionType = motionType;
+}
+
+/**
+ * Teleport a body to a world position + orientation (a pure transform set — velocities are left
+ * unchanged). For grab-follow, save-restore, and undo. Also updates the bound node so a render that
+ * reads the node before the next physics step stays consistent.
+ */
+export function setPhysicsBodyTransform(world: PhysicsWorld, body: PhysicsBody, position: Vec3, rotation: Quat): void {
+    world._hknp.HP_Body_SetQTransform(body._hkBody, [
+        [position.x, position.y, position.z],
+        [rotation.x, rotation.y, rotation.z, rotation.w],
+    ]);
+    body.node.position.set(position.x, position.y, position.z);
+    body.node.rotationQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+}
+
+// ─── Removal ─────────────────────────────────────────────────────────
+
+/**
+ * Remove a single body from the world and release its native handle (the per-frame step skips it from
+ * now on). After this the body must not be reused. A body that isn't in the world is ignored, so this is
+ * safe to call once per body. Does NOT release the body's collision shape — release that separately with
+ * {@link releasePhysicsShape} if it isn't shared.
+ * @param world - The physics world.
+ * @param body - The body to remove.
+ */
+export function removePhysicsBody(world: PhysicsWorld, body: PhysicsBody): void {
+    const { _hknp: hknp, _hkWorld: hkWorld, _bodies: bodies } = world;
+    const i = bodies.indexOf(body);
+    if (i < 0) {
+        return; // already removed / not part of this world
+    }
+    bodies.splice(i, 1);
+    hknp.HP_World_RemoveBody(hkWorld, body._hkBody);
+    hknp.HP_Body_Release(body._hkBody);
+}
+
+/**
+ * Release a collision shape's native handle, freeing its WASM memory. Only call once no body still
+ * references the shape (e.g. after {@link removePhysicsBody}). Useful when rebuilding a changing set of
+ * static colliders so their shapes don't accumulate.
+ * @param world - The physics world.
+ * @param shape - The shape to release.
+ */
+export function releasePhysicsShape(world: PhysicsWorld, shape: PhysicsShape): void {
+    world._hknp.HP_Shape_Release(shape._hkShape);
 }
 
 // ─── Aggregate (convenience) ─────────────────────────────────────────
@@ -473,6 +638,11 @@ function _boundingRadius(mesh: Mesh): number {
  * @param world - The physics world to dispose.
  */
 export function disposePhysics(world: PhysicsWorld): void {
+    if (world._fo) {
+        world._fo.dispose(world);
+        return;
+    }
+
     const { _hknp: hknp, _hkWorld: hkWorld, _bodies: bodies } = world;
 
     // Remove and release all bodies

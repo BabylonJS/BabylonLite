@@ -23,7 +23,10 @@ export interface LightBase extends IWorldMatrixProvider, IParentable {
     parent: IWorldMatrixProvider | null;
     readonly worldMatrix: Mat4;
     readonly worldMatrixVersion: number;
-    /** @internal */
+    /** @internal Write this light's 64-byte entry into the shared lights UBO.
+     *  Positions are written precision-only (raw world space); under floating
+     *  origin the active-camera offset is subtracted afterwards by
+     *  `engine._applyLightFoOffset`, which is kept out of non-LWR bundles. */
     readonly _writeLightUbo?: ((data: Float32Array, offset: number) => void) | undefined;
     /** @internal Monotonically increasing version — bumped when any UBO-relevant property changes. */
     readonly _lightVersion: number;

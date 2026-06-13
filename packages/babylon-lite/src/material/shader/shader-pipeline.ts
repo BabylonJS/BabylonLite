@@ -1,3 +1,4 @@
+import { SS } from "../../engine/gpu-flags.js";
 import type { EngineContext } from "../../engine/engine.js";
 import type { RenderTargetSignature } from "../../engine/render-target.js";
 import { targetSignatureKey } from "../../engine/render-target.js";
@@ -25,7 +26,7 @@ interface ShaderMaterialPipelineState extends ShaderMaterial {
     _shaderCustomVersion?: number;
 }
 
-const SHADER_STAGE_ALL = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
+const SHADER_STAGE_ALL = SS.VERTEX | SS.FRAGMENT;
 
 export function getOrCreateShaderPipelineBindings(engine: EngineContext, material: ShaderMaterial): ShaderPipelineBindings {
     const state = material as ShaderMaterialPipelineState;
@@ -109,13 +110,19 @@ export function getOrCreateShaderPipeline(
             ? {
                   depthStencil: {
                       format: sig._depthStencilFormat,
-                      depthCompare: material.depthCompare,
+                      // The target's declared depth convention wins over the material default: a depth-only
+                      // caster authored for the forward-Z shadow map ("less-equal") must still depth-test
+                      // correctly when drawn into a reverse-Z camera depth prepass that declares
+                      // "greater-equal" — otherwise every fragment fails against the 0-cleared buffer.
+                      depthCompare: sig._depthCompare ?? material.depthCompare,
                       depthWriteEnabled: material.needAlphaBlending ? false : material.depthWrite,
+                      ...(material.depthBias ? { depthBias: material.depthBias } : {}),
+                      ...(material.depthBiasSlopeScale ? { depthBiasSlopeScale: material.depthBiasSlopeScale } : {}),
                   },
               }
             : {}),
         multisample: { count: sig._sampleCount },
-        primitive: { topology: "triangle-list", cullMode: material.backFaceCulling ? "back" : "none", frontFace: sig._flipY ? "cw" : "ccw" },
+        primitive: { topology: "triangle-list", cullMode: material.backFaceCulling ? "back" : "none", frontFace: "ccw" },
     });
     bindings.pipelines.set(key, pipeline);
     return pipeline;

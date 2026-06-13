@@ -1,5 +1,7 @@
+import { TU, SS } from "../engine/gpu-flags.js";
 import type { EngineContext } from "../engine/engine.js";
 import { _vis } from "../engine/engine.js";
+import { createRenderTarget } from "../engine/render-target.js";
 import { getBilinearSampler } from "../resource/samplers.js";
 import { getTrilinearAnisotropicSampler } from "../resource/trilinear-anisotropic-sampler.js";
 import type { Texture2D } from "../texture/texture-2d.js";
@@ -93,7 +95,7 @@ export function enableRenderTaskTransmission(task: RenderTask, engine: EngineCon
         return grab;
     }
     if (linear) {
-        retargetRenderTaskToLinearOffscreen(task, engine);
+        retargetRenderTaskToLinearOffscreen(task);
     }
     let state: RenderTaskTransmissionState | null = null;
     const record = task.record.bind(task);
@@ -118,30 +120,45 @@ export function enableRenderTaskTransmission(task: RenderTask, engine: EngineCon
     return grab;
 }
 
-function retargetRenderTaskToLinearOffscreen(task: RenderTask, engine: EngineContext): void {
-    const desc = task._config.rt._descriptor;
-    if (desc.resolveToSwapchain) {
-        desc.resolveToSwapchain = false;
-        desc.colorFormat = "rgba16float";
-        desc.flipY = false;
-        task._opaqueBundles.length = 0;
-        task._lastVersion = -1;
-    } else if (!desc.colorFormat) {
-        desc.colorFormat = "rgba16float";
-    }
-    desc.sampleCount = engine.msaaSamples;
+function retargetRenderTaskToLinearOffscreen(task: RenderTask): void {
+    const cfg = task._config;
+    const oldDesc = cfg.rt._descriptor;
+    const surface = task.scene.surface;
+    const sampleCount = surface.msaaSamples;
+    // The scene render task may target the shared engine scRT (single-sample,
+    // colour-only — single-sample default path) or an MSAA colour RT that resolves into it
+    // via `rst` (MSAA default path). Never mutate the shared scRT descriptor —
+    // instead point the task at a fresh offscreen HDR target and stop resolving to swap.
+    // Transmission samples this linear HDR result in its own final image-processing pass
+    // that writes the tonemapped result to the swapchain.
+    //
+    // Depth ownership: when the task already carries an external depth (`cfg.depth`, the
+    // single-sample default path), keep it; otherwise the new target owns depth (matching
+    // the MSAA colour RT it replaces).
+    const ownsDepth = !cfg.depth;
+    const newRt = createRenderTarget({
+        lbl: "transmission-linear",
+        format: "rgba16float",
+        dFormat: ownsDepth ? (oldDesc.dFormat ?? "depth24plus-stencil8") : undefined,
+        _depthClearValue: oldDesc._depthClearValue,
+        _depthCompare: oldDesc._depthCompare,
+        samples: sampleCount,
+        size: surface,
+    });
+    cfg.rt = newRt;
+    cfg.rst = undefined;
     const sig = task._targetSignature as {
         _colorFormat?: GPUTextureFormat;
         _depthStencilFormat?: GPUTextureFormat;
         _depthCompare?: GPUCompareFunction;
         _sampleCount: number;
-        _flipY?: boolean;
     };
-    sig._colorFormat = desc.colorFormat;
-    sig._depthStencilFormat = desc.depthStencilFormat;
-    sig._depthCompare = desc._depthCompare;
-    sig._sampleCount = desc.sampleCount;
-    sig._flipY = desc.flipY ?? true;
+    sig._colorFormat = "rgba16float";
+    sig._depthStencilFormat = cfg.depth?._descriptor.dFormat ?? newRt._descriptor.dFormat;
+    sig._depthCompare = newRt._descriptor._depthCompare;
+    sig._sampleCount = sampleCount;
+    task._opaqueBundles.length = 0;
+    task._lastVersion = -1;
 }
 
 function executeRenderTaskLinear(scene: SceneContext, execute: () => number): number {
@@ -220,7 +237,7 @@ function createRenderTaskTransmission(task: RenderTask, engine: EngineContext): 
         size: { width, height },
         format,
         mipLevelCount: generateMipmaps ? biasedMipLevelCount(width, height, REFRACTION_LOD_BIAS) : 1,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        usage: TU.RENDER_ATTACHMENT | TU.TEXTURE_BINDING | TU.COPY_DST,
     });
     const tex: Texture2D = {
         texture,
@@ -332,14 +349,14 @@ function getBlitPipeline(engine: EngineContext, format: GPUTextureFormat, multis
     if (multisampled) {
         blitMsaaShader ??= device.createShaderModule({ code: BLIT_MSAA_SHADER });
         blitMsaaBgl ??= device.createBindGroupLayout({
-            entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float", multisampled: true } }],
+            entries: [{ binding: 0, visibility: SS.FRAGMENT, texture: { sampleType: "unfilterable-float", multisampled: true } }],
         });
     } else {
         blitShader ??= device.createShaderModule({ code: BLIT_SHADER });
         blitBgl ??= device.createBindGroupLayout({
             entries: [
-                { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } },
-                { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+                { binding: 0, visibility: SS.FRAGMENT, texture: { sampleType: "float" } },
+                { binding: 1, visibility: SS.FRAGMENT, sampler: {} },
             ],
         });
     }
@@ -446,9 +463,9 @@ function drawBaseTask(task: RenderTask, pass: GPURenderPassEncoder): number {
     if (task._lastVersion !== scene._renderableVersion || task._lastVis !== _vis || opaqueBundles.length === 0) {
         const desc = rt._descriptor;
         const be = eng._device.createRenderBundleEncoder({
-            colorFormats: desc.colorFormat ? [desc.colorFormat] : [],
-            depthStencilFormat: desc.depthStencilFormat,
-            sampleCount: desc.sampleCount ?? 1,
+            colorFormats: desc.format ? [desc.format] : [],
+            depthStencilFormat: desc.dFormat,
+            sampleCount: desc.samples ?? 1,
         });
         be.setBindGroup(0, task._sceneBG);
         drawList(be, opaqueBindings, eng);

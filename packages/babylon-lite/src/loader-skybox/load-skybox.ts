@@ -1,8 +1,9 @@
 /** High-level skybox loader.
  *  Loads a cube texture and registers a skybox for the auto-builder. */
 
+import { F32 } from "../engine/typed-arrays.js";
+import { BU } from "../engine/gpu-flags.js";
 import type { SceneContext } from "../scene/scene.js";
-import type { EngineContext } from "../engine/engine.js";
 import { loadCubeTexture } from "../texture/cube-texture.js";
 import { createBoxData } from "../mesh/create-box.js";
 import { createMappedBuffer } from "../resource/gpu-buffers.js";
@@ -27,16 +28,16 @@ export interface SkyboxData {
  *  @param size    - Box size (default 100, matches Babylon)
  */
 export async function loadSkybox(scene: SceneContext, baseUrl: string, ext: string, size = 100): Promise<void> {
-    const eng = scene.engine as EngineContext;
+    const eng = scene.surface.engine;
 
     const cubeTex = await loadCubeTexture(eng, baseUrl, ext);
 
     const boxData = createBoxData(size);
-    const posBuffer = createMappedBuffer(eng, boxData.positions, GPUBufferUsage.VERTEX);
-    const normBuffer = createMappedBuffer(eng, boxData.normals, GPUBufferUsage.VERTEX);
-    const idxBuffer = createMappedBuffer(eng, boxData.indices, GPUBufferUsage.INDEX);
+    const posBuffer = createMappedBuffer(eng, boxData.positions, BU.VERTEX);
+    const normBuffer = createMappedBuffer(eng, boxData.normals, BU.VERTEX);
+    const idxBuffer = createMappedBuffer(eng, boxData.indices, BU.INDEX);
 
-    const world = new Float32Array(16);
+    const world = new F32(16);
     world[0] = 1;
     world[5] = 1;
     world[10] = 1;
