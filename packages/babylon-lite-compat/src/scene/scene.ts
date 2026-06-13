@@ -124,6 +124,9 @@ export class Scene {
         // listeners therefore resolve one frame later than they would in BJS.
         let renderedAFrame = false;
         onBeforeRender(this._lite, (deltaMs: number) => {
+            // Record the frame delta so `engine.getDeltaTime()` (read inside
+            // before-render observers) reflects the current frame.
+            this._engine._lastDeltaMs = deltaMs;
             for (const a of this._runningAnimatables) {
                 a._tick(deltaMs);
             }

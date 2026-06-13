@@ -251,9 +251,10 @@ for reader context but are not part of the audited surface.
 
 ## Sprites
 
-| BJS API                                                          | Status          | Notes                                      |
-| ---------------------------------------------------------------- | --------------- | ------------------------------------------ |
-| `Sprite` / `SpriteManager` / `SpriteMap` / `SpritePackedManager` | ❌ Not supported | throwing stub; use native Lite sprite APIs |
+| BJS API                             | Status          | Notes                                                                                                                         |
+| ----------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `SpriteManager` / `Sprite`          | ⚡ Partial       | [sprites/sprites.ts](src/sprites/sprites.ts) — world-space camera-facing billboards over Lite's `createFacingBillboardSystem` |
+| `SpriteMap` / `SpritePackedManager` | ❌ Not supported | throwing stub; tile-map / packed-atlas variants not wrapped                                                                   |
 
 ## Particles
 
@@ -339,44 +340,47 @@ behavioural cross-check of the API surface above, not a separate contract.
 > nothing to run through the compat layer; `/compat/sceneN.html` reports them as
 > skipped. The counts below are out of the **164** scenes that have a BJS oracle.
 
-### ✅ Working (46 scenes, MAD ≈ 0)
+### ✅ Working (52 scenes, MAD ≈ 0)
 
 `1`, `2`, `5`, `6`, `9`, `10`, `11`, `13`, `15`, `16`, `18`, `28`, `29`, `30`,
-`31`, `32`, `33`, `34`, `35`, `37`, `38`, `60`, `61`, `62`, `63`, `77`, `78`,
-`79`, `80`, `82`, `83`, `85`, `88`, `89`, `150`, `151`, `152`, `200`, `202`,
-`203`, `204`, `207`, `210`, `216`, `218`, `219`
+`31`, `32`, `33`, `34`, `35`, `37`, `38`, `54`, `55`, `59`, `60`, `61`, `62`,
+`63`, `77`, `78`, `79`, `80`, `82`, `83`, `85`, `87`, `88`, `89`, `94`, `95`,
+`150`, `151`, `152`, `200`, `202`, `203`, `204`, `207`, `210`, `216`, `218`,
+`219`
 
 Covers: StandardMaterial + PBR (factor + IBL), glTF / `.babylon` model loading
 (+ loaded animation groups with `goToFrame` freeze), default-environment IBL,
-fog, spot/directional PCF + ESM shadows, thin instances, NME node materials,
-procedural builders (ribbon/tube/extrude), floating-origin / large-world
-rendering (point/spot light, thin instances, directional shadows), and CPU
-keyframe animation.
+fog, spot/directional PCF + ESM shadows, thin instances, NME node materials
+(incl. iridescence + image processing), world-space camera-facing billboard
+sprites (`SpriteManager`/`Sprite`), procedural builders (ribbon/tube/extrude),
+floating-origin / large-world rendering (point/spot light, thin instances,
+directional shadows), and CPU keyframe animation.
 
 ### ❌ Not working — grouped by blocker
 
-| Blocker                                                  | Scenes                                                                                                | Notes                                                                                                            |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `SpriteManager` / `SpriteRenderer` (sprites)             | 50, 52, 53, 54, 55, 58, 59, 92, 93, 94, 95, 96, 98, 205                                               | Sprite system not wrapped; Lite has a different sprite API                                                       |
-| `NodeMaterial` shadow/PBR layers (renders, diverges)     | 65, 66, 67, 68, 69, 70, 71, 72, 73, 84, 87                                                            | Render at MAD ≈ 0.4–1.5; advanced NME-PBR (clearcoat/sheen/SSS/env) not exact                                    |
-| `PostProcess` / rendering pipelines                      | 142, 143, 144, 145, 146                                                                               | No post-process pipeline; use native frame-graph tasks                                                           |
-| Missing `Effect` / `EffectRenderer` exports              | 74, 75, 76, 116, 127, 128, 159, 160, 161, 162, 163                                                    | Low-level shader-effect API not wrapped                                                                          |
-| Missing `VertexBuffer` export / custom geometry          | 56, 64, 86, 114, 170, 213                                                                             | Manual vertex-buffer authoring not wrapped                                                                       |
-| glTF model framing (`result.meshes` + `getBoundingInfo`) | 172, 173                                                                                              | 🔧 Recast nav scenes also gated on navigation mesh support                                                        |
-| Floating-origin / large-world rendering (LWR)            | 201, 206                                                                                              | 201/206 add sprite/billboard + `VertexData` on top of LWR; the procedural LWR scenes (202–204, 207) now pass     |
-| `.dds` environment / advanced reflection                 | 17, 19, 21, 23, 176, 177, 178, 212                                                                    | `loadEnvironment` consumes `.env`; `.dds` cube + skybox PBR diverge                                              |
-| Heightmap ground (`CreateGroundFromHeightMap`)           | 4, 22                                                                                                 | Async heightmap mesh builder not wrapped                                                                         |
-| `VertexData.applyToMesh` (build mesh from CPU data)      | 57                                                                                                    | Needs an empty-`Mesh(name, scene)` + apply path                                                                  |
-| Gaussian splatting / point clouds                        | 120, 121, 122, 123, 124, 125, 126, 129                                                                | `.ply`/`.spz`/splat formats not parsed by Lite                                                                   |
-| Navigation meshes (Recast)                               | 171, 174, 175                                                                                         | Recast nav not wrapped                                                                                           |
-| Basis Universal textures                                 | 36                                                                                                    | `.basis` transcode not wrapped                                                                                   |
-| CSG / CSG2                                               | 90, 91                                                                                                | Constructive solid geometry not wrapped                                                                          |
-| Physics (Havok)                                          | 40                                                                                                    | `PhysicsAggregate`/`PhysicsShapeType` not wrapped                                                                |
-| `CascadedShadowGenerator` (true CSM)                     | 214, 215                                                                                              | Falls back to single-cascade directional; cascades diverge                                                       |
-| Weighted `AnimationGroup` blending (`group.start`)       | 155, 156, 157, 158                                                                                    | Weighted cross-fade / additive blend not modelled                                                                |
-| Misc single-API gaps                                     | 8, 12, 20, 25, 26, 27, 113, 140, 147, 148, 149, 153, 154, 165, 179, 211, 217, 221, 222, 223, 224, 225 | e.g. `HDRCubeTexture`, `engine.getCaps`, `NullEngine`, `MaterialPluginBase`, `GeospatialCamera`, gizmo internals |
-| Silent no-render (no throw, blank frame)                 | 14, 24, 112                                                                                           | Under investigation                                                                                              |
-| Sync `scene.pick`                                        | 113                                                                                                   | ❌ by design — use async `GPUPicker`                                                                              |
+| Blocker                                                  | Scenes                                                                                                | Notes                                                                                                                                                                                                  |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Sprite2D pixel-space layer (`SpriteManager` pixel path)  | 50, 52, 53, 58, 92, 93, 96                                                                            | These Lite ports use the pixel-space `Sprite2DLayer`; the compat `SpriteManager` wraps the world-space billboard path, so the billboard scenes (54, 55, 59, 94, 95) pass but the 2D-layer ones diverge |
+| Additive-blend billboards (`ALPHA_ONEONE` premultiplied) | 98, 205                                                                                               | 98's BJS oracle premultiplies color for `(one,one)` but Lite additive is `(src-alpha,one)`; 205 layers LWR on top                                                                                      |
+| `NodeMaterial` shadow/PBR layers (renders, diverges)     | 65, 66, 67, 68, 69, 70, 71, 72, 73, 84                                                                | Render at MAD ≈ 0.4–1.5; advanced NME-PBR (clearcoat/sheen/SSS/env) not exact                                                                                                                          |
+| `PostProcess` / rendering pipelines                      | 142, 143, 144, 145, 146                                                                               | No post-process pipeline; use native frame-graph tasks                                                                                                                                                 |
+| Missing `Effect` / `EffectRenderer` exports              | 74, 75, 76, 116, 127, 128, 159, 160, 161, 162, 163                                                    | Low-level shader-effect API not wrapped                                                                                                                                                                |
+| Missing `VertexBuffer` export / custom geometry          | 56, 64, 86, 114, 170, 213                                                                             | Manual vertex-buffer authoring not wrapped                                                                                                                                                             |
+| glTF model framing (`result.meshes` + `getBoundingInfo`) | 172, 173                                                                                              | 🔧 Recast nav scenes also gated on navigation mesh support                                                                                                                                              |
+| Floating-origin / large-world rendering (LWR)            | 201, 206                                                                                              | 201/206 add sprite/billboard + `VertexData` on top of LWR; the procedural LWR scenes (202–204, 207) now pass                                                                                           |
+| `.dds` environment / advanced reflection                 | 17, 19, 21, 23, 176, 177, 178, 212                                                                    | `loadEnvironment` consumes `.env`; `.dds` cube + skybox PBR diverge                                                                                                                                    |
+| Heightmap ground (`CreateGroundFromHeightMap`)           | 4, 22                                                                                                 | Async heightmap mesh builder not wrapped                                                                                                                                                               |
+| `VertexData.applyToMesh` (build mesh from CPU data)      | 57                                                                                                    | Needs an empty-`Mesh(name, scene)` + apply path                                                                                                                                                        |
+| Gaussian splatting / point clouds                        | 120, 121, 122, 123, 124, 125, 126, 129                                                                | `.ply`/`.spz`/splat formats not parsed by Lite                                                                                                                                                         |
+| Navigation meshes (Recast)                               | 171, 174, 175                                                                                         | Recast nav not wrapped                                                                                                                                                                                 |
+| Basis Universal textures                                 | 36                                                                                                    | `.basis` transcode not wrapped                                                                                                                                                                         |
+| CSG / CSG2                                               | 90, 91                                                                                                | Constructive solid geometry not wrapped                                                                                                                                                                |
+| Physics (Havok)                                          | 40                                                                                                    | `PhysicsAggregate`/`PhysicsShapeType` not wrapped                                                                                                                                                      |
+| `CascadedShadowGenerator` (true CSM)                     | 214, 215                                                                                              | Falls back to single-cascade directional; cascades diverge                                                                                                                                             |
+| Weighted `AnimationGroup` blending (`group.start`)       | 155, 156, 157, 158                                                                                    | Weighted cross-fade / additive blend not modelled                                                                                                                                                      |
+| Misc single-API gaps                                     | 8, 12, 20, 25, 26, 27, 113, 140, 147, 148, 149, 153, 154, 165, 179, 211, 217, 221, 222, 223, 224, 225 | e.g. `HDRCubeTexture`, `engine.getCaps`, `NullEngine`, `MaterialPluginBase`, `GeospatialCamera`, gizmo internals                                                                                       |
+| Silent no-render (no throw, blank frame)                 | 14, 24, 112                                                                                           | Under investigation                                                                                                                                                                                    |
+| Sync `scene.pick`                                        | 113                                                                                                   | ❌ by design — use async `GPUPicker`                                                                                                                                                                    |
 
 Adding a missing export usually only advances a scene to its _next_ blocker
 rather than fixing it outright (e.g. several NME-PBR scenes resolve `NodeMaterial`

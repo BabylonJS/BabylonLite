@@ -226,21 +226,9 @@ export class BVHFileLoader {
 }
 
 // ─── Sprites ─────────────────────────────────────────────────────────
-// Babylon Lite has 2D/billboard sprite systems, but their handle-based API
-// differs substantially from Babylon.js's `SpriteManager`/`Sprite`. Use the
-// native sprite APIs (`createSprite2DLayer`, `createGridSpriteAtlas`, …).
-export class SpriteManager {
-    public constructor() {
-        unsupported("SpriteManager", "Use the native Babylon Lite sprite APIs (`createSprite2DLayer`, `createGridSpriteAtlas`, `addSprite2D`).");
-    }
-}
-
-export class Sprite {
-    public constructor() {
-        unsupported("Sprite", "Use the native Babylon Lite sprite APIs (`addSprite2D` / billboard sprite systems).");
-    }
-}
-
+// `SpriteManager` / `Sprite` are wrapped over Lite's facing-billboard system
+// (see ../sprites/sprites.ts). `SpriteMap` / `SpritePackedManager` remain
+// unsupported (tile-map / packed-atlas variants are not wrapped).
 export class SpriteMap {
     public constructor() {
         unsupported("SpriteMap", "Tile-map sprites are not wrapped; use the native sprite APIs.");

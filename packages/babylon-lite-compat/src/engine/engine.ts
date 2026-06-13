@@ -35,6 +35,9 @@ export class WebGPUEngine {
      */
     public useReverseDepthBuffer = false;
 
+    /** @internal Latest per-frame delta in ms, updated by each scene's before-render hook. */
+    public _lastDeltaMs = 16;
+
     public constructor(canvas: RenderCanvas, options?: ({ antialias?: boolean; adaptToDeviceRatio?: boolean; useLargeWorldRendering?: boolean } & EngineOptions) | boolean) {
         this._canvas = canvas;
         // Babylon.js's WebGPUEngine takes an options object as the second arg;
@@ -63,6 +66,15 @@ export class WebGPUEngine {
 
     public getRenderingCanvas(): RenderCanvas {
         return this._canvas;
+    }
+
+    /**
+     * Babylon.js `engine.getDeltaTime()` — milliseconds elapsed since the previous
+     * frame. Updated from each scene's Lite before-render hook (which receives the
+     * frame delta); defaults to ~16ms before the first frame.
+     */
+    public getDeltaTime(): number {
+        return this._lastDeltaMs;
     }
 
     /** @internal Scenes register themselves on construction. */

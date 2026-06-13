@@ -80,6 +80,9 @@ export { UtilityLayerRenderer, PositionGizmo, RotationGizmo, ScaleGizmo, Boundin
 export { AutoRotationBehavior, BouncingBehavior, FramingBehavior } from "./behaviors/behaviors.js";
 export type { Behavior } from "./behaviors/behaviors.js";
 
+// ─── Sprites ─────────────────────────────────────────────────────────
+export { SpriteManager, Sprite } from "./sprites/sprites.js";
+
 // ─── Shadows ─────────────────────────────────────────────────────────
 export { ShadowGenerator, CascadedShadowGenerator } from "./shadows/shadow-generator.js";
 export { NodeMaterial } from "./materials/node-material.js";
@@ -179,8 +182,6 @@ export {
     STLFileLoader,
     FBXFileLoader,
     BVHFileLoader,
-    SpriteManager,
-    Sprite,
     SpriteMap,
     SpritePackedManager,
     VirtualJoystick,

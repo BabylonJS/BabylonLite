@@ -449,7 +449,8 @@
         "maxMad": 0.02,
         "maxRawKB": 65,
         "description": "World-space camera-facing rectangular sprite cards rendered through the opt-in FacingBillboardSpriteSystem path from an off-axis camera, depth-tested against diagonal opaque boxes with transparent alpha and no depth write. BJS reference uses SpriteManager.",
-        "tags": ["sprites", "billboards", "depth"]
+        "tags": ["sprites", "billboards", "depth"],
+        "compatParity": true
     },
     {
         "id": 55,
@@ -459,7 +460,8 @@
         "maxRawKB": 35,
         "description": "Overlapping transparent world-space billboards inserted near-to-far in Lite and far-to-near in the Babylon.js SpriteManager reference, exercising CPU-side per-billboard sorting before compact vertex-buffer upload.",
         "tags": ["sprites", "billboards", "sorting"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 56,
@@ -499,7 +501,8 @@
         "maxRawKB": 70,
         "description": "World-space character billboard sprite sheet animation using the optional billboard handle animation API, including forward looping, reverse looping, and removeWhenFinished.",
         "tags": ["sprites", "billboards", "anim"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 60,
@@ -787,7 +790,8 @@
         "maxRawKB": 99,
         "description": "Environment-lit Node Material PBR sphere covering IridescenceBlock thin-film Fresnel plus ImageProcessingBlock output routing under standard tone mapping/exposure/contrast.",
         "tags": ["nme", "pbr", "iridescence", "image-processing", "env"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 88,
@@ -859,7 +863,8 @@
         "maxRawKB": 68,
         "description": "World-space facing billboards drawn through an opt-in custom fragment shader that multiplies the atlas sample and per-sprite tint by a constant fx.params vec4 set once before the first frame (no fx.time, fully deterministic). BJS SpriteManager oracle pre-multiplies each sprite color by the same params.",
         "tags": ["sprites", "billboards", "shader"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 95,
@@ -869,7 +874,8 @@
         "maxRawKB": 68,
         "description": "World-space facing billboards recoloured through a 256×1 palette lookup texture (cutout atlas red channel indexes the palette, source alpha preserved), nearest-filtered for bit-exact lookup. BJS SpriteManager oracle renders a pre-baked palette-remapped atlas.",
         "tags": ["sprites", "billboards", "shader"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 96,
