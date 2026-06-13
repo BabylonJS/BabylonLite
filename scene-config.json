@@ -195,7 +195,8 @@
         "maxMad": 0.031,
         "maxRawKB": 69.2,
         "description": "Sphere with PBR clearcoat layer (IOR=2.0). DDS environment for glossy reflections.",
-        "tags": ["pbr", "env"]
+        "tags": ["pbr", "env"],
+        "compatParity": true
     },
     {
         "id": 20,
@@ -440,7 +441,8 @@
         "maxRawKB": 60,
         "description": "Two boxes at different camera-distances + a Sprite2DLayer added via addToScene with depth: \"test-write\" and per-instance z. The front box occludes the sprite; the sprite occludes the back box. BJS reference uses SpriteManager sprites projected to the same pixel centers and depths for parity.",
         "tags": ["sprites", "2d", "depth"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 54,
@@ -1485,7 +1487,8 @@
         "maxRawKB": 50,
         "description": "Same 5×5 grid + pillar as scene 200, but useHighPrecisionMatrix=true and useFloatingOrigin=true. F64 caches + eye-relative upload trick keep GPU-facing translations small; rasterization is crisp.",
         "tags": ["hpm", "lwr", "floating-origin", "precision", "procedural", "std"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 202,
@@ -1528,7 +1531,8 @@
         "maxRawKB": 65,
         "description": "World-space camera-facing billboard sprite cards (transparent, depth-tested, alpha) at world (~5e6, *, ~5e6) with useFloatingOrigin=true. The billboard upload bakes the active camera world position into every anchor so the GPU sees eye-relative positions matching the eye-relative view-projection — crisp cards vs F32 jitter. Exercises the sorted/transparent billboard upload path. Pairs with BJS useLargeWorldRendering + SpriteManager.",
         "tags": ["hpm", "lwr", "floating-origin", "sprites", "billboards", "depth"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 206,

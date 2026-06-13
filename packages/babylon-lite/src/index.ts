@@ -316,6 +316,8 @@ export type {
     PbrMaterialProps,
     ClearCoatProps,
     AnisotropyProps,
+    SheenProps,
+    IridescenceProps,
     SubSurfaceProps,
     TranslucencyProps,
     ThicknessProps,

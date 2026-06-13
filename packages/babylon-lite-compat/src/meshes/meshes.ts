@@ -30,6 +30,9 @@ import {
     setParent,
     setThinInstances,
     setThinInstanceColors,
+    createMeshFromData,
+    resizeMeshGeometry,
+    createGroundFromHeightMap,
 } from "babylon-lite";
 import type { Mesh as LiteMesh, TransformNode as LiteTransformNode, SceneNode, EngineContext } from "babylon-lite";
 
@@ -47,6 +50,63 @@ interface LiteVec3Like {
     y: number;
     z: number;
     set(x: number, y: number, z: number): void;
+}
+
+/**
+ * @internal Runtime discriminator for the `Mesh` constructor's two call shapes:
+ * `new Mesh(name, scene)` (empty mesh, Babylon.js) vs the internal
+ * `new Mesh(name, liteMesh, scene)` (geometry-backed). A compat `Scene` exposes
+ * `getEngine()`; a Lite mesh does not.
+ */
+function isCompatScene(value: Scene | LiteMesh): value is Scene {
+    return typeof (value as Scene).getEngine === "function";
+}
+
+// A degenerate single-triangle placeholder so an empty `new Mesh(name, scene)`
+// has a valid Lite mesh (`_lite`) immediately. Replaced in place by
+// `VertexData.applyToMesh` via `resizeMeshGeometry`.
+const PLACEHOLDER_POSITIONS = new Float32Array([0, 0, 0, 0, 0, 0, 0, 0, 0]);
+const PLACEHOLDER_NORMALS = new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]);
+const PLACEHOLDER_UVS = new Float32Array([0, 0, 0, 0, 0, 0]);
+const PLACEHOLDER_INDICES = new Uint32Array([0, 1, 2]);
+
+/** @internal Coerce a number list / typed array to a `Float32Array` (reusing the buffer when possible). */
+function toF32(data: ArrayLike<number>): Float32Array {
+    return data instanceof Float32Array ? data : Float32Array.from(data);
+}
+
+/** @internal Coerce an index list / typed array to a `Uint32Array`. */
+function toU32(data: ArrayLike<number>): Uint32Array {
+    return data instanceof Uint32Array ? data : Uint32Array.from(data);
+}
+
+/** @internal Flat per-face normals for vertex data that omits them (Lite requires a normals buffer). */
+function computeFlatNormals(positions: Float32Array, indices: Uint32Array): Float32Array {
+    const normals = new Float32Array(positions.length);
+    for (let i = 0; i < indices.length; i += 3) {
+        const a = indices[i]! * 3;
+        const b = indices[i + 1]! * 3;
+        const c = indices[i + 2]! * 3;
+        const ux = positions[b]! - positions[a]!;
+        const uy = positions[b + 1]! - positions[a + 1]!;
+        const uz = positions[b + 2]! - positions[a + 2]!;
+        const vx = positions[c]! - positions[a]!;
+        const vy = positions[c + 1]! - positions[a + 1]!;
+        const vz = positions[c + 2]! - positions[a + 2]!;
+        let nx = uy * vz - uz * vy;
+        let ny = uz * vx - ux * vz;
+        let nz = ux * vy - uy * vx;
+        const len = Math.hypot(nx, ny, nz) || 1;
+        nx /= len;
+        ny /= len;
+        nz /= len;
+        for (const vi of [a, b, c]) {
+            normals[vi] = nx;
+            normals[vi + 1] = ny;
+            normals[vi + 2] = nz;
+        }
+    }
+    return normals;
 }
 
 /**
@@ -181,6 +241,21 @@ export class AbstractMesh extends TransformNode {
 
 /** Babylon.js `Mesh` — a concrete renderable mesh with geometry. */
 export class Mesh extends AbstractMesh {
+    public constructor(name: string, sceneOrLite?: Scene | LiteMesh, scene?: Scene) {
+        if (sceneOrLite !== undefined && isCompatScene(sceneOrLite)) {
+            // Babylon.js `new Mesh(name, scene)` — an empty mesh whose geometry is
+            // supplied later via `VertexData.applyToMesh`. Build a degenerate
+            // placeholder Lite mesh so `_lite` is valid immediately, then defer the
+            // scene-add until engine start (after geometry + material settle).
+            const realScene = sceneOrLite;
+            const lite = createMeshFromData(realScene.getEngine()._lite, name, PLACEHOLDER_POSITIONS, PLACEHOLDER_NORMALS, PLACEHOLDER_INDICES, PLACEHOLDER_UVS);
+            super(name, lite, realScene);
+            addPrimitive(this, realScene);
+        } else {
+            super(name, sceneOrLite as LiteMesh, scene);
+        }
+    }
+
     public override getClassName(): string {
         return "Mesh";
     }
@@ -280,6 +355,29 @@ export class VertexData {
     public colors: number[] | Float32Array | null = null;
     public indices: number[] | Uint32Array | Uint16Array | null = null;
 
+    /**
+     * Babylon.js `VertexData.applyToMesh(mesh)` — upload this CPU geometry onto a
+     * mesh (typically one created via `new Mesh(name, scene)`). Replaces the Lite
+     * mesh's geometry in place via `resizeMeshGeometry`. Normals are computed flat
+     * if omitted (Babylon Lite requires a normals buffer).
+     */
+    public applyToMesh(mesh: Mesh): void {
+        if (!this.positions || !this.indices) {
+            return;
+        }
+        const scene = mesh.getScene();
+        if (!scene) {
+            return;
+        }
+        const engine = scene.getEngine()._lite;
+        const positions = toF32(this.positions);
+        const indices = toU32(this.indices);
+        const normals = this.normals ? toF32(this.normals) : computeFlatNormals(positions, indices);
+        const uvs = this.uvs ? toF32(this.uvs) : undefined;
+        const colors = this.colors ? toF32(this.colors) : undefined;
+        resizeMeshGeometry(engine, mesh._lite, positions, normals, indices, uvs, undefined, undefined, colors);
+    }
+
     /** Merge another `VertexData` into this one (concatenating attributes + reindexing). */
     public merge(other: VertexData): VertexData {
         const baseVertexCount = this.positions ? this.positions.length / 3 : 0;
@@ -366,6 +464,28 @@ export const MeshBuilder = {
     CreateGround(name: string, options: GroundOptions, scene: Scene): Mesh {
         const lite = createGround(engineOf(scene), options as never);
         return addPrimitive(new Mesh(name, lite, scene), scene);
+    },
+
+    /**
+     * Babylon.js `MeshBuilder.CreateGroundFromHeightMap(name, url, options, scene)`.
+     * Babylon.js returns the mesh synchronously and fills its geometry once the
+     * heightmap image loads; we mirror that by returning a placeholder `GroundMesh`
+     * immediately and swapping in the real geometry (via `resizeMeshGeometry`) when
+     * the async Lite `createGroundFromHeightMap` resolves. The load is tracked so
+     * the engine awaits it before the scene is registered.
+     */
+    CreateGroundFromHeightMap(name: string, url: string, options: object, scene: Scene): Mesh {
+        const engine = engineOf(scene);
+        // `new GroundMesh(name, scene)` builds a placeholder + defers its scene-add
+        // (Babylon.js empty-mesh path); no extra `addPrimitive` call is needed.
+        const mesh = new GroundMesh(name, scene);
+        scene._trackTextureLoad(
+            createGroundFromHeightMap(engine, url, options as never).then((lite) => {
+                const g = lite as unknown as { _cpuPositions: Float32Array; _cpuNormals: Float32Array; _cpuIndices: Uint32Array; _cpuUvs?: Float32Array };
+                resizeMeshGeometry(engine, mesh._lite, g._cpuPositions, g._cpuNormals, g._cpuIndices, g._cpuUvs);
+            })
+        );
+        return mesh;
     },
 
     CreatePlane(name: string, options: PlaneOptions, scene: Scene): Mesh {

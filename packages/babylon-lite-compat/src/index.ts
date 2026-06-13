@@ -60,7 +60,18 @@ export { Light, HemisphericLight, DirectionalLight, PointLight, SpotLight } from
 export { Mesh, AbstractMesh, TransformNode, GroundMesh, InstancedMesh, VertexData, MeshBuilder } from "./meshes/meshes.js";
 
 // ─── Materials ───────────────────────────────────────────────────────
-export { Material, PushMaterial, StandardMaterial, PBRMaterial, PBRMetallicRoughnessMaterial, PBRSpecularGlossinessMaterial } from "./materials/materials.js";
+export {
+    Material,
+    PushMaterial,
+    StandardMaterial,
+    PBRMaterial,
+    PBRMetallicRoughnessMaterial,
+    PBRSpecularGlossinessMaterial,
+    PBRClearCoatConfiguration,
+    PBRSheenConfiguration,
+    PBRAnisotropicConfiguration,
+    PBRIridescenceConfiguration,
+} from "./materials/materials.js";
 
 // ─── Textures ────────────────────────────────────────────────────────
 export { BaseTexture, Texture, RawTexture, DynamicTexture, CubeTexture, HDRCubeTexture, RenderTargetTexture } from "./textures/textures.js";

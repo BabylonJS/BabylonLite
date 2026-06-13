@@ -340,21 +340,22 @@ behavioural cross-check of the API surface above, not a separate contract.
 > nothing to run through the compat layer; `/compat/sceneN.html` reports them as
 > skipped. The counts below are out of the **164** scenes that have a BJS oracle.
 
-### ✅ Working (52 scenes, MAD ≈ 0)
+### ✅ Working (56 scenes, MAD ≈ 0)
 
-`1`, `2`, `5`, `6`, `9`, `10`, `11`, `13`, `15`, `16`, `18`, `28`, `29`, `30`,
-`31`, `32`, `33`, `34`, `35`, `37`, `38`, `54`, `55`, `59`, `60`, `61`, `62`,
-`63`, `77`, `78`, `79`, `80`, `82`, `83`, `85`, `87`, `88`, `89`, `94`, `95`,
-`150`, `151`, `152`, `200`, `202`, `203`, `204`, `207`, `210`, `216`, `218`,
-`219`
+`1`, `2`, `5`, `6`, `9`, `10`, `11`, `13`, `15`, `16`, `18`, `19`, `28`, `29`,
+`30`, `31`, `32`, `33`, `34`, `35`, `37`, `38`, `53`, `54`, `55`, `59`, `60`,
+`61`, `62`, `63`, `77`, `78`, `79`, `80`, `82`, `83`, `85`, `87`, `88`, `89`,
+`94`, `95`, `150`, `151`, `152`, `200`, `201`, `202`, `203`, `204`, `205`,
+`207`, `210`, `216`, `218`, `219`
 
-Covers: StandardMaterial + PBR (factor + IBL), glTF / `.babylon` model loading
-(+ loaded animation groups with `goToFrame` freeze), default-environment IBL,
-fog, spot/directional PCF + ESM shadows, thin instances, NME node materials
-(incl. iridescence + image processing), world-space camera-facing billboard
-sprites (`SpriteManager`/`Sprite`), procedural builders (ribbon/tube/extrude),
-floating-origin / large-world rendering (point/spot light, thin instances,
-directional shadows), and CPU keyframe animation.
+Covers: StandardMaterial + PBR (factor + IBL, clearcoat, `.dds` environment),
+glTF / `.babylon` model loading (+ loaded animation groups with `goToFrame`
+freeze), default-environment IBL, fog, spot/directional PCF + ESM shadows, thin
+instances, NME node materials (incl. iridescence + image processing), world-space
+camera-facing billboard sprites (`SpriteManager`/`Sprite`) plus depth-hosted 2D
+sprites, procedural builders (ribbon/tube/extrude), `VertexData.applyToMesh`
+(CPU-authored geometry), floating-origin / large-world rendering (point/spot
+light, thin instances, directional shadows), and CPU keyframe animation.
 
 ### ❌ Not working — grouped by blocker
 

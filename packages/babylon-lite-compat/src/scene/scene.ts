@@ -21,6 +21,7 @@ import {
     createHemisphericLight,
     addToScene,
 } from "babylon-lite";
+import { loadDdsEnvironment } from "babylon-lite/loader-env/load-dds-env";
 import type { SceneContext, Camera as LiteCamera, ArcRotateCamera as LiteArcRotateCamera } from "babylon-lite";
 
 import { Color3, Color4 } from "../math/color.js";
@@ -355,6 +356,17 @@ export class Scene {
         }
         const opts = this._defaultEnvOptions;
         const skyboxUrl = opts?.skyboxFromEnv ? envUrl : opts?.createSkybox ? DEFAULT_SKYBOX_URL : undefined;
+        // Babylon.js `CubeTexture.CreateFromPrefilteredData` accepts both `.env`
+        // and `.dds` prefiltered environments. Babylon Lite splits these into two
+        // loaders: `loadEnvironment` (`.env`) and `loadDdsEnvironment` (`.dds`).
+        if (envUrl.toLowerCase().endsWith(".dds")) {
+            await loadDdsEnvironment(this._lite, envUrl, {
+                brdfUrl: DEFAULT_BRDF_URL,
+                skipSkybox: !opts?.createSkybox,
+                skipGround: !opts?.createGround,
+            });
+            return;
+        }
         await loadEnvironment(this._lite, envUrl, {
             brdfUrl: DEFAULT_BRDF_URL,
             skyboxUrl,

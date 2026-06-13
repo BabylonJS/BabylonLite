@@ -10,7 +10,7 @@
  */
 
 import { createStandardMaterial, createPbrMaterial, markMaterialUboDirty, createSolidTexture2D } from "babylon-lite";
-import type { StandardMaterialProps, PbrMaterialProps, Texture2D, EngineContext } from "babylon-lite";
+import type { StandardMaterialProps, PbrMaterialProps, ClearCoatProps, SheenProps, AnisotropyProps, IridescenceProps, Texture2D, EngineContext } from "babylon-lite";
 
 import { Color3 } from "../math/color.js";
 import type { Scene } from "../scene/scene.js";
@@ -169,6 +169,179 @@ export class StandardMaterial extends PushMaterial {
     }
 }
 
+/**
+ * Babylon.js `PBRClearCoatConfiguration` — the `pbr.clearCoat` sub-object.
+ * Proxies the common clearcoat fields onto a Babylon Lite `ClearCoatProps`.
+ */
+export class PBRClearCoatConfiguration {
+    public constructor(
+        private readonly _props: ClearCoatProps,
+        private readonly _markDirty: () => void
+    ) {}
+
+    public get isEnabled(): boolean {
+        return this._props.isEnabled ?? false;
+    }
+    public set isEnabled(value: boolean) {
+        this._props.isEnabled = value;
+        this._markDirty();
+    }
+
+    public get intensity(): number {
+        return this._props.intensity ?? 1;
+    }
+    public set intensity(value: number) {
+        this._props.intensity = value;
+        this._markDirty();
+    }
+
+    public get roughness(): number {
+        return this._props.roughness ?? 0;
+    }
+    public set roughness(value: number) {
+        this._props.roughness = value;
+        this._markDirty();
+    }
+
+    public get indexOfRefraction(): number {
+        return this._props.indexOfRefraction ?? 1.5;
+    }
+    public set indexOfRefraction(value: number) {
+        this._props.indexOfRefraction = value;
+        this._markDirty();
+    }
+}
+
+/** Babylon.js `PBRSheenConfiguration` — the `pbr.sheen` sub-object over Lite `SheenProps`. */
+export class PBRSheenConfiguration {
+    public constructor(
+        private readonly _props: SheenProps,
+        private readonly _markDirty: () => void
+    ) {}
+
+    public get isEnabled(): boolean {
+        return this._props.isEnabled;
+    }
+    public set isEnabled(value: boolean) {
+        this._props.isEnabled = value;
+        this._markDirty();
+    }
+
+    public get intensity(): number {
+        return this._props.intensity ?? 1;
+    }
+    public set intensity(value: number) {
+        this._props.intensity = value;
+        this._markDirty();
+    }
+
+    public get roughness(): number {
+        return this._props.roughness ?? 0;
+    }
+    public set roughness(value: number) {
+        this._props.roughness = value;
+        this._markDirty();
+    }
+
+    public get color(): Color3 {
+        const c = this._props.color ?? [1, 1, 1];
+        return new Color3(c[0], c[1], c[2]);
+    }
+    public set color(value: Color3) {
+        this._props.color = [value.r, value.g, value.b];
+        this._markDirty();
+    }
+
+    /** Babylon.js `sheen.texture`. Binds the Lite handle if the texture has resolved. */
+    public set texture(value: { _lite?: Texture2D } | null) {
+        if (value?._lite) {
+            this._props.texture = value._lite;
+            this._markDirty();
+        }
+    }
+}
+
+/** Babylon.js `PBRAnisotropicConfiguration` — the `pbr.anisotropy` sub-object over Lite `AnisotropyProps`. */
+export class PBRAnisotropicConfiguration {
+    public constructor(
+        private readonly _props: AnisotropyProps,
+        private readonly _markDirty: () => void
+    ) {}
+
+    public get isEnabled(): boolean {
+        return this._props.isEnabled;
+    }
+    public set isEnabled(value: boolean) {
+        this._props.isEnabled = value;
+        this._markDirty();
+    }
+
+    public get intensity(): number {
+        return this._props.intensity ?? 1;
+    }
+    public set intensity(value: number) {
+        this._props.intensity = value;
+        this._markDirty();
+    }
+
+    public get direction(): { x: number; y: number } {
+        const d = this._props.direction ?? [1, 0];
+        return { x: d[0], y: d[1] };
+    }
+    public set direction(value: { x: number; y: number }) {
+        this._props.direction = [value.x, value.y];
+        this._markDirty();
+    }
+}
+
+/** Babylon.js `PBRIridescenceConfiguration` — the `pbr.iridescence` sub-object over Lite `IridescenceProps`. */
+export class PBRIridescenceConfiguration {
+    public constructor(
+        private readonly _props: IridescenceProps,
+        private readonly _markDirty: () => void
+    ) {}
+
+    public get isEnabled(): boolean {
+        return this._props.isEnabled ?? false;
+    }
+    public set isEnabled(value: boolean) {
+        this._props.isEnabled = value;
+        this._markDirty();
+    }
+
+    public get intensity(): number {
+        return this._props.intensity ?? 1;
+    }
+    public set intensity(value: number) {
+        this._props.intensity = value;
+        this._markDirty();
+    }
+
+    public get indexOfRefraction(): number {
+        return this._props.indexOfRefraction ?? 1.3;
+    }
+    public set indexOfRefraction(value: number) {
+        this._props.indexOfRefraction = value;
+        this._markDirty();
+    }
+
+    public get minimumThickness(): number {
+        return this._props.minimumThickness ?? 100;
+    }
+    public set minimumThickness(value: number) {
+        this._props.minimumThickness = value;
+        this._markDirty();
+    }
+
+    public get maximumThickness(): number {
+        return this._props.maximumThickness ?? 400;
+    }
+    public set maximumThickness(value: number) {
+        this._props.maximumThickness = value;
+        this._markDirty();
+    }
+}
+
 export class PBRMaterial extends PushMaterial {
     /** @internal Underlying Babylon Lite PBR-material props. */
     public readonly _lite: PbrMaterialProps;
@@ -226,6 +399,68 @@ export class PBRMaterial extends PushMaterial {
         this._lite.alpha = value;
         this._markDirty();
     }
+
+    /**
+     * Babylon.js `material.forceIrradianceInFragment`. Babylon Lite computes
+     * irradiance in the fragment stage already, so this is accepted for parity.
+     */
+    public forceIrradianceInFragment = false;
+
+    /**
+     * Babylon.js `pbr.clearCoat` sub-configuration. Lazily allocates the Lite
+     * `clearCoat` props on first access and proxies the common fields
+     * (`isEnabled`, `intensity`, `roughness`, `indexOfRefraction`) onto them.
+     */
+    public get clearCoat(): PBRClearCoatConfiguration {
+        if (!this._clearCoat) {
+            if (!this._lite.clearCoat) {
+                this._lite.clearCoat = { isEnabled: false };
+            }
+            this._clearCoat = new PBRClearCoatConfiguration(this._lite.clearCoat, () => this._markDirty());
+        }
+        return this._clearCoat;
+    }
+
+    private _clearCoat?: PBRClearCoatConfiguration;
+
+    /** Babylon.js `pbr.sheen` sub-configuration (Lite `SheenProps`). */
+    public get sheen(): PBRSheenConfiguration {
+        if (!this._sheen) {
+            if (!this._lite.sheen) {
+                this._lite.sheen = { isEnabled: false };
+            }
+            this._sheen = new PBRSheenConfiguration(this._lite.sheen, () => this._markDirty());
+        }
+        return this._sheen;
+    }
+
+    private _sheen?: PBRSheenConfiguration;
+
+    /** Babylon.js `pbr.anisotropy` sub-configuration (Lite `AnisotropyProps`). */
+    public get anisotropy(): PBRAnisotropicConfiguration {
+        if (!this._anisotropy) {
+            if (!this._lite.anisotropy) {
+                this._lite.anisotropy = { isEnabled: false };
+            }
+            this._anisotropy = new PBRAnisotropicConfiguration(this._lite.anisotropy, () => this._markDirty());
+        }
+        return this._anisotropy;
+    }
+
+    private _anisotropy?: PBRAnisotropicConfiguration;
+
+    /** Babylon.js `pbr.iridescence` sub-configuration (Lite `IridescenceProps`). */
+    public get iridescence(): PBRIridescenceConfiguration {
+        if (!this._iridescence) {
+            if (!this._lite.iridescence) {
+                this._lite.iridescence = { isEnabled: false };
+            }
+            this._iridescence = new PBRIridescenceConfiguration(this._lite.iridescence, () => this._markDirty());
+        }
+        return this._iridescence;
+    }
+
+    private _iridescence?: PBRIridescenceConfiguration;
 
     /**
      * Babylon.js `material.environmentTexture` / `reflectionTexture`. Babylon Lite
