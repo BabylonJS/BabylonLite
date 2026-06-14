@@ -128,8 +128,6 @@ export interface SceneContext extends RenderingContext {
     _clusteredLightContainer?: ClusteredLightContainer;
     /** @internal Updates clustered light cells for the camera used by the current render pass. */
     _clusteredLightUpdater?: (camera: Camera | null | undefined, targetWidth: number, targetHeight: number) => void;
-    /** @internal Optional feature hooks for materials added after a scene extension is enabled. */
-    _materialAddedHooks?: ((material: unknown) => void)[];
 }
 
 /** Options passed to the scene-context factory. */
@@ -155,15 +153,6 @@ function enqueueMaterialSwap(scene: SceneContext, mesh: Mesh): void {
     }
 }
 
-function runMaterialAddedHooks(scene: SceneContext, material: unknown): void {
-    if (!material) {
-        return;
-    }
-    for (const hook of scene._materialAddedHooks ?? []) {
-        hook(material);
-    }
-}
-
 /** Install a property setter on mesh.material that sets _materialDirty
  *  and pushes the mesh into the scene's swap queue for processing. */
 function installMaterialSetter(scene: SceneContext, mesh: Mesh): void {
@@ -175,7 +164,6 @@ function installMaterialSetter(scene: SceneContext, mesh: Mesh): void {
         set(v) {
             if (v !== _mat) {
                 _mat = v;
-                runMaterialAddedHooks(scene, v);
                 enqueueMaterialSwap(scene, mesh);
             }
         },
@@ -357,7 +345,6 @@ export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camer
         const mesh = entity as unknown as Mesh;
         ctx.meshes.push(mesh);
         installMaterialSetter(ctx, mesh);
-        runMaterialAddedHooks(ctx, mesh.material);
         const build = mesh.material ? (mesh.material as unknown as { _buildGroup?: MeshGroupBuilder })._buildGroup : undefined;
         if (build) {
             let group = ctx._groups.get(build);
