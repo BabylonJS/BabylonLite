@@ -234,13 +234,13 @@ for reader context but are not part of the audited surface.
 
 ## Animation
 
-| BJS API                                                     | Status    | Module                                                                                                                                 |
-| ----------------------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Easing functions (`SineEase`, `CubicEase`, `BounceEase`, …) | ✅ Full    | [animations/easing.ts](src/animations/easing.ts)                                                                                       |
-| `Animation` (keyframe model + CPU `evaluate`)               | ✅ Full    | [animations/animation.ts](src/animations/animation.ts)                                                                                 |
-| `Animatable` / `scene.beginDirectAnimation`                 | ⚡ Partial | animation (CPU per-frame evaluation; no weight blending)                                                                               |
-| `AnimationGroup` (single BJS type; structural + loaded)     | ⚡ Partial | animation (loaded groups seek/freeze via Lite; structural groups step + weight-blend on the CPU)                                       |
-| Animation weights / cross-fade / additive                   | ⚡ Partial | structural CPU weighted + cross-fade blending (manual `AnimationGroup`s); loaded-clip skeletal weighted/additive blend needs Lite core |
+| BJS API                                                     | Status    | Module                                                                                                                                                                                  |
+| ----------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Easing functions (`SineEase`, `CubicEase`, `BounceEase`, …) | ✅ Full    | [animations/easing.ts](src/animations/easing.ts)                                                                                                                                        |
+| `Animation` (keyframe model + CPU `evaluate`)               | ✅ Full    | [animations/animation.ts](src/animations/animation.ts)                                                                                                                                  |
+| `Animatable` / `scene.beginDirectAnimation`                 | ⚡ Partial | animation (CPU per-frame evaluation; no weight blending)                                                                                                                                |
+| `AnimationGroup` (single BJS type; structural + loaded)     | ⚡ Partial | animation (loaded groups seek/freeze + weighted/additive blend via a scene-owned Lite `AnimationManager`; structural groups step + weight-blend on the CPU)                             |
+| Animation weights / cross-fade / additive                   | ✅ Full    | structural CPU weighted + cross-fade blending (manual `AnimationGroup`s) and loaded glTF skeletal weighted + additive (`MakeAnimationAdditive`) blending over Lite's `AnimationManager` |
 
 ## Bones / Skeletons / Morph
 
@@ -340,14 +340,14 @@ behavioural cross-check of the API surface above, not a separate contract.
 > nothing to run through the compat layer; `/compat/sceneN.html` reports them as
 > skipped. The counts below are out of the **164** scenes that have a BJS oracle.
 
-### ✅ Working (69 scenes, MAD ≈ 0)
+### ✅ Working (71 scenes, MAD ≈ 0)
 
 `1`, `2`, `5`, `6`, `9`, `10`, `11`, `13`, `15`, `16`, `18`, `19`, `28`, `29`,
 `30`, `31`, `32`, `33`, `34`, `35`, `37`, `38`, `50`, `51`, `52`, `53`, `54`,
 `55`, `58`, `59`, `60`, `61`, `62`, `63`, `77`, `78`, `79`, `80`, `82`, `83`,
 `85`, `87`, `88`, `89`, `92`, `93`, `94`, `95`, `96`, `150`, `151`, `152`,
-`155`, `156`, `200`, `201`, `202`, `203`, `204`, `205`, `207`, `210`, `216`,
-`218`, `219`, `221`, `222`, `223`, `224`
+`155`, `156`, `157`, `158`, `200`, `201`, `202`, `203`, `204`, `205`, `207`,
+`210`, `216`, `218`, `219`, `221`, `222`, `223`, `224`
 
 Covers: StandardMaterial + PBR (factor + IBL, clearcoat, `.dds` environment),
 glTF / `.babylon` model loading (+ loaded animation groups with `goToFrame`
@@ -360,8 +360,10 @@ composite position/rotation/scale, bounding-box, camera + light) over a utility
 layer, procedural builders (ribbon/tube/extrude), `VertexData.applyToMesh`
 (CPU-authored geometry),
 floating-origin / large-world rendering (point/spot light, thin instances,
-directional shadows), CPU keyframe animation, and manual weighted / cross-fade
-`AnimationGroup` blending (structural groups sharing a property).
+directional shadows), CPU keyframe animation, manual weighted / cross-fade
+`AnimationGroup` blending (structural groups sharing a property), and loaded
+glTF skeletal weighted + additive `AnimationGroup` blending (Xbot walk/run mix,
+idle + additive sad-pose) via a scene-owned Lite `AnimationManager`.
 
 ### ❌ Not working — grouped by blocker
 
@@ -384,7 +386,6 @@ directional shadows), CPU keyframe animation, and manual weighted / cross-fade
 | CSG / CSG2                                                  | 90, 91                                                                                                | Constructive solid geometry not wrapped                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Physics (Havok)                                             | 40                                                                                                    | `PhysicsAggregate`/`PhysicsShapeType` not wrapped                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `CascadedShadowGenerator` (true CSM)                        | 214, 215                                                                                              | Falls back to single-cascade directional; cascades diverge                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Loaded glTF weighted / additive `AnimationGroup` blending   | 157, 158                                                                                              | Manual structural weighted / cross-fade blend now works (155, 156). The loaded-clip path needs Babylon Lite to blend two **skeletal** loaded groups by weight (157) and to support `MakeAnimationAdditive` (158) — a Lite-core capability, not a compat facade.                                                                                                                                                                                                                              |
 | Misc single-API gaps                                        | 8, 12, 20, 25, 26, 27, 113, 140, 147, 148, 149, 153, 154, 165, 179, 211, 217, 221, 222, 223, 224, 225 | e.g. `HDRCubeTexture`, `engine.getCaps`, `NullEngine`, `MaterialPluginBase`, `GeospatialCamera`, gizmo internals                                                                                                                                                                                                                                                                                                                                                                             |
 | Silent no-render (no throw, blank frame)                    | 14, 24, 112                                                                                           | Under investigation                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Sync `scene.pick`                                           | 113                                                                                                   | ❌ by design — use async `GPUPicker`                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -396,7 +397,7 @@ scenes (142–146) are deferred **by design** — Lite renders effects through i
 own `create*PostProcessTask` frame-graph API, so the Babylon.js camera-attached
 `PostProcess` / `PostProcessRenderPipeline` / raw `FrameGraph*` model is left as a
 throwing stub rather than re-emulated. Manual structural weighted / cross-fade
-`AnimationGroup` blending now works (155, 156); the remaining tractable work is the
-loaded-clip skeletal weighted / additive blend (157, 158, needs Lite core) and the
-assorted single-API gaps. The glTF model-framing cluster and the procedural
+`AnimationGroup` blending (155, 156) and loaded glTF skeletal weighted + additive
+blending (157, 158) now work; the remaining tractable work is the assorted
+single-API gaps. The glTF model-framing cluster and the procedural
 large-world-rendering scenes are now resolved.

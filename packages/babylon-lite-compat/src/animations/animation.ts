@@ -8,7 +8,7 @@
  * native Babylon Lite animation manager when wired to a scene (not modelled here).
  */
 
-import { goToFrame as liteGoToFrame, playAnimation, pauseAnimation, stopAnimation } from "babylon-lite";
+import { goToFrame as liteGoToFrame, playAnimation, pauseAnimation, stopAnimation, setAnimationAdditive } from "babylon-lite";
 import type { AnimationGroup as LiteAnimationGroup, EngineContext } from "babylon-lite";
 
 export interface IAnimationKey {
@@ -271,6 +271,19 @@ export interface StructuralAnimationHost {
 }
 
 /**
+ * @internal Surface a **loaded** glTF/.babylon `AnimationGroup` needs from its
+ * host scene to enable Babylon Lite's weighted / additive skeletal blending.
+ * Implemented structurally by the compat `Scene` to avoid an import cycle.
+ */
+export interface LoadedAnimationBlendHost {
+    /**
+     * @internal Route the scene's loaded Lite animation groups through a
+     * scene-owned `AnimationManager` with blending enabled (idempotent).
+     */
+    _enableLoadedBlend(): void;
+}
+
+/**
  * Babylon.js `AnimationGroup` — a named collection of targeted animations with
  * playback state. This is the **single** `AnimationGroup` type, matching Babylon.js;
  * there is no separate "loaded" subtype. Two construction paths map onto Lite:
@@ -295,6 +308,8 @@ export class AnimationGroup {
     public _lite?: LiteAnimationGroup;
     /** @internal Engine context used to drive Lite-backed playback. */
     private _engine?: EngineContext;
+    /** @internal Host scene that owns the loaded-group blend manager (loaded path). */
+    private _blendHost?: LoadedAnimationBlendHost;
 
     private _from = 0;
     private _to = 0;
@@ -316,10 +331,25 @@ export class AnimationGroup {
     }
 
     /** @internal Build an `AnimationGroup` backed by a Babylon Lite loaded group. */
-    public static _fromLite(lite: LiteAnimationGroup, engine: EngineContext): AnimationGroup {
+    public static _fromLite(lite: LiteAnimationGroup, engine: EngineContext, blendHost?: LoadedAnimationBlendHost): AnimationGroup {
         const group = new AnimationGroup(lite.name);
         group._lite = lite;
         group._engine = engine;
+        group._blendHost = blendHost;
+        return group;
+    }
+
+    /**
+     * Babylon.js `AnimationGroup.MakeAnimationAdditive(group)` — convert a loaded
+     * group into an additive layer (reference frame 0) and enable the scene's
+     * weighted-blend manager. Returns the same group (Babylon Lite mutates in
+     * place rather than cloning).
+     */
+    public static MakeAnimationAdditive(group: AnimationGroup): AnimationGroup {
+        if (group._lite) {
+            setAnimationAdditive(group._lite, { referenceFrame: 0 });
+            group._blendHost?._enableLoadedBlend();
+        }
         return group;
     }
 
@@ -372,6 +402,12 @@ export class AnimationGroup {
     public set weight(value: number) {
         if (this._lite) {
             this._lite.weight = value;
+            // A non-unit weight on a loaded clip means the scene must blend its
+            // groups (Babylon.js manual weighted blend). Enable the scene's
+            // weighted-blend manager (idempotent; no-op for the default weight 1).
+            if (value !== 1) {
+                this._blendHost?._enableLoadedBlend();
+            }
         } else {
             this._weight = value;
             this._host?._recomputeStructuralBlends();
@@ -404,10 +440,29 @@ export class AnimationGroup {
      * Babylon.js `start(loop?, speedRatio?, from?, to?)`. On the structural path this
      * registers the group with its host scene, captures the targets' rest-pose
      * baselines, and begins CPU stepping + weight blending. On the loaded path it
-     * delegates to `play` (Lite drives the clip).
+     * seeks to `from` and plays — except a zero-length range (`from === to`) is a
+     * **held single-frame pose** (e.g. an additive pose layer), which must hold
+     * rather than play: Babylon Lite's group advance ignores the BJS play range and
+     * would otherwise loop the (often ~2-frame) pose clip every frame, flickering.
      */
     public start(loop = true, speedRatio = 1, from?: number, to?: number): this {
         if (this._lite) {
+            const frameRate = this._lite.frameRate ?? 60;
+            if (from !== undefined) {
+                this._lite.currentFrame = from / frameRate;
+            }
+            this._lite.speedRatio = speedRatio;
+            this._lite.loopAnimation = loop;
+            if (from !== undefined && to !== undefined && from === to) {
+                // Held single-frame pose — seek and hold (do not advance/loop).
+                // `play` then `pause` clears Lite's internal `_stopped` flag (set by a
+                // prior `stop()`) while leaving the clip paused, so the weighted mixer
+                // still includes this group (a `_stopped` group is excluded from
+                // blending, which would drop the whole shared-skeleton blend).
+                playAnimation(this._lite);
+                pauseAnimation(this._lite);
+                return this;
+            }
             return this.play(loop);
         }
         this._loopAnimation = loop;

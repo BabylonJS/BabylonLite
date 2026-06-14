@@ -20,9 +20,13 @@ import {
     loadEnvironment,
     createHemisphericLight,
     addToScene,
+    createAnimationManager,
+    addAnimationGroup,
+    enableAnimationBlending,
+    updateAnimationManager,
 } from "babylon-lite";
 import { loadDdsEnvironment } from "babylon-lite/loader-env/load-dds-env";
-import type { SceneContext, Camera as LiteCamera, ArcRotateCamera as LiteArcRotateCamera } from "babylon-lite";
+import type { SceneContext, Camera as LiteCamera, ArcRotateCamera as LiteArcRotateCamera, AnimationManager } from "babylon-lite";
 
 import { Color3, Color4 } from "../math/color.js";
 import { unsupported } from "../error.js";
@@ -82,7 +86,7 @@ export class Scene {
         return liteGroups.map((g) => {
             let wrapper = this._animationGroupCache.get(g);
             if (!wrapper) {
-                wrapper = AnimationGroup._fromLite(g, this._engine._lite);
+                wrapper = AnimationGroup._fromLite(g, this._engine._lite, this);
                 this._animationGroupCache.set(g, wrapper);
             }
             return wrapper;
@@ -118,6 +122,8 @@ export class Scene {
     private readonly _animationGroupCache = new WeakMap<object, AnimationGroup>();
     /** @internal Structural `AnimationGroup`s stepped + weight-blended each frame. */
     private readonly _structuralGroups: AnimationGroup[] = [];
+    /** @internal Lite manager that weight/additive-blends loaded glTF groups (lazily created). */
+    private _blendManager: AnimationManager | null = null;
 
     public constructor(engine: WebGPUEngine) {
         this._engine = engine;
@@ -133,6 +139,9 @@ export class Scene {
             // before-render observers) reflects the current frame.
             this._engine._lastDeltaMs = deltaMs;
             this.onBeforeAnimationsObservable.notifyObservers(this);
+            if (this._blendManager) {
+                updateAnimationManager(this._blendManager, deltaMs);
+            }
             for (const a of this._runningAnimatables) {
                 a._tick(deltaMs);
             }
@@ -460,6 +469,34 @@ export class Scene {
     /** @internal Re-run weighted blending across all structural groups (after a seek/weight change). */
     public _recomputeStructuralBlends(): void {
         AnimationGroup._blendStructuralGroups(this._structuralGroups);
+    }
+
+    /**
+     * @internal Route the scene's loaded Lite animation groups through a
+     * scene-owned `AnimationManager` with weighted/additive blending enabled.
+     *
+     * Babylon.js treats the scene as an implicit animation mixer, so any loaded
+     * group whose weight ≠ 1 (or that is made additive) must blend with its
+     * siblings on the shared skeleton. Babylon Lite makes the manager explicit and
+     * blending opt-in (`enableAnimationBlending`). When a glTF container is added,
+     * Lite installs a per-group last-writer-wins tick (scene-core `addToScene`); we
+     * detach each group's controller (`_ctrl`) so that tick skips them and the
+     * weighted mixer — which drives groups via `_gltfMixer`, not `_ctrl` — owns the
+     * pose instead. Idempotent.
+     */
+    public _enableLoadedBlend(): void {
+        const liteGroups = this._lite.animationGroups ?? [];
+        if (liteGroups.length === 0) {
+            return;
+        }
+        if (!this._blendManager) {
+            this._blendManager = createAnimationManager({ engine: this._engine._lite });
+            enableAnimationBlending(this._blendManager);
+        }
+        for (const g of liteGroups) {
+            addAnimationGroup(this._blendManager, g);
+            (g as { _ctrl?: unknown })._ctrl = undefined;
+        }
     }
 
     /**

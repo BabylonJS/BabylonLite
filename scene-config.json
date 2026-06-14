@@ -1264,7 +1264,8 @@
         "maxRawKB": 96,
         "description": "One AnimationManager blends Xbot walk and run glTF animation groups with equal weights before a single skeleton upload.",
         "tags": ["pbr", "gltf", "anim"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 158,
@@ -1274,7 +1275,8 @@
         "maxRawKB": 98,
         "description": "Xbot idle base animation blends with a full-weight additive sad pose.",
         "tags": ["pbr", "gltf", "anim"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 159,
