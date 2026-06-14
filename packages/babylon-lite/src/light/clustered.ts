@@ -139,12 +139,18 @@ export function addClusteredLightContainer(scene: SceneContext, container: Clust
     const state = buildClusteredLightGpuState(ctx.surface.engine, ctx, container);
     ctx._clusteredLightUpdater = (camera, targetWidth, targetHeight) => state.refresh(camera, targetWidth, targetHeight);
     ctx._disposables.push(() => state.dispose());
-    for (const mesh of ctx.meshes) {
-        if (mesh.material) {
-            const mat = mesh.material as { _clusteredLightState?: ClusteredLightGpuState; _renderFeatures?: unknown };
-            mat._clusteredLightState = state;
-            mat._renderFeatures = undefined;
+    const attachMaterial = (material: unknown): void => {
+        const mat = material as { _clusteredLightState?: ClusteredLightGpuState; _renderFeatures?: unknown } | null | undefined;
+        if (!mat) {
+            return;
         }
+        mat._clusteredLightState = state;
+        mat._renderFeatures = undefined;
+    };
+    ctx._materialAddedHooks ??= [];
+    ctx._materialAddedHooks.push(attachMaterial);
+    for (const mesh of ctx.meshes) {
+        attachMaterial(mesh.material);
     }
 }
 
