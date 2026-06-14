@@ -23,12 +23,21 @@ import {
     addFacingBillboardSystem,
     billboardBlendAlpha,
     billboardBlendAdditive,
+    createSprite2DLayer,
+    addSprite2DIndex,
+    updateSprite2DIndex,
+    createSpriteRenderer,
+    registerSpriteRenderer,
+    spriteBlendAlpha,
+    spriteBlendPremultiplied,
+    spriteBlendAdditive,
 } from "babylon-lite";
-import type { SpriteAtlas, FacingBillboardSpriteSystem, BillboardBlendDescriptor, BillboardSpriteInit } from "babylon-lite";
+import type { SpriteAtlas, FacingBillboardSpriteSystem, BillboardBlendDescriptor, BillboardSpriteInit, Sprite2DLayer, SpriteBlendMode } from "babylon-lite";
 
 import { Vector3 } from "../math/vector.js";
 import { Color4 } from "../math/color.js";
 import type { Scene } from "../scene/scene.js";
+import type { WebGPUEngine } from "../engine/engine.js";
 
 interface CellSize {
     width: number;
@@ -229,5 +238,158 @@ export class Sprite {
         if (this._system && this._index >= 0) {
             updateBillboardSpriteIndex(this._system, this._index, patch);
         }
+    }
+}
+
+/** Babylon.js `Constants.ALPHA_PREMULTIPLIED`. */
+const ALPHA_PREMULTIPLIED = 7;
+
+/**
+ * Babylon.js `ThinSprite` — a lightweight pixel-space sprite drawn by a
+ * {@link SpriteRenderer}. Position is in screen pixels (origin bottom-left, +Y
+ * up, matching the orthographic projection BJS sprite scenes set up); size is in
+ * pixels; `cellIndex` selects the atlas frame.
+ */
+export class ThinSprite {
+    public position = new Vector3(0, 0, 0);
+    public width = 1;
+    public height = 1;
+    public cellIndex = 0;
+    public angle = 0;
+    public color = new Color4(1, 1, 1, 1);
+    public invertU = false;
+    public invertV = false;
+    public isVisible = true;
+}
+
+interface ThinSpriteLike {
+    position: { x: number; y: number };
+    width: number;
+    height: number;
+    cellIndex: number;
+    angle: number;
+    color: { r: number; g: number; b: number; a: number };
+    invertU: boolean;
+    invertV: boolean;
+    isVisible: boolean;
+}
+
+/**
+ * Babylon.js `SpriteRenderer` — the low-level, scene-less pixel-space sprite
+ * pass. Babylon.js scenes build an array of {@link ThinSprite}s and call
+ * `renderer.render(sprites, dt, view, projection)` from their own render loop
+ * with an orthographic pixel projection.
+ *
+ * Babylon Lite's equivalent is `createSpriteRenderer` + a pixel-space
+ * `Sprite2DLayer`. The atlas image loads asynchronously, so the renderer
+ * registers the atlas load as engine startup work (evaluated once `cellWidth`/
+ * `cellHeight` are set), then builds + registers a self-drawing Lite sprite
+ * renderer on the first `render(...)` call (the engine invokes the loop callback
+ * once after startup for scene-less loops). Subsequent `render(...)` calls push
+ * live per-sprite updates so animated scenes stay in sync.
+ *
+ * Coordinate mapping: BJS sprite positions are bottom-left-origin pixels (the
+ * scenes use `OrthoOffCenterLH(0, w, 0, h)` and set `y = canvas.height - topY`),
+ * whereas Lite `Sprite2DLayer` uses top-left-origin pixels — so the Y axis is
+ * flipped (`positionPx.y = canvasHeight - sprite.position.y`) and the rotation
+ * sign is negated to match.
+ */
+export class SpriteRenderer {
+    public texture: { name: string; samplingMode?: number } | null = null;
+    public cellWidth = 0;
+    public cellHeight = 0;
+    public disableDepthWrite = false;
+    /** Babylon.js `Constants.ALPHA_*` blend mode. `ALPHA_PREMULTIPLIED` maps to Lite's premultiplied path. */
+    public blendMode = 2;
+    /** @internal Babylon.js scenes poll this to gate readiness; true once the Lite renderer is built. */
+    public _shadersLoaded = false;
+
+    private readonly _engine: WebGPUEngine;
+    private readonly _capacity: number;
+    private _atlas?: SpriteAtlas;
+    private _layer?: Sprite2DLayer;
+    private _built = false;
+    private readonly _indices: number[] = [];
+    private _sprites: ThinSpriteLike[] = [];
+
+    public constructor(engine: WebGPUEngine, capacity = 256, _epsilon = 0.01, _scene?: unknown) {
+        this._engine = engine;
+        this._capacity = capacity;
+        // Defer the atlas load to engine startup: the thunk runs after the scene
+        // setup code has assigned `texture`/`cellWidth`/`cellHeight`.
+        engine._registerStartupWork(async () => {
+            if (!this.texture) {
+                return;
+            }
+            const premultiplied = this.blendMode === ALPHA_PREMULTIPLIED;
+            this._atlas = await loadSpriteAtlas(engine._lite, this.texture.name, {
+                gridSize: [this.cellWidth, this.cellHeight],
+                sampling: this.texture.samplingMode === 1 ? "nearest" : "linear",
+                premultipliedAlpha: premultiplied,
+            });
+        });
+    }
+
+    /** @internal Map the Babylon.js blend mode to a Lite sprite blend descriptor. */
+    private _blend(): SpriteBlendMode {
+        if (this.blendMode === ALPHA_PREMULTIPLIED) {
+            return spriteBlendPremultiplied;
+        }
+        if (this.blendMode === 1 || this.blendMode === 6) {
+            return spriteBlendAdditive;
+        }
+        return spriteBlendAlpha;
+    }
+
+    /**
+     * Babylon.js `renderer.render(sprites, deltaTime, viewMatrix, projectionMatrix)`.
+     * The matrices are owned by Babylon Lite's pixel-space sprite pass, so they are
+     * accepted for API parity but not consumed. First call builds + registers the
+     * Lite sprite renderer; later calls push per-sprite updates.
+     */
+    public render(sprites: readonly ThinSpriteLike[], _deltaTime?: number, _view?: unknown, _projection?: unknown): void {
+        this._sprites = sprites as ThinSpriteLike[];
+        if (!this._atlas) {
+            return;
+        }
+        const canvasHeight = this._engine.getRenderingCanvas().height;
+        if (!this._built) {
+            const layer = createSprite2DLayer(this._atlas, { capacity: this._capacity, depth: "none", blendMode: this._blend() });
+            for (const s of this._sprites) {
+                this._indices.push(addSprite2DIndex(layer, this._spriteProps(s, canvasHeight)));
+            }
+            this._layer = layer;
+            const renderer = createSpriteRenderer(this._engine._lite, {
+                layers: [layer],
+                // Only clear if the scene drove a `engine.clear(...)` (scene-less 2D
+                // path); when overlaying a 3D scene the renderer must preserve the
+                // already-rendered colour, so it draws without clearing.
+                clear: this._engine._clearRequested,
+                clearValue: { ...this._engine._lastClearColor },
+            });
+            registerSpriteRenderer(renderer);
+            this._built = true;
+            this._shadersLoaded = true;
+            return;
+        }
+        // Live update path (animated scenes): re-sync each sprite's props.
+        const layer = this._layer!;
+        for (let i = 0; i < this._sprites.length; i++) {
+            updateSprite2DIndex(layer, this._indices[i]!, this._spriteProps(this._sprites[i]!, canvasHeight));
+        }
+    }
+
+    /** @internal Convert a BJS `ThinSprite` to Lite `Sprite2DProps` (Y-flip + rotation negate). */
+    private _spriteProps(s: ThinSpriteLike, canvasHeight: number): Parameters<typeof addSprite2DIndex>[1] {
+        return {
+            positionPx: [s.position.x, canvasHeight - s.position.y],
+            sizePx: [s.width, s.height],
+            frame: s.cellIndex,
+            rotation: -s.angle,
+            color: [s.color.r, s.color.g, s.color.b, s.color.a],
+            flipX: s.invertU,
+            flipY: s.invertV,
+            visible: s.isVisible,
+        };
     }
 }

@@ -28,6 +28,8 @@ export class WebGPUEngine {
     private readonly _loopCallbacks: Array<() => void> = [];
     private _initialized = false;
     private _started = false;
+    /** @internal Active `requestAnimationFrame` id for the scene-less loop, if any. */
+    private _rafId: number | null = null;
 
     /**
      * Babylon.js `engine.useReverseDepthBuffer`. Babylon Lite owns its depth
@@ -37,6 +39,15 @@ export class WebGPUEngine {
 
     /** @internal Latest per-frame delta in ms, updated by each scene's before-render hook. */
     public _lastDeltaMs = 16;
+
+    /** @internal Last clear colour passed to `engine.clear(...)` (consumed by the scene-less sprite path). */
+    public _lastClearColor: { r: number; g: number; b: number; a: number } = { r: 0, g: 0, b: 0, a: 1 };
+
+    /** @internal Whether `engine.clear(...)` was ever called (sprite renderers overlay a scene if not). */
+    public _clearRequested = false;
+
+    /** @internal Deferred startup work (thunks) awaited before the engine starts — e.g. sprite-atlas loads. */
+    private readonly _startupWork: Array<() => Promise<void>> = [];
 
     public constructor(canvas: RenderCanvas, options?: ({ antialias?: boolean; adaptToDeviceRatio?: boolean; useLargeWorldRendering?: boolean } & EngineOptions) | boolean) {
         this._canvas = canvas;
@@ -77,6 +88,32 @@ export class WebGPUEngine {
         return this._lastDeltaMs;
     }
 
+    /**
+     * Babylon.js `engine.isNDCHalfZRange`. WebGPU's clip space uses a `[0, 1]`
+     * depth range, so this is always `true` under Babylon Lite.
+     */
+    public get isNDCHalfZRange(): boolean {
+        return true;
+    }
+
+    /**
+     * Babylon.js `engine.clear(color?, backBuffer?, depth?, stencil?)`. Babylon
+     * Lite owns clearing through its render contexts (scenes / sprite renderers),
+     * so this records the requested clear colour (used by the scene-less sprite
+     * renderer path) and is otherwise a no-op.
+     */
+    public clear(color?: { r: number; g: number; b: number; a: number }, _backBuffer?: boolean, _depth?: boolean, _stencil?: boolean): void {
+        this._clearRequested = true;
+        if (color) {
+            this._lastClearColor = { r: color.r, g: color.g, b: color.b, a: color.a ?? 1 };
+        }
+    }
+
+    /** @internal Register deferred startup work (a thunk) awaited before the engine starts. */
+    public _registerStartupWork(work: () => Promise<void>): void {
+        this._startupWork.push(work);
+    }
+
     /** @internal Scenes register themselves on construction. */
     public _registerScene(scene: Scene): void {
         this._scenes.push(scene);
@@ -92,10 +129,30 @@ export class WebGPUEngine {
         for (const scene of this._scenes) {
             onBeforeRender(scene._lite, () => callback());
         }
-        void this._start();
+        void this._start().then(() => {
+            // Scene-less render loops (e.g. the `SpriteRenderer` 2D path) have no
+            // scene before-render hook to drive the callback. Run them on a
+            // `requestAnimationFrame` loop so per-frame work (e.g. sprite-sheet
+            // animation that mutates `cellIndex` each tick) actually advances.
+            // Babylon Lite's own render loop draws the registered sprite renderer;
+            // we just need to push the updated sprite data before each frame.
+            if (this._scenes.length === 0 && this._rafId === null && typeof requestAnimationFrame === "function") {
+                const tick = (): void => {
+                    for (const cb of this._loopCallbacks) {
+                        cb();
+                    }
+                    this._rafId = requestAnimationFrame(tick);
+                };
+                this._rafId = requestAnimationFrame(tick);
+            }
+        });
     }
 
     public stopRenderLoop(): void {
+        if (this._rafId !== null && typeof cancelAnimationFrame === "function") {
+            cancelAnimationFrame(this._rafId);
+            this._rafId = null;
+        }
         if (this._initialized) {
             stopEngine(this._lite);
         }
@@ -112,6 +169,10 @@ export class WebGPUEngine {
     }
 
     public dispose(): void {
+        if (this._rafId !== null && typeof cancelAnimationFrame === "function") {
+            cancelAnimationFrame(this._rafId);
+            this._rafId = null;
+        }
         if (this._initialized) {
             disposeEngine(this._lite);
         }
@@ -132,6 +193,12 @@ export class WebGPUEngine {
             return;
         }
         this._started = true;
+        // Run deferred startup work (e.g. sprite-atlas loads) first, so any
+        // resources a render context needs exist before the first frame.
+        if (this._startupWork.length > 0) {
+            await Promise.all(this._startupWork.map((w) => w()));
+            this._startupWork.length = 0;
+        }
         for (const scene of this._scenes) {
             await scene._awaitPendingTextures();
             scene._flushPendingAdds();

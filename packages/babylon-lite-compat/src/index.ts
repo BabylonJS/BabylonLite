@@ -57,7 +57,7 @@ export {
 export { Light, HemisphericLight, DirectionalLight, PointLight, SpotLight } from "./lights/lights.js";
 
 // ─── Meshes ──────────────────────────────────────────────────────────
-export { Mesh, AbstractMesh, TransformNode, GroundMesh, InstancedMesh, VertexData, MeshBuilder } from "./meshes/meshes.js";
+export { Mesh, AbstractMesh, TransformNode, GroundMesh, InstancedMesh, VertexData, VertexBuffer, MeshBuilder } from "./meshes/meshes.js";
 
 // ─── Materials ───────────────────────────────────────────────────────
 export {
@@ -92,7 +92,7 @@ export { AutoRotationBehavior, BouncingBehavior, FramingBehavior } from "./behav
 export type { Behavior } from "./behaviors/behaviors.js";
 
 // ─── Sprites ─────────────────────────────────────────────────────────
-export { SpriteManager, Sprite } from "./sprites/sprites.js";
+export { SpriteManager, Sprite, SpriteRenderer, ThinSprite } from "./sprites/sprites.js";
 
 // ─── Shadows ─────────────────────────────────────────────────────────
 export { ShadowGenerator, CascadedShadowGenerator } from "./shadows/shadow-generator.js";

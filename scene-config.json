@@ -411,7 +411,8 @@
         "maxRawKB": 20,
         "description": "25×10 grid of icon sprites with cycled tints and rotated thirds, rendered via the pure-2D sprite API. BJS SpriteManager oracle.",
         "tags": ["sprites", "2d"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 51,
@@ -431,7 +432,8 @@
         "maxRawKB": 60,
         "description": "3D scene (sphere + StandardMaterial under a directional light) with a pure-2D HUD sprite overlay rendered AFTER the 3D pass via createSpriteRenderer + registerSpriteRenderer. HUD layer uses depth: \"none\". BJS reference renders the same 3D scene plus a pixel-space SpriteRenderer HUD for parity.",
         "tags": ["sprites", "2d", "hud"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 53,
@@ -493,7 +495,8 @@
         "maxRawKB": 25,
         "description": "Pure-2D player sprite sheet animation using the optional Sprite2D handle animation API. The scene exercises forward looping, reverse looping, and removeWhenFinished on a frozen seek frame.",
         "tags": ["sprites", "2d", "anim"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 59,
@@ -845,7 +848,8 @@
         "maxRawKB": 24,
         "description": "25×10 pure-2D sprite grid drawn through an opt-in custom fragment shader that multiplies the atlas sample and per-sprite tint by a constant fx.params vec4 set once before the first frame (no fx.time, fully deterministic). BJS SpriteRenderer oracle pre-multiplies each sprite color by the same params.",
         "tags": ["sprites", "2d", "shader"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 93,
@@ -855,7 +859,8 @@
         "maxRawKB": 24,
         "description": "25×10 pure-2D cutout-sprite grid recoloured through a 256×1 palette lookup texture (atlas red channel indexes the palette, source alpha preserved), nearest-filtered for bit-exact lookup. BJS SpriteRenderer oracle renders a pre-baked palette-remapped atlas.",
         "tags": ["sprites", "2d", "shader"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 94,
@@ -887,7 +892,8 @@
         "maxRawKB": 16,
         "description": "20×9 pure-2D sprite grid sampling one tileable atlas tile (repeat wrap, nearest) where each horizontal band carries a different fixed per-sprite uvOffset (uvScroll), shifting the sampled UV in the vertex stage — the building block for parallax / infinite-scroll backgrounds. BJS SpriteRenderer oracle bakes the same effect into a per-offset rolled-tile atlas selected by cellIndex.",
         "tags": ["sprites", "2d", "uvoffset"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 97,

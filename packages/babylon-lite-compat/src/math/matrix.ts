@@ -156,6 +156,45 @@ export class Matrix {
         return Matrix.FromValues(c, s, 0, 0, -s, c, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
     }
 
+    /** Babylon.js `Matrix.LookAtLH(eye, target, up)` — left-handed view matrix. */
+    public static LookAtLH(eye: Vector3, target: Vector3, up: Vector3): Matrix {
+        // zaxis = normalize(target - eye)
+        let zx = target.x - eye.x,
+            zy = target.y - eye.y,
+            zz = target.z - eye.z;
+        const zl = Math.hypot(zx, zy, zz) || 1;
+        zx /= zl;
+        zy /= zl;
+        zz /= zl;
+        // xaxis = normalize(cross(up, zaxis))
+        let xx = up.y * zz - up.z * zy,
+            xy = up.z * zx - up.x * zz,
+            xz = up.x * zy - up.y * zx;
+        const xl = Math.hypot(xx, xy, xz) || 1;
+        xx /= xl;
+        xy /= xl;
+        xz /= xl;
+        // yaxis = cross(zaxis, xaxis)
+        const yx = zy * xz - zz * xy,
+            yy = zz * xx - zx * xz,
+            yz = zx * xy - zy * xx;
+        const ex = -(xx * eye.x + xy * eye.y + xz * eye.z);
+        const ey = -(yx * eye.x + yy * eye.y + yz * eye.z);
+        const ez = -(zx * eye.x + zy * eye.y + zz * eye.z);
+        return Matrix.FromValues(xx, yx, zx, 0, xy, yy, zy, 0, xz, yz, zz, 0, ex, ey, ez, 1);
+    }
+
+    /** Babylon.js `Matrix.OrthoOffCenterLH(left, right, bottom, top, znear, zfar, halfZRange?)` — LH ortho projection. */
+    public static OrthoOffCenterLH(left: number, right: number, bottom: number, top: number, znear: number, zfar: number, _halfZRange?: boolean): Matrix {
+        const a = 2 / (right - left);
+        const b = 2 / (top - bottom);
+        const c = 1 / (zfar - znear);
+        const tx = (left + right) / (left - right);
+        const ty = (top + bottom) / (bottom - top);
+        const tz = -znear * c;
+        return Matrix.FromValues(a, 0, 0, 0, 0, b, 0, 0, 0, 0, c, 0, tx, ty, tz, 1);
+    }
+
     /**
      * Babylon.js `Matrix.Compose(scale, rotation, translation)` — build a TRS matrix
      * from a scale vector, a rotation quaternion, and a translation vector (row-vector

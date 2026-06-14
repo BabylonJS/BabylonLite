@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Sprite, SpriteManager } from "../src/sprites/sprites";
+import { Sprite, SpriteManager, ThinSprite } from "../src/sprites/sprites";
 
 /**
  * GPU-free coverage for the sprite wrappers. `SpriteManager` needs a real engine
@@ -44,5 +44,36 @@ describe("Sprite", () => {
         expect(sprite.height).toBe(4);
         expect(sprite.cellIndex).toBe(7);
         expect(sprite.invertU).toBe(true);
+    });
+});
+
+describe("ThinSprite", () => {
+    it("exposes Babylon.js default pixel-sprite properties", () => {
+        const s = new ThinSprite();
+        expect(s.position.x).toBe(0);
+        expect(s.width).toBe(1);
+        expect(s.height).toBe(1);
+        expect(s.cellIndex).toBe(0);
+        expect(s.angle).toBe(0);
+        expect(s.invertU).toBe(false);
+        expect(s.invertV).toBe(false);
+        expect(s.isVisible).toBe(true);
+        expect(s.color.a).toBe(1);
+    });
+
+    it("holds mutated pixel-space props for the SpriteRenderer", () => {
+        const s = new ThinSprite();
+        s.position.set(120, 80, 0);
+        s.width = 28;
+        s.height = 28;
+        s.cellIndex = 12;
+        s.angle = Math.PI / 6;
+        s.invertU = true;
+        expect(s.position.x).toBe(120);
+        expect(s.position.y).toBe(80);
+        expect(s.width).toBe(28);
+        expect(s.cellIndex).toBe(12);
+        expect(s.angle).toBeCloseTo(Math.PI / 6);
+        expect(s.invertU).toBe(true);
     });
 });

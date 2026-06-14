@@ -231,6 +231,54 @@ export class AbstractMesh extends TransformNode {
         return unsupported("AbstractMesh.getBoundingInfo", "Babylon Lite does not expose a public mesh bounding-info accessor yet.");
     }
 
+    /**
+     * Babylon.js `mesh.getVerticesData(kind)` — read back the CPU geometry buffer
+     * for `position` / `normal` / `uv`. Babylon Lite retains these on the mesh
+     * (for picking + device-loss recovery); other kinds are not stored.
+     */
+    public getVerticesData(kind: string): Float32Array | null {
+        const lite = this._lite as unknown as { _cpuPositions?: Float32Array; _cpuNormals?: Float32Array; _cpuUvs?: Float32Array };
+        switch (kind) {
+            case "position":
+                return lite._cpuPositions ?? null;
+            case "normal":
+                return lite._cpuNormals ?? null;
+            case "uv":
+                return lite._cpuUvs ?? null;
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Babylon.js `mesh.setVerticesData(kind, data)` — replace a vertex attribute.
+     * `position` / `normal` / `uv` / `color` re-upload the geometry in place;
+     * skinning/morph attributes (`matricesIndices`, etc.) are accepted but not
+     * applied (Babylon Lite drives skinning through its own loaded-skeleton path).
+     */
+    public setVerticesData(kind: string, data: number[] | Float32Array, _updatable?: boolean): void {
+        const engine = this._scene?.getEngine()._lite;
+        const lite = this._lite as unknown as { _cpuPositions?: Float32Array; _cpuNormals?: Float32Array; _cpuUvs?: Float32Array; _cpuIndices?: Uint32Array };
+        if (!engine || !lite._cpuPositions || !lite._cpuIndices) {
+            return;
+        }
+        if (kind !== "position" && kind !== "normal" && kind !== "uv" && kind !== "color") {
+            return;
+        }
+        const f32 = data instanceof Float32Array ? data : Float32Array.from(data);
+        const positions = kind === "position" ? f32 : lite._cpuPositions;
+        const normals = kind === "normal" ? f32 : (lite._cpuNormals ?? computeFlatNormals(positions, lite._cpuIndices));
+        const uvs = kind === "uv" ? f32 : lite._cpuUvs;
+        const colors = kind === "color" ? f32 : undefined;
+        resizeMeshGeometry(engine, this._lite, positions, normals, lite._cpuIndices, uvs, undefined, undefined, colors);
+    }
+
+    /** Babylon.js `mesh.getTotalVertices()` — vertex count from the position buffer. */
+    public getTotalVertices(): number {
+        const lite = this._lite as unknown as { _cpuPositions?: Float32Array };
+        return lite._cpuPositions ? lite._cpuPositions.length / 3 : 0;
+    }
+
     public override dispose(): void {
         if (this._scene) {
             removeFromScene(this._scene._lite, this._lite);
@@ -343,6 +391,22 @@ export class InstancedMesh {
         unsupported("InstancedMesh", "Babylon Lite has no hardware-instance object. Use the native thin-instance API (`setThinInstances`).");
     }
 }
+
+/**
+ * Babylon.js `VertexBuffer` — the per-attribute geometry buffer. Only the `kind`
+ * string constants are surfaced (used with `mesh.getVerticesData` /
+ * `setVerticesData`); the buffer-object API itself is not wrapped.
+ */
+export const VertexBuffer = {
+    PositionKind: "position",
+    NormalKind: "normal",
+    TangentKind: "tangent",
+    UVKind: "uv",
+    UV2Kind: "uv2",
+    ColorKind: "color",
+    MatricesIndicesKind: "matricesIndices",
+    MatricesWeightsKind: "matricesWeights",
+} as const;
 
 /**
  * Babylon.js `VertexData` — CPU vertex attribute container. Pure data; apply it

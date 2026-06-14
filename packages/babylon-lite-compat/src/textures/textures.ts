@@ -51,11 +51,30 @@ export class Texture extends BaseTexture {
     public vOffset = 0;
     public hasAlpha = false;
     public coordinatesIndex = 0;
+    /** Babylon.js sampling mode passed at construction (`NEAREST_SAMPLINGMODE` = 1, etc.). */
+    public readonly samplingMode: number;
+    /** @internal The Scene or engine this texture was created against (for `clone`). */
+    private readonly _source: Scene | { _lite: import("babylon-lite").EngineContext };
 
-    public constructor(url: string, scene: Scene, _noMipmapOrOptions?: unknown, _invertY?: boolean, _samplingMode?: number, onLoad?: (() => void) | null) {
+    public constructor(
+        url: string,
+        sceneOrEngine: Scene | { _lite: import("babylon-lite").EngineContext },
+        _noMipmapOrOptions?: unknown,
+        _invertY?: boolean,
+        _samplingMode?: number,
+        onLoad?: (() => void) | null
+    ) {
         super();
         this.name = url;
-        const engine = scene.getEngine()._lite;
+        this.samplingMode = _samplingMode ?? Texture.BILINEAR_SAMPLINGMODE;
+        this._source = sceneOrEngine;
+        // Babylon.js's `Texture` accepts either a `Scene` or a `ThinEngine`. When a
+        // scene is passed, the load is tracked so the scene awaits it at build; when
+        // a bare engine is passed (e.g. the scene-less `SpriteRenderer` path), there
+        // is no scene to track against, so the caller awaits readiness itself.
+        const scene = (sceneOrEngine as Scene).getEngine ? (sceneOrEngine as Scene) : undefined;
+        const engineWrapper = scene ? undefined : (sceneOrEngine as { _lite: import("babylon-lite").EngineContext; _registerStartupWork?: (w: () => Promise<void>) => void });
+        const engine = scene ? scene.getEngine()._lite : engineWrapper!._lite;
         this._ready = loadTexture2D(engine, url).then((tex) => {
             this._lite = tex;
             if (onLoad) {
@@ -65,15 +84,39 @@ export class Texture extends BaseTexture {
         // Let the scene await this load before it builds renderables, so the GPU
         // handle exists when the owning material binds (Babylon.js loads in the
         // background but its render loop simply waits a frame; we wait at build).
-        scene._trackTextureLoad(this._ready);
+        scene?._trackTextureLoad(this._ready);
+        // Scene-less path (bare engine): register the load as engine startup work
+        // so `texture.isReady()` is true by the time the render loop first runs.
+        engineWrapper?._registerStartupWork?.(() => this._ready);
     }
 
     public override getClassName(): string {
         return "Texture";
     }
 
+    /**
+     * Babylon.js `texture.clone()` — a new `Texture` over the same source URL.
+     * UV tiling/offset and sampling are copied; the clone re-resolves the GPU
+     * handle (tracked against the same scene so it is ready at build).
+     */
+    public clone(): Texture {
+        const c = new Texture(this.name, this._source, undefined, undefined, this.samplingMode);
+        c.uScale = this.uScale;
+        c.vScale = this.vScale;
+        c.uOffset = this.uOffset;
+        c.vOffset = this.vOffset;
+        c.hasAlpha = this.hasAlpha;
+        c.coordinatesIndex = this.coordinatesIndex;
+        return c;
+    }
+
     public override whenReadyAsync(): Promise<void> {
         return this._ready;
+    }
+
+    /** Babylon.js `BaseTexture.isReady()` — true once the GPU handle has resolved. */
+    public isReady(): boolean {
+        return this._lite !== undefined;
     }
 
     /** Load a texture and resolve once its GPU handle is available. */
