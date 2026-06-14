@@ -20,6 +20,7 @@ import {
     setEffectFloat2,
     setEffectTexture,
     setViewport,
+    wipeGLStateCache,
 } from "../../../packages/babylon-lite-gl/src/index";
 import { createMockCanvas, createMockGL, fireLost, fireRestored } from "./_lite-gl-mock";
 
@@ -308,6 +309,41 @@ describe("lite-gl: executeWhenCompiled", () => {
         // Subsequent polls don't re-fire
         expect(isEffectReady(engine, effect)).toBe(true);
         expect(fired).toBe(1);
+    });
+});
+
+describe("lite-gl cache: wipeGLStateCache", () => {
+    it("wipeGLStateCache forces the next setViewport to re-issue (cache invalidated)", () => {
+        const { mock, engine } = makeReadyEffect();
+        setViewport(engine, { x: 0, y: 0, w: 64, h: 48 });
+        mock.clear();
+        // Same rectangle is normally elided …
+        setViewport(engine, { x: 0, y: 0, w: 64, h: 48 });
+        expect(mock.count("viewport")).toBe(0);
+        // … but after a wipe the cache is "unknown" again, so it re-issues.
+        wipeGLStateCache(engine);
+        setViewport(engine, { x: 0, y: 0, w: 64, h: 48 });
+        expect(mock.count("viewport")).toBe(1);
+    });
+
+    it("wipeGLStateCache re-binds the program but PRESERVES the shared quad (no rebuild)", () => {
+        const { mock, engine } = makeReadyEffect();
+        const wrapper = createEffectWrapper(engine, { name: "w", fragmentSource: FS });
+        applyEffectWrapper(wrapper); // builds the quad VAO + binds the program once
+        expect(mock.count("createVertexArray")).toBe(1);
+        mock.clear();
+        wipeGLStateCache(engine);
+        applyEffectWrapper(wrapper);
+        // Program binding cache was wiped → re-issued …
+        expect(mock.count("useProgram")).toBe(1);
+        // … but the owned quad GL objects survive → NOT recreated.
+        expect(mock.count("createVertexArray")).toBe(0);
+    });
+
+    it("wipeGLStateCache is a no-op after disposal and does not throw", () => {
+        const { engine } = makeReadyEffect();
+        disposeGLEngine(engine);
+        expect(() => wipeGLStateCache(engine)).not.toThrow();
     });
 });
 

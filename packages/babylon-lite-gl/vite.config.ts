@@ -8,9 +8,9 @@ import { Extractor, ExtractorConfig, ExtractorLogLevel } from "@microsoft/api-ex
  * Re-runs api-extractor on each already-rolled-up entry `.d.ts` to drop every
  * member tagged `@internal` (and the top-level imports kept alive only by
  * them), mirroring `packages/babylon-lite/vite.config.ts`. Unlike the Lite
- * package, lite-gl ships THREE public entries (`index` + `html-texture` +
- * `sprites`), so each rolled d.ts is trimmed in turn. Uses `types: []` — this
- * is a WebGL2 package and must not pull in `@webgpu/types`.
+ * package, lite-gl ships multiple public entries (`index` + `html-texture` +
+ * `sprites` + `render-target`), so each rolled d.ts is trimmed in turn. Uses
+ * `types: []` — this is a WebGL2 package and must not pull in `@webgpu/types`.
  */
 function trimInternalDts(outDir: string, entries: string[]): Plugin {
     return {
@@ -116,6 +116,26 @@ function emitPackageJson(outDir: string): Plugin {
                         import: "./sprites.js",
                         types: "./sprites.d.ts",
                     },
+                    "./render-target": {
+                        import: "./render-target.js",
+                        types: "./render-target.d.ts",
+                    },
+                    "./mesh": {
+                        import: "./mesh.js",
+                        types: "./mesh.d.ts",
+                    },
+                    "./depth-stencil": {
+                        import: "./depth-stencil.js",
+                        types: "./depth-stencil.d.ts",
+                    },
+                    "./scissor": {
+                        import: "./scissor.js",
+                        types: "./scissor.d.ts",
+                    },
+                    "./dynamic-texture": {
+                        import: "./dynamic-texture.js",
+                        types: "./dynamic-texture.d.ts",
+                    },
                 },
             };
             writeFileSync(resolve(outDir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
@@ -138,6 +158,11 @@ export default defineConfig(({ mode }) => {
                     index: resolve(__dirname, "src/index.ts"),
                     "html-texture": resolve(__dirname, "src/html-texture.ts"),
                     sprites: resolve(__dirname, "src/sprites.ts"),
+                    "render-target": resolve(__dirname, "src/render-target.ts"),
+                    mesh: resolve(__dirname, "src/mesh.ts"),
+                    "depth-stencil": resolve(__dirname, "src/depth-stencil.ts"),
+                    scissor: resolve(__dirname, "src/scissor.ts"),
+                    "dynamic-texture": resolve(__dirname, "src/dynamic-texture.ts"),
                 },
                 formats: ["es"],
             },
@@ -158,7 +183,7 @@ export default defineConfig(({ mode }) => {
                 tsconfigPath: resolve(__dirname, "tsconfig.json"),
                 outDir,
             }),
-            ...(isWatch ? [] : [trimInternalDts(outDir, ["index", "html-texture", "sprites"])]),
+            ...(isWatch ? [] : [trimInternalDts(outDir, ["index", "html-texture", "sprites", "render-target", "mesh", "depth-stencil", "scissor", "dynamic-texture"])]),
             emitPackageJson(outDir),
         ],
     };

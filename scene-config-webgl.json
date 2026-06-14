@@ -39,7 +39,7 @@
         "description": "A drifting, hue-cycling field of 64 tinted sprites drawn with the @babylonjs/lite-gl/sprites renderer over a procedural glow-disc sheet (identity view/projection maps sprite positions straight to clip space).",
         "tags": ["sprites"],
         "maxMad": 2.0,
-        "maxRawKB": 20,
+        "maxRawKB": 21,
         "skipParity": false,
         "skipPerf": false
     },
@@ -73,6 +73,17 @@
         "tags": ["effect", "shader", "procedural"],
         "maxMad": 3.0,
         "maxRawKB": 13,
+        "skipParity": false,
+        "skipPerf": false
+    },
+    {
+        "id": 8,
+        "slug": "gl-render-target",
+        "name": "Scene 8 — Render-to-Texture Round-Trip",
+        "description": "A procedural radial pattern rendered into an offscreen FBO via @babylonjs/lite-gl/render-target (createRenderTarget + bindRenderTarget), then sampled fullscreen to the screen with an aspect-corrected vignette — a deterministic render-to-texture round-trip.",
+        "tags": ["texture", "rtt"],
+        "maxMad": 2.0,
+        "maxRawKB": 17,
         "skipParity": false,
         "skipPerf": false
     }

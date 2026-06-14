@@ -32,6 +32,9 @@ export interface MockGL {
      *  flipped via `setParallelComplete(true)`. */
     setParallelComplete(ok: boolean): void;
     setParallelAvailable(ok: boolean): void;
+    /** Toggle availability of a `getExtension(name)` result (e.g. the
+     *  color-buffer-float extensions that drive render-target caps). */
+    setExtensionAvailable(name: string, ok: boolean): void;
 }
 
 interface Internal {
@@ -39,6 +42,7 @@ interface Internal {
     parallelComplete: boolean;
     compileSuccess: boolean;
     linkSuccess: boolean;
+    extensions: Record<string, boolean>;
 }
 
 export function createMockGL(): MockGL {
@@ -49,6 +53,13 @@ export function createMockGL(): MockGL {
         parallelComplete: true,
         compileSuccess: true,
         linkSuccess: true,
+        // Default: all color-buffer-float extensions present so render-target
+        // float caps report true. Toggle with `setExtensionAvailable`.
+        extensions: {
+            EXT_color_buffer_float: true,
+            EXT_color_buffer_half_float: true,
+            OES_texture_float_linear: true,
+        },
     };
 
     const PARALLEL_EXT = { COMPLETION_STATUS_KHR: 0x91b1 };
@@ -72,9 +83,13 @@ export function createMockGL(): MockGL {
         HALF_FLOAT: 0x140b,
         RGBA: 0x1908,
         RGB: 0x1907,
+        RG: 0x8227,
+        RED: 0x1903,
         LUMINANCE: 0x1909,
         RGBA8: 0x8058,
         RGB8: 0x8051,
+        RG8: 0x822b,
+        R8: 0x8229,
         RGBA32F: 0x8814,
         RGB32F: 0x8815,
         RGBA16F: 0x881a,
@@ -104,6 +119,41 @@ export function createMockGL(): MockGL {
         ONE: 1,
         ZERO: 0,
         DYNAMIC_DRAW: 0x88e8,
+        UNSIGNED_INT: 0x1405,
+        // ──── framebuffer / renderbuffer (render targets) ────────────────
+        FRAMEBUFFER: 0x8d40,
+        RENDERBUFFER: 0x8d41,
+        COLOR_ATTACHMENT0: 0x8ce0,
+        DEPTH_ATTACHMENT: 0x8d00,
+        STENCIL_ATTACHMENT: 0x8d20,
+        DEPTH_STENCIL_ATTACHMENT: 0x821a,
+        DEPTH24_STENCIL8: 0x88f0,
+        DEPTH_COMPONENT16: 0x81a5,
+        STENCIL_INDEX8: 0x8d48,
+        FRAMEBUFFER_COMPLETE: 0x8cd5,
+        // ──── depth / stencil / cull / scissor / clear ───────────────────
+        DEPTH_TEST: 0x0b71,
+        STENCIL_TEST: 0x0b90,
+        CULL_FACE: 0x0b44,
+        SCISSOR_TEST: 0x0c11,
+        COLOR_BUFFER_BIT: 0x4000,
+        DEPTH_BUFFER_BIT: 0x0100,
+        STENCIL_BUFFER_BIT: 0x0400,
+        LESS: 0x0201,
+        ALWAYS: 0x0207,
+        NOTEQUAL: 0x0205,
+        KEEP: 0x1e00,
+        INCR_WRAP: 0x8507,
+        BACK: 0x0405,
+        // ──── pixel store + blend equations ──────────────────────────────
+        UNPACK_ALIGNMENT: 0x0cf5,
+        UNPACK_PREMULTIPLY_ALPHA_WEBGL: 0x9241,
+        MIN: 0x8007,
+        MAX: 0x8008,
+        FUNC_REVERSE_SUBTRACT: 0x800b,
+        DST_COLOR: 0x0306,
+        MIRRORED_REPEAT: 0x8370,
+        REPEAT: 0x2901,
     };
 
     const gl = {
@@ -121,6 +171,9 @@ export function createMockGL(): MockGL {
         getExtension: (name: string): unknown => {
             if (name === "KHR_parallel_shader_compile" && state.parallelAvailable) {
                 return PARALLEL_EXT;
+            }
+            if (state.extensions[name] === true) {
+                return { __ext: name };
             }
             return null;
         },
@@ -281,6 +334,98 @@ export function createMockGL(): MockGL {
         drawElements: (...args: unknown[]): void => {
             rec("drawElements", ...args);
         },
+        drawElementsInstanced: (...args: unknown[]): void => {
+            rec("drawElementsInstanced", ...args);
+        },
+        vertexAttribDivisor: (index: number, divisor: number): void => {
+            rec("vertexAttribDivisor", index, divisor);
+        },
+        disableVertexAttribArray: (i: number): void => {
+            rec("disableVertexAttribArray", i);
+        },
+        uniformMatrix3fv: (loc: object, transpose: boolean, value: unknown): void => {
+            rec("uniformMatrix3fv", loc, transpose, value);
+        },
+        uniform1fv: (loc: object, value: unknown): void => {
+            rec("uniform1fv", loc, value);
+        },
+        uniform4fv: (loc: object, value: unknown): void => {
+            rec("uniform4fv", loc, value);
+        },
+        uniform1iv: (loc: object, value: unknown): void => {
+            rec("uniform1iv", loc, value);
+        },
+        // ──── framebuffers / renderbuffers (render targets) ──────────────
+        createFramebuffer: (): object => {
+            rec("createFramebuffer");
+            return handle("framebuffer");
+        },
+        deleteFramebuffer: (f: object | null): void => {
+            rec("deleteFramebuffer", f);
+        },
+        bindFramebuffer: (target: number, f: object | null): void => {
+            rec("bindFramebuffer", target, f);
+        },
+        framebufferTexture2D: (...args: unknown[]): void => {
+            rec("framebufferTexture2D", ...args);
+        },
+        framebufferRenderbuffer: (...args: unknown[]): void => {
+            rec("framebufferRenderbuffer", ...args);
+        },
+        checkFramebufferStatus: (target: number): number => {
+            rec("checkFramebufferStatus", target);
+            return 0x8cd5; // FRAMEBUFFER_COMPLETE
+        },
+        createRenderbuffer: (): object => {
+            rec("createRenderbuffer");
+            return handle("renderbuffer");
+        },
+        deleteRenderbuffer: (r: object | null): void => {
+            rec("deleteRenderbuffer", r);
+        },
+        bindRenderbuffer: (target: number, r: object | null): void => {
+            rec("bindRenderbuffer", target, r);
+        },
+        renderbufferStorage: (...args: unknown[]): void => {
+            rec("renderbufferStorage", ...args);
+        },
+        readPixels: (...args: unknown[]): void => {
+            rec("readPixels", ...args);
+        },
+        // ──── depth / stencil / cull / scissor / clear ───────────────────
+        depthFunc: (f: number): void => {
+            rec("depthFunc", f);
+        },
+        depthMask: (m: boolean): void => {
+            rec("depthMask", m);
+        },
+        colorMask: (r: boolean, g: boolean, b: boolean, a: boolean): void => {
+            rec("colorMask", r, g, b, a);
+        },
+        cullFace: (f: number): void => {
+            rec("cullFace", f);
+        },
+        stencilFunc: (func: number, ref: number, mask: number): void => {
+            rec("stencilFunc", func, ref, mask);
+        },
+        stencilOp: (fail: number, zfail: number, zpass: number): void => {
+            rec("stencilOp", fail, zfail, zpass);
+        },
+        stencilMask: (m: number): void => {
+            rec("stencilMask", m);
+        },
+        scissor: (x: number, y: number, w: number, h: number): void => {
+            rec("scissor", x, y, w, h);
+        },
+        clearColor: (r: number, g: number, b: number, a: number): void => {
+            rec("clearColor", r, g, b, a);
+        },
+        clearDepth: (d: number): void => {
+            rec("clearDepth", d);
+        },
+        clear: (mask: number): void => {
+            rec("clear", mask);
+        },
     } as unknown as WebGL2RenderingContext;
 
     return {
@@ -302,6 +447,9 @@ export function createMockGL(): MockGL {
         },
         setParallelAvailable: (ok) => {
             state.parallelAvailable = ok;
+        },
+        setExtensionAvailable: (name, ok) => {
+            state.extensions[name] = ok;
         },
     };
 }

@@ -6,7 +6,7 @@
  * don't pull it into their bundles.
  */
 import type { GLEngineContext } from "./context.js";
-import { bindTextureForUpload, type GLTexture, type GLTextureOptions } from "./texture.js";
+import { bindTextureForUpload, setUnpackState, type GLTexture, type GLTextureOptions } from "./texture.js";
 
 /** High-level sampling presets, mirroring Babylon's `Texture.*_SAMPLINGMODE`
  *  numeric constants. Each resolves to GL min/mag filters (and mip generation
@@ -68,7 +68,7 @@ export function createHtmlElementTexture(
 
     const upload = (target: GLEngineContext): void => {
         const g = target.gl;
-        g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL, invertY ? 1 : 0);
+        setUnpackState(target, invertY, false);
         bindTextureForUpload(target, tex.handle);
         g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, element);
         const [w, h] = sizeOf();

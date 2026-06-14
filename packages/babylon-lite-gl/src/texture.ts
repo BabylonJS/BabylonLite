@@ -10,10 +10,24 @@ export interface GLTextureOptions {
     minFilter?: GLenum;
     /** Default: gl.LINEAR. */
     magFilter?: GLenum;
-    /** Default: gl.CLAMP_TO_EDGE. */
+    /** Default: gl.CLAMP_TO_EDGE. May be `gl.REPEAT` / `gl.MIRRORED_REPEAT`
+     *  (NPOT-safe in WebGL2). */
     wrapS?: GLenum;
-    /** Default: gl.CLAMP_TO_EDGE. */
+    /** Default: gl.CLAMP_TO_EDGE. May be `gl.REPEAT` / `gl.MIRRORED_REPEAT`. */
     wrapT?: GLenum;
+    /** `gl.pixelStorei(UNPACK_ALIGNMENT)` for the upload (1/2/4/8). Default 4.
+     *  Use 1 for tightly-packed non-RGBA rows. */
+    unpackAlignment?: number;
+    /** Premultiply alpha at upload (`UNPACK_PREMULTIPLY_ALPHA_WEBGL`). Default
+     *  false. */
+    premultiplyAlpha?: boolean;
+    /** Explicit sized internalFormat for `texImage2D`. When provided it is used
+     *  verbatim and the inline LDR resolver is bypassed — this is how
+     *  {@link createFloatTexture} injects its `RGBA16F` / `RGBA32F` choice
+     *  without the byte path ever referencing the float-format table (keeping it
+     *  tree-shakeable out of RGBA8-only bundles). Default: derived from
+     *  `format`/`type` via the LDR resolver. */
+    internalFormat?: GLenum;
 }
 
 /**
@@ -59,9 +73,56 @@ export interface GLTexture {
      * @internal
      */
     _wasReady: boolean;
+    /**
+     * Live re-upload hook installed by `createRawTexture` — lets
+     * `updateRawTexture` replace the pixel data (and optionally the size)
+     * through the same closure that the context-restore replay uses, keeping
+     * restore correct. Absent on image / HTML-element / external textures.
+     * @internal
+     */
+    _updateRaw?: (engine: GLEngineContext, data: ArrayBufferView | null, width: number, height: number, unpackAlignment: number) => void;
+    /**
+     * Dynamic-texture source captured by `updateDynamicTexture`
+     * (`@babylonjs/lite-gl/dynamic-texture`) and replayed into the fresh handle
+     * on `webglcontextrestored`. Null/absent on non-dynamic textures.
+     * @internal
+     */
+    _dynSource?: TexImageSource | null;
+    /** UNPACK_FLIP_Y applied when replaying {@link GLTexture._dynSource}. @internal */
+    _dynInvertY?: boolean;
+    /** UNPACK_PREMULTIPLY_ALPHA applied when replaying {@link GLTexture._dynSource}. @internal */
+    _dynPremultiplyAlpha?: boolean;
 }
 
-/** Uint8 raw texture upload. */
+/**
+ * Apply the three `UNPACK_*` pixel-store flags through the GL-state cache,
+ * eliding redundant `pixelStorei` calls. Centralising this guarantees EVERY
+ * upload path sets all three explicitly, so a premultiplying / flipping upload
+ * never leaks its flag into a later upload that forgot to set it.
+ * @internal
+ */
+export function setUnpackState(engine: GLEngineContext, flipY: boolean, premultiplyAlpha: boolean, alignment = 4): void {
+    const gl = engine.gl;
+    const s = engine._state;
+    const fy = flipY ? 1 : 0;
+    if (s.unpackFlipY !== fy) {
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, fy);
+        s.unpackFlipY = fy;
+    }
+    const pm = premultiplyAlpha ? 1 : 0;
+    if (s.unpackPremultiplyAlpha !== pm) {
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, pm);
+        s.unpackPremultiplyAlpha = pm;
+    }
+    if (s.unpackAlignment !== alignment) {
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, alignment);
+        s.unpackAlignment = alignment;
+    }
+}
+
+/** Uint8 / float raw texture upload. The pixel data can be replaced later via
+ *  {@link updateRawTexture}; the sampling and wrap can be changed via
+ *  {@link updateTextureSamplingMode} / {@link updateTextureWrapMode}. */
 export function createRawTexture(
     engine: GLEngineContext,
     data: ArrayBufferView | null,
@@ -82,14 +143,27 @@ export function createRawTexture(
     const wrapS = opts.wrapS ?? gl.CLAMP_TO_EDGE;
     const wrapT = opts.wrapT ?? gl.CLAMP_TO_EDGE;
     const invertY = opts.invertY ?? false;
+    const premultiply = opts.premultiplyAlpha ?? false;
     const generateMipMaps = opts.generateMipMaps ?? false;
-    const internalFormat = pickSizedInternalFormat(gl, format, type);
+    // LDR byte formats are resolved INLINE here; the float-format table in
+    // `pickSizedInternalFormat` is deliberately NOT referenced from this path so
+    // it tree-shakes out of byte-only bundles. `createFloatTexture` injects its
+    // sized float format via `opts.internalFormat`.
+    const internalFormat = opts.internalFormat ?? resolveLdrInternalFormat(gl, format, type);
+
+    // Mutable upload state — `updateRawTexture` mutates these and re-runs
+    // `upload`, so the context-restore replay (which calls the same `upload`)
+    // always reproduces the latest contents.
+    let curData = data;
+    let curWidth = width;
+    let curHeight = height;
+    let curAlign = opts.unpackAlignment ?? 4;
 
     const upload = (target: GLEngineContext): void => {
         const g = target.gl;
-        g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL, invertY ? 1 : 0);
+        setUnpackState(target, invertY, premultiply, curAlign);
         bindTextureForUpload(target, tex.handle);
-        g.texImage2D(g.TEXTURE_2D, 0, internalFormat, width, height, 0, format, type, data);
+        g.texImage2D(g.TEXTURE_2D, 0, internalFormat, curWidth, curHeight, 0, format, type, curData);
         g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, minFilter);
         g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, magFilter);
         g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, wrapS);
@@ -110,8 +184,159 @@ export function createRawTexture(
         _upload: upload,
         _wasReady: true,
     };
+    tex._updateRaw = (target: GLEngineContext, newData: ArrayBufferView | null, newWidth: number, newHeight: number, unpackAlignment: number): void => {
+        curData = newData;
+        curWidth = newWidth;
+        curHeight = newHeight;
+        curAlign = unpackAlignment;
+        tex.width = newWidth;
+        tex.height = newHeight;
+        upload(target);
+    };
     upload(engine);
     engine._textures.push(tex);
+    return tex;
+}
+
+/** Options for {@link createFloatTexture} — the shared {@link GLTextureOptions}
+ *  plus the float-specific `type` / `format`. */
+export interface GLFloatTextureOptions extends GLTextureOptions {
+    /** Float texel type — `gl.HALF_FLOAT` (default) or `gl.FLOAT`. */
+    type?: GLenum;
+    /** Color format. Default `gl.RGBA`. */
+    format?: GLenum;
+}
+
+/**
+ * Create a float / half-float raw texture — the HDR counterpart of
+ * {@link createRawTexture}. This is the ONLY texture factory that carries the
+ * `RGBA16F` / `RGBA32F` sized-format knowledge (via {@link pickSizedInternalFormat}),
+ * so byte-only consumers calling {@link createRawTexture} ship none of it.
+ * Defaults to `gl.HALF_FLOAT`; pass `options.type = gl.FLOAT` for full 32-bit.
+ * The caller is responsible for the matching engine cap (e.g.
+ * `caps.textureFloatLinearFiltering`) when sampling these with `LINEAR`.
+ *
+ * @param engine - The engine.
+ * @param data - Initial pixels (`Float32Array` for FLOAT, `Uint16Array` for
+ *  HALF_FLOAT), or `null` for an uninitialised allocation.
+ * @param width - Texture width in texels (≥ 1).
+ * @param height - Texture height in texels (≥ 1).
+ * @param options - See {@link GLFloatTextureOptions}.
+ * @returns The new {@link GLTexture}.
+ */
+export function createFloatTexture(engine: GLEngineContext, data: ArrayBufferView | null, width: number, height: number, options?: GLFloatTextureOptions): GLTexture {
+    const gl = engine.gl;
+    const o = options ?? {};
+    const format = o.format ?? gl.RGBA;
+    const type = o.type ?? gl.HALF_FLOAT;
+    // Precompute the sized float internalFormat HERE and pass it through, so
+    // `createRawTexture`'s inline LDR resolver is bypassed and the float table
+    // stays out of byte-only bundles.
+    const internalFormat = pickSizedInternalFormat(gl, format, type);
+    return createRawTexture(engine, data, width, height, format, type, { ...o, internalFormat });
+}
+
+/** Generate the mip chain for a texture from its level-0 contents — mipmaps as
+ *  an explicit opt-in function rather than baked into the create path. Binds for
+ *  upload (unit 0). No-op on a lost/disposed context or a handle-less texture. */
+export function generateTextureMipMaps(engine: GLEngineContext, tex: GLTexture): void {
+    if (engine._isLost || engine._disposed || tex._disposed || tex.handle === null) {
+        return;
+    }
+    bindTextureForUpload(engine, tex.handle);
+    engine.gl.generateMipmap(engine.gl.TEXTURE_2D);
+}
+
+/**
+ * Re-upload the pixel data (and optionally resize) of a texture created by
+ * {@link createRawTexture} — the lite-gl equivalent of Babylon's
+ * `updateRawTexture` / `_uploadDataToTextureDirectly`. Goes through the same
+ * upload closure used by context-restore, so the new contents survive a context
+ * loss. No-op on a lost/disposed/non-raw texture.
+ *
+ * @param engine - The engine.
+ * @param tex - The raw texture to update.
+ * @param data - New pixel data (must match the original `format`/`type`).
+ * @param options - Optional new `width`/`height` (default: unchanged) and
+ *  `unpackAlignment` (default 4).
+ */
+export function updateRawTexture(
+    engine: GLEngineContext,
+    tex: GLTexture,
+    data: ArrayBufferView | null,
+    options?: { width?: number; height?: number; unpackAlignment?: number }
+): void {
+    if (engine._isLost || engine._disposed || tex._disposed || tex._updateRaw === undefined) {
+        return;
+    }
+    const o = options ?? {};
+    tex._updateRaw(engine, data, o.width ?? tex.width, o.height ?? tex.height, o.unpackAlignment ?? 4);
+}
+
+/** Update a texture's min/mag sampling filters — the lite-gl equivalent of
+ *  Babylon's `updateTextureSamplingMode`. Binds for upload (unit 0) so the
+ *  `texParameteri` lands on this texture. No-op on a lost/disposed context. */
+export function updateTextureSamplingMode(engine: GLEngineContext, tex: GLTexture, minFilter: GLenum, magFilter: GLenum): void {
+    if (engine._isLost || engine._disposed || tex._disposed) {
+        return;
+    }
+    const gl = engine.gl;
+    bindTextureForUpload(engine, tex.handle);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, minFilter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, magFilter);
+}
+
+/** Update a texture's S/T wrap modes (`gl.CLAMP_TO_EDGE` / `gl.REPEAT` /
+ *  `gl.MIRRORED_REPEAT`) — the lite-gl equivalent of Babylon's
+ *  `updateTextureWrappingMode`. No-op on a lost/disposed context. */
+export function updateTextureWrapMode(engine: GLEngineContext, tex: GLTexture, wrapS: GLenum, wrapT: GLenum): void {
+    if (engine._isLost || engine._disposed || tex._disposed) {
+        return;
+    }
+    const gl = engine.gl;
+    bindTextureForUpload(engine, tex.handle);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapS);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrapT);
+}
+
+/**
+ * Wrap an existing raw `WebGLTexture` (e.g. one created by a host renderer or a
+ * previous engine) as a {@link GLTexture} — the lite-gl equivalent of
+ * ShapeBuilder's `createTextureGraphicsResourceFromExternalWebGLTexture`.
+ *
+ * The wrapper does NOT own the underlying handle's upload — it is NOT registered
+ * for context-restore replay (the external owner is responsible for that) and is
+ * marked ready immediately. `disposeTexture` will still `gl.deleteTexture` it, so
+ * only wrap a handle whose deletion you intend lite-gl to manage.
+ *
+ * @param engine - The engine.
+ * @param handle - The external `WebGLTexture`.
+ * @param width - Texture width in texels.
+ * @param height - Texture height in texels.
+ * @param options - Optional sampling/wrap to apply once (min/mag/wrapS/wrapT).
+ * @returns A {@link GLTexture} wrapping the handle.
+ */
+export function createTextureFromHandle(engine: GLEngineContext, handle: WebGLTexture, width: number, height: number, options?: GLTextureOptions): GLTexture {
+    const tex: GLTexture = {
+        handle,
+        target: engine.gl.TEXTURE_2D,
+        width,
+        height,
+        isReady: true,
+        _disposed: false,
+        _refCount: 1,
+        // External handle — restore replay is the external owner's job.
+        _upload: () => {},
+        _wasReady: true,
+    };
+    if (options !== undefined) {
+        const gl = engine.gl;
+        bindTextureForUpload(engine, handle);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, options.minFilter ?? gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, options.magFilter ?? gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, options.wrapS ?? gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, options.wrapT ?? gl.CLAMP_TO_EDGE);
+    }
     return tex;
 }
 
@@ -140,8 +365,8 @@ export function loadTexture2D(engine: GLEngineContext, url: string, options?: GL
         const g = target.gl;
         // invertY is applied at decode time via createImageBitmap({ imageOrientation })
         // because UNPACK_FLIP_Y_WEBGL is IGNORED for ImageBitmap sources (and the 1×1
-        // placeholder is flip-invariant), so keep the global flip state off here.
-        g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL, 0);
+        // placeholder is flip-invariant), so keep flip + premultiply off here.
+        setUnpackState(target, false, false);
         bindTextureForUpload(target, tex.handle);
         if (bitmap !== null) {
             g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, bitmap);
@@ -290,11 +515,38 @@ export function disposeTexture(engine: GLEngineContext, tex: GLTexture): void {
     }
 }
 
+/** Internal — resolve the sized internalFormat for the LDR (byte) `texImage2D`
+ *  paths ONLY: RGBA→RGBA8, RGB→RGB8, RG→RG8, RED→R8, LUMINANCE passthrough.
+ *  Deliberately knows nothing about FLOAT / HALF_FLOAT so the float-format table
+ *  in {@link pickSizedInternalFormat} tree-shakes out of byte-only bundles.
+ *  @internal */
+function resolveLdrInternalFormat(gl: WebGL2RenderingContext, format: GLenum, type: GLenum): GLenum {
+    if (type === gl.UNSIGNED_BYTE) {
+        if (format === gl.RGBA) {
+            return gl.RGBA8;
+        }
+        if (format === gl.RGB) {
+            return gl.RGB8;
+        }
+        if (format === gl.RG) {
+            return gl.RG8;
+        }
+        if (format === gl.RED) {
+            return gl.R8;
+        }
+        if (format === gl.LUMINANCE) {
+            return gl.LUMINANCE;
+        }
+    }
+    return format;
+}
+
 /** Internal — pick a sized internalFormat for `texImage2D`. WebGL2 prefers
  *  sized formats for non-color-renderable / non-readback paths; for the
  *  NeonBrush use cases (sample-only) the unsized format works too, but sized
- *  is more portable. */
-function pickSizedInternalFormat(gl: WebGL2RenderingContext, format: GLenum, type: GLenum): GLenum {
+ *  is more portable. Shared with the render-target module.
+ *  @internal */
+export function pickSizedInternalFormat(gl: WebGL2RenderingContext, format: GLenum, type: GLenum): GLenum {
     if (type === gl.UNSIGNED_BYTE) {
         if (format === gl.RGBA) {
             return gl.RGBA8;

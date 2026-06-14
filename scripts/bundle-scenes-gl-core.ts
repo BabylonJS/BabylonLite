@@ -18,8 +18,11 @@ import { resolve } from "path";
 export const repoRoot = resolve(__dirname, "..");
 export const pkgSrc = resolve(repoRoot, "packages/babylon-lite-gl/src");
 export const sceneSrcDir = resolve(repoRoot, "lab/gl/src");
+export const demoSrcDir = resolve(repoRoot, "lab/gl/src/demos");
 export const manifestPath = resolve(repoRoot, "lab/public/gl/bundle/manifest.json");
+export const demosManifestPath = resolve(repoRoot, "lab/public/gl/bundle/demos-manifest.json");
 export const sceneConfigPath = resolve(repoRoot, "scene-config-webgl.json");
+export const demoConfigPath = resolve(repoRoot, "demos-config-webgl.json");
 
 export interface SceneConfigEntry {
     id: number;
@@ -53,6 +56,11 @@ export const liteGlAlias: Record<string, string> = {
     "babylon-lite-gl": resolve(pkgSrc, "index.ts"),
     "babylon-lite-gl/sprites": resolve(pkgSrc, "sprites.ts"),
     "babylon-lite-gl/html-texture": resolve(pkgSrc, "html-texture.ts"),
+    "babylon-lite-gl/render-target": resolve(pkgSrc, "render-target.ts"),
+    "babylon-lite-gl/mesh": resolve(pkgSrc, "mesh.ts"),
+    "babylon-lite-gl/depth-stencil": resolve(pkgSrc, "depth-stencil.ts"),
+    "babylon-lite-gl/scissor": resolve(pkgSrc, "scissor.ts"),
+    "babylon-lite-gl/dynamic-texture": resolve(pkgSrc, "dynamic-texture.ts"),
 };
 
 /** rawKB / gzipKB rounding identical to the lite bundler's bytesToRoundedKB. */
@@ -159,4 +167,58 @@ export async function buildGlBundleManifest(): Promise<void> {
     writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
     console.log(`\n\u2713 Wrote gl/bundle/manifest.json (${Object.keys(manifest).length} scenes)`);
     console.log(`  ${manifestPath}`);
+}
+
+/** A GL demos-config-webgl.json entry (only the fields the bundler needs). */
+export interface DemoConfigEntry {
+    slug: string;
+    name: string;
+}
+
+export function loadDemoConfig(): DemoConfigEntry[] {
+    const config: DemoConfigEntry[] = JSON.parse(readFileSync(demoConfigPath, "utf-8"));
+    if (!Array.isArray(config)) {
+        throw new Error(`demos-config-webgl.json is empty or invalid: ${demoConfigPath}`);
+    }
+    return config;
+}
+
+/**
+ * Measure a GL demo's standalone, tree-shaken lite-gl bundle. Returns `null` for
+ * demos that REUSE a scene source (no dedicated `lab/gl/src/demos/<slug>.ts`,
+ * e.g. `sine-bands` reuses `scene7.ts`) — their size is already reported by the
+ * matching scene in the Bundle tab, so they are omitted from the demos manifest.
+ */
+export async function measureDemoBundle(slug: string): Promise<BundleSize | null> {
+    const entry = resolve(demoSrcDir, `${slug}.ts`);
+    if (!existsSync(entry)) {
+        return null;
+    }
+    return measureBundle(entry, liteGlAlias);
+}
+
+/**
+ * Build every dedicated GL demo's bundle and write the dashboard demos manifest
+ * (`lab/public/gl/bundle/demos-manifest.json`, keyed by slug → { rawKB, gzipKB }),
+ * consumed by the GL dashboard "Demos" tab to advertise each demo's real shipped
+ * lite-gl size.
+ */
+export async function buildGlDemosManifest(): Promise<void> {
+    const config = loadDemoConfig();
+    const manifest: Record<string, BundleSize> = {};
+
+    for (const entry of config) {
+        const size = await measureDemoBundle(entry.slug);
+        if (size === null) {
+            console.log(`  demo ${entry.slug}: reuses a scene source — size shown in the Bundle tab`);
+            continue;
+        }
+        manifest[entry.slug] = size;
+        console.log(`  demo ${entry.slug}: ${size.rawKB} KB min / ${size.gzipKB} KB gzip`);
+    }
+
+    mkdirSync(resolve(demosManifestPath, ".."), { recursive: true });
+    writeFileSync(demosManifestPath, JSON.stringify(manifest, null, 2) + "\n");
+    console.log(`\n\u2713 Wrote gl/bundle/demos-manifest.json (${Object.keys(manifest).length} demos)`);
+    console.log(`  ${demosManifestPath}`);
 }

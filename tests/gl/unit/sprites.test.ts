@@ -181,6 +181,101 @@ describe("lite-gl sprites: texture swap", () => {
     });
 });
 
+describe("lite-gl sprites: manual UV rects (lottie atlas path)", () => {
+    it("creates a renderer without cellWidth/cellHeight (defaults to 1)", () => {
+        const { engine, texture } = setup();
+        const renderer = createSpriteRenderer(engine, { capacity: 4, texture });
+        expect(renderer.cellWidth).toBe(1);
+        expect(renderer.cellHeight).toBe(1);
+    });
+
+    it("writes the per-sprite UV rect into cellInfo (offset normalized, size ÷ texW/texH)", () => {
+        const { engine, texture } = setup(); // 64x64 texture
+        const renderer = createSpriteRenderer(engine, { capacity: 4, texture });
+        const sprite = makeSprite({ cellIndex: undefined, uOffset: 0.25, vOffset: 0.5, uSize: 16, vSize: 8 });
+        renderSprites(renderer, [sprite], 0, VIEW, PROJ);
+        const vd = renderer._vertexData;
+        // cellInfo = floats 10..13 of vertex 0: (uOffset, vOffset, uSize/64, vSize/64)
+        expect(vd[10]).toBeCloseTo(0.25, 6);
+        expect(vd[11]).toBeCloseTo(0.5, 6);
+        expect(vd[12]).toBeCloseTo(16 / 64, 6);
+        expect(vd[13]).toBeCloseTo(8 / 64, 6);
+    });
+
+    it("supports uSize=0 (solid-color single-texel sample) and ignores cellIndex", () => {
+        const { engine, texture } = setup();
+        const renderer = createSpriteRenderer(engine, { capacity: 4, cellWidth: 32, cellHeight: 32, texture });
+        const sprite = makeSprite({ cellIndex: 3, uOffset: 0.1, vOffset: 0.2, uSize: 0, vSize: 0 });
+        renderSprites(renderer, [sprite], 0, VIEW, PROJ);
+        const vd = renderer._vertexData;
+        // Manual UV (uSize is defined) wins over the cellIndex grid.
+        expect(vd[10]).toBeCloseTo(0.1, 6);
+        expect(vd[11]).toBeCloseTo(0.2, 6);
+        expect(vd[12]).toBe(0);
+        expect(vd[13]).toBe(0);
+    });
+
+    it("still uses the cellIndex grid when no manual UV rect is set", () => {
+        const { engine, texture } = setup(); // 64x64, cells 32x32 => rowSize 2
+        const renderer = createSpriteRenderer(engine, { capacity: 4, cellWidth: 32, cellHeight: 32, texture });
+        // cellIndex 3 => row 1, col 1 => left=(1*32)/64=0.5, top=(1*32)/64=0.5
+        renderSprites(renderer, [makeSprite({ cellIndex: 3 })], 0, VIEW, PROJ);
+        const vd = renderer._vertexData;
+        expect(vd[10]).toBeCloseTo(0.5, 6);
+        expect(vd[11]).toBeCloseTo(0.5, 6);
+        expect(vd[12]).toBeCloseTo(0.5, 6);
+        expect(vd[13]).toBeCloseTo(0.5, 6);
+    });
+});
+
+describe("lite-gl sprites: epsilon (UV/position inset)", () => {
+    it("defaults epsilon to 0.01 (Babylon SpriteRenderer default) and insets the quad corners", () => {
+        const { engine, texture } = setup();
+        const renderer = createSpriteRenderer(engine, { capacity: 4, texture });
+        expect(renderer.epsilon).toBe(0.01);
+        renderSprites(renderer, [makeSprite({ uOffset: 0, vOffset: 0, uSize: 8, vSize: 8 })], 0, VIEW, PROJ);
+        // Vertex 0 is corner (0,0): its position/UV offset (floats 6,7) is inset to +eps.
+        expect(renderer._vertexData[6]).toBeCloseTo(0.01, 6);
+        expect(renderer._vertexData[7]).toBeCloseTo(0.01, 6);
+    });
+
+    it("honours epsilon: 0 (lottie atlas path) so quad corners are exactly 0 and 1", () => {
+        const { engine, texture } = setup();
+        const renderer = createSpriteRenderer(engine, { capacity: 4, texture, epsilon: 0 });
+        expect(renderer.epsilon).toBe(0);
+        renderSprites(renderer, [makeSprite({ uOffset: 0, vOffset: 0, uSize: 8, vSize: 8 })], 0, VIEW, PROJ);
+        const stride = 18; // FLOATS_PER_VERTEX
+        // Corner (0,0) stays 0; corner (1,1) on vertex 2 stays 1 — full-size quad (no shrink).
+        expect(renderer._vertexData[6]).toBe(0);
+        expect(renderer._vertexData[7]).toBe(0);
+        expect(renderer._vertexData[2 * stride + 6]).toBe(1);
+        expect(renderer._vertexData[2 * stride + 7]).toBe(1);
+    });
+});
+
+describe("lite-gl sprites: autoResetAlpha", () => {
+    it("leaves the blend mode applied after drawing when autoResetAlpha is false", () => {
+        const { mock, engine, texture } = setup();
+        const renderer = createSpriteRenderer(engine, {
+            capacity: 4,
+            texture,
+            blendMode: GLBlendMode.PREMULTIPLIED,
+            autoResetAlpha: false,
+        });
+        mock.clear();
+        renderSprites(renderer, [makeSprite({ uOffset: 0, vOffset: 0, uSize: 1, vSize: 1 })], 0, VIEW, PROJ);
+        // No reset-to-DISABLE: the premultiplied mode persists for the next pass.
+        expect(mock.count("disable")).toBe(0);
+        expect(renderer.autoResetAlpha).toBe(false);
+    });
+
+    it("defaults autoResetAlpha to true", () => {
+        const { engine, texture } = setup();
+        const renderer = createSpriteRenderer(engine, { capacity: 4, texture });
+        expect(renderer.autoResetAlpha).toBe(true);
+    });
+});
+
 describe("lite-gl sprites: lost / disposed safety", () => {
     it("renderSprites is a no-op on a lost context and does not throw", () => {
         const { mock, canvas, engine, texture } = setup();

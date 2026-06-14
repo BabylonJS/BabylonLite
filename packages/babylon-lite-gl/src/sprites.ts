@@ -128,14 +128,32 @@ export interface GLSprite {
     /** Rotation angle, in radians. */
     angle: number;
     /** Sprite-sheet cell index (0-based, row-major). Out-of-range / negative
-     *  values are clamped to 0, matching Babylon's `if (!cellIndex) = 0`. */
-    cellIndex: number;
+     *  values are clamped to 0, matching Babylon's `if (!cellIndex) = 0`. Ignored
+     *  when a manual UV rect (`uSize`) is set. Optional — defaults to `0`. */
+    cellIndex?: number;
     /** Optional tint; defaults to opaque white `{ r: 1, g: 1, b: 1, a: 1 }`. */
     color?: GLSpriteColor;
     /** Flip the cell horizontally. Defaults to `false`. */
     invertU?: boolean;
     /** Flip the cell vertically. Defaults to `false`. */
     invertV?: boolean;
+    /** Manual UV rect — normalized left (U) origin in `[0, 1]`, mirroring
+     *  Babylon's `ThinSprite._xOffset`. Set together with {@link GLSprite.uSize}
+     *  to address an arbitrary sub-rectangle of the sheet instead of the fixed
+     *  `cellIndex` grid (used by the lottie atlas, whose cells vary in size). */
+    uOffset?: number;
+    /** Manual UV rect — normalized top (V) origin in `[0, 1]` (≙ Babylon
+     *  `ThinSprite._yOffset`). See {@link GLSprite.uSize}. */
+    vOffset?: number;
+    /** Manual UV rect — cell width in **texels** (≙ Babylon `ThinSprite._xSize`;
+     *  divided by the texture width when building vertices). Presence of `uSize`
+     *  switches the sprite into manual-UV mode (the `cellIndex` grid is ignored).
+     *  `0` samples a single column — the "solid color" trick. */
+    uSize?: number;
+    /** Manual UV rect — cell height in **texels** (≙ Babylon `ThinSprite._ySize`).
+     *  See {@link GLSprite.uSize}. Defaults to `0` when `uSize` is set but `vSize`
+     *  is omitted. */
+    vSize?: number;
     /** When `false`, the sprite is skipped. Defaults to `true`. */
     isVisible?: boolean;
 }
@@ -145,16 +163,33 @@ export interface GLSpriteRendererOptions {
     /** Maximum number of sprites drawable in one `renderSprites` call. Must be
      *  an integer in `[1, 16384]` (the `Uint16` index-buffer limit). */
     capacity: number;
-    /** Cell width in texels within the sprite sheet. */
-    cellWidth: number;
-    /** Cell height in texels within the sprite sheet. */
-    cellHeight: number;
+    /** Cell width in texels within the sprite sheet, for the fixed-grid
+     *  `cellIndex` path. Optional — defaults to `1`; irrelevant when every
+     *  sprite supplies a manual UV rect (`uSize`), as the lottie atlas does. */
+    cellWidth?: number;
+    /** Cell height in texels within the sprite sheet. Optional — defaults to
+     *  `1`. See {@link GLSpriteRendererOptions.cellWidth}. */
+    cellHeight?: number;
+    /** Per-corner UV/position inset applied to each quad vertex, in the `[0, 0.5)`
+     *  range — the `epsilon` constructor argument of Babylon's `SpriteRenderer`.
+     *  It both insets cell UV sampling (so a cell never bleeds its neighbours) and
+     *  shrinks the quad by `epsilon * size` per side. Defaults to `0.01` (Babylon's
+     *  `SpriteRenderer` default). Pass `0` to disable insetting — the lottie atlas
+     *  does this (it relies on edge-extruded cells + center sampling instead, so a
+     *  non-zero inset would shrink every sprite by ~`0.01·size` per edge). */
+    epsilon?: number;
     /** The sprite-sheet texture. May be swapped later via
      *  {@link setSpriteRendererTexture}. */
     texture: GLTexture;
     /** Blend mode for the draw. Defaults to {@link GLBlendMode.ALPHA} (2),
      *  matching Babylon's `SpriteRenderer.blendMode` default. */
     blendMode?: GLBlendMode;
+    /** When `true` (default), `renderSprites` resets the blend mode to
+     *  {@link GLBlendMode.DISABLE} after drawing — mirroring Babylon's
+     *  `SpriteRenderer.autoResetAlpha = true`. Set `false` to leave the
+     *  renderer's `blendMode` applied after the draw (the lottie player relies
+     *  on this so its premultiplied alpha mode persists across passes). */
+    autoResetAlpha?: boolean;
     /** Accepted for Babylon API parity. lite-gl's default engine has no depth
      *  attachment (`depth: false`), so there is no depth pre-pass and this flag
      *  has no observable effect; it is stored verbatim for a future depth-aware
@@ -175,8 +210,13 @@ export interface GLSpriteRenderer {
     cellWidth: number;
     /** Cell height in texels. */
     cellHeight: number;
+    /** Per-corner UV/position inset (Babylon `SpriteRenderer` `epsilon`). */
+    epsilon: number;
     /** Active blend mode applied by `renderSprites` before drawing. */
     blendMode: GLBlendMode;
+    /** When `true`, `renderSprites` resets blend to {@link GLBlendMode.DISABLE}
+     *  after drawing (Babylon `autoResetAlpha`). */
+    autoResetAlpha: boolean;
     /** Babylon-parity flag (no effect without a depth attachment). */
     disableDepthWrite: boolean;
     /** Maximum sprites per draw, fixed at creation. */
@@ -216,15 +256,19 @@ export interface GLSpriteRenderer {
  * @param engine - The engine to create GL resources on.
  * @param options - See {@link GLSpriteRendererOptions}.
  * @returns The new {@link GLSpriteRenderer}.
- * @throws If `capacity` is not an integer in `[1, 16384]`, or if
- *  `cellWidth`/`cellHeight` are not positive.
+ * @throws If `capacity` is not an integer in `[1, 16384]`, or if a provided
+ *  `cellWidth`/`cellHeight` is not positive.
  */
 export function createSpriteRenderer(engine: GLEngineContext, options: GLSpriteRendererOptions): GLSpriteRenderer {
     const capacity = options.capacity;
     if (!Number.isInteger(capacity) || capacity < 1 || capacity > MAX_CAPACITY) {
         throw new Error(`lite-gl: sprite renderer capacity must be an integer in [1, ${MAX_CAPACITY}], got ${capacity}`);
     }
-    if (!(options.cellWidth > 0) || !(options.cellHeight > 0)) {
+    // cellWidth/cellHeight drive only the fixed-grid `cellIndex` path; manual-UV
+    // consumers (the lottie atlas) omit them. Default to 1; reject explicit ≤ 0.
+    const cellWidth = options.cellWidth ?? 1;
+    const cellHeight = options.cellHeight ?? 1;
+    if (!(cellWidth > 0) || !(cellHeight > 0)) {
         throw new Error("lite-gl: sprite renderer cellWidth/cellHeight must be > 0");
     }
 
@@ -252,9 +296,11 @@ export function createSpriteRenderer(engine: GLEngineContext, options: GLSpriteR
 
     const renderer: GLSpriteRenderer = {
         texture: options.texture,
-        cellWidth: options.cellWidth,
-        cellHeight: options.cellHeight,
+        cellWidth,
+        cellHeight,
+        epsilon: options.epsilon ?? SPRITE_EPSILON,
         blendMode: options.blendMode ?? GLBlendMode.ALPHA,
+        autoResetAlpha: options.autoResetAlpha ?? true,
         disableDepthWrite: options.disableDepthWrite ?? false,
         capacity,
         _engine: engine,
@@ -325,7 +371,7 @@ export function renderSprites(
 
     // ── Build vertex data (allocation-free) ──────────────────────────────────
     const vd = renderer._vertexData;
-    const eps = SPRITE_EPSILON;
+    const eps = renderer.epsilon;
     const texW = tex.width;
     const texH = tex.height;
     const cellW = renderer.cellWidth;
@@ -341,11 +387,27 @@ export function renderSprites(
         if (sprite === undefined || sprite.isVisible === false) {
             continue;
         }
-        // Cell math — verbatim from Babylon's `_appendSpriteVertex`.
-        const cellIndex = sprite.cellIndex > 0 ? sprite.cellIndex : 0;
-        const row = (cellIndex / rowSize) >> 0;
-        const cellLeft = ((cellIndex - row * rowSize) * cellW) / texW;
-        const cellTop = (row * cellH) / texH;
+        // UV rect — manual per-sprite rect (Babylon `ThinSprite._xOffset/_xSize`
+        // path, selected when `uSize` is set) or the fixed `cellIndex` grid.
+        // Both resolve to a normalized `(left, top, widthN, heightN)` rectangle,
+        // matching Babylon's `_appendSpriteVertex` vertex layout exactly.
+        let cellLeft: number;
+        let cellTop: number;
+        let cellWN: number;
+        let cellHN: number;
+        if (sprite.uSize !== undefined) {
+            cellLeft = sprite.uOffset ?? 0;
+            cellTop = sprite.vOffset ?? 0;
+            cellWN = sprite.uSize / texW;
+            cellHN = (sprite.vSize ?? 0) / texH;
+        } else {
+            const cellIndex = (sprite.cellIndex ?? 0) > 0 ? (sprite.cellIndex as number) : 0;
+            const row = (cellIndex / rowSize) >> 0;
+            cellLeft = ((cellIndex - row * rowSize) * cellW) / texW;
+            cellTop = (row * cellH) / texH;
+            cellWN = cellWidthN;
+            cellHN = cellHeightN;
+        }
 
         const px = sprite.position.x;
         const py = sprite.position.y;
@@ -377,8 +439,8 @@ export function renderSprites(
             vd[off + 9] = invV;
             vd[off + 10] = cellLeft;
             vd[off + 11] = cellTop;
-            vd[off + 12] = cellWidthN;
-            vd[off + 13] = cellHeightN;
+            vd[off + 12] = cellWN;
+            vd[off + 13] = cellHN;
             vd[off + 14] = cr;
             vd[off + 15] = cg;
             vd[off + 16] = cb;
@@ -424,7 +486,11 @@ export function renderSprites(
     gl.drawElements(gl.TRIANGLES, visible * INDICES_PER_SPRITE, gl.UNSIGNED_SHORT, 0);
     // Auto-reset (Babylon `autoResetAlpha = true`): leave blend disabled so a
     // subsequent fullscreen `drawEffect` renders with the same state as before.
-    setBlendMode(engine, GLBlendMode.DISABLE);
+    // When `autoResetAlpha` is false (lottie), keep `renderer.blendMode` applied
+    // so a premultiplied-alpha mode persists across multiple atlas-page passes.
+    if (renderer.autoResetAlpha) {
+        setBlendMode(engine, GLBlendMode.DISABLE);
+    }
 }
 
 /** Swap the sprite-sheet texture (≙ Babylon assigning `SpriteRenderer.texture`

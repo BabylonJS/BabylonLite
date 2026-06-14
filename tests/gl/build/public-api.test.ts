@@ -15,6 +15,12 @@ const NODE = process.execPath;
 const VITE_JS = resolve(PACKAGE_DIR, "node_modules/vite/bin/vite.js");
 const TSC_JS = resolve(ROOT, "node_modules/typescript/bin/tsc");
 
+// Every public entry-point of the converged package. The barrel (".") plus seven
+// tree-shakeable sub-entries. Each ships a `.js` + `.d.ts` and is wired through
+// the emitted dist/package.json `exports` map.
+const ENTRIES = ["index", "html-texture", "sprites", "render-target", "mesh", "depth-stencil", "scissor", "dynamic-texture"] as const;
+const SUBPATHS = [".", "./html-texture", "./sprites", "./render-target", "./mesh", "./depth-stencil", "./scissor", "./dynamic-texture"] as const;
+
 function typecheckDts(dts: string) {
     return spawnSync(NODE, [TSC_JS, "--noEmit", "--strict", "--target", "es2022", "--module", "esnext", "--moduleResolution", "bundler", "--lib", "es2022,dom,dom.iterable", dts], {
         cwd: PACKAGE_DIR,
@@ -30,52 +36,172 @@ describe("babylon-lite-gl build output", () => {
             throw new Error(`babylon-lite-gl build failed:\n${build.stdout ?? ""}${build.stderr ?? ""}`);
         }
 
-        // Both public entries plus the publish manifest must be emitted.
-        for (const file of ["index.js", "index.d.ts", "html-texture.js", "html-texture.d.ts", "sprites.js", "sprites.d.ts", "package.json"]) {
+        // Every public entry (.js + .d.ts) plus the publish manifest must be emitted.
+        const expectedFiles = [...ENTRIES.flatMap((e) => [`${e}.js`, `${e}.d.ts`]), "package.json"];
+        for (const file of expectedFiles) {
             expect(existsSync(resolve(DIST, file)), `missing dist/${file}`).toBe(true);
         }
 
-        // The emitted manifest is the scoped npm name with both subpath exports.
+        // The emitted manifest is the scoped npm name with every subpath export.
         const pkg = JSON.parse(readFileSync(resolve(DIST, "package.json"), "utf-8")) as { name?: string; exports?: Record<string, unknown> };
         expect(pkg.name).toBe("@babylonjs/lite-gl");
-        expect(pkg.exports?.["."]).toBeDefined();
-        expect(pkg.exports?.["./html-texture"]).toBeDefined();
-        expect(pkg.exports?.["./sprites"]).toBeDefined();
+        for (const subpath of SUBPATHS) {
+            expect(pkg.exports?.[subpath], `exports["${subpath}"] missing from dist manifest`).toBeDefined();
+        }
 
         // The @internal trim pass must strip every underscored member from the
         // public declarations — no internal surface may leak to consumers.
-        for (const dts of ["index.d.ts", "html-texture.d.ts", "sprites.d.ts"]) {
-            const content = readFileSync(resolve(DIST, dts), "utf-8");
+        for (const entry of ENTRIES) {
+            const content = readFileSync(resolve(DIST, `${entry}.d.ts`), "utf-8");
             const leak = content.match(/^\s+_[A-Za-z]\w*[?:(]/m);
-            expect(leak, `internal member leaked into dist/${dts}: ${leak ? leak[0] : ""}`).toBeNull();
+            expect(leak, `internal member leaked into dist/${entry}.d.ts: ${leak ? leak[0] : ""}`).toBeNull();
         }
 
         // The generated declarations type-check in isolation (no skipLibCheck),
         // catching any internal-only types leaking into the public surface.
-        for (const dts of ["index.d.ts", "html-texture.d.ts", "sprites.d.ts"]) {
-            const result = typecheckDts(resolve(DIST, dts));
+        for (const entry of ENTRIES) {
+            const result = typecheckDts(resolve(DIST, `${entry}.d.ts`));
             if (result.status !== 0) {
-                throw new Error(`dist/${dts} has TypeScript errors:\n${result.stdout ?? ""}${result.stderr ?? ""}`);
+                throw new Error(`dist/${entry}.d.ts has TypeScript errors:\n${result.stdout ?? ""}${result.stderr ?? ""}`);
             }
             expect(result.status).toBe(0);
         }
 
-        // The built ESM entry exposes the documented runtime exports.
+        // ── The barrel exposes the full converged runtime surface ───────────
         const mod = (await import(pathToFileURL(resolve(DIST, "index.js")).href)) as Record<string, unknown>;
-        for (const name of ["createGLEngine", "createEffect", "createEffectWrapper", "applyEffectWrapper", "drawEffect", "runRenderLoop", "loadTexture2D", "setBlendMode"]) {
-            expect(typeof mod[name], `export ${name}`).toBe("function");
+        for (const name of [
+            // engine / context / loop
+            "createGLEngine",
+            "disposeGLEngine",
+            "resizeGLEngine",
+            "setGLEngineSize",
+            "wipeGLStateCache",
+            "runRenderLoop",
+            "stopRenderLoop",
+            // effects
+            "createEffect",
+            "createEffectWrapper",
+            "applyEffectWrapper",
+            "drawEffect",
+            "setEffectTexture",
+            "setEffectMatrix",
+            "setEffectMatrix3x3",
+            // textures (LDR core + HDR opt-in + extensions)
+            "createRawTexture",
+            "createFloatTexture",
+            "generateTextureMipMaps",
+            "loadTexture2D",
+            "updateRawTexture",
+            "updateTextureSamplingMode",
+            "updateTextureWrapMode",
+            "createTextureFromHandle",
+            // dynamic textures (also a sub-entry)
+            "createDynamicTexture",
+            "updateDynamicTexture",
+            "clearDynamicTextureSource",
+            // render targets (LDR core + HDR opt-in + ping-pong)
+            "createRenderTarget",
+            "createFloatRenderTarget",
+            "bindRenderTarget",
+            "generateRenderTargetMipMaps",
+            "resizeRenderTarget",
+            "readRenderTargetPixels",
+            "disposeRenderTarget",
+            "createPingPong",
+            "resizePingPong",
+            "disposePingPong",
+            // meshes / buffers / instancing
+            "createVertexBuffer",
+            "updateVertexBuffer",
+            "createIndexBuffer",
+            "disposeBuffer",
+            "bindAttributes",
+            "drawIndexed",
+            // blend / depth-stencil / scissor
+            "setBlendMode",
+            "setBlendState",
+            "disableBlend",
+            "setDepthState",
+            "setCullState",
+            "setStencilState",
+            "setColorMask",
+            "clearEngine",
+            "setScissor",
+            "disableScissor",
+        ]) {
+            expect(typeof mod[name], `barrel export ${name}`).toBe("function");
         }
-        // The blend-mode preset table is a value export, not a function.
+        // The blend-mode / blend-equation / sampling-mode preset tables are value exports.
         expect(typeof mod.GLBlendMode, "export GLBlendMode").toBe("object");
+        expect(typeof mod.GLBlendEquation, "export GLBlendEquation").toBe("object");
+        expect(typeof mod.GLSamplingMode, "export GLSamplingMode").toBe("object");
 
-        // The /html-texture sub-entry resolves and exposes its factory.
+        // The legacy `unbindRenderTarget` was folded into `bindRenderTarget(engine, null)`
+        // and MUST NOT ship — its presence would mean the converge regressed.
+        expect(mod.unbindRenderTarget, "unbindRenderTarget must not be exported").toBeUndefined();
+
+        // ── /html-texture sub-entry ─────────────────────────────────────────
         const htmlTex = (await import(pathToFileURL(resolve(DIST, "html-texture.js")).href)) as Record<string, unknown>;
-        expect(typeof htmlTex.createHtmlElementTexture).toBe("function");
+        for (const name of ["createHtmlElementTexture", "updateHtmlElementTexture"]) {
+            expect(typeof htmlTex[name], `html-texture export ${name}`).toBe("function");
+        }
+        expect(typeof htmlTex.GLSamplingMode, "html-texture export GLSamplingMode").toBe("object");
 
-        // The /sprites sub-entry resolves and exposes its renderer factory.
+        // ── /sprites sub-entry ──────────────────────────────────────────────
         const sprites = (await import(pathToFileURL(resolve(DIST, "sprites.js")).href)) as Record<string, unknown>;
         for (const name of ["createSpriteRenderer", "renderSprites", "setSpriteRendererTexture", "disposeSpriteRenderer"]) {
             expect(typeof sprites[name], `sprites export ${name}`).toBe("function");
+        }
+
+        // ── /render-target sub-entry (FBO + float + ping-pong) ──────────────
+        const renderTarget = (await import(pathToFileURL(resolve(DIST, "render-target.js")).href)) as Record<string, unknown>;
+        for (const name of [
+            "createRenderTarget",
+            "createFloatRenderTarget",
+            "bindRenderTarget",
+            "generateRenderTargetMipMaps",
+            "resizeRenderTarget",
+            "readRenderTargetPixels",
+            "disposeRenderTarget",
+            "createPingPong",
+            "resizePingPong",
+            "disposePingPong",
+        ]) {
+            expect(typeof renderTarget[name], `render-target export ${name}`).toBe("function");
+        }
+        expect(renderTarget.unbindRenderTarget, "render-target must not export unbindRenderTarget").toBeUndefined();
+
+        // ── /mesh sub-entry ─────────────────────────────────────────────────
+        const mesh = (await import(pathToFileURL(resolve(DIST, "mesh.js")).href)) as Record<string, unknown>;
+        for (const name of [
+            "createVertexBuffer",
+            "updateVertexBuffer",
+            "createIndexBuffer",
+            "disposeBuffer",
+            "bindIndexBuffer",
+            "bindAttributes",
+            "unbindInstanceAttributes",
+            "drawIndexed",
+        ]) {
+            expect(typeof mesh[name], `mesh export ${name}`).toBe("function");
+        }
+
+        // ── /depth-stencil sub-entry ────────────────────────────────────────
+        const depthStencil = (await import(pathToFileURL(resolve(DIST, "depth-stencil.js")).href)) as Record<string, unknown>;
+        for (const name of ["setDepthState", "setCullState", "setStencilState", "setColorMask", "clearEngine"]) {
+            expect(typeof depthStencil[name], `depth-stencil export ${name}`).toBe("function");
+        }
+
+        // ── /scissor sub-entry ──────────────────────────────────────────────
+        const scissor = (await import(pathToFileURL(resolve(DIST, "scissor.js")).href)) as Record<string, unknown>;
+        for (const name of ["setScissor", "disableScissor"]) {
+            expect(typeof scissor[name], `scissor export ${name}`).toBe("function");
+        }
+
+        // ── /dynamic-texture sub-entry ──────────────────────────────────────
+        const dynamicTexture = (await import(pathToFileURL(resolve(DIST, "dynamic-texture.js")).href)) as Record<string, unknown>;
+        for (const name of ["createDynamicTexture", "updateDynamicTexture", "clearDynamicTextureSource"]) {
+            expect(typeof dynamicTexture[name], `dynamic-texture export ${name}`).toBe("function");
         }
 
         // Resolve each public subpath THROUGH the emitted exports map (not a
@@ -89,6 +215,11 @@ describe("babylon-lite-gl build output", () => {
             { subpath: ".", expected: "createGLEngine" },
             { subpath: "./html-texture", expected: "createHtmlElementTexture" },
             { subpath: "./sprites", expected: "createSpriteRenderer" },
+            { subpath: "./render-target", expected: "createRenderTarget" },
+            { subpath: "./mesh", expected: "createVertexBuffer" },
+            { subpath: "./depth-stencil", expected: "clearEngine" },
+            { subpath: "./scissor", expected: "setScissor" },
+            { subpath: "./dynamic-texture", expected: "createDynamicTexture" },
         ];
         for (const { subpath, expected } of subpathProbes) {
             const entry = distPkg.exports[subpath];

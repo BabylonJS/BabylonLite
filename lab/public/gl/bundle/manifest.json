@@ -1,44 +1,50 @@
 {
   "scene1": {
-    "rawKB": 9.8,
-    "gzipKB": 3.6,
+    "rawKB": 11.3,
+    "gzipKB": 4.1,
     "bjsRawKB": 166,
     "bjsGzipKB": 42.1
   },
   "scene2": {
-    "rawKB": 10,
-    "gzipKB": 3.7,
+    "rawKB": 11.5,
+    "gzipKB": 4.2,
     "bjsRawKB": 166.3,
     "bjsGzipKB": 42.2
   },
   "scene3": {
-    "rawKB": 14.5,
-    "gzipKB": 5.4,
+    "rawKB": 16.2,
+    "gzipKB": 6,
     "bjsRawKB": 309.7,
     "bjsGzipKB": 79.1
   },
   "scene4": {
-    "rawKB": 17.7,
-    "gzipKB": 6.4,
+    "rawKB": 20.1,
+    "gzipKB": 7.2,
     "bjsRawKB": 329.4,
     "bjsGzipKB": 84.4
   },
   "scene5": {
-    "rawKB": 11.6,
-    "gzipKB": 4.3,
+    "rawKB": 13.6,
+    "gzipKB": 4.8,
     "bjsRawKB": 178.7,
     "bjsGzipKB": 45.7
   },
   "scene6": {
-    "rawKB": 12.4,
-    "gzipKB": 4.8,
+    "rawKB": 13.9,
+    "gzipKB": 5.2,
     "bjsRawKB": 285.2,
     "bjsGzipKB": 73.2
   },
   "scene7": {
-    "rawKB": 10.5,
-    "gzipKB": 4,
+    "rawKB": 12.1,
+    "gzipKB": 4.4,
     "bjsRawKB": 166.7,
     "bjsGzipKB": 42.4
+  },
+  "scene8": {
+    "rawKB": 16.6,
+    "gzipKB": 5.6,
+    "bjsRawKB": 197.8,
+    "bjsGzipKB": 50
   }
 }

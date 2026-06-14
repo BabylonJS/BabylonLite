@@ -18,6 +18,8 @@ export {
     createGLEngine,
     disposeGLEngine,
     resizeGLEngine,
+    setGLEngineSize,
+    wipeGLStateCache,
     getRenderWidth,
     getRenderHeight,
     getHardwareScalingLevel,
@@ -46,8 +48,15 @@ export {
     setEffectFloat4,
     setEffectColor3,
     setEffectColor4,
+    setEffectVector2,
+    setEffectDirectColor4,
     setEffectInt,
     setEffectTexture,
+    setEffectMatrix,
+    setEffectMatrix3x3,
+    setEffectFloatArray,
+    setEffectFloatArray4,
+    setEffectIntArray,
 } from "./effect.js";
 export type { GLEffectOptions, GLEffect } from "./effect.js";
 
@@ -56,12 +65,54 @@ export { createEffectWrapper, applyEffectWrapper, drawEffect, setViewport, dispo
 export type { GLEffectWrapperOptions, GLEffectWrapper, GLViewport } from "./effect-renderer.js";
 
 // ─── Textures ────────────────────────────────────────────────────────
-export { createRawTexture, loadTexture2D, bindTexture, disposeTexture } from "./texture.js";
-export type { GLTextureOptions, GLTexture } from "./texture.js";
+export {
+    createRawTexture,
+    createFloatTexture,
+    generateTextureMipMaps,
+    loadTexture2D,
+    bindTexture,
+    disposeTexture,
+    updateRawTexture,
+    updateTextureSamplingMode,
+    updateTextureWrapMode,
+    createTextureFromHandle,
+} from "./texture.js";
+export type { GLTextureOptions, GLFloatTextureOptions, GLTexture } from "./texture.js";
+
+// ─── Dynamic textures (also at `@babylonjs/lite-gl/dynamic-texture`) ──
+export { createDynamicTexture, updateDynamicTexture, clearDynamicTextureSource } from "./dynamic-texture.js";
+
+// ─── Render targets (also at `@babylonjs/lite-gl/render-target`) ─────
+export {
+    createRenderTarget,
+    createFloatRenderTarget,
+    bindRenderTarget,
+    generateRenderTargetMipMaps,
+    resizeRenderTarget,
+    readRenderTargetPixels,
+    disposeRenderTarget,
+    createPingPong,
+    resizePingPong,
+    disposePingPong,
+} from "./render-target.js";
+export type { GLRenderTarget, GLRenderTargetOptions, GLFloatRenderTargetOptions, GLPingPong } from "./render-target.js";
+
+// ─── Meshes / buffers / instancing (also at `@babylonjs/lite-gl/mesh`) ──
+export { createVertexBuffer, updateVertexBuffer, createIndexBuffer, disposeBuffer, bindIndexBuffer, bindAttributes, unbindInstanceAttributes, drawIndexed } from "./mesh.js";
+export type { GLVertexBuffer, GLIndexBuffer, GLAttributeDescriptor } from "./mesh.js";
 
 // ─── Blend modes ─────────────────────────────────────────────────────
-// GLBlendMode is a const + same-name type; one value re-export carries both.
-export { GLBlendMode, setBlendMode } from "./blend.js";
+// GLBlendMode / GLBlendEquation are const + same-name type; one value
+// re-export carries both.
+export { GLBlendMode, GLBlendEquation, setBlendMode, setBlendState, disableBlend } from "./blend.js";
+export type { GLBlendState } from "./blend.js";
+
+// ─── Depth / stencil / color-mask / clear ────────────────────────────
+export { setDepthState, setCullState, setStencilState, setColorMask, clearEngine } from "./depth-stencil.js";
+export type { GLDepthState, GLStencilState, GLClearOptions } from "./depth-stencil.js";
+
+// ─── Scissor ─────────────────────────────────────────────────────────
+export { setScissor, disableScissor } from "./scissor.js";
 
 // ─── Sprites (also at `@babylonjs/lite-gl/sprites`) ──────────────────
 export { createSpriteRenderer, renderSprites, setSpriteRendererTexture, disposeSpriteRenderer } from "./sprites.js";

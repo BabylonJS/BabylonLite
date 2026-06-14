@@ -395,6 +395,21 @@ export function setEffectColor4(engine: GLEngineContext, effect: GLEffect, name:
     setEffectFloat4(engine, effect, name, c.r, c.g, c.b, c.a);
 }
 
+/** Cached `gl.uniform2f` from an `{x,y}` vector object — the lite-gl equivalent
+ *  of Babylon's `Effect.setVector2`. Delegates to `setEffectFloat2`. */
+export function setEffectVector2(engine: GLEngineContext, effect: GLEffect, name: string, v: { x: number; y: number }): void {
+    setEffectFloat2(engine, effect, name, v.x, v.y);
+}
+
+/** Cached `gl.uniform4f` from an r/g/b/a color WITHOUT premultiplication — the
+ *  lite-gl equivalent of Babylon's `Effect.setDirectColor4`. Delegates to
+ *  `setEffectFloat4` (lite-gl never premultiplies in the uniform setters, so
+ *  this matches `setEffectColor4`; the distinct name eases the ShapeBuilder
+ *  port). */
+export function setEffectDirectColor4(engine: GLEngineContext, effect: GLEffect, name: string, c: { r: number; g: number; b: number; a: number }): void {
+    setEffectFloat4(engine, effect, name, c.r, c.g, c.b, c.a);
+}
+
 /** Cached `gl.uniform1i`. No-op when context-lost, the effect isn't ready, the
  *  uniform is absent, or the value is unchanged since last upload. */
 export function setEffectInt(engine: GLEngineContext, effect: GLEffect, name: string, x: number): void {
@@ -412,6 +427,78 @@ export function setEffectInt(engine: GLEngineContext, effect: GLEffect, name: st
     engine.gl.uniform1i(loc, x);
 }
 
+/* ── Matrix / array setters (uploaded every call — not value-cached) ──────────
+ *
+ * Matrices and arrays usually change every frame; element-wise caching would
+ * cost more than the upload it saves, so these always issue the GL call (the
+ * location lookup + ready guards still apply). They cover the ShapeBuilder
+ * surface (`setMatrix3x3`, `setFloatArray`, `setFloatArray4`) plus a general
+ * 4×4 matrix setter for any future mesh consumer. */
+
+/** `gl.uniformMatrix4fv` from a column-major 4×4 matrix — the lite-gl
+ *  equivalent of Babylon's `Effect.setMatrix`. Not value-cached. */
+export function setEffectMatrix(engine: GLEngineContext, effect: GLEffect, name: string, matrix: Float32Array | number[]): void {
+    if (engine._isLost || !effect.isReady) {
+        return;
+    }
+    const loc = effect.uniformLocations[name];
+    if (loc === null || loc === undefined) {
+        return;
+    }
+    engine.gl.uniformMatrix4fv(loc, false, matrix);
+}
+
+/** `gl.uniformMatrix3fv` from a column-major 3×3 matrix — the lite-gl
+ *  equivalent of Babylon's `Effect.setMatrix3x3`. Not value-cached. */
+export function setEffectMatrix3x3(engine: GLEngineContext, effect: GLEffect, name: string, matrix: Float32Array | number[]): void {
+    if (engine._isLost || !effect.isReady) {
+        return;
+    }
+    const loc = effect.uniformLocations[name];
+    if (loc === null || loc === undefined) {
+        return;
+    }
+    engine.gl.uniformMatrix3fv(loc, false, matrix);
+}
+
+/** `gl.uniform1fv` — a flat float array (`Effect.setFloatArray` / `setArray`).
+ *  Not value-cached. */
+export function setEffectFloatArray(engine: GLEngineContext, effect: GLEffect, name: string, array: Float32Array | number[]): void {
+    if (engine._isLost || !effect.isReady) {
+        return;
+    }
+    const loc = effect.uniformLocations[name];
+    if (loc === null || loc === undefined) {
+        return;
+    }
+    engine.gl.uniform1fv(loc, array);
+}
+
+/** `gl.uniform4fv` — an array of `vec4`s (`Effect.setFloatArray4` / `setArray4`).
+ *  Not value-cached. */
+export function setEffectFloatArray4(engine: GLEngineContext, effect: GLEffect, name: string, array: Float32Array | number[]): void {
+    if (engine._isLost || !effect.isReady) {
+        return;
+    }
+    const loc = effect.uniformLocations[name];
+    if (loc === null || loc === undefined) {
+        return;
+    }
+    engine.gl.uniform4fv(loc, array);
+}
+
+/** `gl.uniform1iv` — a flat int array (`Effect.setIntArray`). Not value-cached. */
+export function setEffectIntArray(engine: GLEngineContext, effect: GLEffect, name: string, array: Int32Array | number[]): void {
+    if (engine._isLost || !effect.isReady) {
+        return;
+    }
+    const loc = effect.uniformLocations[name];
+    if (loc === null || loc === undefined) {
+        return;
+    }
+    engine.gl.uniform1iv(loc, array);
+}
+
 /** Bind a texture to the sampler's pre-assigned unit (§4.4). NO `gl.uniform1i`
  *  is issued — that was done exactly once per program lifetime during
  *  finalization. This is the key win over Babylon's `Effect.setTexture` which
@@ -425,6 +512,22 @@ export function setEffectTexture(engine: GLEngineContext, effect: GLEffect, samp
         return;
     }
     bindTexture(engine, unit, tex);
+}
+
+/** Resolve (and cache) a vertex-attribute location by name — the lite-gl
+ *  equivalent of Babylon's `Effect.getAttributeLocationByName`. Locations for
+ *  declared `attributeNames` are resolved during finalization; this also serves
+ *  the mesh / instancing path, where attribute names are not declared up-front.
+ *  Returns `-1` when the attribute is absent (matching `gl.getAttribLocation`).
+ *  @internal */
+export function getEffectAttributeLocation(engine: GLEngineContext, effect: GLEffect, name: string): number {
+    const cached = effect.attributeLocations[name];
+    if (cached !== undefined) {
+        return cached;
+    }
+    const loc = engine.gl.getAttribLocation(effect.program, name);
+    effect.attributeLocations[name] = loc;
+    return loc;
 }
 
 /* ────────────────────────────  internal helpers  ──────────────────────────── */
