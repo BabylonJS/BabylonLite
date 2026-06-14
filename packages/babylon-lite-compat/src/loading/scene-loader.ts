@@ -14,7 +14,20 @@ import type { AssetContainer as LiteAssetContainer, AnimationGroup } from "babyl
 
 import { unsupported } from "../error.js";
 import { collectLoadedMeshes, type LoadedMesh } from "./loaded-mesh.js";
+import { GaussianSplattingMesh } from "../meshes/gaussian-splatting.js";
 import type { Scene } from "../scene/scene.js";
+
+/** Splat asset extensions Babylon Lite can parse (`loadSplat` / `loadSOG` / `loadSPZ`). */
+function isSplatUrl(url: string): boolean {
+    const u = url.split("?")[0]!.toLowerCase();
+    return u.endsWith(".ply") || u.endsWith(".splat") || u.endsWith(".sog") || u.endsWith(".spz");
+}
+
+/** Last path segment of a URL, used to name a loaded Gaussian-Splatting mesh. */
+function baseName(url: string): string {
+    const path = url.split("?")[0]!;
+    return path.slice(path.lastIndexOf("/") + 1) || "splat";
+}
 
 export class AssetContainer {
     /** @internal Underlying Babylon Lite asset container. */
@@ -45,14 +58,21 @@ export class AssetContainer {
 }
 
 interface ImportResult {
-    meshes: LoadedMesh[];
+    meshes: Array<LoadedMesh | GaussianSplattingMesh>;
     particleSystems: unknown[];
     skeletons: unknown[];
     animationGroups: AnimationGroup[];
     transformNodes: unknown[];
     lights: unknown[];
-    /** The underlying Lite asset container (compat extension). */
-    container: AssetContainer;
+    /** The underlying Lite asset container (compat extension; absent for splat assets). */
+    container?: AssetContainer;
+}
+
+/** @internal Load a splat URL into a `GaussianSplattingMesh` (shared by every loader entry point). */
+async function loadSplatResult(url: string, scene: Scene): Promise<ImportResult> {
+    const gs = new GaussianSplattingMesh(baseName(url), null, scene);
+    await gs.loadFileAsync(url);
+    return { meshes: [gs], particleSystems: [], skeletons: [], animationGroups: [], transformNodes: [], lights: [] };
 }
 
 function joinUrl(rootUrl: string, fileName: string): string {
@@ -76,6 +96,10 @@ async function load(rootUrl: string, fileName: string, scene: Scene): Promise<As
 export const SceneLoader = {
     /** Import meshes (and the rest of the asset) into the scene. */
     async ImportMeshAsync(_meshNames: unknown, rootUrl: string, sceneFilename: string, scene: Scene): Promise<ImportResult> {
+        const url = joinUrl(rootUrl, sceneFilename);
+        if (isSplatUrl(url)) {
+            return loadSplatResult(url, scene);
+        }
         const container = await load(rootUrl, sceneFilename, scene);
         container.addAllToScene(scene);
         return {
@@ -91,6 +115,11 @@ export const SceneLoader = {
 
     /** Append an asset's contents to the scene. */
     async AppendAsync(rootUrl: string, sceneFilename: string, scene: Scene): Promise<Scene> {
+        const url = joinUrl(rootUrl, sceneFilename);
+        if (isSplatUrl(url)) {
+            await loadSplatResult(url, scene);
+            return scene;
+        }
         const container = await load(rootUrl, sceneFilename, scene);
         container.addAllToScene(scene);
         return scene;
@@ -114,6 +143,9 @@ export const SceneLoader = {
 
 /** Babylon.js `ImportMeshAsync(source, scene, options?)` — imports an asset into the scene. */
 export async function ImportMeshAsync(source: string, scene: Scene, _options?: unknown): Promise<ImportResult> {
+    if (isSplatUrl(source)) {
+        return loadSplatResult(source, scene);
+    }
     const container = await loadFromSource(source, scene);
     container.addAllToScene(scene);
     return {
@@ -129,6 +161,10 @@ export async function ImportMeshAsync(source: string, scene: Scene, _options?: u
 
 /** Babylon.js `AppendSceneAsync(source, scene, options?)` — appends an asset's contents to the scene. */
 export async function AppendSceneAsync(source: string, scene: Scene, _options?: unknown): Promise<Scene> {
+    if (isSplatUrl(source)) {
+        await loadSplatResult(source, scene);
+        return scene;
+    }
     const container = await loadFromSource(source, scene);
     container.addAllToScene(scene);
     return scene;

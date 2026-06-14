@@ -82,6 +82,15 @@ Phase A is mandatory and is the gate. Phase B is an accelerator, not a substitut
       unsupported: read `packages/babylon-lite/src/index.ts` and grep
       `packages/babylon-lite/src/**` for related names (e.g. searching `pick`
       would have surfaced `createGpuPicker` / `pickAsync`).
+    - **Check for a native Lite lab scene demonstrating the feature before marking
+      it `❌`/`🔧`.** Most lab scenes have both a BJS oracle
+      (`lab/lite/src/bjs/sceneN.ts`) and a native Lite port
+      (`lab/lite/src/lite/sceneN.ts`). If the Lite port renders the feature, Lite
+      **can** back it — read that port to learn the exact Lite API/call sequence to
+      wrap (it is a working, copy-able recipe), then mirror it in the compat
+      wrapper. A feature with a working Lite lab scene is almost never a genuine
+      `🔧 Needs Lite core`; treat "no compat wrapper yet" and "Lite can't do it" as
+      different conclusions.
     - If Lite can back it → implement the wrapper (see "Implementation patterns").
     - If Lite *almost* backs it but the clean surface is missing, consider adding a
       **tree-shakeable** accessor/function to Lite core (imported only by compat —

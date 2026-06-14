@@ -33,6 +33,7 @@ import { unsupported } from "../error.js";
 import { Observable } from "../misc/observable.js";
 import type { Camera } from "../cameras/cameras.js";
 import { ArcRotateCamera } from "../cameras/cameras.js";
+import type { TransformNode } from "../meshes/meshes.js";
 import { StandardMaterial } from "../materials/materials.js";
 import { Animatable } from "../animations/animation.js";
 import type { Animation } from "../animations/animation.js";
@@ -93,6 +94,23 @@ export class Scene {
         });
     }
 
+    /**
+     * Babylon.js `scene.meshes`. Babylon Lite does not expose a public scene-mesh
+     * registry, so this tracks the meshes the compat layer creates against a scene
+     * which need lookup (currently Gaussian-Splatting meshes surfaced through the
+     * loader). Other primitives register with the Lite scene directly.
+     */
+    public get meshes(): TransformNode[] {
+        return this._trackedMeshes;
+    }
+
+    /** @internal Track a compat mesh so it appears in `scene.meshes`. */
+    public _registerMesh(mesh: TransformNode): void {
+        if (!this._trackedMeshes.includes(mesh)) {
+            this._trackedMeshes.push(mesh);
+        }
+    }
+
     public get animatables(): Animatable[] {
         return this._runningAnimatables;
     }
@@ -124,6 +142,8 @@ export class Scene {
     private readonly _structuralGroups: AnimationGroup[] = [];
     /** @internal Lite manager that weight/additive-blends loaded glTF groups (lazily created). */
     private _blendManager: AnimationManager | null = null;
+    /** @internal Compat meshes surfaced through `scene.meshes` (e.g. Gaussian-Splatting). */
+    private readonly _trackedMeshes: TransformNode[] = [];
 
     public constructor(engine: WebGPUEngine) {
         this._engine = engine;

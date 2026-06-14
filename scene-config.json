@@ -993,7 +993,8 @@
         "maxMad": 1,
         "maxRawKB": 35,
         "description": "Loads Halo_Believe.ply via loadSplat(); renders the splat cloud with a back-to-front sort produced by an inline worker thread.",
-        "tags": ["gaussian-splatting", "ply"]
+        "tags": ["gaussian-splatting", "ply"],
+        "compatParity": true
     },
     {
         "id": 121,
@@ -1013,7 +1014,8 @@
         "maxRawKB": 70,
         "description": "Loads hornedlizard.sog (ZIP-packed WebPs + meta.json) via loadSOG(); renders with view-dependent SH shading.",
         "tags": ["gaussian-splatting", "sog", "sh"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 123,
@@ -1023,7 +1025,8 @@
         "maxRawKB": 65,
         "description": "Loads hornedlizard.spz (gzip-wrapped binary stream) via loadSPZ(); renders with view-dependent SH shading.",
         "tags": ["gaussian-splatting", "spz", "sh"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 124,
@@ -1033,7 +1036,8 @@
         "maxRawKB": 65,
         "description": "Loads small_hornedlizard.compressed.ply (chunked PLY + element sh) via loadSplat(); SH rendering through dynamic-imported pipeline.",
         "tags": ["gaussian-splatting", "ply", "compressed", "sh"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 125,

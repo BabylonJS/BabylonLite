@@ -58,6 +58,7 @@ export { Light, HemisphericLight, DirectionalLight, PointLight, SpotLight } from
 
 // ─── Meshes ──────────────────────────────────────────────────────────
 export { Mesh, AbstractMesh, TransformNode, GroundMesh, InstancedMesh, VertexData, VertexBuffer, MeshBuilder } from "./meshes/meshes.js";
+export { GaussianSplattingMesh } from "./meshes/gaussian-splatting.js";
 
 // ─── Materials ───────────────────────────────────────────────────────
 export {
