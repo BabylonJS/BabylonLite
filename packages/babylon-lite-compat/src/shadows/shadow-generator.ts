@@ -24,6 +24,8 @@ export class ShadowGenerator {
     private readonly _mapSize: number;
     private readonly _light: Light;
     private readonly _casters: AbstractMesh[] = [];
+    /** @internal The built Lite shadow generator (set in `_build`). Used to wire NME receivers. */
+    public _liteGen: unknown;
 
     public getClassName(): string {
         return "ShadowGenerator";
@@ -143,6 +145,7 @@ export class ShadowGenerator {
         }
 
         (liteLight as { shadowGenerator?: unknown }).shadowGenerator = liteGen;
+        this._liteGen = liteGen;
         const casterMeshes = this._casters.map((m) => m._lite as LiteMesh);
         setShadowTaskCasterMeshes(liteGen, casterMeshes);
     }

@@ -91,7 +91,7 @@ export class NodeMaterial {
     }
 
     /** @internal Resolve override textures, then parse + compile the NME graph. */
-    private async _parse(engine: EngineContext): Promise<void> {
+    public async _parse(engine: EngineContext, shadowGenerators: readonly unknown[] = []): Promise<void> {
         // Yield once so any synchronous `getBlockByName(name).texture = …` overrides
         // set immediately after `Parse()` are recorded before we read them.
         await Promise.resolve();
@@ -103,18 +103,25 @@ export class NodeMaterial {
                 textures[blockName] = tex._lite;
             }
         }
-        this._lite = await parseNodeMaterialFromSnippet(engine, "", { json: this._json, ...(overrides.length ? { textures } : {}) });
+        this._lite = await parseNodeMaterialFromSnippet(engine, "", {
+            json: this._json,
+            ...(overrides.length ? { textures } : {}),
+            // Babylon.js wires shadows into the scene globally; Babylon Lite takes them
+            // at NME parse time, so NME shadow-receiver blocks sample the scene's
+            // generators (e.g. ground `receiveShadows` in scenes 65/66).
+            ...(shadowGenerators.length ? { shadowGenerators: shadowGenerators as never } : {}),
+        });
     }
 
     /**
      * Babylon.js `NodeMaterial.Parse(source, scene, rootUrl?)` — parse an NME graph
      * from inline JSON. Returns synchronously; the actual GPU compile runs async and
-     * is awaited by the engine before the scene builds.
+     * is driven by the engine (after shadow generators are built) before the scene
+     * builds, so NME shadow-receiver blocks can sample the scene's shadow generators.
      */
     public static Parse(source: object | string, scene: Scene, _rootUrl?: string): NodeMaterial {
         const material = new NodeMaterial("nodeMaterial", scene, source);
-        const engine = scene.getEngine()._lite;
-        scene._trackTextureLoad(material._parse(engine));
+        scene._registerNodeMaterial(material);
         return material;
     }
 }

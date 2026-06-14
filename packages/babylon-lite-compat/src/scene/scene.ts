@@ -52,8 +52,18 @@ interface DefaultEnvironmentOptions {
     createSkybox?: boolean;
     createGround?: boolean;
     skyboxSize?: number;
+    /** Babylon.js EnvironmentHelper: set up tone mapping / exposure / contrast (default true). */
+    setupImageProcessing?: boolean;
+    /** Babylon.js EnvironmentHelper camera exposure (default 0.8). */
+    cameraExposure?: number;
+    /** Babylon.js EnvironmentHelper camera contrast (default 1.2). */
+    cameraContrast?: number;
+    /** Babylon.js EnvironmentHelper tone-mapping toggle (default true). */
+    toneMappingEnabled?: boolean;
     /** @internal When set, the skybox is the environment texture itself (Babylon.js `createDefaultSkybox`). */
     skyboxFromEnv?: boolean;
+    /** @internal Apply EnvironmentHelper image processing (only set by `createDefaultEnvironment`). */
+    applyImageProcessing?: boolean;
 }
 
 export class Scene {
@@ -134,7 +144,7 @@ export class Scene {
     private _started = false;
     private _envTexture: CubeTexture | null = null;
     private _defaultEnvOptions: DefaultEnvironmentOptions | null = null;
-    private readonly _shadowGenerators: Array<{ _build(engine: import("babylon-lite").EngineContext): void }> = [];
+    private readonly _shadowGenerators: Array<{ _build(engine: import("babylon-lite").EngineContext): void; _liteGen?: unknown }> = [];
     private readonly _pendingTextures: Array<Promise<void>> = [];
     private readonly _runningAnimatables: Animatable[] = [];
     private readonly _animationGroupCache = new WeakMap<object, AnimationGroup>();
@@ -144,6 +154,8 @@ export class Scene {
     private _blendManager: AnimationManager | null = null;
     /** @internal Compat meshes surfaced through `scene.meshes` (e.g. Gaussian-Splatting). */
     private readonly _trackedMeshes: TransformNode[] = [];
+    /** @internal `NodeMaterial`s whose async parse the engine drives after shadow generators are built. */
+    private readonly _nodeMaterials: Array<{ _parse(engine: import("babylon-lite").EngineContext, shadowGenerators: readonly unknown[]): Promise<void> }> = [];
 
     public constructor(engine: WebGPUEngine) {
         this._engine = engine;
@@ -236,6 +248,27 @@ export class Scene {
         for (const gen of this._shadowGenerators) {
             gen._build(engine);
         }
+    }
+
+    /** @internal Register a `NodeMaterial` whose parse the engine drives after shadow build. */
+    public _registerNodeMaterial(material: { _parse(engine: import("babylon-lite").EngineContext, shadowGenerators: readonly unknown[]): Promise<void> }): void {
+        this._nodeMaterials.push(material);
+    }
+
+    /**
+     * @internal Parse all registered `NodeMaterial`s, passing the scene's built Lite
+     * shadow generators so NME shadow-receiver blocks sample them (Babylon.js wires
+     * shadows into the scene globally; Babylon Lite takes them at NME parse time).
+     * Must run after `_buildShadowGenerators` so the Lite generators exist.
+     */
+    public async _parseNodeMaterials(): Promise<void> {
+        if (this._nodeMaterials.length === 0) {
+            return;
+        }
+        const engine = this._engine._lite;
+        const liteGens = this._shadowGenerators.map((g) => g._liteGen).filter((g): g is unknown => g !== undefined);
+        await Promise.all(this._nodeMaterials.map((m) => m._parse(engine, liteGens)));
+        this._nodeMaterials.length = 0;
     }
 
     /**
@@ -357,7 +390,13 @@ export class Scene {
      * Babylon.js's default skybox/ground assets.
      */
     public createDefaultEnvironment(options: DefaultEnvironmentOptions = {}): { dispose(): void } {
-        this._defaultEnvOptions = { createSkybox: true, createGround: true, ...options };
+        this._defaultEnvOptions = {
+            createSkybox: true,
+            createGround: true,
+            ...options,
+            // Babylon.js EnvironmentHelper sets up image processing by default.
+            applyImageProcessing: options.setupImageProcessing !== false,
+        };
         return { dispose(): void {} };
     }
 
@@ -396,6 +435,17 @@ export class Scene {
         }
         const opts = this._defaultEnvOptions;
         const skyboxUrl = opts?.skyboxFromEnv ? envUrl : opts?.createSkybox ? DEFAULT_SKYBOX_URL : undefined;
+        // Babylon.js `scene.environmentTexture = …` / `CubeTexture.CreateFromPrefilteredData`
+        // does NOT change image processing — tone mapping stays at the scene's current
+        // value (Babylon.js default: off). Babylon Lite's `loadEnvironment`/`loadDdsEnvironment`,
+        // however, force tone mapping on (exposure 0.8 / contrast 1.2). That side effect is
+        // wrong for ported code that only assigns `environmentTexture` (e.g. NME scenes), but it
+        // happens to mirror what Babylon.js's `createDefaultEnvironment` (EnvironmentHelper) does.
+        // Snapshot the scene's image-processing state and restore it after the env load so the
+        // side effect is invisible; if `createDefaultEnvironment` was used we re-apply the
+        // EnvironmentHelper image processing explicitly below — matching Babylon.js semantics.
+        const ip = this._lite.imageProcessing;
+        const ipSnapshot = { exposure: ip.exposure, contrast: ip.contrast, toneMappingEnabled: ip.toneMappingEnabled };
         // Babylon.js `CubeTexture.CreateFromPrefilteredData` accepts both `.env`
         // and `.dds` prefiltered environments. Babylon Lite splits these into two
         // loaders: `loadEnvironment` (`.env`) and `loadDdsEnvironment` (`.dds`).
@@ -405,16 +455,28 @@ export class Scene {
                 skipSkybox: !opts?.createSkybox,
                 skipGround: !opts?.createGround,
             });
-            return;
+        } else {
+            await loadEnvironment(this._lite, envUrl, {
+                brdfUrl: DEFAULT_BRDF_URL,
+                skyboxUrl,
+                skipSkybox: !opts?.createSkybox,
+                groundTextureUrl: opts?.createGround ? DEFAULT_GROUND_URL : undefined,
+                skipGround: !opts?.createGround,
+                skyboxSize: opts?.skyboxSize ?? 1000,
+            });
         }
-        await loadEnvironment(this._lite, envUrl, {
-            brdfUrl: DEFAULT_BRDF_URL,
-            skyboxUrl,
-            skipSkybox: !opts?.createSkybox,
-            groundTextureUrl: opts?.createGround ? DEFAULT_GROUND_URL : undefined,
-            skipGround: !opts?.createGround,
-            skyboxSize: opts?.skyboxSize ?? 1000,
-        });
+        ip.exposure = ipSnapshot.exposure;
+        ip.contrast = ipSnapshot.contrast;
+        ip.toneMappingEnabled = ipSnapshot.toneMappingEnabled;
+        // Babylon.js EnvironmentHelper (`createDefaultEnvironment`) sets up image processing
+        // by default: tone mapping on with exposure 0.8 / contrast 1.2 (all overridable). Apply
+        // it here so `createDefaultEnvironment` scenes (e.g. PBR sphere grids) keep their tone
+        // mapping while plain `environmentTexture` scenes (e.g. NME) do not.
+        if (opts?.applyImageProcessing) {
+            ip.toneMappingEnabled = opts.toneMappingEnabled ?? true;
+            ip.exposure = opts.cameraExposure ?? 0.8;
+            ip.contrast = opts.cameraContrast ?? 1.2;
+        }
     }
 
     /** Create and activate a default arc-rotate camera framing the scene. */

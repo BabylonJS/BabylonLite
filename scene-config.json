@@ -573,7 +573,8 @@
         "maxRawKB": 80,
         "description": "Node Material with shadow receive: sphere casts onto ground plane, both lit by one DirectionalLight with an ESM shadow generator. Only meshes with receiveShadows=true are attenuated; the sphere stays fully lit. Same JSON graph as scene 63 — shadow integration is externally driven via parseNodeMaterialFromSnippet({ shadowGenerators }).",
         "tags": ["nme", "procedural", "shadows"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 66,
@@ -592,7 +593,8 @@
         "maxRawKB": 95,
         "description": "NME PBRMetallicRoughnessBlock + ReflectionBlock with IBL plumbing on a saturated teal matte sphere. Hemi + point + spot + directional lights make the base material visible against a black background.",
         "tags": ["pbr", "nme", "procedural", "env"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 68,
@@ -602,7 +604,8 @@
         "maxRawKB": 96,
         "description": "Dark navy PBR sphere with a ClearCoatBlock wired into PBRMetallicRoughnessBlock.clearcoat (intensity=1, roughness=0.02, IOR=1.5) for an obvious glossy coat highlight.",
         "tags": ["pbr", "nme", "procedural", "env", "clearcoat"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 69,
@@ -612,7 +615,8 @@
         "maxRawKB": 98,
         "description": "Dark purple PBR sphere with softened clearcoat plus a hot magenta SheenBlock wired into PBRMetallicRoughnessBlock.sheen (intensity=1, roughness=0.55) for a visible fabric-like rim.",
         "tags": ["pbr", "nme", "procedural", "env", "clearcoat", "sheen"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 70,
@@ -622,7 +626,8 @@
         "maxRawKB": 100,
         "description": "Metallic gold PBR sphere with AnisotropyBlock intensity=0.85 and diagonal direction, producing a visibly stretched anisotropic specular highlight.",
         "tags": ["pbr", "nme", "procedural", "env", "anisotropy"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 71,
@@ -632,7 +637,8 @@
         "maxRawKB": 100,
         "description": "Warm wax-like PBR sphere with SubSurfaceBlock translucency and a modest RefractionBlock input, back-lit to show transmitted subsurface glow.",
         "tags": ["pbr", "nme", "procedural", "env", "subsurface"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 72,

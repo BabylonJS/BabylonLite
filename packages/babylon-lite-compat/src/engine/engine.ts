@@ -213,10 +213,13 @@ export class WebGPUEngine {
             this._startupWork.length = 0;
         }
         for (const scene of this._scenes) {
+            // Build shadow generators first so NME materials can sample them at parse
+            // time (Babylon Lite wires shadow receivers into the NME graph on parse).
+            scene._buildShadowGenerators();
+            await scene._parseNodeMaterials();
             await scene._awaitPendingTextures();
             scene._flushPendingAdds();
             await scene._loadPendingEnvironment();
-            scene._buildShadowGenerators();
             if (scene._hasShadows()) {
                 await registerSceneWithShadowSupport(scene._lite);
             } else {
