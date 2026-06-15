@@ -31,14 +31,21 @@ export abstract class AbstractEngine {
     /** @internal The underlying Lite engine context. Populated by `initAsync()`. */
     public _lite!: EngineContext;
 
-    private readonly _canvas: RenderCanvas;
+    /**
+     * @internal Whether this engine has no GPU device (a {@link NullEngine}). Headless
+     * engines drive a pure-JS animation/observable loop instead of Babylon Lite's
+     * GPU render loop, so the compat `Scene` skips its Lite scene-context setup.
+     */
+    public _headless = false;
+
+    protected readonly _canvas: RenderCanvas;
     private readonly _options: EngineOptions | undefined;
-    private readonly _scenes: Scene[] = [];
-    private readonly _loopCallbacks: Array<() => void> = [];
-    private _initialized = false;
+    protected readonly _scenes: Scene[] = [];
+    protected readonly _loopCallbacks: Array<() => void> = [];
+    protected _initialized = false;
     private _started = false;
     /** @internal Active `requestAnimationFrame` id for the scene-less loop, if any. */
-    private _rafId: number | null = null;
+    protected _rafId: number | null = null;
 
     /**
      * Babylon.js `engine.useReverseDepthBuffer`. Babylon Lite owns its depth
@@ -343,3 +350,64 @@ export class Engine extends ThinEngine {}
  * since Babylon Lite is WebGPU-only.
  */
 export class WebGPUEngine extends AbstractEngine {}
+
+/** A degenerate canvas stand-in for the deviceless {@link NullEngine}. */
+const NULL_CANVAS = { width: 0, height: 0 } as unknown as RenderCanvas;
+
+/**
+ * Babylon.js's `NullEngine` — a headless engine with no GPU device, used to run
+ * scene logic (animations, observables, frame timing) without rendering. Babylon
+ * Lite has no headless context, so the compat `NullEngine` builds nothing on the
+ * GPU: it drives a pure-JS `requestAnimationFrame` loop that advances each scene's
+ * CPU animations and fires its before/after-render observables. Scenes constructed
+ * against it skip the Lite scene-context build (see `Scene`'s headless branch), so
+ * only the deviceless surface (CPU animations, manual 2D-canvas drawing, etc.)
+ * works — there is no WebGPU rendering. Extends {@link WebGPUEngine} so it is
+ * accepted everywhere a compat engine is (e.g. `new Scene(engine)`).
+ */
+export class NullEngine extends WebGPUEngine {
+    public constructor() {
+        super(NULL_CANVAS);
+        this._headless = true;
+        // No GPU device to acquire — usable immediately, no `initAsync()` needed.
+        this._initialized = true;
+    }
+
+    /** No GPU device to acquire. */
+    public override async initAsync(): Promise<void> {
+        // Headless: nothing to initialise.
+    }
+
+    /**
+     * Drive a pure-JS frame loop: each tick advances every registered scene's CPU
+     * animations + render observables, then runs the user callback(s). No GPU work.
+     */
+    public override runRenderLoop(callback: () => void): void {
+        this._loopCallbacks.push(callback);
+        if (this._rafId !== null || typeof requestAnimationFrame !== "function") {
+            return;
+        }
+        const now = (): number => (typeof performance !== "undefined" ? performance.now() : Date.now());
+        let last = now();
+        const tick = (): void => {
+            const current = now();
+            const deltaMs = current - last;
+            last = current;
+            for (const scene of this._scenes) {
+                scene._tick(deltaMs);
+            }
+            for (const cb of this._loopCallbacks) {
+                cb();
+            }
+            this._rafId = requestAnimationFrame(tick);
+        };
+        this._rafId = requestAnimationFrame(tick);
+    }
+
+    /** @internal Track the scene for the headless tick loop (no Lite before-render wiring). */
+    public override _registerScene(scene: Scene): void {
+        if (!this._scenes.includes(scene)) {
+            this._scenes.push(scene);
+        }
+    }
+}

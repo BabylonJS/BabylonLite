@@ -14,13 +14,6 @@
 
 import { unsupported } from "../error.js";
 
-// ─── Engines ─────────────────────────────────────────────────────────
-export class NullEngine {
-    public constructor() {
-        unsupported("NullEngine", "Babylon Lite has no headless/null engine. Tests that need a deviceless engine should use the GPU-free compat unit-test surface instead.");
-    }
-}
-
 // ─── Materials ───────────────────────────────────────────────────────
 export class MultiMaterial {
     public constructor() {

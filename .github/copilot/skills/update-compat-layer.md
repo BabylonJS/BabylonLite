@@ -53,7 +53,10 @@ must be left accurate, but a run that ships zero new working scenes is incomplet
   of the lab's Babylon.js oracle scenes rendering at pixel parity through the compat
   layer — every run, even when it's hard.
 - **Task 3 — Close API-parity gaps.** Bring the compat surface closer to the full
-  `@babylonjs/core` + `@babylonjs/loaders` public API.
+  `@babylonjs/core` + `@babylonjs/loaders` public API. Every run must land at least
+  one of: add a missing API (even as a stub), upgrade an unsupported/partial API to
+  a real implementation, or prove full coverage with no remaining upgrades possible
+  (see Task 3).
 
 Task 3 carries a hard **completeness invariant** — every core/loaders symbol must
 have a status row (see Task 3 below). The three feed each other: a diff in Task 1
@@ -159,6 +162,25 @@ existed and was never triaged. So every run does a **full enumeration** of the
 core + loaders export surface and reconciles it against the status matrix. That
 enumeration is the mandatory completeness gate; _implementing_ the gaps it surfaces
 is incremental, best-effort progress.
+
+**Required outcome (every run must land at least one of these):**
+
+1. **Add at least one missing API** (property, function, class, enum, or member) —
+   even if it ships as a throwing `unsupported(...)` stub — so a real core/loaders
+   symbol that previously gave a bare "not exported" error now resolves.
+2. **Upgrade at least one unsupported/partial API to a real implementation** —
+   replace a throwing stub (or fill in a missing member on a `⚡ Partial` wrapper)
+   with working behaviour backed by the Lite API.
+3. **Prove full coverage with no further upgrades possible** — demonstrate, with
+   evidence, that every core/loaders symbol already has a row _and_ that every `❌` /
+   `🔧` row was re-checked this run and genuinely cannot be backed by the current
+   Lite API. This is the only outcome that needs no code change, and it requires the
+   re-triage in step 4 to be exhaustive — not assumed.
+
+Landing the Task 2 scene often satisfies outcome 1 or 2 as a side effect (the scene
+fails on a missing/stubbed API you then add) — but confirm which outcome you hit and
+record it. "I enumerated the surface but changed nothing" only counts if you can back
+outcome 3.
 
 1. **Read `packages/babylon-lite-compat/COMPAT-STATUS.md`** and extract the
    `Last synced BJS commit` SHA (`LAST_BJS_SHA`) and `Last sync date`.
@@ -348,6 +370,11 @@ finish until:
       does **not** satisfy this. (The only exemption is a written, evidence-backed
       proof that _every_ remaining not-working scene is blocked on a non-tree-shakeable
       Lite-core change — see Task 2.)
+- [ ] **(Task 3 — required outcome)** This run landed at least one of: (a) a newly
+      added API (even a throwing `unsupported(...)` stub) for a core/loaders symbol
+      that previously bare-failed; (b) a stub/partial API upgraded to a real
+      Lite-backed implementation; or (c) an evidence-backed proof that coverage is
+      complete and no `❌`/`🔧` row can currently be upgraded. State which.
 - [ ] **(Task 3)** Every public symbol exported by `@babylonjs/core` and
       `@babylonjs/loaders` maps to a row in `COMPAT-STATUS.md`
       (`✅` / `⚡` / `🔧` / `❌`) — the coverage ledger is empty.
@@ -407,7 +434,8 @@ If any box is unchecked, the run is not done.
   job, not a reason to stop.
 - Summarise at the end, per task: **(Task 1)** which BJS/Lite changes you acted on
   and the new `NEW_BJS_SHA`; **(Task 2)** which lab scene(s) you **landed at MAD ≈ 0**
-  (the required win) and the new working count; **(Task 3)** the size of the
-  coverage ledger (and that it is now empty) and which wrappers were added/extended
-  — plus any tree-shakeable Lite-core additions (with the bundle-diff proof) and the
-  test/typecheck/lint results.
+  (the required win) and the new working count; **(Task 3)** which required outcome
+  you hit — the missing API you added, the stub/partial you upgraded to a real
+  implementation, or the proof that coverage is complete — plus the size of the
+  coverage ledger (and that it is now empty), any tree-shakeable Lite-core additions
+  (with the bundle-diff proof), and the test/typecheck/lint results.

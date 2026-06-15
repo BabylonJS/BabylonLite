@@ -1245,7 +1245,8 @@
         "maxRawKB": 16,
         "description": "Standalone AnimationManager animates a plain object and draws to a 2D canvas without a Lite scene or engine.",
         "tags": ["anim", "standalone"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 154,

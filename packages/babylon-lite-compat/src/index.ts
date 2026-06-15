@@ -31,7 +31,7 @@ export { Angle, Curve3, Path3D } from "./math/curve.js";
 export { BoundingBox, BoundingSphere, BoundingInfo } from "./culling/bounding.js";
 
 // ─── Engine ──────────────────────────────────────────────────────────
-export { AbstractEngine, ThinEngine, WebGPUEngine, Engine } from "./engine/engine.js";
+export { AbstractEngine, ThinEngine, WebGPUEngine, Engine, NullEngine } from "./engine/engine.js";
 
 // ─── Scene graph ─────────────────────────────────────────────────────
 export { Node } from "./node/node.js";
@@ -159,7 +159,6 @@ export {
 
 // ─── Known but unsupported (throw LiteCompatError on use) ─────────────
 export {
-    NullEngine,
     MultiMaterial,
     ShaderMaterial,
     BackgroundMaterial,

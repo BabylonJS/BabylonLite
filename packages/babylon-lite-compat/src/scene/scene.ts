@@ -68,6 +68,21 @@ interface DefaultEnvironmentOptions {
     applyImageProcessing?: boolean;
 }
 
+/**
+ * Minimal `SceneContext` stand-in for a headless ({@link NullEngine}) scene, which
+ * has no Lite GPU context. It satisfies only the plain data accessors a deviceless
+ * scene may touch (`clearColor` / `camera` / `imageProcessing` / `animationGroups`);
+ * no Lite scene method is ever invoked on it.
+ */
+function createHeadlessLite(): SceneContext {
+    return {
+        clearColor: { r: 0, g: 0, b: 0, a: 1 },
+        camera: null,
+        imageProcessing: { exposure: 1, contrast: 1, toneMappingEnabled: false },
+        animationGroups: [],
+    } as unknown as SceneContext;
+}
+
 export class Scene extends AbstractScene {
     /** @internal Underlying Babylon Lite scene context. */
     public readonly _lite: SceneContext;
@@ -146,6 +161,10 @@ export class Scene extends AbstractScene {
     private _blendManager: AnimationManager | null = null;
     private _ambientColor = new Color3(0, 0, 0);
     private _environmentIntensity = 1;
+    /** @internal Whether this scene is bound to a headless `NullEngine` (no GPU context). */
+    private _headless = false;
+    /** @internal Tracks whether at least one frame has ticked (gates `onAfterRenderObservable`). */
+    private _renderedAFrame = false;
     /** @internal `NodeMaterial`s whose async parse the engine drives after shadow generators are built. */
     private readonly _nodeMaterials: Array<{ _parse(engine: import("babylon-lite").EngineContext, shadowGenerators: readonly unknown[]): Promise<void> }> = [];
 
@@ -157,37 +176,54 @@ export class Scene extends AbstractScene {
     public constructor(engine: WebGPUEngine) {
         super();
         this._engine = engine;
+        if (engine._headless) {
+            // Headless (`NullEngine`): no Lite scene context — the engine drives a
+            // pure-JS tick loop (see `NullEngine.runRenderLoop`) that calls `_tick`.
+            // Only the deviceless surface (CPU animations, manual canvas drawing)
+            // works; there is no GPU rendering. The stub `_lite` satisfies the few
+            // plain accessors a headless scene may touch (camera / clearColor / …).
+            this._headless = true;
+            this._lite = createHeadlessLite();
+            engine._registerScene(this);
+            return;
+        }
         this._lite = createSceneContext(engine._lite);
         // Babylon Lite exposes a before-render hook but no after-render hook. We
         // fire `onBeforeRenderObservable` on each tick, and approximate
         // `onAfterRenderObservable` by firing it at the start of the *next* tick
         // (i.e. after the previous frame has rendered). `addOnce` after-render
         // listeners therefore resolve one frame later than they would in BJS.
-        let renderedAFrame = false;
-        onBeforeRender(this._lite, (deltaMs: number) => {
-            // Record the frame delta so `engine.getDeltaTime()` (read inside
-            // before-render observers) reflects the current frame.
-            this._engine._lastDeltaMs = deltaMs;
-            this.onBeforeAnimationsObservable.notifyObservers(this);
-            if (this._blendManager) {
-                updateAnimationManager(this._blendManager, deltaMs);
-            }
-            for (const a of this._runningAnimatables) {
-                a._tick(deltaMs);
-            }
-            if (this._structuralGroups.length > 0) {
-                for (const g of this._structuralGroups) {
-                    g._advanceStructural(deltaMs);
-                }
-                AnimationGroup._blendStructuralGroups(this._structuralGroups);
-            }
-            if (renderedAFrame) {
-                this.onAfterRenderObservable.notifyObservers(this);
-            }
-            renderedAFrame = true;
-            this.onBeforeRenderObservable.notifyObservers(this);
-        });
+        onBeforeRender(this._lite, (deltaMs: number) => this._tick(deltaMs));
         engine._registerScene(this);
+    }
+
+    /**
+     * @internal Per-frame update: advance CPU animations and fire the render
+     * observables. Driven by Babylon Lite's before-render hook for GPU engines, or
+     * by the `NullEngine` `requestAnimationFrame` loop for headless engines.
+     */
+    public _tick(deltaMs: number): void {
+        // Record the frame delta so `engine.getDeltaTime()` (read inside before-render
+        // observers) reflects the current frame.
+        this._engine._lastDeltaMs = deltaMs;
+        this.onBeforeAnimationsObservable.notifyObservers(this);
+        if (this._blendManager) {
+            updateAnimationManager(this._blendManager, deltaMs);
+        }
+        for (const a of this._runningAnimatables) {
+            a._tick(deltaMs);
+        }
+        if (this._structuralGroups.length > 0) {
+            for (const g of this._structuralGroups) {
+                g._advanceStructural(deltaMs);
+            }
+            AnimationGroup._blendStructuralGroups(this._structuralGroups);
+        }
+        if (this._renderedAFrame) {
+            this.onAfterRenderObservable.notifyObservers(this);
+        }
+        this._renderedAFrame = true;
+        this.onBeforeRenderObservable.notifyObservers(this);
     }
 
     public getEngine(): WebGPUEngine {
@@ -704,6 +740,9 @@ export class Scene extends AbstractScene {
 
     public dispose(): void {
         this.onDisposeObservable.notifyObservers(this);
-        disposeScene(this._lite);
+        // A headless scene has no Lite context to dispose (see `createHeadlessLite`).
+        if (!this._headless) {
+            disposeScene(this._lite);
+        }
     }
 }
