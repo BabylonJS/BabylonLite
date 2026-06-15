@@ -53,7 +53,16 @@ permissions:
 # needs outbound network and GitHub read access.
 network: defaults
 
-engine: copilot
+# The Copilot CLI engine, pinned to Claude Opus 4.8 with high thinking effort
+# (the `?effort=high` suffix is gh-aw's way to request maximum reasoning effort).
+# If the exact identifier below is not available to the account behind
+# COPILOT_GITHUB_TOKEN, the run fails with model_not_supported_error — adjust to match
+# what your Copilot seat exposes. Context-window size (e.g. 1M) is a property of the
+# model the backend serves, not a configurable field. Override per-repo without
+# recompiling via the GH_AW_MODEL_AGENT_COPILOT Actions variable.
+engine:
+    id: copilot
+    model: claude-opus-4.8?effort=high
 
 # Wall-clock cap for the agent job. The update-compat-layer skill is heavy (clones and
 # diffs upstream, implements wrappers, runs the bundle build + parity tests, lands a
