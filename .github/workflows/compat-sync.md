@@ -8,6 +8,19 @@
 #   1. Daily schedule.
 #   2. An issue labeled `compat`.
 #
+# Required secret:
+#   COPILOT_GITHUB_TOKEN — a GitHub PAT from an account with an active GitHub Copilot
+#   subscription. The agent authenticates Copilot with this token, so inference bills
+#   to that account's Copilot allowance (the BabylonJS org has no org Copilot plan and
+#   does not ladder up to a Microsoft enterprise).
+#
+#   NOTE: currently configured for testing in the private fork `ryantrem/Babylon-Lite`.
+#   Set the secret (you have admin on your own fork):
+#     gh secret set COPILOT_GITHUB_TOKEN --repo ryantrem/Babylon-Lite
+#   The agent also reads the repo-wide daily AI-credit cap variable:
+#     gh variable set GH_AW_DEFAULT_MAX_DAILY_AI_CREDITS --body 100000 --repo ryantrem/Babylon-Lite
+#   (When promoting to the upstream repo, swap ryantrem/Babylon-Lite → BabylonJS/Babylon-Lite.)
+#
 # After editing this file you MUST recompile the hardened lock file and commit both:
 #   gh aw compile .github/workflows/compat-sync.md
 # This produces compat-sync.lock.yml — commit it alongside this file on the default branch.
@@ -19,14 +32,14 @@ on:
         names: [compat]
     # `gh aw compile` also injects workflow_dispatch so you can run it manually.
 
-# Read-only by default. `copilot-requests: write` bills Copilot inference to the org
-# via the built-in GITHUB_TOKEN (requires the org's "Copilot CLI" policy enabled);
-# drop it and configure COPILOT_GITHUB_TOKEN instead if billing to the org is not set up.
+# Read-only repo permissions. Copilot inference is NOT billed to the org (BabylonJS
+# does not have an org Copilot plan); instead the agent authenticates with a personal
+# Copilot token supplied via the COPILOT_GITHUB_TOKEN repo secret (set separately).
+# Inference therefore bills to that account's Copilot allowance.
 permissions:
     contents: read
     issues: read
     pull-requests: read
-    copilot-requests: write
 
 # The skill diffs the upstream BabylonJS/Babylon.js and Babylon Lite trees, so the agent
 # needs outbound network and GitHub read access.
