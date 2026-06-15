@@ -118,6 +118,14 @@ export class StandardMaterial extends PushMaterial {
         this._markDirty();
     }
 
+    public get disableLighting(): boolean {
+        return this._lite.disableLighting;
+    }
+    public set disableLighting(value: boolean) {
+        this._lite.disableLighting = value;
+        this._markDirty();
+    }
+
     public get alpha(): number {
         return this._lite.alpha;
     }

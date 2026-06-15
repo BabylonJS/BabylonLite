@@ -39,7 +39,8 @@
         "maxMad": 0.08,
         "maxRawKB": 72.4,
         "description": "DirectionalLight, ESM shadow map with blur, heightmap ground, torus caster.",
-        "tags": ["shadow", "procedural", "std"]
+        "tags": ["shadow", "procedural", "std"],
+        "compatParity": true
     },
     {
         "id": 5,
