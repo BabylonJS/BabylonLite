@@ -4,6 +4,8 @@
 // ─── Core ────────────────────────────────────────────────────────────
 export { createEngine, startEngine, stopEngine, renderFrame, resizeEngine, setEngineSize, disposeEngine, VERSION } from "./engine/engine.js";
 export type { EngineContext, EngineOptions, RenderCanvas } from "./engine/engine.js";
+export { createSurface, disposeSurface, resizeSurface, setSurfaceSize } from "./engine/surface.js";
+export type { SurfaceContext, SurfaceOptions } from "./engine/surface.js";
 export { captureScreenshot } from "./engine/screenshot.js";
 export type { Screenshot } from "./engine/screenshot.js";
 export {
@@ -97,6 +99,24 @@ export type { AttachControlOptions, ArcRotateCameraLimits } from "./camera/arc-r
 export { createFreeCamera } from "./camera/free-camera.js";
 export { attachFreeControl } from "./camera/free-camera-controls.js";
 
+// Geospatial (globe-orbit) camera
+export {
+    createGeospatialCamera,
+    setGeospatialOrientation,
+    computeLocalBasis,
+    computeLookAtFromYawPitch,
+    computeYawPitchFromLookAt,
+    clampCenterFromPoles,
+    normalizeRadians,
+} from "./camera/geospatial-camera.js";
+export type { GeospatialCamera, GeospatialCameraOptions, GeospatialOrientation } from "./camera/geospatial-camera.js";
+export { createGeospatialLimits, getEffectivePitchMax, clampZoomDistance } from "./camera/geospatial-limits.js";
+export type { GeospatialLimits } from "./camera/geospatial-limits.js";
+export { attachGeospatialControls } from "./camera/geospatial-camera-controls.js";
+export type { GeospatialControlOptions } from "./camera/geospatial-camera-controls.js";
+export { flyGeospatialCameraToAsync } from "./camera/geospatial-camera-fly.js";
+export type { GeospatialFlyOptions } from "./camera/geospatial-camera-fly.js";
+
 // ─── Lights ──────────────────────────────────────────────────────────
 export { createHemisphericLight } from "./light/hemispheric.js";
 export type { HemisphericLight } from "./light/hemispheric.js";
@@ -157,6 +177,8 @@ export { createStandardNoColorMaterialView } from "./material/standard/no-color-
 export { createPbrMaterial } from "./material/pbr/pbr-material.js";
 export { createShaderMaterial, setShaderUniform, setShaderTexture, setShaderFloat, setShaderVector3, setShaderMatrix } from "./material/shader/shader-material.js";
 export { createShaderNoColorMaterialView } from "./material/shader/no-color-view.js";
+export { createShaderNormalMaterialView } from "./material/shader/normal-view.js";
+export type { ShaderNormalViewConfig } from "./material/shader/normal-view.js";
 export { createGridMaterial } from "./material/grid/grid-material.js";
 export type { GridMaterialOptions, GridVec3 } from "./material/grid/grid-material.js";
 export { createPbrNoColorMaterialView } from "./material/pbr/no-color-view.js";
@@ -498,6 +520,7 @@ export {
 // ─── Physics ─────────────────────────────────────────────────────────
 export {
     createHavokWorld,
+    enableHavokFloatingOrigin,
     createPhysicsBody,
     createPhysicsShape,
     createPhysicsAggregate,
@@ -519,6 +542,14 @@ export {
     setPhysicsShapeMaterial,
     setPhysicsBodyMass,
     setPhysicsBodyMassProperties,
+    applyPhysicsImpulse,
+    setPhysicsBodyLinearVelocity,
+    getPhysicsBodyLinearVelocity,
+    setPhysicsBodyAngularVelocity,
+    setPhysicsBodyMotionType,
+    setPhysicsBodyTransform,
+    removePhysicsBody,
+    releasePhysicsShape,
     disposePhysics,
     PhysicsShapeType,
     PhysicsMotionType,
@@ -545,6 +576,7 @@ export type { PhysicsViewer, PhysicsViewerOptions, PhysicsConstraintDebug } from
 export {
     createNavigationPluginAsync,
     createNavMesh,
+    createNavMeshFromSources,
     createDebugNavMeshGeometry,
     getClosestPoint,
     computePath,
@@ -564,4 +596,4 @@ export {
     removeObstacle,
     updateNavMeshObstacles,
 } from "./navigation/navigation.js";
-export type { NavigationPlugin, NavCrowd, NavMeshParameters, AgentParameters, OffMeshConnection, ObstacleHandle } from "./navigation/navigation.js";
+export type { NavigationPlugin, NavCrowd, NavMeshParameters, NavMeshSource, AgentParameters, OffMeshConnection, ObstacleHandle } from "./navigation/navigation.js";
