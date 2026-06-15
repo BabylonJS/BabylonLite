@@ -29,6 +29,8 @@ export abstract class Node {
     protected _scene: Scene | undefined;
     /** @internal */
     protected _parent: Node | null = null;
+    /** @internal Direct children, maintained as `parent` / `setParent` links change. */
+    protected readonly _children: Node[] = [];
     /** @internal */
     protected _enabled = true;
     /** @internal */
@@ -60,8 +62,70 @@ export abstract class Node {
         return this._parent;
     }
     public set parent(value: Node | null) {
-        this._parent = value;
+        this._linkParent(value);
         this._applyParent(value);
+    }
+
+    /**
+     * @internal Update the parent link and both nodes' child registries. Shared by
+     * the `parent` setter and `TransformNode.setParent` (which differ only in how
+     * the Lite-side transform is reparented, handled by their own callers).
+     */
+    protected _linkParent(value: Node | null): void {
+        if (this._parent === value) {
+            return;
+        }
+        if (this._parent) {
+            const i = this._parent._children.indexOf(this);
+            if (i !== -1) {
+                this._parent._children.splice(i, 1);
+            }
+        }
+        this._parent = value;
+        if (value && !value._children.includes(this)) {
+            value._children.push(this);
+        }
+    }
+
+    /** @internal Whether this node is an `AbstractMesh` (overridden there) — drives `getChildMeshes`. */
+    protected _isMeshNode(): boolean {
+        return false;
+    }
+
+    /**
+     * Babylon.js `node.getDescendants(directDescendantsOnly?, predicate?)` — the
+     * nodes parented (directly or transitively) under this one, optionally filtered.
+     */
+    public getDescendants(directDescendantsOnly = false, predicate?: (node: Node) => boolean): Node[] {
+        const results: Node[] = [];
+        const collect = (node: Node): void => {
+            for (const child of node._children) {
+                if (!predicate || predicate(child)) {
+                    results.push(child);
+                }
+                if (!directDescendantsOnly) {
+                    collect(child);
+                }
+            }
+        };
+        collect(this);
+        return results;
+    }
+
+    /**
+     * Babylon.js `node.getChildren(predicate?, directDescendantsOnly?)` — descendant
+     * nodes (direct children by default), optionally filtered by a predicate.
+     */
+    public getChildren(predicate?: (node: Node) => boolean, directDescendantsOnly = true): Node[] {
+        return this.getDescendants(directDescendantsOnly, predicate);
+    }
+
+    /**
+     * Babylon.js `node.getChildMeshes(directDescendantsOnly?, predicate?)` — the
+     * descendant nodes that are meshes (all descendants by default).
+     */
+    public getChildMeshes(directDescendantsOnly = false, predicate?: (node: Node) => boolean): Node[] {
+        return this.getDescendants(directDescendantsOnly, (node) => node._isMeshNode() && (!predicate || predicate(node)));
     }
 
     public isEnabled(): boolean {
@@ -78,7 +142,9 @@ export abstract class Node {
 
     public dispose(): void {
         this._disposed = true;
-        // Drop this node from its scene's camera / light / mesh registries.
+        // Detach from the parent's child registry, then drop this node from its
+        // scene's camera / light / mesh registries.
+        this._linkParent(null);
         this._scene?._unregisterNode(this);
     }
 

@@ -2,13 +2,21 @@
 
 You maintain `@babylonjs/lite-compat` — the Babylon.js-shaped compatibility layer
 that sits on top of the Babylon Lite public API (package at
-`packages/babylon-lite-compat/`). Your job in this skill is to **reconcile the
-compat layer with what has changed in both Babylon.js and Babylon Lite since the
-last sync**, implement what is now possible, add tests, and update the status
-file.
+`packages/babylon-lite-compat/`). Your job in this skill is to **make progress on
+three fronts**: react to upstream Babylon.js / Babylon Lite changes (Task 1), get
+more of the lab's oracle scenes rendering through the compat layer (Task 2), and
+close gaps between the compat surface and the Babylon.js API (Task 3) —
+implementing what is now possible, adding tests, and updating the status file for
+each.
 
-The single source of truth for sync state is
-`packages/babylon-lite-compat/COMPAT-STATUS.md`.
+The single source of truth for all three is
+`packages/babylon-lite-compat/COMPAT-STATUS.md`, which tracks them in three places:
+
+| Task | Goal               | Tracked in `COMPAT-STATUS.md` by                                  |
+| ---- | ------------------ | ----------------------------------------------------------------- |
+| 1    | Upstream diffs     | the `Last synced BJS commit` + `Last sync date` markers           |
+| 2    | Lab-scene coverage | the **Lab scene coverage** section (working list + blocker table) |
+| 3    | API parity         | the per-area **status matrix** (a row per core/loaders symbol)    |
 
 ---
 
@@ -31,26 +39,96 @@ live outside core. If you encounter one of these, ignore it — do not add a row
 
 ---
 
-## The completeness invariant (read this first)
+## The three tasks (read this first)
 
-**Every public symbol exported from BJS core + loaders MUST have a row in
-`COMPAT-STATUS.md`.** A symbol with no row is an undetected gap. Diffs alone cannot
-guarantee this — they only surface what *changed*, never what already existed and
-was never triaged.
+Every run advances the compat layer on three fronts. You need not exhaust all
+three in a single run, but you **must** make real progress on at least one and
+leave `COMPAT-STATUS.md` accurately reflecting the new state of each:
 
-You therefore run **two phases every time**:
+- **Task 1 — React to upstream diffs.** Pick up what changed in Babylon.js and
+  Babylon Lite since the last sync and act on anything newly relevant.
+- **Task 2 — Advance lab-scene coverage.** Get more of the lab's Babylon.js oracle
+  scenes rendering at pixel parity through the compat layer.
+- **Task 3 — Close API-parity gaps.** Bring the compat surface closer to the full
+  `@babylonjs/core` + `@babylonjs/loaders` public API.
 
-- **Phase A — Coverage audit (full enumeration).** Enumerate the *entire* core +
-  loaders export surface and reconcile it against the status matrix. This is what
-  guarantees thoroughness; it does not depend on diffs.
-- **Phase B — Incremental diff.** Use the BJS/Lite diffs since the last sync to
-  prioritise *what changed*, so you spend effort where it's most likely to matter.
-
-Phase A is mandatory and is the gate. Phase B is an accelerator, not a substitute.
+Task 3 carries a hard **completeness invariant** — every core/loaders symbol must
+have a status row (see Task 3 below) — and is the gate for finishing. Tasks 1 and 2
+are incremental ("make progress"). The three feed each other: a diff in Task 1 can
+unblock a lab scene in Task 2 or a parity gap in Task 3, and the lab-scene recipe
+in Task 2 is often the fastest way to prove an API gap in Task 3 is implementable.
 
 ---
 
-## Phase A — Coverage audit (mandatory, full enumeration)
+## Task 1 — React to upstream BJS/Lite diffs
+
+Use the diffs since the last sync to find — and prioritise — what changed.
+
+1. **Find the last Lite change since the previous sync.** Run:
+    ```
+    git log -1 --format=%H -- packages/babylon-lite-compat/COMPAT-STATUS.md
+    ```
+    Call this `LAST_STATUS_COMMIT`. Lite changes to consider are everything in
+    `packages/babylon-lite/src/**` since `LAST_STATUS_COMMIT`:
+    ```
+    git log --oneline LAST_STATUS_COMMIT..HEAD -- packages/babylon-lite/src
+    git diff --stat LAST_STATUS_COMMIT..HEAD -- packages/babylon-lite/src/index.ts
+    ```
+    New public exports in `index.ts` are new Lite capabilities — cross-reference
+    them against the `🔧 Needs Lite core` / `⚡ Partial` / `❌` rows, since they may
+    now be upgradable (a new Lite capability can unblock a lab scene in Task 2 or a
+    parity gap in Task 3).
+2. **Find what changed in Babylon.js core/loaders since `LAST_BJS_SHA`** (the
+   `Last synced BJS commit` recorded in `COMPAT-STATUS.md`).
+    - Latest master HEAD: `https://api.github.com/repos/BabylonJS/Babylon.js/commits/master`
+      (record the new SHA as `NEW_BJS_SHA`).
+    - Compare view: `https://api.github.com/repos/BabylonJS/Babylon.js/compare/LAST_BJS_SHA...master`
+      — act only on changes under `packages/dev/core/src/**` and
+      `packages/dev/loaders/src/**`. New symbols here feed Task 3's ledger; the diff
+      just tells you which ones are _new_ so you prioritise them.
+
+---
+
+## Task 2 — Advance lab-scene coverage
+
+The lab renders each Babylon.js oracle scene (`lab/lite/src/bjs/sceneN.ts`) through
+the compat layer at `/compat/sceneN.html`. A scene **works** when its compat render
+matches the native Lite port (`/lite/sceneN.html`) at MAD ≈ 0. The **Lab scene
+coverage** section of `COMPAT-STATUS.md` is the live record: a working-scene list
+(with a count) plus a table grouping the rest by blocker.
+
+1. Read the **Lab scene coverage** section — the working list and the blocker table.
+2. Pick one or more not-yet-working scenes. Prefer a blocker group where the fix is
+   likely to unblock several scenes at once, and where the native Lite port already
+   renders the feature (proof Lite can back it).
+3. For each candidate, read **both** the BJS oracle (`lab/lite/src/bjs/sceneN.ts`)
+   and the native Lite port (`lab/lite/src/lite/sceneN.ts`). **If the Lite port
+   renders the feature, Lite can back it** — that port is a working, copy-able
+   recipe for the exact Lite API/call sequence to wrap. Implement or extend the
+   compat wrapper to match (see "Implementation patterns").
+4. Measure compat-vs-lite parity (in-browser MAD diff of `/compat/sceneN` vs
+   `/lite/sceneN`). When a scene reaches MAD ≈ 0, opt it into the Compat tab by
+   setting `"compatParity": true` in `scene-config.json`, then regression-check a
+   sample of already-working scenes so the change didn't break them.
+5. Update the **Lab scene coverage** section: move newly-working scenes into the
+   working list (bump its count) and update or remove the blocker row.
+
+> Don't conflate "no compat wrapper yet" with "Lite can't do it." A scene whose
+> native Lite port renders the feature is almost never a genuine `🔧 Needs Lite
+core` — it just needs the wrapper. Only record a `🔧`/`❌` blocker after confirming
+> the Lite port itself cannot render it.
+
+---
+
+## Task 3 — Close API-parity gaps (coverage audit, full enumeration)
+
+**Every public symbol exported from BJS core + loaders MUST have a row in
+`COMPAT-STATUS.md`.** A symbol with no row is an undetected gap. The Task 1 diffs
+alone cannot guarantee this — they only surface what _changed_, never what already
+existed and was never triaged. So every run does a **full enumeration** of the
+core + loaders export surface and reconciles it against the status matrix. That
+enumeration is the mandatory completeness gate; _implementing_ the gaps it surfaces
+is incremental, best-effort progress.
 
 1. **Read `packages/babylon-lite-compat/COMPAT-STATUS.md`** and extract the
    `Last synced BJS commit` SHA (`LAST_BJS_SHA`) and `Last sync date`.
@@ -76,7 +154,7 @@ Phase A is mandatory and is the gate. Phase B is an accelerator, not a substitut
    output and must be empty before you finish.
 
 4. **Triage every uncovered symbol** — and **re-triage every existing `❌` / `🔧`
-   row** — against the *current* Babylon Lite public API. Do not trust the prior
+   row** — against the _current_ Babylon Lite public API. Do not trust the prior
    status; the whole point is to catch things Lite can now back. For each:
     - Search Lite's surface for a backing capability before concluding it is
       unsupported: read `packages/babylon-lite/src/index.ts` and grep
@@ -90,9 +168,9 @@ Phase A is mandatory and is the gate. Phase B is an accelerator, not a substitut
       wrap (it is a working, copy-able recipe), then mirror it in the compat
       wrapper. A feature with a working Lite lab scene is almost never a genuine
       `🔧 Needs Lite core`; treat "no compat wrapper yet" and "Lite can't do it" as
-      different conclusions.
+      different conclusions. (Driving these lab scenes to parity is **Task 2**.)
     - If Lite can back it → implement the wrapper (see "Implementation patterns").
-    - If Lite *almost* backs it but the clean surface is missing, consider adding a
+    - If Lite _almost_ backs it but the clean surface is missing, consider adding a
       **tree-shakeable** accessor/function to Lite core (imported only by compat —
       see "Implementation patterns"). Only do this if you can prove zero bundle-size
       impact; otherwise record `🔧 Needs Lite core`.
@@ -105,36 +183,10 @@ Phase A is mandatory and is the gate. Phase B is an accelerator, not a substitut
 
 ---
 
-## Phase B — Incremental diff (prioritisation)
-
-1. **Find the last Lite change since the previous sync.** Run:
-    ```
-    git log -1 --format=%H -- packages/babylon-lite-compat/COMPAT-STATUS.md
-    ```
-    Call this `LAST_STATUS_COMMIT`. Lite changes to consider are everything in
-    `packages/babylon-lite/src/**` since `LAST_STATUS_COMMIT`:
-    ```
-    git log --oneline LAST_STATUS_COMMIT..HEAD -- packages/babylon-lite/src
-    git diff --stat LAST_STATUS_COMMIT..HEAD -- packages/babylon-lite/src/index.ts
-    ```
-    New public exports in `index.ts` are new Lite capabilities — cross-reference
-    them against the `🔧 Needs Lite core` / `⚡ Partial` / `❌` rows from Phase A,
-    since they may now be upgradable.
-2. **Find what changed in Babylon.js core/loaders since `LAST_BJS_SHA`.**
-    - Latest master HEAD: `https://api.github.com/repos/BabylonJS/Babylon.js/commits/master`
-      (record the new SHA as `NEW_BJS_SHA`).
-    - Compare view: `https://api.github.com/repos/BabylonJS/Babylon.js/compare/LAST_BJS_SHA...master`
-      — act only on changes under `packages/dev/core/src/**` and
-      `packages/dev/loaders/src/**`. New symbols here must already have been caught
-      by Phase A's enumeration; the diff just tells you which ones are *new* so you
-      prioritise them.
-
----
-
 ## Implementation patterns
 
-When Phase A/B determines a symbol is now implementable on Lite, build the wrapper
-following the existing patterns in `packages/babylon-lite-compat/src/`:
+When Task 2 or Task 3 surfaces a symbol that is now implementable on Lite, build the
+wrapper following the existing patterns in `packages/babylon-lite-compat/src/`:
 
 - **Match Babylon.js type names and public shapes exactly — this is the whole point
   of the compat layer.** The goal is that ported code that imports from
@@ -235,7 +287,7 @@ All must pass.
 
 **If (and only if) you added anything to `packages/babylon-lite/` core this run,**
 also prove it is tree-shakeable with a clean A/B build — the committed manifest can
-be stale, so compare two fresh builds that differ *only* by your Lite change:
+be stale, so compare two fresh builds that differ _only_ by your Lite change:
 
 ```
 # 1. Build WITH your change, save the manifest
@@ -256,14 +308,21 @@ tree-shakeable — revert it and record `🔧 Needs Lite core` instead.
 
 ## Completeness gate (required before finishing)
 
-Do not finish until the coverage ledger from Phase A is **empty**:
+Task 3's coverage ledger is a hard gate; Tasks 1 and 2 are incremental, but the
+status you leave behind for them must be accurate. Do not finish until:
 
-- [ ] Every public symbol exported by `@babylonjs/core` and `@babylonjs/loaders`
-      maps to a row in `COMPAT-STATUS.md` (as `✅` / `⚡` / `🔧` / `❌`).
-- [ ] No core/loaders symbol resolves to a bare "not exported" error — every one is
-      either wrapped or shipped as a throwing `unsupported(...)` stub.
-- [ ] Every existing `❌` / `🔧` row was re-checked against the *current* Lite API
-      this run (not assumed from the previous sync).
+- [ ] **(Task 3)** Every public symbol exported by `@babylonjs/core` and
+      `@babylonjs/loaders` maps to a row in `COMPAT-STATUS.md`
+      (`✅` / `⚡` / `🔧` / `❌`) — the coverage ledger is empty.
+- [ ] **(Task 3)** No core/loaders symbol resolves to a bare "not exported" error —
+      every one is either wrapped or shipped as a throwing `unsupported(...)` stub.
+- [ ] **(Task 3)** Every existing `❌` / `🔧` row was re-checked against the
+      _current_ Lite API this run (not assumed from the previous sync).
+- [ ] **(Task 1)** `Last synced BJS commit` / `Last sync date` are updated to the
+      reconciled `NEW_BJS_SHA` / today.
+- [ ] **(Task 2)** The **Lab scene coverage** section reflects reality: every scene
+      you drove to MAD ≈ 0 is in the working list (count bumped) and opted into
+      `scene-config.json`, and blocker rows are updated.
 - [ ] Tests, both typechecks, ESLint, and Prettier all pass.
 
 If any box is unchecked, the run is not done.
@@ -272,13 +331,15 @@ If any box is unchecked, the run is not done.
 
 ## Update `COMPAT-STATUS.md` (required, last step)
 
-After implementing and testing:
+`COMPAT-STATUS.md` tracks all three tasks, so update the part each one touched:
 
-1. Update every feature row you changed to its new status.
-2. Add rows for any newly enumerated BJS core/loaders symbols (even unsupported ones).
-3. Set `Last synced BJS commit` to `NEW_BJS_SHA`.
-4. Set `Last sync date` to today's date.
-5. If the compat package version changed, update `Lite compat package version`.
+1. **(Task 3)** Update every feature row you changed to its new status, and add
+   rows for any newly enumerated BJS core/loaders symbols (even unsupported ones).
+2. **(Task 2)** Update the **Lab scene coverage** section — move newly-working
+   scenes into the working list (bump the count) and revise or remove blocker rows.
+3. **(Task 1)** Set `Last synced BJS commit` to `NEW_BJS_SHA` and `Last sync date`
+   to today's date.
+4. If the compat package version changed, update `Lite compat package version`.
 
 ---
 
@@ -302,7 +363,9 @@ After implementing and testing:
   compat work.
 - Keep the wrappers honest: a feature is only `✅ Full`/`⚡ Partial` if it actually
   works on the Lite API. When in doubt, mark it `🔧`/`❌` and explain in the row.
-- Summarise at the end: the size of the Phase A coverage ledger (and that it is now
-  empty), which BJS/Lite changes you acted on, which wrappers were added/extended,
-  any tree-shakeable Lite-core additions (with the bundle-diff proof), the new
-  `NEW_BJS_SHA`, and the test/typecheck/lint results.
+- Summarise at the end, per task: **(Task 1)** which BJS/Lite changes you acted on
+  and the new `NEW_BJS_SHA`; **(Task 2)** which lab scenes you drove to parity and
+  the new working count; **(Task 3)** the size of the coverage ledger (and that it
+  is now empty) and which wrappers were added/extended — plus any tree-shakeable
+  Lite-core additions (with the bundle-diff proof) and the test/typecheck/lint
+  results.

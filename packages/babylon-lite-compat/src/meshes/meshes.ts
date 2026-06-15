@@ -199,7 +199,7 @@ export class TransformNode extends Node {
      * setter, which keeps the local transform and lets the world move.
      */
     public setParent(parent: Node | null): TransformNode {
-        this._parent = parent;
+        this._linkParent(parent);
         setParent(this._node as never, liteNodeOf(parent) as never);
         return this;
     }
@@ -237,6 +237,11 @@ export class AbstractMesh extends TransformNode {
 
     public override getClassName(): string {
         return "AbstractMesh";
+    }
+
+    /** @internal An `AbstractMesh` counts as a mesh node for `getChildMeshes`. */
+    protected override _isMeshNode(): boolean {
+        return true;
     }
 
     public get material(): CompatMaterial | null {
