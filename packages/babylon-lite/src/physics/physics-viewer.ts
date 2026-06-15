@@ -165,7 +165,7 @@ export function showPhysicsBody(viewer: PhysicsViewer, body: PhysicsBody): Mesh 
 
     const lineIndices = createLineListIndices(geometry.indices);
     const normals = new Float32Array(geometry.positions.length);
-    const debugMesh = createMeshFromData(viewer.scene.engine, "physicsBodyDebug", geometry.positions, normals, lineIndices);
+    const debugMesh = createMeshFromData(viewer.scene.surface.engine, "physicsBodyDebug", geometry.positions, normals, lineIndices);
     debugMesh.material = createPhysicsDebugLineMaterial(viewer._color);
     debugMesh.pickable = false;
     debugMesh.renderOrder = 1000;
@@ -280,7 +280,7 @@ function createConstraintAxisMesh(viewer: PhysicsViewer, body: PhysicsBody, pivo
 }
 
 function createConstraintArrowheadMesh(viewer: PhysicsViewer, color: [number, number, number, number], name: string, endpoint: ConstraintEndpoint): Mesh {
-    const mesh = createCylinder(viewer.scene.engine, { height: 0.13, diameterTop: 0, diameterBottom: 0.08, tessellation: 12 });
+    const mesh = createCylinder(viewer.scene.surface.engine, { height: 0.13, diameterTop: 0, diameterBottom: 0.08, tessellation: 12 });
     mesh.name = name;
     const material = createStandardMaterial();
     material.disableLighting = true;
@@ -296,7 +296,7 @@ function createConstraintArrowheadMesh(viewer: PhysicsViewer, color: [number, nu
 }
 
 function createConstraintDiskMesh(viewer: PhysicsViewer, body: PhysicsBody, pivot: Vec3, axis: Vec3, radius: number, color: [number, number, number, number], name: string): Mesh {
-    const mesh = createDisc(viewer.scene.engine, { radius, tessellation: 48 });
+    const mesh = createDisc(viewer.scene.surface.engine, { radius, tessellation: 48 });
     mesh.name = name;
     const material = createStandardMaterial();
     material.disableLighting = true;
@@ -317,7 +317,7 @@ function createConstraintLineMesh(viewer: PhysicsViewer, color: [number, number,
     writeEndpoint(positions, 3, b);
     const normals = new Float32Array(positions.length);
     const indices = new Uint32Array([0, 1]);
-    const mesh = createMeshFromData(viewer.scene.engine, name, positions, normals, indices);
+    const mesh = createMeshFromData(viewer.scene.surface.engine, name, positions, normals, indices);
     mesh.material = createPhysicsDebugLineMaterial(color);
     mesh.pickable = false;
     mesh.renderOrder = 1000;
@@ -328,7 +328,7 @@ function createConstraintLineMesh(viewer: PhysicsViewer, color: [number, number,
 function updateConstraintLine(viewer: PhysicsViewer, line: ConstraintLine): void {
     writeEndpoint(line.positions, 0, line.a);
     writeEndpoint(line.positions, 3, line.b);
-    updateMeshPositions(viewer.scene.engine, line.mesh, line.positions);
+    updateMeshPositions(viewer.scene.surface.engine, line.mesh, line.positions);
 }
 
 function updateConstraintDisk(disk: ConstraintDisk): void {

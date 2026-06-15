@@ -107,7 +107,7 @@ async function main(): Promise<void> {
         createBoxes(0.2, 1, false, { x: 2, y: 5, z: 0 }, 0, 21);
     }, DROP_AFTER_MS);
 
-    await registerScene(engine, scene);
+    await registerScene(scene);
     await startEngine(engine);
     simulationStarted = true;
     canvas.dataset.initMs = String(performance.now() - __initStart);

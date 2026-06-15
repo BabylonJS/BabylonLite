@@ -22,7 +22,7 @@ import {
     PhysicsMotionType,
     PhysicsShapeType,
     registerScene,
-    setPhysicsBodyMass,
+    setPhysicsBodyMassProperties,
     setPhysicsBodyShape,
     setPhysicsShapeMaterial,
     showPhysicsBody,
@@ -132,7 +132,7 @@ function bindBodyShape(world: PhysicsWorld, viewer: PhysicsViewer, node: SceneNo
     const body = createPhysicsBody(world, node, PhysicsMotionType.DYNAMIC);
     setPhysicsBodyShape(world, body, shape);
     setPhysicsShapeMaterial(world, shape, 0.2, 0);
-    setPhysicsBodyMass(world, body, 1);
+    setPhysicsBodyMassProperties(world, body, { mass: 1 });
     showPhysicsBody(viewer, body);
 }
 
@@ -272,7 +272,7 @@ async function main(): Promise<void> {
         createShapeRow(world, viewer, row);
     }
 
-    await registerScene(engine, scene);
+    await registerScene(scene);
     await startEngine(engine);
     simulationStarted = true;
     canvas.dataset.initMs = String(performance.now() - __initStart);

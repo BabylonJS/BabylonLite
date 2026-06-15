@@ -117,7 +117,7 @@ function clearPhysicsDebugLinePipelineCache(): void {
 }
 
 function buildLineRenderable(scene: SceneContext, mesh: Mesh, materialOverride?: Material): Renderable {
-    const engine = scene.engine;
+    const engine = scene.surface.engine;
     const material = (materialOverride ?? mesh.material) as PhysicsDebugLineMaterial;
     const meshData = new F32(16);
     packMat4IntoF32(meshData, mesh.worldMatrix);

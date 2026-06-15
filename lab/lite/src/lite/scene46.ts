@@ -209,7 +209,7 @@ async function main(): Promise<void> {
     prismatic(scene, engine, world, true);
     sixdof(scene, engine, world);
 
-    await registerScene(engine, scene);
+    await registerScene(scene);
     await startEngine(engine);
     simulationStarted = true;
     canvas.dataset.initMs = String(performance.now() - __initStart);

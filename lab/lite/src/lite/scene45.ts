@@ -114,7 +114,7 @@ async function main(): Promise<void> {
     setPhysicsShapeFilterCollideMask(world, sphere1Aggregate.shape, FILTER_GROUP_GROUND | FILTER_GROUP_BOX);
     setPhysicsShapeFilterCollideMask(world, sphere2Aggregate.shape, FILTER_GROUP_GROUND);
 
-    await registerScene(engine, scene);
+    await registerScene(scene);
     await startEngine(engine);
     simulationStarted = true;
     canvas.dataset.initMs = String(performance.now() - __initStart);

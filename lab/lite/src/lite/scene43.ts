@@ -198,7 +198,7 @@ async function main(): Promise<void> {
         frame++;
     });
 
-    await registerScene(engine, scene);
+    await registerScene(scene);
     await startEngine(engine);
     canvas.dataset.initMs = String(performance.now() - __initStart);
     canvas.dataset.ready = "true";
