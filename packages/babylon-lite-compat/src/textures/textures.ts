@@ -95,7 +95,14 @@ export class Texture extends BaseTexture {
         // Honour `invertY` / `noMipmap` only on the material (scene-based) path. The
         // bare-engine path feeds Babylon Lite's sprite renderer, which applies its own
         // V-orientation, so it keeps `loadTexture2D`'s defaults (matching the Lite ports).
-        const loadOpts = scene ? { invertY: this._invertY, mipMaps: !this._noMipmap } : {};
+        // Map the Babylon.js sampling mode to Lite's min/mag filters: `NEAREST_SAMPLINGMODE`
+        // must load with nearest filtering, else the alpha of an alpha-tested (cutout)
+        // texture is bilinear-filtered and the discard boundary shifts — invisible on
+        // axis-aligned sprites but a large divergence on rotated cutout billboards.
+        const nearest = this.samplingMode === Texture.NEAREST_SAMPLINGMODE || this.samplingMode === Texture.NEAREST_NEAREST;
+        const filterOpts: { minFilter?: "nearest" | "linear"; magFilter?: "nearest" | "linear" } = nearest ? { minFilter: "nearest", magFilter: "nearest" } : {};
+        const loadOpts = scene ? { invertY: this._invertY, mipMaps: !this._noMipmap, ...filterOpts } : {};
+
         this._ready = loadTexture2D(engine, url, loadOpts).then((tex) => {
             this._lite = tex;
             if (onLoad) {

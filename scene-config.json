@@ -490,7 +490,8 @@
         "maxRawKB": 65,
         "description": "Hard-alpha world-space billboard cards rendered with blendMode: \"cutout\", alpha cutoff, and depth writes. Front cutout pixels occlude later overlapping cards and opaque geometry while transparent holes leave the background visible.",
         "tags": ["sprites", "billboards", "depth"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 58,
