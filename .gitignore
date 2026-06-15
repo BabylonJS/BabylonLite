@@ -55,6 +55,7 @@ lab/public/perf-regression-manifest.json
 # manifest the dashboard reads. GL thumbnails are committed (stable assets).
 lab/public/gl/bundle/*
 !lab/public/gl/bundle/manifest.json
+!lab/public/gl/bundle/demos-manifest.json
 lab/public/gl/perf-manifest.json
 lab/public/gl/perf-regression-manifest.json
 test-results/

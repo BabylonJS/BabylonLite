@@ -126,6 +126,7 @@ describe("babylon-lite-gl build output", () => {
             "setStencilState",
             "setColorMask",
             "clearEngine",
+            "generateRenderTargetStencil",
             "setScissor",
             "disableScissor",
         ]) {
@@ -188,7 +189,7 @@ describe("babylon-lite-gl build output", () => {
 
         // ── /depth-stencil sub-entry ────────────────────────────────────────
         const depthStencil = (await import(pathToFileURL(resolve(DIST, "depth-stencil.js")).href)) as Record<string, unknown>;
-        for (const name of ["setDepthState", "setCullState", "setStencilState", "setColorMask", "clearEngine"]) {
+        for (const name of ["setDepthState", "setCullState", "setStencilState", "setColorMask", "clearEngine", "generateRenderTargetStencil"]) {
             expect(typeof depthStencil[name], `depth-stencil export ${name}`).toBe("function");
         }
 

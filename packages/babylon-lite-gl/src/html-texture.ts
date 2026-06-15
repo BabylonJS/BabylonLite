@@ -32,6 +32,11 @@ export interface GLHtmlElementTextureOptions extends GLTextureOptions {
      *  `magFilter` / `generateMipMaps` options still take precedence. Omit for
      *  the GL defaults (linear min + mag, no mipmaps). */
     samplingMode?: GLSamplingMode;
+    /** Build a full mip chain after each upload. Independent of the core
+     *  texture options (this factory's mip behavior is sampling-mode-driven):
+     *  defaults to `true` only when `samplingMode` is `TRILINEAR`, otherwise
+     *  `false`. */
+    generateMipMaps?: boolean;
 }
 
 /** Create a texture backed by an `<canvas>` / `<img>` / `<video>` element.

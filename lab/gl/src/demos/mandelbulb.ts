@@ -352,12 +352,26 @@ void main() {
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const engine = createGLEngine(canvas, { alpha: false });
 
+// The power-8 mandelbulb raymarch (Buffer A) is by far the most expensive pass,
+// so its offscreen resolution is CAPPED to MAX_RT_SIZE on the longest side
+// (aspect preserved). This bounds the raymarch cost independent of the canvas /
+// display (e.g. retina) size; the cheap FXAA pass then upscales the result to the
+// canvas.
+const MAX_RT_SIZE = 1024;
+
+/** Cap (w, h) so its longest side is ≤ MAX_RT_SIZE, preserving aspect ratio. */
+function cappedRtSize(w: number, h: number): { w: number; h: number } {
+    const scale = Math.min(1, MAX_RT_SIZE / Math.max(w, h, 1));
+    return { w: Math.max(1, Math.round(w * scale)), h: Math.max(1, Math.round(h * scale)) };
+}
+
 // Buffer A renders the mandelbulb into a single offscreen target (RGBA8, LINEAR
 // so the FXAA pass can sample it smoothly). No depth, no ping-pong — Buffer A
 // reads nothing, so one render target is enough.
-const rt = createRenderTarget(engine, { width: canvas.width || 1, height: canvas.height || 1 });
-let rtW = canvas.width || 1;
-let rtH = canvas.height || 1;
+const initRt = cappedRtSize(canvas.width || 1, canvas.height || 1);
+const rt = createRenderTarget(engine, { width: initRt.w, height: initRt.h });
+let rtW = initRt.w;
+let rtH = initRt.h;
 
 const bufferWrapper = createEffectWrapper(engine, {
     name: "gl-mandelbulb-buffer",
@@ -383,27 +397,29 @@ runRenderLoop(engine, () => {
         return;
     }
     resizeGLEngine(engine);
-    const w = canvas.width;
-    const h = canvas.height;
-    if (w !== rtW || h !== rtH) {
-        resizeRenderTarget(engine, rt, w, h);
-        rtW = w;
-        rtH = h;
+    // Buffer A renders at the CAPPED resolution; the FXAA pass upscales to canvas.
+    const target = cappedRtSize(canvas.width, canvas.height);
+    if (target.w !== rtW || target.h !== rtH) {
+        resizeRenderTarget(engine, rt, target.w, target.h);
+        rtW = target.w;
+        rtH = target.h;
     }
 
     const time = (performance.now() - startMs) / 1000;
 
-    // Pass 1 — Buffer A: raymarch the mandelbulb into the render target.
+    // Pass 1 — Buffer A: raymarch the mandelbulb into the (capped) render target.
     bindRenderTarget(engine, rt);
     applyEffectWrapper(bufferWrapper);
     setEffectFloat(engine, bufferEffect, "iTime", time);
-    setEffectFloat3(engine, bufferEffect, "iResolution", w, h, 1);
+    setEffectFloat3(engine, bufferEffect, "iResolution", rtW, rtH, 1);
     drawEffect(engine);
 
-    // Pass 2 — Image: FXAA-resolve Buffer A to the screen.
+    // Pass 2 — Image: FXAA-resolve Buffer A (at its capped resolution) to the
+    // full-size canvas. iResolution is the render-target size so the FXAA texel
+    // offsets land on adjacent Buffer-A texels.
     bindRenderTarget(engine, null);
     applyEffectWrapper(imageWrapper);
-    setEffectFloat3(engine, imageEffect, "iResolution", w, h, 1);
+    setEffectFloat3(engine, imageEffect, "iResolution", rtW, rtH, 1);
     setEffectTexture(engine, imageEffect, "iChannel0", rt.texture);
     drawEffect(engine);
 
@@ -411,6 +427,7 @@ runRenderLoop(engine, () => {
         firstFrameDrawn = true;
         canvas.dataset.drawCalls = "2";
         canvas.dataset.initMs = String(performance.now() - initStart);
+        canvas.dataset.rtSize = `${rtW}x${rtH}`;
         canvas.dataset.ready = "true";
     }
 });

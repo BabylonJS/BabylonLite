@@ -19,5 +19,12 @@
         "description": "A faithful lite-gl port of mrange's CC0 Shadertoy (mtScRc): a refraction-bouncing raymarched power-8 mandelbulb rendered into an offscreen render target, then FXAA-resolved to screen. Showcases the lite-gl single render-target (FBO) path.",
         "tags": ["effect", "rtt"],
         "mobile": false
+    },
+    {
+        "slug": "just-another-cube",
+        "name": "Just Another Cube",
+        "description": "A faithful lite-gl port of mrange's CC0 Shadertoy (3XdXRr): a single fullscreen-pass raymarched, twisting superquadric ('rounded cube') with volumetric glow, fresnel reflections of a procedural sky/floor and rim lighting. Showcases the lite-gl single-pass fullscreen-effect path (no render target).",
+        "tags": ["effect"],
+        "mobile": false
     }
 ]

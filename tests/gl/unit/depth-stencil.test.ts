@@ -1,12 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { createGLEngine } from "../../../packages/babylon-lite-gl/src/context";
-import { setDepthState, setCullState, setStencilState, setColorMask, clearEngine } from "../../../packages/babylon-lite-gl/src/depth-stencil";
-import { createMockCanvas, createMockGL, fireLost, type MockCall, type MockGL } from "./_lite-gl-mock";
+import { setDepthState, setCullState, setStencilState, setColorMask, clearEngine, generateRenderTargetStencil } from "../../../packages/babylon-lite-gl/src/depth-stencil";
+import { createRenderTarget, disposeRenderTarget, resizeRenderTarget, bindRenderTarget } from "../../../packages/babylon-lite-gl/src/render-target";
+import { createMockCanvas, createMockGL, fireLost, fireRestored, type MockCall, type MockGL } from "./_lite-gl-mock";
 
 function makeEngine() {
     const mock = createMockGL();
     const canvas = createMockCanvas(mock);
     const engine = createGLEngine(canvas);
+    return { mock, canvas, engine };
+}
+
+/** Engine + sized canvas for the render-target stencil opt-in tests. */
+function makeRTEngine() {
+    const mock = createMockGL();
+    const canvas = createMockCanvas(mock);
+    canvas.width = 256;
+    canvas.height = 256;
+    const engine = createGLEngine(canvas);
+    mock.setParallelComplete(true);
     return { mock, canvas, engine };
 }
 
@@ -133,5 +145,156 @@ describe("lite-gl depth/stencil: lost-context safety", () => {
             clearEngine(engine, { color: { r: 0, g: 0, b: 0 } });
         }).not.toThrow();
         expect(mock.log).toHaveLength(0);
+    });
+});
+
+describe("lite-gl render-target stencil opt-in (generateRenderTargetStencil)", () => {
+    it("default → packed DEPTH24_STENCIL8 on DEPTH_STENCIL_ATTACHMENT, replacing the core depth-only buffer", () => {
+        const { mock, engine } = makeRTEngine();
+        const gl = engine.gl;
+        const rt = createRenderTarget(engine, { width: 64, height: 64, generateDepthBuffer: true });
+        const depthOnly = rt._depthStencil;
+        mock.clear();
+        generateRenderTargetStencil(engine, rt);
+        // The packed buffer replaced (deleted) the core depth-only renderbuffer.
+        expect(callsNamed(mock, "deleteRenderbuffer").map((c) => c.args[0])).toContain(depthOnly);
+        const store = callsNamed(mock, "renderbufferStorage");
+        expect(store).toHaveLength(1);
+        expect(store[0]?.args[1]).toBe(gl.DEPTH24_STENCIL8);
+        expect(callsNamed(mock, "framebufferRenderbuffer")[0]?.args[1]).toBe(gl.DEPTH_STENCIL_ATTACHMENT);
+        // Completeness is validated; the field now holds the packed buffer.
+        expect(mock.count("checkFramebufferStatus")).toBe(1);
+        expect(rt._depthStencil).not.toBeNull();
+        expect(rt._depthStencil).not.toBe(depthOnly);
+    });
+
+    it("{ depth: false } → stencil-only STENCIL_INDEX8 on STENCIL_ATTACHMENT", () => {
+        const { mock, engine } = makeRTEngine();
+        const gl = engine.gl;
+        const rt = createRenderTarget(engine, { width: 64, height: 64 });
+        mock.clear();
+        generateRenderTargetStencil(engine, rt, { depth: false });
+        const store = callsNamed(mock, "renderbufferStorage");
+        expect(store).toHaveLength(1);
+        expect(store[0]?.args[1]).toBe(gl.STENCIL_INDEX8);
+        expect(store[0]?.args[2]).toBe(64);
+        expect(store[0]?.args[3]).toBe(64);
+        expect(callsNamed(mock, "framebufferRenderbuffer")[0]?.args[1]).toBe(gl.STENCIL_ATTACHMENT);
+        expect(rt._depthStencil).not.toBeNull();
+    });
+
+    it("installs a rebuild hook that re-creates the packed buffer on context restore", () => {
+        const { mock, canvas, engine } = makeRTEngine();
+        const gl = engine.gl;
+        const rt = createRenderTarget(engine, { width: 64, height: 64, generateDepthBuffer: true });
+        generateRenderTargetStencil(engine, rt);
+        expect(rt._rebuildDepthStencil).toBeDefined();
+        fireLost(canvas);
+        mock.clear();
+        fireRestored(canvas);
+        // After the RT's restore runs, the stencil hook fired and rebuilt the
+        // packed depth+stencil attachment into the fresh FBO.
+        expect(callsNamed(mock, "renderbufferStorage").some((c) => c.args[1] === gl.DEPTH24_STENCIL8)).toBe(true);
+        expect(callsNamed(mock, "framebufferRenderbuffer").some((c) => c.args[1] === gl.DEPTH_STENCIL_ATTACHMENT)).toBe(true);
+        expect(rt._depthStencil).not.toBeNull();
+    });
+
+    it("the hook rebuilds the packed buffer at the NEW size on resize", () => {
+        const { mock, engine } = makeRTEngine();
+        const gl = engine.gl;
+        const rt = createRenderTarget(engine, { width: 64, height: 64, generateDepthBuffer: true });
+        generateRenderTargetStencil(engine, rt);
+        mock.clear();
+        resizeRenderTarget(engine, rt, 128, 128);
+        const packed = callsNamed(mock, "renderbufferStorage").filter((c) => c.args[1] === gl.DEPTH24_STENCIL8);
+        expect(packed.length).toBeGreaterThanOrEqual(1);
+        expect(packed[packed.length - 1]?.args[2]).toBe(128);
+        expect(packed[packed.length - 1]?.args[3]).toBe(128);
+        expect(rt._depthStencil).not.toBeNull();
+    });
+
+    it("is a no-op on a disposed target", () => {
+        const { mock, engine } = makeRTEngine();
+        const rt = createRenderTarget(engine, { width: 64, height: 64 });
+        disposeRenderTarget(engine, rt);
+        mock.clear();
+        generateRenderTargetStencil(engine, rt);
+        expect(mock.count("createRenderbuffer")).toBe(0);
+    });
+
+    it("is a no-op on a lost context", () => {
+        const { mock, canvas, engine } = makeRTEngine();
+        const rt = createRenderTarget(engine, { width: 64, height: 64 });
+        fireLost(canvas);
+        mock.clear();
+        generateRenderTargetStencil(engine, rt);
+        expect(mock.count("createRenderbuffer")).toBe(0);
+    });
+
+    it("is state-neutral — restores the previously-bound draw target after attaching", () => {
+        const { mock, engine } = makeRTEngine();
+        const other = createRenderTarget(engine, { width: 32, height: 32 });
+        const rt = createRenderTarget(engine, { width: 64, height: 64, generateDepthBuffer: true });
+        // Make another RT the active draw target, then add stencil to `rt`.
+        bindRenderTarget(engine, other);
+        const prevFb = engine._state.boundFramebuffer;
+        expect(prevFb).toBe(other._framebuffer);
+        mock.clear();
+        generateRenderTargetStencil(engine, rt);
+        // The helper must NOT leave rt's FBO bound — the caller's target is restored.
+        expect(engine._state.boundFramebuffer).toBe(prevFb);
+        const binds = callsNamed(mock, "bindFramebuffer");
+        expect(binds[binds.length - 1]?.args[1]).toBe(prevFb);
+    });
+
+    it("deletes the new renderbuffer and restores the binding when the framebuffer is incomplete", () => {
+        const { mock, engine } = makeRTEngine();
+        const gl = engine.gl;
+        const rt = createRenderTarget(engine, { width: 64, height: 64 }); // no depth/stencil yet
+        expect(rt._depthStencil).toBeNull();
+        const prevFb = engine._state.boundFramebuffer;
+        mock.clear();
+        // Force the post-attach completeness check to fail for this call only.
+        const origCheck = gl.checkFramebufferStatus;
+        gl.checkFramebufferStatus = () => 0x8cd6; // FRAMEBUFFER_INCOMPLETE_ATTACHMENT
+        try {
+            expect(() => generateRenderTargetStencil(engine, rt)).toThrow(/incomplete/);
+        } finally {
+            gl.checkFramebufferStatus = origCheck;
+        }
+        // The renderbuffer created for the failed attach was deleted exactly once
+        // (no leak); the target's attachment is left as it was, and the draw target
+        // the caller had bound is restored.
+        expect(mock.count("createRenderbuffer")).toBe(1);
+        expect(mock.count("deleteRenderbuffer")).toBe(1);
+        expect(rt._depthStencil).toBeNull();
+        expect(engine._state.boundFramebuffer).toBe(prevFb);
+    });
+
+    it("rolls back to the core depth buffer when a with-depth attach is incomplete", () => {
+        const { mock, engine } = makeRTEngine();
+        const gl = engine.gl;
+        const rt = createRenderTarget(engine, { width: 64, height: 64, generateDepthBuffer: true });
+        const coreDepth = rt._depthStencil;
+        expect(coreDepth).not.toBeNull();
+        mock.clear();
+        const origCheck = gl.checkFramebufferStatus;
+        gl.checkFramebufferStatus = () => 0x8cd6; // FRAMEBUFFER_INCOMPLETE_ATTACHMENT
+        try {
+            expect(() => generateRenderTargetStencil(engine, rt)).toThrow(/incomplete/);
+        } finally {
+            gl.checkFramebufferStatus = origCheck;
+        }
+        // The new packed buffer was created then deleted (no leak); the core depth
+        // buffer is retained, not deleted.
+        expect(mock.count("createRenderbuffer")).toBe(1);
+        expect(mock.count("deleteRenderbuffer")).toBe(1);
+        expect(rt._depthStencil).toBe(coreDepth);
+        // The packed attach cleared DEPTH_ATTACHMENT; the rollback re-established the
+        // core depth buffer there, so the target keeps a valid depth attachment.
+        const reattach = callsNamed(mock, "framebufferRenderbuffer").filter((c) => c.args[1] === gl.DEPTH_ATTACHMENT && c.args[3] === coreDepth);
+        expect(reattach.length).toBeGreaterThanOrEqual(1);
+        // A failed first opt-in must not install the resize/restore hook.
+        expect(rt._rebuildDepthStencil).toBeUndefined();
     });
 });

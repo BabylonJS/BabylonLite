@@ -52,13 +52,12 @@ export interface GLRenderTargetOptions {
     width: number;
     /** Color attachment height in texels. Must be a positive integer. */
     height: number;
-    /** Allocate a depth renderbuffer. Default `false`. */
+    /** Allocate a depth renderbuffer (`DEPTH_COMPONENT16`). Default `false`.
+     *  Stencil is NOT a create option — opt in (packed depth+stencil, or
+     *  stencil-only) via `generateRenderTargetStencil`
+     *  (`@babylonjs/lite-gl/depth-stencil`), which keeps the stencil/packed
+     *  renderbuffer code out of the render-target core bundle. */
     generateDepthBuffer?: boolean;
-    /** Allocate a stencil renderbuffer. Default `false`. When combined with
-     *  `generateDepthBuffer` a single packed `DEPTH24_STENCIL8` buffer is used. */
-    generateStencilBuffer?: boolean;
-    /** Generate a mip chain for the color texture. Default `false`. */
-    generateMipMaps?: boolean;
     /** Color texture minification filter. Default `gl.LINEAR`. */
     minFilter?: GLenum;
     /** Color texture magnification filter. Default `gl.LINEAR`. */
@@ -69,8 +68,8 @@ export interface GLRenderTargetOptions {
     wrapT?: GLenum;
     /** Attach a caller-supplied (BYO) color {@link GLTexture} instead of creating
      *  one. When supplied the render target does NOT own or restore it — the
-     *  texture is engine-managed (lives in `_textures`, restored there first) and
-     *  the RT re-attaches its swapped handle afterwards. The caller is
+     *  texture is engine-managed (restored by the standard texture-restore path
+     *  first) and the RT re-attaches its swapped handle afterwards. The caller is
      *  responsible for sizing it to `width`×`height` and for disposing it. */
     colorTexture?: GLTexture;
 }
@@ -92,8 +91,6 @@ interface ResolvedRTConfig {
     format: GLenum;
     type: GLenum;
     hasDepth: boolean;
-    hasStencil: boolean;
-    generateMipMaps: boolean;
     minFilter: GLenum;
     magFilter: GLenum;
     wrapS: GLenum;
@@ -122,8 +119,18 @@ export interface GLRenderTarget {
     isReady: boolean;
     /** @internal The framebuffer object. Swapped on context-restore. */
     _framebuffer: WebGLFramebuffer | null;
-    /** @internal Packed/standalone depth-stencil renderbuffer, or null. */
+    /** @internal Depth-only (`DEPTH_COMPONENT16`) renderbuffer built by the core,
+     *  OR the packed/stencil renderbuffer installed by `generateRenderTargetStencil`
+     *  — a single field either way. Null when neither depth nor stencil is used. */
     _depthStencil: WebGLRenderbuffer | null;
+    /**
+     * @internal Optional stencil rebuild hook installed by
+     * `generateRenderTargetStencil` (`@babylonjs/lite-gl/depth-stencil`). When
+     * present it OWNS the depth/stencil renderbuffer (replacing the core
+     * depth-only buffer) and is re-invoked after every FBO rebuild
+     * (create-via-helper, resize, context-restore) so the attachment survives.
+     */
+    _rebuildDepthStencil?: (engine: GLEngineContext) => void;
     /** @internal Resolved attachment config, for context-restore rebuild. */
     _config: ResolvedRTConfig;
     /** @internal */
@@ -207,10 +214,9 @@ export function createFloatRenderTarget(engine: GLEngineContext, options: GLFloa
  * `restoreDefaultFramebuffer`. Subsequent `drawEffect` / `drawIndexed` /
  * `clearEngine` calls write into the bound target.
  *
- * Leaving a mipmapped target (switching to another target OR unbinding to the
- * canvas) regenerates that target's mip chain from the level-0 just rendered,
- * mirroring Babylon's auto-mipmap on `unBindFramebuffer`. Cached. No-op on a
- * lost/disposed context or a disposed `rt`.
+ * Cached. No-op on a lost/disposed context or a disposed `rt`. Mipmaps are NOT
+ * regenerated here — refresh a target's mip chain explicitly via
+ * {@link generateRenderTargetMipMaps} after rendering into it.
  *
  * @param engine - The engine.
  * @param rt - The render target to draw into, or `null` for the canvas.
@@ -224,11 +230,6 @@ export function bindRenderTarget(engine: GLEngineContext, rt: GLRenderTarget | n
     }
     const gl = engine.gl;
     const s = engine._state;
-    // Leaving a different mipmapped target (switch OR unbind-to-canvas): refresh
-    // its mip chain from the level-0 we just rendered before drawing elsewhere.
-    if (engine._currentRenderTarget !== null && engine._currentRenderTarget !== rt) {
-        generateRenderTargetMipMaps(engine, engine._currentRenderTarget);
-    }
     const fb = rt === null ? null : rt._framebuffer;
     if (s.boundFramebuffer !== fb) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
@@ -242,13 +243,12 @@ export function bindRenderTarget(engine: GLEngineContext, rt: GLRenderTarget | n
     }
 }
 
-/** Regenerate a mipmapped render target's mip chain from its (freshly rendered)
- *  level-0. No-op for non-mipmapped / disposed targets, a handle-less color
- *  attachment, or a lost/disposed context. Mirrors Babylon's automatic mipmap
- *  generation on `unBindFramebuffer`; also called automatically by
- *  {@link bindRenderTarget} when leaving a mipmapped target. */
+/** Regenerate a render target's color-attachment mip chain from its (freshly
+ *  rendered) level-0 — mipmaps for render targets are a pure manual opt-in
+ *  (call this after rendering into the target). No-op for a disposed target, a
+ *  handle-less color attachment, or a lost/disposed context. */
 export function generateRenderTargetMipMaps(engine: GLEngineContext, rt: GLRenderTarget): void {
-    if (engine._isLost || engine._disposed || rt._disposed || !rt._config.generateMipMaps || rt.texture.handle === null) {
+    if (engine._isLost || engine._disposed || rt._disposed || rt.texture.handle === null) {
         return;
     }
     bindTextureForUpload(engine, rt.texture.handle);
@@ -481,8 +481,6 @@ function buildRT(engine: GLEngineContext, options: GLRenderTargetOptions, intern
         format,
         type,
         hasDepth: options.generateDepthBuffer ?? false,
-        hasStencil: options.generateStencilBuffer ?? false,
-        generateMipMaps: options.generateMipMaps ?? false,
         minFilter: options.minFilter ?? LINEAR,
         magFilter: options.magFilter ?? LINEAR,
         wrapS: options.wrapS ?? CLAMP_TO_EDGE,
@@ -511,6 +509,7 @@ function buildRT(engine: GLEngineContext, options: GLRenderTargetOptions, intern
         isReady: false,
         _framebuffer: null,
         _depthStencil: null,
+        _rebuildDepthStencil: undefined,
         _config: config,
         _disposed: false,
         _deleteGpu: () => {},
@@ -611,13 +610,6 @@ function allocateRenderTargetGpu(engine: GLEngineContext, rt: GLRenderTarget): v
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, c.magFilter);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, c.wrapS);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, c.wrapT);
-            // A mipmapped target uses a mipmap min-filter; allocate the chain now
-            // so the texture is mipmap-COMPLETE before its first use (an
-            // incomplete chain samples as opaque black). bindRenderTarget
-            // refreshes it after each render.
-            if (c.generateMipMaps) {
-                gl.generateMipmap(gl.TEXTURE_2D);
-            }
             rt.texture.isReady = true;
             rt.texture._wasReady = true;
         }
@@ -632,29 +624,28 @@ function allocateRenderTargetGpu(engine: GLEngineContext, rt: GLRenderTarget): v
         s.boundFramebuffer = fb;
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rt.texture.handle, 0);
 
+        // ── Depth (core, DEPTH-ONLY) ─────────────────────────────────────────
+        // The core only ever builds a DEPTH_COMPONENT16 depth buffer. Stencil /
+        // packed depth-stencil is an opt-in installed by
+        // `generateRenderTargetStencil` (`@babylonjs/lite-gl/depth-stencil`),
+        // which sets `_rebuildDepthStencil` to a closure that REPLACES the
+        // depth-only buffer below with its own packed/stencil renderbuffer. That
+        // hook is re-run here on every rebuild (create / resize / context-restore)
+        // so a helper-added stencil attachment survives at the new size.
         rt._depthStencil = null;
-        if (c.hasDepth || c.hasStencil) {
+        if (c.hasDepth) {
             rb = gl.createRenderbuffer();
             if (rb === null) {
                 throw new Error("lite-gl: gl.createRenderbuffer returned null");
             }
-            rt._depthStencil = rb;
             gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
-            // depth+stencil → packed; depth-only → DEPTH_COMPONENT16;
-            // stencil-only → STENCIL_INDEX8 (matches Babylon's
-            // `_setupFramebufferDepthAttachments`).
-            if (c.hasDepth && c.hasStencil) {
-                gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH24_STENCIL8, rt.width, rt.height);
-                gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, rb);
-            } else if (c.hasDepth) {
-                gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, rt.width, rt.height);
-                gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
-            } else {
-                gl.renderbufferStorage(gl.RENDERBUFFER, gl.STENCIL_INDEX8, rt.width, rt.height);
-                gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.STENCIL_ATTACHMENT, gl.RENDERBUFFER, rb);
-            }
+            gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, rt.width, rt.height);
+            gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
             gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+            rt._depthStencil = rb;
         }
+        // A helper-attached stencil replaces/augments the depth-only buffer.
+        rt._rebuildDepthStencil?.(engine);
 
         const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
         if (status !== gl.FRAMEBUFFER_COMPLETE) {
@@ -662,8 +653,12 @@ function allocateRenderTargetGpu(engine: GLEngineContext, rt: GLRenderTarget): v
         }
         rt.isReady = true;
     } catch (e) {
-        if (rb !== null) {
-            gl.deleteRenderbuffer(rb);
+        // Free whatever depth/stencil renderbuffer is currently attached. After a
+        // `_rebuildDepthStencil` hook ran, `rt._depthStencil` may be a packed buffer
+        // the hook swapped in (it deletes the core `rb` itself on success), so free
+        // the live `rt._depthStencil` rather than the stale local `rb`.
+        if (rt._depthStencil !== null) {
+            gl.deleteRenderbuffer(rt._depthStencil);
         }
         rt._depthStencil = null;
         if (fb !== null) {

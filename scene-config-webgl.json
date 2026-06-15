@@ -86,5 +86,71 @@
         "maxRawKB": 17,
         "skipParity": false,
         "skipPerf": false
+    },
+    {
+        "id": 9,
+        "slug": "gl-ping-pong-feedback",
+        "name": "Scene 9 — Ping-Pong Feedback",
+        "description": "A radial pattern evolved through 6 fixed ping-pong feedback iterations on a pair of offscreen render targets (createPingPong + swap from @babylonjs/lite-gl/render-target), then composited fullscreen with an aspect-corrected vignette — a deterministic frame-feedback round-trip.",
+        "tags": ["texture", "rtt"],
+        "maxMad": 2.0,
+        "maxRawKB": 18.5,
+        "skipParity": false,
+        "skipPerf": false
+    },
+    {
+        "id": 10,
+        "slug": "gl-mesh",
+        "name": "Scene 10 — Indexed Mesh + Instancing",
+        "description": "An indexed mesh drawn from @babylonjs/lite-gl/mesh (createVertexBuffer + createIndexBuffer + bindAttributes + drawIndexed) as several depth-tested instances, with setDepthState/setCullState — the first lite-gl scene with real geometry rather than a fullscreen quad.",
+        "tags": ["mesh", "depth"],
+        "maxMad": 2.0,
+        "maxRawKB": 14,
+        "skipParity": false,
+        "skipPerf": false
+    },
+    {
+        "id": 11,
+        "slug": "gl-stencil",
+        "name": "Scene 11 — Stencil Masking",
+        "description": "A stencil mask written into an offscreen render target's stencil buffer (generateRenderTargetStencil from @babylonjs/lite-gl/depth-stencil + setStencilState), then a fullscreen pattern drawn only where the stencil test passes.",
+        "tags": ["stencil", "rtt"],
+        "maxMad": 2.0,
+        "maxRawKB": 19.5,
+        "skipParity": false,
+        "skipPerf": false
+    },
+    {
+        "id": 12,
+        "slug": "gl-scissor",
+        "name": "Scene 12 — Scissor Rectangles",
+        "description": "Independent scissor-clipped clears and draws (setScissor/disableScissor) tiling the canvas into deterministic colored regions.",
+        "tags": ["scissor"],
+        "maxMad": 1.5,
+        "maxRawKB": 7,
+        "skipParity": false,
+        "skipPerf": false
+    },
+    {
+        "id": 13,
+        "slug": "gl-dynamic-texture",
+        "name": "Scene 13 — Dynamic Texture",
+        "description": "A canvas-backed dynamic texture (createDynamicTexture + updateDynamicTexture from @babylonjs/lite-gl/dynamic-texture) re-uploaded from a deterministically drawn 2D canvas and sampled fullscreen.",
+        "tags": ["texture", "dynamic"],
+        "maxMad": 2.0,
+        "maxRawKB": 14.5,
+        "skipParity": false,
+        "skipPerf": false
+    },
+    {
+        "id": 14,
+        "slug": "gl-float-rt",
+        "name": "Scene 14 — Float (HDR) Render Target",
+        "description": "A high-dynamic-range pattern (values > 1.0) rendered into a half-float render target (createFloatRenderTarget from @babylonjs/lite-gl/render-target), then tone-mapped to the LDR screen — the HDR opt-in counterpart of the RGBA8 render-target path.",
+        "tags": ["texture", "rtt", "hdr"],
+        "maxMad": 3.0,
+        "maxRawKB": 17.5,
+        "skipParity": false,
+        "skipPerf": false
     }
 ]

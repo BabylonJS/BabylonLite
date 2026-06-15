@@ -9,8 +9,17 @@
  * (e.g. just the stencil op triple) issues only that GL call.
  *
  * All setters are no-ops on a lost/disposed context.
+ *
+ * This module also hosts {@link generateRenderTargetStencil} — the tree-shakeable
+ * opt-in that gives a `/render-target` {@link GLRenderTarget} a stencil (or packed
+ * depth+stencil) attachment. Keeping the STENCIL_INDEX8 / DEPTH24_STENCIL8
+ * renderbuffer code here (rather than in the render-target core) means a consumer
+ * that only needs a depth buffer never ships it. The one-way type import below
+ * (`depth-stencil` importing `render-target`) introduces NO cycle: render-target
+ * must not import this module.
  */
 import type { GLEngineContext } from "./context.js";
+import type { GLRenderTarget } from "./render-target.js";
 
 /** GL `gl.DEPTH_TEST`. */
 const DEPTH_TEST = 0x0b71;
@@ -22,6 +31,28 @@ const STENCIL_TEST = 0x0b90;
 const COLOR_BUFFER_BIT = 0x4000;
 const DEPTH_BUFFER_BIT = 0x0100;
 const STENCIL_BUFFER_BIT = 0x0400;
+
+// ── Framebuffer / renderbuffer enums (used only by generateRenderTargetStencil).
+// Module-local consts mirror render-target.ts's constant style. Because the
+// render-target core no longer references the stencil/packed enums, they live
+// here and tree-shake away for consumers that never opt into a stencil buffer.
+/** GL `gl.FRAMEBUFFER`. */
+const FRAMEBUFFER = 0x8d40;
+/** GL `gl.RENDERBUFFER`. */
+const RENDERBUFFER = 0x8d41;
+/** GL `gl.DEPTH24_STENCIL8` — packed depth+stencil sized format. */
+const DEPTH24_STENCIL8 = 0x88f0;
+/** GL `gl.STENCIL_INDEX8` — stencil-only sized format. */
+const STENCIL_INDEX8 = 0x8d48;
+/** GL `gl.DEPTH_STENCIL_ATTACHMENT`. */
+const DEPTH_STENCIL_ATTACHMENT = 0x821a;
+/** GL `gl.STENCIL_ATTACHMENT`. */
+const STENCIL_ATTACHMENT = 0x8d20;
+/** GL `gl.DEPTH_ATTACHMENT` — where the render-target core attaches its depth-only
+ *  renderbuffer (re-established when rolling back a failed stencil attach). */
+const DEPTH_ATTACHMENT = 0x8d00;
+/** GL `gl.FRAMEBUFFER_COMPLETE`. */
+const FRAMEBUFFER_COMPLETE = 0x8cd5;
 
 /** Depth-buffer configuration for {@link setDepthState}. Omitted fields are
  *  left unchanged. */
@@ -239,5 +270,131 @@ export function clearEngine(engine: GLEngineContext, options: GLClearOptions): v
     }
     if (mask !== 0) {
         gl.clear(mask);
+    }
+}
+
+/**
+ * Opt-in: give a `/render-target` {@link GLRenderTarget} a stencil attachment,
+ * replacing the core's depth-only `DEPTH_COMPONENT16` renderbuffer with either a
+ * packed **`DEPTH24_STENCIL8`** buffer (default — depth *and* stencil) or a
+ * stencil-only **`STENCIL_INDEX8`** buffer.
+ *
+ * Stencil is intentionally NOT a {@link createRenderTarget} option: keeping this
+ * helper in the `/depth-stencil` sub-entry means the stencil/packed renderbuffer
+ * code tree-shakes out of every bundle that only needs a color (and optional
+ * depth) target.
+ *
+ * The attachment is **restore-correct**: it is rebuilt automatically — at the new
+ * size on {@link resizeRenderTarget}, and into the fresh framebuffer after a
+ * `webglcontextrestored` event — so the stencil survives for the life of the
+ * target, and {@link disposeRenderTarget} releases it along with the target.
+ *
+ * No-op on a lost/disposed context or a disposed target.
+ *
+ * @param engine - The engine that owns `rt`.
+ * @param rt - The render target to attach the stencil buffer to.
+ * @param options - `depth` (default `true`): when `true` the attachment is a
+ *  packed depth+stencil buffer (`DEPTH24_STENCIL8` on `DEPTH_STENCIL_ATTACHMENT`)
+ *  — the common case, and the correct choice when the target was created with
+ *  `generateDepthBuffer: true`. When `false` the attachment is stencil-only
+ *  (`STENCIL_INDEX8` on `STENCIL_ATTACHMENT`).
+ * @throws If a renderbuffer handle could not be allocated or the framebuffer is
+ *  incomplete after attaching.
+ */
+export function generateRenderTargetStencil(engine: GLEngineContext, rt: GLRenderTarget, options?: { depth?: boolean }): void {
+    if (engine._isLost || engine._disposed || rt._disposed) {
+        return;
+    }
+    const packDepth = options?.depth ?? true;
+    const attachment = packDepth ? DEPTH_STENCIL_ATTACHMENT : STENCIL_ATTACHMENT;
+    const format = packDepth ? DEPTH24_STENCIL8 : STENCIL_INDEX8;
+
+    const build = (e: GLEngineContext): void => {
+        const gl = e.gl;
+        // Capture the caller's draw target so this helper is STATE-NEUTRAL: it must
+        // not silently redirect subsequent draws to `rt` (during an internal
+        // rebuild `prevFb` is `rt._framebuffer`, which the core re-checks next).
+        const prevFb = e._state.boundFramebuffer;
+        const newRb = gl.createRenderbuffer();
+        if (newRb === null) {
+            throw new Error("lite-gl: gl.createRenderbuffer returned null (render target stencil)");
+        }
+        let committed = false;
+        try {
+            gl.bindFramebuffer(FRAMEBUFFER, rt._framebuffer);
+            e._state.boundFramebuffer = rt._framebuffer;
+            gl.bindRenderbuffer(RENDERBUFFER, newRb);
+            gl.renderbufferStorage(RENDERBUFFER, format, rt.width, rt.height);
+            gl.framebufferRenderbuffer(FRAMEBUFFER, attachment, RENDERBUFFER, newRb);
+            gl.bindRenderbuffer(RENDERBUFFER, null);
+            const status = gl.checkFramebufferStatus(FRAMEBUFFER);
+            if (status !== FRAMEBUFFER_COMPLETE) {
+                throw new Error(`lite-gl: render target framebuffer incomplete after stencil attach (status 0x${status.toString(16)})`);
+            }
+            // Commit only after a complete attachment: release the buffer we
+            // replaced (the core depth-only one, or our own from a prior rebuild).
+            if (rt._depthStencil !== null) {
+                gl.deleteRenderbuffer(rt._depthStencil);
+            }
+            rt._depthStencil = newRb;
+            committed = true;
+        } finally {
+            if (!committed) {
+                // Any non-committed exit (incomplete framebuffer OR an unexpected
+                // GL throw): detach + delete the buffer we couldn't adopt so it
+                // never leaks, leaving the attachment point empty for the
+                // caller-level rollback to re-establish the prior buffer.
+                gl.framebufferRenderbuffer(FRAMEBUFFER, attachment, RENDERBUFFER, null);
+                gl.deleteRenderbuffer(newRb);
+            }
+            // Restore the caller's draw target + the bound-framebuffer cache.
+            if (e._state.boundFramebuffer !== prevFb) {
+                gl.bindFramebuffer(FRAMEBUFFER, prevFb);
+                e._state.boundFramebuffer = prevFb;
+            }
+        }
+    };
+
+    // Build once now, but COMMIT the resize/restore hook only if it succeeds — a
+    // failed opt-in must leave the target exactly as it was. The packed attach
+    // above can clear the core `DEPTH_ATTACHMENT`, so on failure restore the prior
+    // hook AND re-establish the prior depth/stencil attachment (the prior hook's,
+    // or the core depth-only buffer).
+    const prevHook = rt._rebuildDepthStencil;
+    const prevDepthStencil = rt._depthStencil;
+    try {
+        build(engine);
+    } catch (err) {
+        rt._rebuildDepthStencil = prevHook;
+        try {
+            if (prevHook !== undefined) {
+                prevHook(engine);
+            } else if (prevDepthStencil !== null) {
+                reattachCoreDepthBuffer(engine, rt, prevDepthStencil);
+            }
+        } catch {
+            // Best-effort restore; surface the original failure below.
+        }
+        throw err;
+    }
+    rt._rebuildDepthStencil = build;
+}
+
+/**
+ * Re-attach a core depth-only renderbuffer at `DEPTH_ATTACHMENT` — used to roll a
+ * render target back when a packed {@link generateRenderTargetStencil} attach
+ * fails completeness (attaching at `DEPTH_STENCIL_ATTACHMENT` clears the core
+ * `DEPTH_ATTACHMENT`). State-neutral: restores the caller's bound framebuffer.
+ * @internal
+ */
+function reattachCoreDepthBuffer(engine: GLEngineContext, rt: GLRenderTarget, depthBuffer: WebGLRenderbuffer): void {
+    const gl = engine.gl;
+    const prevFb = engine._state.boundFramebuffer;
+    gl.bindFramebuffer(FRAMEBUFFER, rt._framebuffer);
+    engine._state.boundFramebuffer = rt._framebuffer;
+    gl.framebufferRenderbuffer(FRAMEBUFFER, DEPTH_ATTACHMENT, RENDERBUFFER, depthBuffer);
+    if (engine._state.boundFramebuffer !== prevFb) {
+        gl.bindFramebuffer(FRAMEBUFFER, prevFb);
+        engine._state.boundFramebuffer = prevFb;
     }
 }

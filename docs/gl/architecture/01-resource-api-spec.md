@@ -1,10 +1,13 @@
 # lite-gl Resource API — convergence spec (render targets + textures)
 
-> Status: **proposal / design spec** (no code changes yet). Target: a single,
-> tree-shakeable resource API that the `newdemo`, `theduck`, and `tinylottie`
-> branches all converge on, so the render-target and texture work can co-merge
-> onto `lite-gl` without two contradictory `createRenderTarget`/`createRawTexture`
-> surfaces.
+> Status: **implemented on `newdemo`** — this branch ships the converged surface
+> below (see `packages/babylon-lite-gl/src/{texture,render-target}.ts` and the
+> `tests/gl/build/public-api.test.ts` contract). The remaining work is for the
+> `theduck` and `tinylottie` branches to rebase their additions onto this one
+> API, so the render-target and texture work co-merges onto `lite-gl` without two
+> contradictory `createRenderTarget`/`createRawTexture` surfaces. The
+> reconciliation matrix in §5 records the pre-convergence state of each branch and
+> is kept for historical context.
 
 ## 1. Why this spec exists
 
@@ -61,12 +64,13 @@ heavier opt-ins are separate exports and, when large, separate sub-entries
 (`/dynamic-texture`, `/mesh`, `/depth-stencil`, `/scissor`, plus existing
 `/sprites`, `/html-texture`). Package is `sideEffects:false`.
 
-**P5 — One restore mechanism.** Color attachments and every texture variant are
-the same mutable-handle `GLTexture`, restored by the engine's texture registry on
-`webglcontextrestored`; FBOs/renderbuffers are rebuilt by their own restore hook.
-A render target therefore *composes* a `GLTexture` rather than owning a bespoke
-color path — which is exactly what makes "bring-your-own-color-texture" (P2's HDR
-answer) fall out for free.
+**P5 — One restore mechanism.** Every texture variant is the same mutable-handle
+`GLTexture`. A render target's FBO/renderbuffers — and its default (owned) color
+texture — are rebuilt by the target's own restore hook; a bring-your-own
+`colorTexture` is restored by the engine's standard texture path and the target
+reattaches the swapped handle. A render target therefore *composes* a `GLTexture`
+rather than owning a bespoke color path — which is exactly what makes
+"bring-your-own-color-texture" (P2's HDR answer) fall out for free.
 
 ## 3. Render Target API (converged, tiered)
 
@@ -110,9 +114,13 @@ contains **no** HDR/stencil/mipmap branches; it is format-agnostic via
 readRenderTargetPixels(engine, rt, x, y, w, h, into?): ArrayBufferView
 // mipmaps — a function, NOT a create option
 generateRenderTargetMipMaps(engine, rt): void
-// HDR — no new API: options.colorTexture = createRawTexture(engine, null, w, h, gl.RGBA, gl.HALF_FLOAT, …)
-//        (optional thin sugar createFloatRenderTarget that itself tree-shakes)
-// stencil — via the depth-stencil module (packed DEPTH24_STENCIL8 attach helper), opt-in
+// HDR — float / half-float color, two ways (both tree-shake when unused):
+//   options.colorTexture = createFloatTexture(engine, null, w, h, …)   // BYO
+//   createFloatRenderTarget(engine, { width, height, type? })          // sugar
+//   (the float-format table lives only in these, never in the RGBA8 core)
+// stencil — generateRenderTargetStencil(engine, rt, { depth? }) from /depth-stencil
+//   packs DEPTH24_STENCIL8 (default) or stencil-only STENCIL_INDEX8 (depth:false);
+//   opt-in, installs a restore/resize hook so the attachment survives context loss
 // ping-pong (from newdemo) — feedback helper
 createPingPong(engine, options): GLPingPong            // { read, write, swap() }
 resizePingPong(engine, pp, width, height): void
@@ -152,7 +160,7 @@ updateTextureSamplingMode(engine, tex, minFilter, magFilter): void   // (theduck
 updateTextureWrapMode(engine, tex, wrapS, wrapT): void               // (theduck)
 createTextureFromHandle(engine, handle, w, h, options?): GLTexture   // interop (theduck)
 generateTextureMipMaps(engine, tex): void                            // mipmaps as a fn, not an option
-// HDR sugar (knows RGBA16F/32F) — its own export / `/texture-hdr`; tree-shakes
+// HDR sugar (knows RGBA16F/32F) — ships in the main barrel; tree-shakes when unused
 createFloatTexture(engine, data, w, h, options?): GLTexture
 // dynamic (canvas-backed) textures — `@babylonjs/lite-gl/dynamic-texture` (tinylottie)
 createDynamicTexture(engine, w, h, options?): GLTexture
@@ -161,11 +169,13 @@ clearDynamicTextureSource(tex): void
 // HTML-element textures — existing `/html-texture` sub-entry
 ```
 
-> Decision point: `generateMipMaps` is a single `gl.generateMipmap()` call, so
-> keeping it as a core **option** is defensible (negligible bloat). The spec
-> prefers the `generateTextureMipMaps(engine, tex)` **function** for consistency
-> with P2 and to keep the create path branch-free, but this is the lowest-stakes
-> call in the doc — flag for the owner.
+> Resolved (owner): mipmaps are **function-only**. `generateMipMaps` is NOT a
+> core create-option on `createRawTexture` / `loadTexture2D` / `createRenderTarget`;
+> callers opt in via `generateTextureMipMaps(engine, tex)` /
+> `generateRenderTargetMipMaps(engine, rt)`. This keeps the create path
+> branch-free (P2) and removes the implicit "auto-regenerate on unbind" behavior.
+> (The `/html-texture` and `/dynamic-texture` factories keep their own
+> sampling-mode-driven `generateMipMaps` flag — separate opt-in sub-entries.)
 
 ## 5. Reconciliation matrix (what each branch does)
 
@@ -175,7 +185,7 @@ clearDynamicTextureSource(tex): void
 | `bindRenderTarget(null)` vs `unbindRenderTarget` | null-bind | `unbind` | — | **null-bind**; drop `unbindRenderTarget` |
 | `disposeRenderTarget` null-safe | ✓ | ✗ | — | **null-safe** |
 | HDR float/half target | ✗ | option `type` | — | **BYO `colorTexture` / `createFloatRenderTarget`** (out of core) |
-| stencil | ✗ | option | — | **depth-stencil module**, opt-in |
+| stencil | ✗ | option | — | **`generateRenderTargetStencil`** (/depth-stencil), opt-in |
 | mipmaps (RT) | ✗ | option | — | **`generateRenderTargetMipMaps`** fn |
 | `readRenderTargetPixels` | ✗ | ✓ | — | **keep** (Tier 1) |
 | ping-pong | ✓ | ✗ | — | **keep** (Tier 1) |
@@ -196,24 +206,36 @@ clearDynamicTextureSource(tex): void
 - `@babylonjs/lite-gl/mesh`, `/depth-stencil`, `/scissor` — theduck's engine
   expansion (already separate).
 - existing: `/sprites`, `/html-texture`.
-- HDR sugar (`createFloatTexture`): either main barrel (it's tiny) or
-  `/texture-hdr`. Owner's call.
+- HDR sugar (`createFloatTexture` / `createFloatRenderTarget`): ships in the main
+  barrel + `/render-target` (they're tiny and tree-shake when unused). No
+  separate `/texture-hdr` sub-entry.
 
 All `sideEffects:false`; the lab bundle-size test (`scene-config-webgl.json
 maxRawKB`) must show effect-only scenes UNCHANGED after these land (proves the
 opt-ins tree-shake).
 
-## 7. Open decisions for the owner
+## 7. Resolved decisions (owner-approved)
 
-1. RT create shape: **options-object** (recommended) vs theduck's positional w/h.
-2. HDR ergonomics: BYO `colorTexture` only, or also ship `createFloatRenderTarget`/
-   `createFloatTexture` sugar.
-3. `generateMipMaps` as a core option (convenient) vs `generateTextureMipMaps`
-   function (P2-pure). Low stakes.
-4. Whether `mesh`/`depth-stencil`/`scissor` ship in the same PR as RTT or follow
-   theduck separately (they don't conflict with this spec).
-5. Merge order: land the converged core first, then layer theduck's Tier-1 +
-   tinylottie's dynamic textures on top.
+1. **RT create shape** — options-object `createRenderTarget(engine, options)`
+   (not theduck's positional `w/h`).
+2. **HDR ergonomics** — keep **both**: BYO `colorTexture` (format-agnostic core)
+   **and** the thin `createFloat*` sugar (tree-shakes when unused).
+3. **Mipmaps** — **function-only**. No `generateMipMaps` create-option on the
+   core texture/RT path; use `generateTextureMipMaps` /
+   `generateRenderTargetMipMaps`. The implicit auto-regenerate-on-unbind is
+   removed. (`/html-texture` + `/dynamic-texture` keep their own
+   sampling-mode-driven flag.)
+4. **Stencil** — **depth-stencil-module opt-in**. Not a `createRenderTarget`
+   option; use `generateRenderTargetStencil(engine, rt, { depth? })` from
+   `/depth-stencil` (packed DEPTH24_STENCIL8 default, or stencil-only
+   STENCIL_INDEX8 with `depth:false`). The core RT keeps only the sanctioned
+   `generateDepthBuffer` (DEPTH_COMPONENT16); the helper installs a
+   restore/resize hook so the attachment survives FBO rebuilds, and the stencil
+   constants stay out of the core bundle.
+5. **`mesh`/`depth-stencil`/`scissor`** — ship as separate tree-shakeable
+   sub-entries (they don't conflict with this spec).
+6. **Merge order** — land the converged core first, then layer theduck's Tier-1
+   + tinylottie's dynamic textures on top. Confirmed.
 
 ## 8. Expected outcome
 

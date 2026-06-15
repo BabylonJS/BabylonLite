@@ -42,7 +42,7 @@ Non-goals:
 
 - No WebGL1 path.
 - No scene graph, no materials, no meshes, no skinning, no PBR.
-- Render-to-texture is available via the `/render-target` sub-entry (§3.8): RGBA8 (or a bring-your-own `colorTexture`, e.g. a float/half-float HDR target), optional depth/stencil, mipmaps, ping-pong feedback and `readPixels` readback. No MRT (multiple render targets). Core effects render to the canvas by default.
+- Render-to-texture is available via the `/render-target` sub-entry (§3.8): RGBA8 (or a bring-your-own `colorTexture`, e.g. a float/half-float HDR target), optional core depth, opt-in stencil (`generateRenderTargetStencil`, /depth-stencil) and mipmap (`generateRenderTargetMipMaps`) helpers, ping-pong feedback and `readPixels` readback. No MRT (multiple render targets). Core effects render to the canvas by default.
 - No `SpriteRenderer` / `ThinSprite` in v1 (deferred; the magic loading screen keeps stock Babylon until v2).
 - No runtime shader preprocessor (`attribute`→`in` etc.). Consumers ship GLSL ES 3.00.
 - No shader-store, no `#include`, no observables, no engine-level customization extension points.
@@ -324,8 +324,6 @@ export function setEffectTexture(engine: GLEngineContext, effect: GLEffect, samp
 
 ```ts
 export interface GLTextureOptions {
-    /** Default: false. */
-    generateMipMaps?: boolean;
     /** Default: false (matches Babylon's default raw-texture behaviour). */
     invertY?: boolean;
     /** WebGL2 sampling mode. Default: gl.LINEAR (mip: NEAREST). Pass gl.NEAREST for nearest. */
@@ -391,6 +389,11 @@ export function bindTexture(engine: GLEngineContext, unit: number, tex: GLTextur
  *  handle (so a later `bindTexture(..., otherTex)` to the same unit is NOT
  *  incorrectly elided). Removes the texture from `engine._textures`. */
 export function disposeTexture(engine: GLEngineContext, tex: GLTexture): void;
+
+/** Build a full mip chain for `tex` (a single `gl.generateMipmap`). Mipmaps are
+ *  a **function**, not a create-option: `GLTextureOptions` has no
+ *  `generateMipMaps` flag. No-op when `tex._disposed` or `engine._isLost`. */
+export function generateTextureMipMaps(engine: GLEngineContext, tex: GLTexture): void;
 ```
 
 #### 3.4.1 Sub-entry: HTML element textures (`/html-texture`)
@@ -635,9 +638,10 @@ export interface GLRenderTargetOptions {
     magFilter?: GLenum;            // default gl.LINEAR
     wrapS?: GLenum;                // default gl.CLAMP_TO_EDGE
     wrapT?: GLenum;                // default gl.CLAMP_TO_EDGE
-    generateStencilBuffer?: boolean; // default false; packs DEPTH24_STENCIL8 with depth
-    generateMipMaps?: boolean;       // default false; regenerated when the target is unbound
     colorTexture?: GLTexture;        // BYO color attachment (e.g. a createFloatTexture HDR target); else RGBA8
+    // No generateStencilBuffer/generateMipMaps here: stencil is the opt-in
+    // generateRenderTargetStencil (/depth-stencil) helper; mipmaps are the
+    // generateRenderTargetMipMaps function (both tree-shake out of the core).
 }
 
 export interface GLRenderTarget { readonly texture: GLTexture; width: number; height: number; /* + @internal FBO/depth/restore */ }
@@ -650,6 +654,11 @@ export function resizeRenderTarget(engine: GLEngineContext, rt: GLRenderTarget, 
 export function disposeRenderTarget(engine: GLEngineContext, rt: GLRenderTarget | null | undefined): void;
 export function createFloatRenderTarget(engine: GLEngineContext, options: GLFloatRenderTargetOptions): GLRenderTarget; // float / half-float HDR color
 export function generateRenderTargetMipMaps(engine: GLEngineContext, rt: GLRenderTarget): void;
+// Stencil is opt-in from the /depth-stencil sub-entry (NOT a createRenderTarget option),
+// so the packed-renderbuffer code tree-shakes out of the render-target core:
+//   generateRenderTargetStencil(engine, rt, { depth? }): void
+//     packs DEPTH24_STENCIL8 (depth default true) or stencil-only STENCIL_INDEX8 (depth:false),
+//     replacing the core depth-only buffer; installs a restore/resize hook so it survives FBO rebuilds.
 export function readRenderTargetPixels(engine: GLEngineContext, rt: GLRenderTarget, x: number, y: number, w: number, h: number, into?: ArrayBufferView): ArrayBufferView; // GPU→CPU readback
 export function createPingPong(engine: GLEngineContext, options: GLRenderTargetOptions): GLPingPong;
 export function resizePingPong(engine: GLEngineContext, pp: GLPingPong, width: number, height: number): void;
@@ -673,14 +682,19 @@ export function disposePingPong(engine: GLEngineContext, pp: GLPingPong | null |
 - **`disposeRenderTarget` / `disposePingPong`** delete every GL resource, unhook the
   restore handler, and are idempotent — and a no-op for `null` / `undefined`, matching
   the WebGPU `@babylonjs/lite` `disposeRenderTarget`.
-- **Context restore.** The color texture is engine-owned (its handle is swapped +
-  re-uploaded by the restore protocol, §4.7); each target registers its OWN
-  `onContextRestored` hook to rebuild the FBO + depth and reattach to the fresh
-  texture handle — the same pattern the sprite renderer uses (§3.6).
+- **Context restore.** A default (owned) RGBA8 color texture is owned, rebuilt and
+  deleted by the render target itself: each target registers its OWN
+  `onContextRestored` hook that re-creates the FBO + depth and the color texture.
+  A bring-your-own `colorTexture` is instead engine-managed (its handle is swapped
+  + re-uploaded by the standard texture restore protocol, §4.7), and the target
+  reattaches the fresh handle — the same per-target hook pattern the sprite
+  renderer uses (§3.6).
 - **Scope.** Color is RGBA8 by default, or any `GLTexture` passed via `colorTexture`
-  (e.g. a `createFloatTexture` half-float HDR target). Optional depth16 / packed
-  depth-stencil, mipmaps, `createFloatRenderTarget`, `generateRenderTargetMipMaps`
-  and `readRenderTargetPixels` readback are all available. Out of scope: MRT (§10).
+  (e.g. a `createFloatTexture` half-float HDR target). Optional core depth16
+  (`generateDepthBuffer`); a packed depth-stencil / stencil-only attachment via the
+  opt-in `generateRenderTargetStencil` (/depth-stencil); `createFloatRenderTarget`,
+  the `generateRenderTargetMipMaps` function (mipmaps are NOT a create-option) and
+  `readRenderTargetPixels` readback are all available. Out of scope: MRT (§10).
 
 Packaging mirrors `/sprites` and `/html-texture`: re-exported from the barrel
 (`@babylonjs/lite-gl`) **and** available as the dedicated
@@ -1253,11 +1267,15 @@ Not implemented (NeonBrush doesn't need them): shader-store / `useShaderStore: t
    `disposeRenderTarget`, plus the `createPingPong` / `resizePingPong` /
    `disposePingPong` feedback helper; types `GLRenderTarget` /
    `GLRenderTargetOptions` / `GLPingPong` — see §3.8). Scope is a single RGBA8
-   color attachment (or a bring-your-own `colorTexture`, e.g. a `createFloatTexture`
-   half-float HDR target via `createFloatRenderTarget`), an optional
-   `DEPTH_COMPONENT16` / packed `DEPTH24_STENCIL8` renderbuffer, mipmaps, ping-pong
-   feedback, and GPU→CPU readback (`readRenderTargetPixels`). NOT supported:
-   multiple render targets (MRT, item 10).
+   color attachment (or a bring-your-own `colorTexture` — e.g. a `createFloatTexture`
+   half-float HDR target — with `createFloatRenderTarget` as the direct HDR sugar),
+   an optional core
+   `DEPTH_COMPONENT16` renderbuffer (`generateDepthBuffer`), opt-in stencil via
+   `generateRenderTargetStencil` (/depth-stencil; packed `DEPTH24_STENCIL8` or
+   stencil-only `STENCIL_INDEX8`) and opt-in mipmaps via
+   `generateRenderTargetMipMaps`, ping-pong feedback, and GPU→CPU readback
+   (`readRenderTargetPixels`). NOT supported: multiple render targets (MRT,
+   item 10).
 3. `SpriteRenderer` / `ThinSprite` are available via the `/sprites` sub-entry
    (`createSpriteRenderer` / `renderSprites` / `GLSprite`), matching Babylon's
    non-instanced 4-vertex path for parity. NOT ported: `ThinSprite` animation
@@ -1387,7 +1405,7 @@ Example:
 this.engine.createRawTexture(new Uint8Array(4), 1, 1, 5, false, false, 1, null, 0);
 // After
 createRawTexture(engine, new Uint8Array(4), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE,
-    { generateMipMaps: false, invertY: false, minFilter: gl.NEAREST, magFilter: gl.NEAREST });
+    { invertY: false, minFilter: gl.NEAREST, magFilter: gl.NEAREST });
 ```
 
 ---

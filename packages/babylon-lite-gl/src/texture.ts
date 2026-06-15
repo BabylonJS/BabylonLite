@@ -1,9 +1,8 @@
 import type { GLEngineContext } from "./context.js";
 
-/** Texture sampling / wrap options. All have GL-spec defaults. */
+/** Texture sampling / wrap options. All have GL-spec defaults. Mipmaps are NOT
+ *  a create option — generate the chain explicitly via {@link generateTextureMipMaps}. */
 export interface GLTextureOptions {
-    /** Default: false. */
-    generateMipMaps?: boolean;
     /** Default: false (matches Babylon's default raw-texture behaviour). */
     invertY?: boolean;
     /** Default: gl.LINEAR. */
@@ -144,7 +143,6 @@ export function createRawTexture(
     const wrapT = opts.wrapT ?? gl.CLAMP_TO_EDGE;
     const invertY = opts.invertY ?? false;
     const premultiply = opts.premultiplyAlpha ?? false;
-    const generateMipMaps = opts.generateMipMaps ?? false;
     // LDR byte formats are resolved INLINE here; the float-format table in
     // `pickSizedInternalFormat` is deliberately NOT referenced from this path so
     // it tree-shakes out of byte-only bundles. `createFloatTexture` injects its
@@ -168,9 +166,6 @@ export function createRawTexture(
         g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, magFilter);
         g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, wrapS);
         g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, wrapT);
-        if (generateMipMaps) {
-            g.generateMipmap(g.TEXTURE_2D);
-        }
     };
 
     const tex: GLTexture = {
@@ -356,7 +351,6 @@ export function loadTexture2D(engine: GLEngineContext, url: string, options?: GL
     const wrapS = opts.wrapS ?? gl.CLAMP_TO_EDGE;
     const wrapT = opts.wrapT ?? gl.CLAMP_TO_EDGE;
     const invertY = opts.invertY ?? false;
-    const generateMipMaps = opts.generateMipMaps ?? false;
 
     let bitmap: ImageBitmap | null = null;
     const placeholderPixels = new Uint8Array([0, 0, 0, 0]);
@@ -370,9 +364,6 @@ export function loadTexture2D(engine: GLEngineContext, url: string, options?: GL
         bindTextureForUpload(target, tex.handle);
         if (bitmap !== null) {
             g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, bitmap);
-            if (generateMipMaps) {
-                g.generateMipmap(g.TEXTURE_2D);
-            }
             tex.width = bitmap.width;
             tex.height = bitmap.height;
         } else {

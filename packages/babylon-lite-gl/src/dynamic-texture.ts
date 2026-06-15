@@ -8,10 +8,9 @@
  * The WebGL counterpart of Babylon's `ThinEngine.createDynamicTexture` +
  * `updateDynamicTexture`. A dynamic texture is a blank RGBA8 allocation whose
  * pixels are pushed on demand from a canvas / `OffscreenCanvas` / image / video
- * / `ImageBitmap` / `ImageData` source. The most recent source is retained on
- * the texture (`_dynSource`) and replayed into the fresh handle on
- * `webglcontextrestored` — the texture is registered in the engine's `_textures`
- * registry, so the standard context-restore protocol replays it.
+ * / `ImageBitmap` / `ImageData` source. The most recent source is retained
+ * internally and replayed into the fresh handle on `webglcontextrestored` by the
+ * engine's standard context-restore protocol.
  */
 import { bindTextureForUpload, setUnpackState, type GLTexture, type GLTextureOptions } from "./texture.js";
 import type { GLEngineContext } from "./context.js";
@@ -32,9 +31,11 @@ import type { GLEngineContext } from "./context.js";
  *  @param engine - The engine to create GL resources on.
  *  @param width - Texture width in texels (clamped to ≥ 1).
  *  @param height - Texture height in texels (clamped to ≥ 1).
- *  @param options - Optional sampling/wrap/mipmap config (see {@link GLTextureOptions}).
+ *  @param options - Optional sampling/wrap config (see {@link GLTextureOptions})
+ *    plus this factory's own `generateMipMaps` flag (mipmaps are built after an
+ *    update when a source is present; defaults to `false`).
  *  @returns The new {@link GLTexture}. */
-export function createDynamicTexture(engine: GLEngineContext, width: number, height: number, options?: GLTextureOptions): GLTexture {
+export function createDynamicTexture(engine: GLEngineContext, width: number, height: number, options?: GLTextureOptions & { generateMipMaps?: boolean }): GLTexture {
     const gl = engine.gl;
     const handle = gl.createTexture();
     if (handle === null) {
