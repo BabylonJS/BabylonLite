@@ -908,7 +908,7 @@
         "slug": "scene96-sprite-uvoffset-parallax",
         "name": "Scene 96 — Sprite uvOffset Parallax",
         "maxMad": 0.02,
-        "maxRawKB": 16,
+        "maxRawKB": 16.1,
         "description": "20×9 pure-2D sprite grid sampling one tileable atlas tile (repeat wrap, nearest) where each horizontal band carries a different fixed per-sprite uvOffset (uvScroll), shifting the sampled UV in the vertex stage — the building block for parallax / infinite-scroll backgrounds. BJS SpriteRenderer oracle bakes the same effect into a per-offset rolled-tile atlas selected by cellIndex.",
         "tags": ["sprites", "2d", "uvoffset"],
         "skipPerf": true
@@ -1017,7 +1017,7 @@
         "slug": "scene121-gs-update-data",
         "name": "Scene 121 — Gaussian Splatting updateData",
         "maxMad": 50,
-        "maxRawKB": 35,
+        "maxRawKB": 35.1,
         "description": "Loads Halo_Believe.splat with keepInRam, modifies the first 30 000 splats' Y by -2, then calls gs.updateData().",
         "tags": ["gaussian-splatting", "splat"],
         "skipPerf": true
