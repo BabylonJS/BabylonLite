@@ -50,18 +50,11 @@ export function cloneTransformNode(src: SceneNode): SceneNode {
                 _materialDirty: false,
                 _gpu: { ...mesh._gpu },
             };
-            initMeshTransform(
-                meshClone,
-                mesh.position.x,
-                mesh.position.y,
-                mesh.position.z,
-                mesh.rotation.x,
-                mesh.rotation.y,
-                mesh.rotation.z,
-                mesh.scaling.x,
-                mesh.scaling.y,
-                mesh.scaling.z
-            );
+            initMeshTransform(meshClone, mesh.position.x, mesh.position.y, mesh.position.z, 0, 0, 0, mesh.scaling.x, mesh.scaling.y, mesh.scaling.z);
+            // Copy the source rotation as a QUATERNION — the Euler round-trip (mesh.rotation.x/y/z) is
+            // lossy near gimbal lock and would skew the clone.
+            const rq = mesh.rotationQuaternion;
+            meshClone.rotationQuaternion.set(rq.x, rq.y, rq.z, rq.w);
             meshClone.parent = clone;
             clone.children.push(meshClone);
         } else {
