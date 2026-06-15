@@ -11,9 +11,29 @@
             "import": "./src/index.ts",
             "types": "./src/index.ts"
         },
-        "./math": {
-            "import": "./src/math/index.ts",
-            "types": "./src/math/index.ts"
+        "./vite": {
+            "import": "./src/vite.ts",
+            "types": "./src/vite.ts"
+        },
+        "./rollup": {
+            "import": "./src/rollup.ts",
+            "types": "./src/rollup.ts"
+        },
+        "./webpack": {
+            "import": "./src/webpack.ts",
+            "types": "./src/webpack.ts"
+        },
+        "./esbuild": {
+            "import": "./src/esbuild.ts",
+            "types": "./src/esbuild.ts"
+        },
+        "./navigation": {
+            "import": "./src/navigation/navigation.ts",
+            "types": "./src/navigation/navigation.ts"
+        },
+        "./recast-shim": {
+            "import": "./src/navigation/recast-shim.ts",
+            "types": "./src/navigation/recast-shim.ts"
         }
     },
     "files": [
@@ -33,6 +53,7 @@
     "devDependencies": {
         "@webgpu/types": "^0.1.52",
         "typescript": "^5.7.0",
-        "vite": "^6.0.0"
+        "vite": "^6.0.0",
+        "vite-plugin-dts": "^4.5.4"
     }
 }

@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from "vite";
 import { resolve } from "path";
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { spawn } from "child_process";
+import { mapBabylonImport, type CompatTarget } from "../packages/babylon-lite-compat/src/bundler-resolve.js";
 
 interface DemoConfigEntry {
     slug: string;
@@ -590,11 +591,13 @@ function tabContentPlugin(): Plugin {
  *    shared helper is redirected too.
  */
 function compatScenesPlugin(): Plugin {
-    const compatBarrel = resolve(__dirname, "../packages/babylon-lite-compat/src/index.ts");
-    const compatNav = resolve(__dirname, "../packages/babylon-lite-compat/src/navigation/navigation.ts");
-    const compatRecastShim = resolve(__dirname, "../packages/babylon-lite-compat/src/navigation/recast-shim.ts");
-    const compatGrid = resolve(__dirname, "../packages/babylon-lite-compat/src/materials/grid-material.ts");
-    const isBjsBare = (s: string) => /^@babylonjs\/(core|loaders)(\/|$)/.test(s);
+    const compatTargets: Record<CompatTarget, string> = {
+        core: resolve(__dirname, "../packages/babylon-lite-compat/src/index.ts"),
+        addons: resolve(__dirname, "../packages/babylon-lite-compat/src/navigation/navigation.ts"),
+        recast: resolve(__dirname, "../packages/babylon-lite-compat/src/navigation/recast-shim.ts"),
+        // GridMaterial is re-exported from the barrel, so materials folds into core.
+        materials: resolve(__dirname, "../packages/babylon-lite-compat/src/index.ts"),
+    };
     const hasCompatMarker = (id: string) => {
         const q = id.split("?")[1];
         return !!q && q.split("&").includes("compat");
@@ -607,24 +610,12 @@ function compatScenesPlugin(): Plugin {
             if (!importer || !hasCompatMarker(importer)) {
                 return null;
             }
-            // Redirect Babylon.js core/loaders (incl. deep subpaths and side-effect-only
-            // imports) onto the single compat barrel. No query → shared/deduped instance.
-            if (isBjsBare(source)) {
-                return compatBarrel;
-            }
-            // `@babylonjs/addons/navigation` → compat navigation wrapper over Babylon Lite's
-            // native Recast API; the raw `@recast-navigation/*` packages the scene imports
-            // become harmless no-ops (Lite loads its own Recast wasm).
-            if (/^@babylonjs\/addons\/navigation(\/|$)/.test(source)) {
-                return compatNav;
-            }
-            if (/^@recast-navigation\/(core|generators)(\/|$)/.test(source)) {
-                return compatRecastShim;
-            }
-            // `@babylonjs/materials/grid/gridMaterial` → compat GridMaterial over Babylon Lite's
-            // native `createGridMaterial`. Other `@babylonjs/materials` are out of scope.
-            if (/^@babylonjs\/materials\/grid\/gridMaterial(\.js)?$/.test(source)) {
-                return compatGrid;
+            // Redirect Babylon.js core/loaders/navigation/grid + raw Recast onto the
+            // matching compat modules. The mapping table is shared with the publishable
+            // `@babylonjs/lite-compat/vite` plugin so the two can never drift.
+            const target = mapBabylonImport(source);
+            if (target) {
+                return compatTargets[target];
             }
             // Propagate the marker across relative imports so a helper that itself
             // imports @babylonjs/core is still redirected within the compat subtree.

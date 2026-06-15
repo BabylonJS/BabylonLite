@@ -23,6 +23,73 @@ box.material = mat;
 engine.runRenderLoop(() => scene.render());
 ```
 
+## Drop-in migration: keep your Babylon.js imports
+
+If you have an existing Babylon.js app, you don't have to rewrite a single import.
+This package ships a bundler plugin that **rewrites `@babylonjs/*` imports onto the
+compat layer at build time**, so your `@babylonjs/core`, `@babylonjs/loaders`,
+`@babylonjs/addons`, `@babylonjs/materials`, and `@recast-navigation/*` imports
+resolve to `@babylonjs/lite-compat` instead.
+
+```ts
+// Your code stays exactly as it was — no edits needed:
+import { Scene, ArcRotateCamera, MeshBuilder } from "@babylonjs/core";
+```
+
+Add the plugin for your bundler:
+
+**Vite**
+
+```ts
+// vite.config.ts
+import { defineConfig } from "vite";
+import { liteCompat } from "@babylonjs/lite-compat/vite";
+
+export default defineConfig({
+    plugins: [liteCompat()],
+});
+```
+
+**Rollup** (also works with Rolldown)
+
+```js
+// rollup.config.js
+import { liteCompat } from "@babylonjs/lite-compat/rollup";
+
+export default {
+    plugins: [liteCompat()],
+};
+```
+
+**Webpack** (also works with Rspack)
+
+```js
+// webpack.config.js
+const { LiteCompatPlugin } = require("@babylonjs/lite-compat/webpack");
+
+module.exports = {
+    plugins: [new LiteCompatPlugin()],
+};
+```
+
+**esbuild**
+
+```js
+import { build } from "esbuild";
+import { liteCompat } from "@babylonjs/lite-compat/esbuild";
+
+await build({
+    plugins: [liteCompat()],
+    // …
+});
+```
+
+Every adapter shares one redirect table, so they map imports identically. Specifiers
+outside the supported surface (e.g. `@babylonjs/gui`) are left untouched and resolve
+to the real Babylon.js package — so unsupported APIs fail loudly instead of silently
+mismapping. Once migration is complete you can drop the plugin and import from
+`@babylonjs/lite-compat` (or native `@babylonjs/lite`) directly.
+
 ## What it is (and isn't)
 
 - A **class-based, Babylon.js-shaped** surface over Lite's plain-data + factory API.

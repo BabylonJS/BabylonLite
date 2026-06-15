@@ -19,6 +19,7 @@ import {
     setFog,
     setClipPlane,
     loadEnvironment,
+    loadDdsEnvironment,
     createHemisphericLight,
     addToScene,
     createAnimationManager,
@@ -26,7 +27,6 @@ import {
     enableAnimationBlending,
     updateAnimationManager,
 } from "babylon-lite";
-import { loadDdsEnvironment } from "babylon-lite/loader-env/load-dds-env";
 import type { SceneContext, Camera as LiteCamera, ArcRotateCamera as LiteArcRotateCamera, AnimationManager } from "babylon-lite";
 
 import { Color3, Color4 } from "../math/color.js";
