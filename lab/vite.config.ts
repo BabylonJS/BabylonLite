@@ -591,6 +591,9 @@ function tabContentPlugin(): Plugin {
  */
 function compatScenesPlugin(): Plugin {
     const compatBarrel = resolve(__dirname, "../packages/babylon-lite-compat/src/index.ts");
+    const compatNav = resolve(__dirname, "../packages/babylon-lite-compat/src/navigation/navigation.ts");
+    const compatRecastShim = resolve(__dirname, "../packages/babylon-lite-compat/src/navigation/recast-shim.ts");
+    const compatGrid = resolve(__dirname, "../packages/babylon-lite-compat/src/materials/grid-material.ts");
     const isBjsBare = (s: string) => /^@babylonjs\/(core|loaders)(\/|$)/.test(s);
     const hasCompatMarker = (id: string) => {
         const q = id.split("?")[1];
@@ -608,6 +611,20 @@ function compatScenesPlugin(): Plugin {
             // imports) onto the single compat barrel. No query → shared/deduped instance.
             if (isBjsBare(source)) {
                 return compatBarrel;
+            }
+            // `@babylonjs/addons/navigation` → compat navigation wrapper over Babylon Lite's
+            // native Recast API; the raw `@recast-navigation/*` packages the scene imports
+            // become harmless no-ops (Lite loads its own Recast wasm).
+            if (/^@babylonjs\/addons\/navigation(\/|$)/.test(source)) {
+                return compatNav;
+            }
+            if (/^@recast-navigation\/(core|generators)(\/|$)/.test(source)) {
+                return compatRecastShim;
+            }
+            // `@babylonjs/materials/grid/gridMaterial` → compat GridMaterial over Babylon Lite's
+            // native `createGridMaterial`. Other `@babylonjs/materials` are out of scope.
+            if (/^@babylonjs\/materials\/grid\/gridMaterial(\.js)?$/.test(source)) {
+                return compatGrid;
             }
             // Propagate the marker across relative imports so a helper that itself
             // imports @babylonjs/core is still redirected within the compat subtree.
@@ -677,7 +694,10 @@ export default defineConfig({
         // BJS uses prototype-patching side-effect imports (e.g. abstractEngine.dom.js).
         // babylon-lite uses ?raw WGSL imports that esbuild can't handle.
         // Exclude both from Vite's dep optimizer.
-        exclude: ["@babylonjs/core", "@babylonjs/loaders", "@babylonjs/havok"],
+        // @recast-navigation/* ship a wasm binary the esbuild optimizer can't process; serve
+        // them as native ESM so Babylon Lite's navigation (and the compat nav wrapper) can load
+        // Recast on demand without a hung pre-bundle.
+        exclude: ["@babylonjs/core", "@babylonjs/loaders", "@babylonjs/havok", "@recast-navigation/core", "@recast-navigation/generators", "@recast-navigation/wasm"],
     },
     resolve: {
         // Ensure @babylonjs/core resolves to a single instance (loaders registers

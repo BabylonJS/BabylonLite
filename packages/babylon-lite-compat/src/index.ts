@@ -113,6 +113,7 @@ export { SpriteManager, Sprite, SpriteRenderer, ThinSprite } from "./sprites/spr
 // ─── Shadows ─────────────────────────────────────────────────────────
 export { ShadowGenerator, CascadedShadowGenerator } from "./shadows/shadow-generator.js";
 export { NodeMaterial } from "./materials/node-material.js";
+export { GridMaterial } from "./materials/grid-material.js";
 
 // ─── Animation ───────────────────────────────────────────────────────
 export { Animation, AnimationGroup, AnimationTypes, AnimationLoopModes, Animatable } from "./animations/animation.js";

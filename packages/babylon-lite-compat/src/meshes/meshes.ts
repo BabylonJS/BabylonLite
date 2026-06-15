@@ -45,9 +45,10 @@ import { Node } from "../node/node.js";
 import type { Scene } from "../scene/scene.js";
 import type { StandardMaterial, PBRMaterial } from "../materials/materials.js";
 import type { NodeMaterial } from "../materials/node-material.js";
+import type { GridMaterial } from "../materials/grid-material.js";
 import type { MorphTargetManager } from "../morph/morph.js";
 
-type CompatMaterial = StandardMaterial | PBRMaterial | NodeMaterial;
+type CompatMaterial = StandardMaterial | PBRMaterial | NodeMaterial | GridMaterial;
 
 /**
  * @internal Runtime discriminator for the `Mesh` constructor's two call shapes:

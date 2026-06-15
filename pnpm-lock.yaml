@@ -164,6 +164,15 @@ importers:
 
   packages/babylon-lite-compat:
     dependencies:
+      '@recast-navigation/core':
+        specifier: 0.43.0
+        version: 0.43.0
+      '@recast-navigation/generators':
+        specifier: 0.43.0
+        version: 0.43.0
+      '@recast-navigation/wasm':
+        specifier: 0.43.0
+        version: 0.43.0
       babylon-lite:
         specifier: workspace:*
         version: link:../babylon-lite
