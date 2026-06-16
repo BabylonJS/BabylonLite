@@ -58,8 +58,8 @@ on:
     # - compat # Label filtering applied via job conditions
     types:
     - labeled
-  schedule:
-  - cron: "49 17 * * *"
+  #schedule:
+  #- cron: "49 17 * * *"
     # Friendly format: daily (scattered)
   workflow_dispatch:
     inputs:
