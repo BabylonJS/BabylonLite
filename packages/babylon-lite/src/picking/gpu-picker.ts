@@ -18,11 +18,37 @@ import { createEmptyUniformBuffer, createMappedBuffer, createUniformBuffer } fro
 // ─── Scratch arrays — allocated once, reused across all picks ──────
 const _pickVP = new F32(16);
 const _gsPickMatrix = new F32(16);
-const _uboScratch = new ArrayBuffer(80);
-const _uboF32 = new F32(_uboScratch, 0, 16);
-const _uboU32 = new U32(_uboScratch, 64, 1);
+const MAX_PICK_CLIPS = 12;
+const PICK_CLIP_FLOAT_OFFSET = 20;
+const PICK_TI_CLIP_FLOAT_OFFSET = 4;
+const PICK_MESH_UBO_BYTES = (PICK_CLIP_FLOAT_OFFSET + MAX_PICK_CLIPS * 12) * 4;
+const PICK_TI_UBO_BYTES = (PICK_TI_CLIP_FLOAT_OFFSET + MAX_PICK_CLIPS * 12) * 4;
+const _uboScratch = new ArrayBuffer(PICK_MESH_UBO_BYTES);
+const _uboF32 = new F32(_uboScratch);
+const _uboU32 = new U32(_uboScratch);
 const _uboView = new U8(_uboScratch);
-const _tiUboScratch = new U32(4);
+const _tiUboScratch = new ArrayBuffer(PICK_TI_UBO_BYTES);
+const _tiUboU32 = new U32(_tiUboScratch);
+const _tiUboF32 = new F32(_tiUboScratch);
+const _tiUboView = new U8(_tiUboScratch);
+
+function writePickClips(f32: Float32Array, u32: Uint32Array, countIndex: number, clipFloatOffset: number, mesh: Mesh): void {
+    const clips = mesh.pickingClipVolumes;
+    const count = Math.min(MAX_PICK_CLIPS, clips?.length ?? 0);
+    u32[countIndex] = count;
+    for (let i = 0; i < MAX_PICK_CLIPS; i++) {
+        const off = clipFloatOffset + i * 12;
+        const clip = i < count ? clips![i]! : null;
+        if (clip) {
+            f32.set(clip.a, off);
+            f32.set(clip.b, off + 4);
+            f32.set(clip.c, off + 8);
+        } else {
+            f32.set([0, 0, 1, 0], off);
+            f32.fill(0, off + 4, off + 12);
+        }
+    }
+}
 
 /** GPU-based picker — pure state. Use pickAsync() and disposePicker() standalone functions. */
 export interface GpuPicker {
@@ -215,8 +241,9 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number, options
         const ti = mesh.thinInstances;
 
         if (ti && ti.count > 0 && ti._gpuBuffer) {
-            _tiUboScratch[0] = nextId;
-            const tiUbo = createUniformBuffer(engine, _tiUboScratch);
+            _tiUboU32[0] = nextId;
+            writePickClips(_tiUboF32, _tiUboU32, 1, PICK_TI_CLIP_FLOAT_OFFSET, mesh);
+            const tiUbo = createUniformBuffer(engine, _tiUboView);
             tempBuffers.push(tiUbo);
 
             pass.setPipeline(tiPipeline);
@@ -236,8 +263,9 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number, options
             pass.drawIndexed(gpu.indexCount, ti.count);
             nextId += ti.count;
         } else {
-            _uboF32.set(mesh.worldMatrix);
-            _uboU32[0] = nextId;
+            _uboF32.set(mesh.worldMatrix, 0);
+            _uboU32[16] = nextId;
+            writePickClips(_uboF32, _uboU32, 17, PICK_CLIP_FLOAT_OFFSET, mesh);
             const meshUbo = createUniformBuffer(engine, _uboView);
             tempBuffers.push(meshUbo);
             let positionBuffer = gpu.positionBuffer;
