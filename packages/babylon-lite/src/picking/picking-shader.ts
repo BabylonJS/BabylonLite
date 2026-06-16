@@ -43,38 +43,17 @@ struct SceneUniforms { viewProjection: mat4x4f };
 struct MeshUniforms {
 world: mat4x4f,
 pickId: u32,
-clipCount: u32,
-_pad0: vec2u,
-clipA0: vec4f, clipB0: vec4f, clipC0: vec4f,
-clipA1: vec4f, clipB1: vec4f, clipC1: vec4f,
-clipA2: vec4f, clipB2: vec4f, clipC2: vec4f,
-clipA3: vec4f, clipB3: vec4f, clipC3: vec4f,
-clipA4: vec4f, clipB4: vec4f, clipC4: vec4f,
-clipA5: vec4f, clipB5: vec4f, clipC5: vec4f,
-clipA6: vec4f, clipB6: vec4f, clipC6: vec4f,
-clipA7: vec4f, clipB7: vec4f, clipC7: vec4f,
-clipA8: vec4f, clipB8: vec4f, clipC8: vec4f,
-clipA9: vec4f, clipB9: vec4f, clipC9: vec4f,
-clipA10: vec4f, clipB10: vec4f, clipC10: vec4f,
-clipA11: vec4f, clipB11: vec4f, clipC11: vec4f,
 };
 @group(0) @binding(0) var<uniform> scene: SceneUniforms;
 @group(1) @binding(0) var<uniform> mesh: MeshUniforms;
+@group(1) @binding(1) var<storage, read> clipData: array<vec4f>;
 ${PICK_SHARED}
 fn pickClipHit(wp: vec3f) -> bool {
-let n = i32(mesh.clipCount);
-if (n > 0 && pickClipOne(wp, mesh.clipA0, mesh.clipB0, mesh.clipC0)) { return true; }
-if (n > 1 && pickClipOne(wp, mesh.clipA1, mesh.clipB1, mesh.clipC1)) { return true; }
-if (n > 2 && pickClipOne(wp, mesh.clipA2, mesh.clipB2, mesh.clipC2)) { return true; }
-if (n > 3 && pickClipOne(wp, mesh.clipA3, mesh.clipB3, mesh.clipC3)) { return true; }
-if (n > 4 && pickClipOne(wp, mesh.clipA4, mesh.clipB4, mesh.clipC4)) { return true; }
-if (n > 5 && pickClipOne(wp, mesh.clipA5, mesh.clipB5, mesh.clipC5)) { return true; }
-if (n > 6 && pickClipOne(wp, mesh.clipA6, mesh.clipB6, mesh.clipC6)) { return true; }
-if (n > 7 && pickClipOne(wp, mesh.clipA7, mesh.clipB7, mesh.clipC7)) { return true; }
-if (n > 8 && pickClipOne(wp, mesh.clipA8, mesh.clipB8, mesh.clipC8)) { return true; }
-if (n > 9 && pickClipOne(wp, mesh.clipA9, mesh.clipB9, mesh.clipC9)) { return true; }
-if (n > 10 && pickClipOne(wp, mesh.clipA10, mesh.clipB10, mesh.clipC10)) { return true; }
-if (n > 11 && pickClipOne(wp, mesh.clipA11, mesh.clipB11, mesh.clipC11)) { return true; }
+let n = i32(clipData[0].x);
+for (var i = 0; i < n; i = i + 1) {
+let base = 1 + i * 3;
+if (pickClipOne(wp, clipData[base], clipData[base + 1], clipData[base + 2])) { return true; }
+}
 return false;
 }
 ${PICK_FS}
@@ -95,39 +74,18 @@ export const pickingThinInstanceShaderSource = /* wgsl */ `
 struct SceneUniforms { viewProjection: mat4x4f };
 struct TIMeshUniforms {
 baseMeshPickId: u32,
-clipCount: u32,
-_pad0: vec2u,
-clipA0: vec4f, clipB0: vec4f, clipC0: vec4f,
-clipA1: vec4f, clipB1: vec4f, clipC1: vec4f,
-clipA2: vec4f, clipB2: vec4f, clipC2: vec4f,
-clipA3: vec4f, clipB3: vec4f, clipC3: vec4f,
-clipA4: vec4f, clipB4: vec4f, clipC4: vec4f,
-clipA5: vec4f, clipB5: vec4f, clipC5: vec4f,
-clipA6: vec4f, clipB6: vec4f, clipC6: vec4f,
-clipA7: vec4f, clipB7: vec4f, clipC7: vec4f,
-clipA8: vec4f, clipB8: vec4f, clipC8: vec4f,
-clipA9: vec4f, clipB9: vec4f, clipC9: vec4f,
-clipA10: vec4f, clipB10: vec4f, clipC10: vec4f,
-clipA11: vec4f, clipB11: vec4f, clipC11: vec4f,
 };
 @group(0) @binding(0) var<uniform> scene: SceneUniforms;
 @group(1) @binding(0) var<uniform> tiMesh: TIMeshUniforms;
 @group(1) @binding(1) var<storage, read> instances: array<mat4x4f>;
+@group(1) @binding(2) var<storage, read> clipData: array<vec4f>;
 ${PICK_SHARED}
 fn pickClipHit(wp: vec3f) -> bool {
-let n = i32(tiMesh.clipCount);
-if (n > 0 && pickClipOne(wp, tiMesh.clipA0, tiMesh.clipB0, tiMesh.clipC0)) { return true; }
-if (n > 1 && pickClipOne(wp, tiMesh.clipA1, tiMesh.clipB1, tiMesh.clipC1)) { return true; }
-if (n > 2 && pickClipOne(wp, tiMesh.clipA2, tiMesh.clipB2, tiMesh.clipC2)) { return true; }
-if (n > 3 && pickClipOne(wp, tiMesh.clipA3, tiMesh.clipB3, tiMesh.clipC3)) { return true; }
-if (n > 4 && pickClipOne(wp, tiMesh.clipA4, tiMesh.clipB4, tiMesh.clipC4)) { return true; }
-if (n > 5 && pickClipOne(wp, tiMesh.clipA5, tiMesh.clipB5, tiMesh.clipC5)) { return true; }
-if (n > 6 && pickClipOne(wp, tiMesh.clipA6, tiMesh.clipB6, tiMesh.clipC6)) { return true; }
-if (n > 7 && pickClipOne(wp, tiMesh.clipA7, tiMesh.clipB7, tiMesh.clipC7)) { return true; }
-if (n > 8 && pickClipOne(wp, tiMesh.clipA8, tiMesh.clipB8, tiMesh.clipC8)) { return true; }
-if (n > 9 && pickClipOne(wp, tiMesh.clipA9, tiMesh.clipB9, tiMesh.clipC9)) { return true; }
-if (n > 10 && pickClipOne(wp, tiMesh.clipA10, tiMesh.clipB10, tiMesh.clipC10)) { return true; }
-if (n > 11 && pickClipOne(wp, tiMesh.clipA11, tiMesh.clipB11, tiMesh.clipC11)) { return true; }
+let n = i32(clipData[0].x);
+for (var i = 0; i < n; i = i + 1) {
+let base = 1 + i * 3;
+if (pickClipOne(wp, clipData[base], clipData[base + 1], clipData[base + 2])) { return true; }
+}
 return false;
 }
 ${PICK_FS}
