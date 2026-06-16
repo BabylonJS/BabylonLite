@@ -138,14 +138,10 @@ interface Group {
     let steps = 0;
     let captureQueued = false;
 
-    scene.onAfterRenderObservable.add(() => {
-        canvas.dataset.drawCalls = String(eng._drawCalls ? eng._drawCalls.current : 0);
-        if (!ready) {
-            ready = true;
-            canvas.dataset.initMs = String(performance.now() - __initStart);
-            canvas.dataset.ready = "true";
-            return;
-        }
+    // Count ACTUAL physics steps (onAfterPhysicsObservable fires once per Havok step) and run the
+    // queries + capture there, matching the Lite scene's onPhysicsAfterStep. onAfterRenderObservable
+    // is kept only for draw-call readout and the one-time ready/initMs setup.
+    scene.onAfterPhysicsObservable.add(() => {
         steps++;
 
         // Group A — shapeProximity: closest-point pair, reading the cylinder's LIVE rotation.
@@ -167,12 +163,21 @@ interface Group {
 
         if (!captureQueued && steps >= CAPTURE_STEPS && shapeLocalResult.hasHit && castWorldResult.hasHit) {
             captureQueued = true;
-            canvas.dataset.captureReady = "true";
-            if (captureMode) {
-                window.setTimeout(() => {
+            window.setTimeout(() => {
+                canvas.dataset.captureReady = "true";
+                if (captureMode) {
                     engine.stopRenderLoop();
-                }, 0);
-            }
+                }
+            }, 0);
+        }
+    });
+
+    scene.onAfterRenderObservable.add(() => {
+        canvas.dataset.drawCalls = String(eng._drawCalls ? eng._drawCalls.current : 0);
+        if (!ready) {
+            ready = true;
+            canvas.dataset.initMs = String(performance.now() - __initStart);
+            canvas.dataset.ready = "true";
         }
     });
 

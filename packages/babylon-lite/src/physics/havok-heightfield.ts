@@ -147,10 +147,19 @@ function optionsFromGroundMesh(mesh: Mesh): ResolvedHeightField {
         }
     }
 
-    const arraySize = ~~(Math.sqrt(vertexCount) - 1);
+    const sideSamples = Math.sqrt(vertexCount);
+    if (!Number.isInteger(sideSamples) || sideSamples < 2) {
+        throw new Error(
+            `createHeightFieldShape requires a regular (N+1)×(N+1) grid mesh (e.g. from createGroundFromHeightMap); got ${vertexCount} vertices, which is not the square of an integer ≥ 2.`
+        );
+    }
+    const arraySize = sideSamples - 1;
     const extendX = (maxX - minX) / 2;
     const extendZ = (maxZ - minZ) / 2;
     const dim = Math.min(extendX, extendZ);
+    if (dim <= 0) {
+        throw new Error("createHeightFieldShape ground mesh has zero extent in X or Z; cannot build a heightfield.");
+    }
     const elementSize = (dim * 2) / arraySize;
 
     const samples = arraySize + 1;

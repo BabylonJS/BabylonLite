@@ -170,6 +170,7 @@ export type { SphereMeshData } from "./mesh/create-sphere.js";
 export { createCylinderData } from "./mesh/create-cylinder.js";
 export { createCapsuleData } from "./mesh/create-capsule.js";
 export type { CylinderData } from "./mesh/create-cylinder.js";
+export type { CapsuleData } from "./mesh/create-capsule.js";
 export { createTorusKnotData } from "./mesh/create-torus-knot.js";
 export type { TorusKnotData, TorusKnotOptions } from "./mesh/create-torus-knot.js";
 export { createCsgFromMesh, csgSubtract, csgIntersect, csgUnion, createMeshFromCsg } from "./mesh/csg.js";

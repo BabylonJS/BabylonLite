@@ -726,8 +726,8 @@
     ]
   },
   "scene47": {
-    "rawKB": 87.5,
-    "gzipKB": 34.6,
+    "rawKB": 87.8,
+    "gzipKB": 34.8,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene47-generate-mipmaps-nvHc2MQU.js",

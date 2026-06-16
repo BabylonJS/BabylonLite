@@ -120,18 +120,11 @@ function createMaterial(scene: Scene, color: Color3, alpha = 1): StandardMateria
     let kickFrame = 0;
     let captureQueued = false;
 
-    scene.onAfterRenderObservable.add(() => {
-        canvas.dataset.drawCalls = String(eng._drawCalls ? eng._drawCalls.current : 0);
-        const now = performance.now();
-        if (!ready) {
-            ready = true;
-            canvas.dataset.initMs = String(now - __initStart);
-            canvas.dataset.ready = "true";
-            window.setTimeout(() => {
-                kickPending = true;
-            }, KICK_DELAY_MS);
-            return;
-        }
+    // Count ACTUAL physics steps (onAfterPhysicsObservable fires once per Havok step), so the
+    // kick and capture land on the same fixed 1/60 steps as the Lite scene regardless of how
+    // many render frames elapse. onAfterRenderObservable is kept only for draw-call readout and
+    // the one-time ready/initMs setup.
+    scene.onAfterPhysicsObservable.add(() => {
         simulatedFrames++;
 
         if (kickPending && !kicked) {
@@ -145,14 +138,26 @@ function createMaterial(scene: Scene, color: Color3, alpha = 1): StandardMateria
 
         if (kicked && !captureQueued && simulatedFrames >= kickFrame + CAPTURE_STEPS_AFTER_KICK) {
             captureQueued = true;
-            canvas.dataset.captureReady = "true";
-            // Freeze on the deterministic parity frame ONLY in capture mode;
-            // the interactive scene keeps simulating.
-            if (captureMode) {
-                window.setTimeout(() => {
+            window.setTimeout(() => {
+                canvas.dataset.captureReady = "true";
+                // Freeze on the deterministic parity frame ONLY in capture mode;
+                // the interactive scene keeps simulating.
+                if (captureMode) {
                     engine.stopRenderLoop();
-                }, 0);
-            }
+                }
+            }, 0);
+        }
+    });
+
+    scene.onAfterRenderObservable.add(() => {
+        canvas.dataset.drawCalls = String(eng._drawCalls ? eng._drawCalls.current : 0);
+        if (!ready) {
+            ready = true;
+            canvas.dataset.initMs = String(performance.now() - __initStart);
+            canvas.dataset.ready = "true";
+            window.setTimeout(() => {
+                kickPending = true;
+            }, KICK_DELAY_MS);
         }
     });
 
