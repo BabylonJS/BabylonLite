@@ -100,25 +100,75 @@ mismapping. Once migration is complete you can drop the plugin and import from
 - **Not** a full Babylon.js reimplementation. Particles, GUI, WebXR, audio, decals,
   and other features absent from Babylon Lite are out of scope.
 
-## Status & migration
+## Supported APIs at a glance
 
-The per-feature support matrix and the last-synced Babylon.js commit live in
-[COMPAT-STATUS.md](./COMPAT-STATUS.md). The intended migration path is:
+A high-level view of which Babylon.js packages and feature areas the compat layer
+covers. This is a summary of the common surface; individual properties and
+overloads within a supported area may still be absent.
+
+| Status | Meaning                                                                 |
+| ------ | ----------------------------------------------------------------------- |
+| ✅      | Common surface implemented and tested where possible                    |
+| ⚡      | A practical subset works; some properties/overloads are absent or throw |
+| ❌      | Not supported on the current Lite API (throws `LiteCompatError`)        |
+
+### `@babylonjs/core`
+
+| Feature area                                                                                            | Status | Notes                                                                                                    |
+| ------------------------------------------------------------------------------------------------------- | :----: | -------------------------------------------------------------------------------------------------------- |
+| Math (`Vector*`, `Color*`, `Quaternion`, `Matrix`, `Plane`, `Ray`, `Frustum`, `Scalar`, `Axis`/`Space`) |   ✅    | `Angle` / `Curve3` / `Path3D` partial                                                                    |
+| Engine (`WebGPUEngine`, `Engine`, `ThinEngine`, `NullEngine`)                                           |   ⚡    | async startup + render loop; `beginFrame`/`endFrame` and manual `scene.render()` unsupported             |
+| Scene (clear color, cameras/lights, fog, environment, observables, ready state)                         |   ⚡    | sync `scene.pick` unsupported (use async `GPUPicker`); some scene enumeration needs Lite core            |
+| Cameras (`ArcRotateCamera`, `FreeCamera`/`Universal`/`Target`, `FollowCamera`)                          |   ✅    | XR / device-orientation / stereoscopic rigs unsupported                                                  |
+| Lights (`Hemispheric`, `Directional`, `Point`, `Spot`)                                                  |   ✅    | `RectAreaLight` / clustered lights unsupported                                                           |
+| Shadows (`ShadowGenerator` directional ESM/PCF, spot PCF)                                               |   ⚡    | `CascadedShadowGenerator` falls back to single cascade                                                   |
+| Meshes & geometry (class chain, `MeshBuilder` primitives, transforms, thin instances, `VertexData`)     |   ⚡    | `CreateLines`/`CreateDecal`/`CreateText`, `InstancedMesh`, LOD/edges/outline, clone/instance unsupported |
+| CSG / CSG2                                                                                              |   ✅    | over Lite boolean ops                                                                                    |
+| Gizmos (position/rotation/scale/bounding-box/light/camera + `GizmoManager`)                             |   ⚡    | over Lite gizmo suite                                                                                    |
+| Materials (`StandardMaterial`, `PBRMaterial`, metallic-rough / spec-gloss, `NodeMaterial`)              |   ⚡    | `ShaderMaterial` (GLSL), `MultiMaterial`, `BackgroundMaterial` unsupported                               |
+| Textures (`Texture`, `RawTexture`, `DynamicTexture`, `CubeTexture`)                                     |   ⚡    | `HDRCubeTexture` / `RenderTargetTexture` / `MirrorTexture` unsupported                                   |
+| Animation (keyframe `Animation`, easing, `Animatable`, `AnimationGroup` incl. weighted/additive blend)  |   ⚡    | CPU evaluation; loaded glTF skeletal blending supported                                                  |
+| Morph targets (`MorphTarget` / `MorphTargetManager`)                                                    |   ✅    | over Lite morph targets                                                                                  |
+| Sprites (`SpriteManager` / `Sprite`)                                                                    |   ⚡    | camera-facing billboards; `SpriteMap` / packed atlas unsupported                                         |
+| Behaviors / Actions (`AutoRotation`, `Framing`, `ActionManager`, conditions)                            |   ⚡    | `ActionManager` is manual-dispatch; drag behaviors need Lite core                                        |
+| Misc (`Observable`, `Tools`, `SmartArray`, `Tags`, gradients, `PerformanceMonitor`)                     |   ✅    |                                                                                                          |
+| Particles, post-processes, layers (glow/highlight), probes, physics, audio, WebXR                       |   ❌    | not in Babylon Lite — use native Lite `create*Task` / Havok-V2 functions                                 |
+
+### `@babylonjs/loaders`
+
+| Feature area                                                                                   | Status | Notes                                                           |
+| ---------------------------------------------------------------------------------------------- | :----: | --------------------------------------------------------------- |
+| glTF 2.0 (+ extensions), `.babylon`                                                            |   ✅    | via Lite `loadGltf` / `loadBabylon`                             |
+| `SceneLoader` (`ImportMeshAsync` / `AppendAsync` / `LoadAssetContainerAsync`), `AssetsManager` |   ⚡    | `AssetContainer` partial                                        |
+| Gaussian Splatting (`.ply` / `.splat` / `.sog` / `.spz`)                                       |   ⚡    | via `GaussianSplattingMesh`; LOD-streaming variants unsupported |
+| `OBJ` / `STL` / `FBX` / `BVH`                                                                  |   ❌    | not in Lite — convert to glTF                                   |
+
+### `@babylonjs/addons` · `@recast-navigation/*`
+
+| Feature area                                                     | Status | Notes                            |
+| ---------------------------------------------------------------- | :----: | -------------------------------- |
+| `RecastJSPlugin` (navmesh, crowd, path, raycast, off-mesh links) |   ✅    | over Lite's native Recast-V2 API |
+
+### `@babylonjs/materials`
+
+| Feature area      | Status | Notes                                                                                          |
+| ----------------- | :----: | ---------------------------------------------------------------------------------------------- |
+| Library materials |   ⚡    | mapped onto the compat material surface where a Lite equivalent exists; unsupported ones throw |
+
+> Specifiers outside the supported surface (e.g. `@babylonjs/gui`,
+> `@babylonjs/inspector`) are left untouched by the bundler plugins and resolve to
+> real Babylon.js, so unsupported APIs fail loudly instead of mis-mapping.
+
+The intended migration path is:
 
 ```
 @babylonjs/core  →  @babylonjs/lite-compat  →  babylon-lite (native)
 ```
 
-## Development
+## Missing an API you need?
 
-```sh
-# Unit tests (GPU-free): math, observables, easing, assets manager
-npx vitest run --project compat
-
-# Typecheck the whole package against the linked babylon-lite types
-npx tsc -p packages/babylon-lite-compat/tsconfig.json --noEmit
-```
-
-Maintenance is automated by the
-[`update-compat-layer`](../../.github/copilot/skills/update-compat-layer.md) skill,
-which reconciles the layer against new Babylon.js and Babylon Lite changes.
+The compat surface grows in response to real-world migration needs. If you hit a
+Babylon.js API that isn't wrapped yet (or one that throws `LiteCompatError`),
+[open an issue in the Babylon Lite repo](https://github.com/BabylonJS/Babylon-Lite/issues/new?template=compat-api-request.yml)
+and add the **`compat`** label. Describe the API and your use case — issues with
+the `compat` label feed directly into the layer's maintenance workflow.

@@ -382,6 +382,10 @@ finish until:
       every one is either wrapped or shipped as a throwing `unsupported(...)` stub.
 - [ ] **(Task 3)** Every existing `❌` / `🔧` row was re-checked against the
       _current_ Lite API this run (not assumed from the previous sync).
+- [ ] **(Task 3)** The high-level support table in
+      `packages/babylon-lite-compat/README.md` (**Supported APIs at a glance**) still
+      reflects the `COMPAT-STATUS.md` matrix — any feature area whose roll-up status
+      (`✅` / `⚡` / `❌`) changed this run is updated, and its note is still accurate.
 - [ ] **(Task 1)** `Last synced BJS commit` / `Last sync date` are updated to the
       reconciled `NEW_BJS_SHA` / today.
 - [ ] **(Task 2)** The **Lab scene coverage** section reflects reality: every scene
@@ -404,6 +408,15 @@ If any box is unchecked, the run is not done.
 3. **(Task 1)** Set `Last synced BJS commit` to `NEW_BJS_SHA` and `Last sync date`
    to today's date.
 4. If the compat package version changed, update `Lite compat package version`.
+
+Then **sync the consumer-facing README summary** (`packages/babylon-lite-compat/README.md`,
+the **Supported APIs at a glance** section): it is a per-_feature-area_ roll-up of the
+`COMPAT-STATUS.md` matrix (one `✅` / `⚡` / `❌` per area, `🔧` rolls up to the most
+user-visible of `⚡`/`❌`). If a change this run flips an area's roll-up status or makes
+its one-line note inaccurate (e.g. a previously-unsupported feature is now wrapped, or a
+newly-enumerated symbol belongs in an existing area), update that row. The README table
+is a summary, not the per-symbol source of truth — do not add a row per symbol there, and
+keep it free of links to internal docs (it ships to npm).
 
 ---
 
