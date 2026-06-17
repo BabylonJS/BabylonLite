@@ -33,6 +33,14 @@ const UNSIGNED_BYTE = 5121;
 
 const COMP_BYTES: Record<number, number> = { [UNSIGNED_BYTE]: 1, [UNSIGNED_SHORT]: 2, [UNSIGNED_INT]: 4, [FLOAT]: 4 };
 
+function createSequentialIndices(vertexCount: number): Uint16Array | Uint32Array {
+    const indices = vertexCount > 0xffff ? new U32(vertexCount) : new U16(vertexCount);
+    for (let i = 0; i < vertexCount; i++) {
+        indices[i] = i;
+    }
+    return indices;
+}
+
 /** Interleave descriptor for one attribute sourced from a strided bufferView.
  *  The raw slice is shared across attributes of the same bufferView; the
  *  pipeline uses `_stride` as arrayStride and binds at `_offset`. */
@@ -204,7 +212,7 @@ export function buildInterleavedPartial(json: any, binChunk: DataView, primitive
             : idxData._data instanceof U8
               ? Uint16Array.from(idxData._data)
               : new U16(idxData._data.buffer, idxData._data.byteOffset, idxData._count)
-        : new U16(0);
+        : createSequentialIndices(vertexCount);
 
     return {
         _positions: positions,
@@ -215,7 +223,7 @@ export function buildInterleavedPartial(json: any, binChunk: DataView, primitive
         _colors: colors,
         _indices: indices,
         _vertexCount: vertexCount,
-        _indexCount: idxData?._count ?? 0,
+        _indexCount: indices.length,
         _worldMatrix: worldMatrix,
         _vb: vb,
         _nodeIndex: nodeIdx,
