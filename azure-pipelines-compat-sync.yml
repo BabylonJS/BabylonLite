@@ -60,10 +60,11 @@ variables:
       value: "9.15.4"
     - name: CI
       value: "true"
-    # Same model + effort as the gh-aw workflow. Adjust to a model your Copilot seat
-    # exposes; an unavailable identifier makes the agent step fail.
+    # Model passed to the Copilot CLI's --model flag. Must be a bare identifier the
+    # account's Copilot seat exposes (run `copilot` then `/model` to list them). NOTE:
+    # the raw CLI does NOT accept gh-aw's `?effort=high` query suffix — use the plain id.
     - name: COPILOT_MODEL
-      value: "claude-opus-4.8?effort=high"
+      value: "claude-opus-4.8"
     # The GitHub repo the PR driver pushes the branch to and opens the PR against, plus
     # its base branch. The base defaults to the branch this pipeline run was started from
     # (the "Select pipeline version" branch in the Run UI) via Build.SourceBranchName —
