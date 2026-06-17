@@ -36,7 +36,9 @@ const TOKEN = requireEnv("GITHUB_TOKEN");
 const BASE_BRANCH = process.env.BASE_BRANCH ?? "master";
 const GIT_USER_NAME = process.env.GIT_USER_NAME ?? "Babylon.js CI";
 const GIT_USER_EMAIL = process.env.GIT_USER_EMAIL ?? "bjsplat@gmail.com";
-const ISSUE_NUMBER = process.env.ISSUE_NUMBER?.trim() || undefined;
+// Treat the ADO sentinel "none" (and "0"/empty) as "no triggering issue". ADO marks
+// string parameters as required, so manual runs pass "none" rather than an empty string.
+const ISSUE_NUMBER = normalizeIssueNumber(process.env.ISSUE_NUMBER);
 const DRY_RUN = process.env.DRY_RUN === "true";
 
 /** Labels applied to the opened PR (mirrors the gh-aw safe-output `labels`). */
@@ -203,15 +205,24 @@ function runGit(args: string[], allowFailure = false): string {
     }
 }
 
+function requireEnv(name: string): string {
+    const value = process.env[name];
+    if (!value) {
+        throw new Error(`Missing required environment variable: ${name}`);
+    }
+    return value;
+}
+
 /** Strip the auth token from any string before it can be logged. */
 function redactToken(text: string): string {
     return TOKEN ? text.split(TOKEN).join("***") : text;
 }
 
-function requireEnv(name: string): string {
-    const value = process.env[name];
-    if (!value) {
-        throw new Error(`Missing required environment variable: ${name}`);
+/** Resolve the triggering issue number, treating "none"/"0"/empty as no issue. */
+function normalizeIssueNumber(raw: string | undefined): string | undefined {
+    const value = raw?.trim();
+    if (!value || value.toLowerCase() === "none" || value === "0") {
+        return undefined;
     }
     return value;
 }

@@ -49,9 +49,9 @@ parameters:
       type: boolean
       default: false
     - name: issueNumber
-      displayName: "Triggering issue number (set by the GitHub label bridge; blank otherwise)"
+      displayName: "Triggering issue number (leave as 'none' for manual runs; set by the GitHub label bridge)"
       type: string
-      default: ""
+      default: "none"
 
 variables:
     - group: BabylonJS-Deployment
