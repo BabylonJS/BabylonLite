@@ -13,14 +13,12 @@ import {
     createPbrMaterial,
     createSceneContext,
     createSolidTexture2D,
-    getFrameGraph,
     loadEnvironment,
     loadGltf,
     onBeforeRender,
     registerScene,
     setCameraLimits,
     startEngine,
-    type RenderTask,
 } from "babylon-lite";
 import { configureDemoDecoderBases, demoAssetUrl } from "./demo-asset-url.js";
 import { installFetchProgress } from "./loading-progress.js";
@@ -46,8 +44,6 @@ async function main(): Promise<void> {
 
     const engine = await createEngine(canvas);
     const scene = createSceneContext(engine);
-    // Transmissive amber requires the frame-graph scene-texture transmission copy.
-    (getFrameGraph(scene)._tasks[0] as RenderTask)._config.transmission = { copyCount: 1 };
 
     const cam = createArcRotateCamera(CAM.alpha, CAM.beta, CAM.radius, CAM.target);
     cam.fov = CAM.fov;

@@ -23,14 +23,12 @@ import {
     createSceneContext,
     createDefaultCamera,
     createHemisphericLight,
-    getFrameGraph,
     loadGltf,
     loadEnvironment,
     onBeforeRender,
     registerScene,
     type EngineContext,
     type RenderCanvas,
-    type RenderTask,
 } from "babylon-lite";
 import { configureDemoDecoderBases, demoAssetUrl } from "./demo-asset-url.js";
 
@@ -62,11 +60,6 @@ export async function startOffscreenScene(canvas: RenderCanvas, brdfUrl: string 
 
     const engine = await createEngine(canvas);
     const scene = createSceneContext(engine);
-
-    // The latest Flight Helmet uses KHR_materials_transmission for the glass
-    // lenses; transmissive materials need the frame-graph scene-texture copy to
-    // refract what's behind them.
-    (getFrameGraph(scene)._tasks[0] as RenderTask)._config.transmission = { copyCount: 1 };
 
     // PBR model + studio environment (IBL, DDS skybox, reflective ground). All the
     // asset I/O below uses fetch + createImageBitmap, which work identically on the
