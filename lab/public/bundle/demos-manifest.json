@@ -42,5 +42,9 @@
   "platformer": {
     "rawKB": 82.2,
     "gzipKB": 29.1
+  },
+  "sandblox": {
+    "rawKB": 111.5,
+    "gzipKB": 40.3
   }
 }
