@@ -30,7 +30,7 @@ function fakeScene(): Scene {
 /** A WebGPUEngine instance with just the fields the tested getters read. */
 function fakeEngine(canvas: { width: number; height: number }, deltaMs: number): WebGPUEngine {
     const engine = Object.create(WebGPUEngine.prototype) as WebGPUEngine & { _canvas: unknown; _lastDeltaMs: number };
-    engine._canvas = canvas;
+    (engine as unknown as { _canvas: unknown })._canvas = canvas;
     engine._lastDeltaMs = deltaMs;
     return engine;
 }
