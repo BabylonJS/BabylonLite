@@ -192,8 +192,18 @@ export class StandardMaterial extends PushMaterial {
         this._markDirty();
     }
 
+    public get emissiveTexture(): BaseTexture | null {
+        return this._emissiveTexture;
+    }
+    public set emissiveTexture(texture: BaseTexture | null) {
+        this._emissiveTexture = texture;
+        this._lite.emissiveTexture = (texture?._lite as Texture2D | undefined) ?? null;
+        this._markDirty();
+    }
+
     private _diffuseTexture: BaseTexture | null = null;
     private _bumpTexture: BaseTexture | null = null;
+    private _emissiveTexture: BaseTexture | null = null;
 
     /**
      * @internal Re-bind texture maps to the Lite material. Babylon.js `Texture`s
@@ -212,6 +222,10 @@ export class StandardMaterial extends PushMaterial {
         const bump = this._bumpTexture as { _lite?: Texture2D } | null;
         if (bump?._lite) {
             this._lite.bumpTexture = bump._lite;
+        }
+        const emissive = this._emissiveTexture as { _lite?: Texture2D } | null;
+        if (emissive?._lite) {
+            this._lite.emissiveTexture = emissive._lite;
         }
         this._markDirty();
     }

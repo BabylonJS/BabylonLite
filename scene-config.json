@@ -373,7 +373,8 @@
         "maxRawKB": 51.1,
         "description": "Box with a .basis texture as diffuse+emissive. Transcoder fetched from the BJS CDN; auto-selects BC7/ASTC/ETC2/BC3/RGBA32 per device. Matches PG #4RN0VF.",
         "tags": ["std", "procedural", "basis"],
-        "skipPerf": true
+        "skipPerf": true,
+        "compatParity": true
     },
     {
         "id": 37,

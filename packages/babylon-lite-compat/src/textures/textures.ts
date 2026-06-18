@@ -8,7 +8,7 @@
  * `Texture.LoadAsync`) so the GPU handle is present when the material binds.
  */
 
-import { loadTexture2D, createTexture2DFromPixels, updateTexture2DFromPixels } from "babylon-lite";
+import { loadTexture2D, loadBasisTexture2D, createTexture2DFromPixels, updateTexture2DFromPixels } from "babylon-lite";
 import type { Texture2D } from "babylon-lite";
 
 import { unsupported } from "../error.js";
@@ -103,7 +103,15 @@ export class Texture extends BaseTexture {
         const filterOpts: { minFilter?: "nearest" | "linear"; magFilter?: "nearest" | "linear" } = nearest ? { minFilter: "nearest", magFilter: "nearest" } : {};
         const loadOpts = scene ? { invertY: this._invertY, mipMaps: !this._noMipmap, ...filterOpts } : {};
 
-        this._ready = loadTexture2D(engine, url, loadOpts).then((tex) => {
+        // Basis Universal (`.basis`) files are transcoded through Lite's dedicated
+        // `loadBasisTexture2D` (the GPU-format transcode path), not the raster
+        // `loadTexture2D`. The basis loader manages its own V-orientation
+        // (`invertY: true`, applied material-side), so the raster-only `invertY` /
+        // `mipMaps` opts are ignored there — passing the same options is harmless.
+        const isBasis = url.split(/[?#]/)[0]!.toLowerCase().endsWith(".basis");
+        const loadTex = isBasis ? loadBasisTexture2D : loadTexture2D;
+
+        this._ready = loadTex(engine, url, loadOpts).then((tex) => {
             this._lite = tex;
             if (onLoad) {
                 onLoad();
