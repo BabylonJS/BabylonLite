@@ -969,6 +969,83 @@
         "skipPerf": true
     },
     {
+        "id": 100,
+        "slug": "scene100-physics-collision",
+        "name": "Scene 100 — Physics Collision Event",
+        "maxMad": 0.5,
+        "maxRawKB": 49.5,
+        "maxGzipKB": 20,
+        "description": "Havok Physics V2 sphere drop (scene 40) plus a registered collision event: when the falling sphere hits the ground a collision event fires (console.log + canvas dataset flag). Visually identical to scene 40.",
+        "tags": ["std", "procedural", "physics"],
+        "skipPerf": true
+    },
+    {
+        "id": 101,
+        "slug": "scene101-physics-trigger",
+        "name": "Scene 101 — Physics Trigger Volume",
+        "maxMad": 0.5,
+        "maxRawKB": 54,
+        "maxGzipKB": 22,
+        "description": "Havok Physics V2 trigger volume. A sphere drops from y=4, falls through a static trigger sphere (TRIGGER_ENTERED), bounces off a perfectly elastic ground (restitution 1), and rises back through the trigger (TRIGGER_EXITED). A red, alpha-0.7 sphere visualises the trigger volume.",
+        "tags": ["std", "procedural", "physics"],
+        "skipPerf": true
+    },
+    {
+        "id": 102,
+        "slug": "scene102-physics-raycast",
+        "name": "Scene 102 — Physics Raycast Filtering",
+        "maxMad": 0.5,
+        "maxRawKB": 60,
+        "maxGzipKB": 24,
+        "description": "Havok Physics V2 filtered raycast (port of PG #PY59V9#7). Two static MESH boxes with distinct filter membership masks (1 and 2), a ground, and a ray. A raycast with collideWith=2 hits only the back box; the hit point, distance, and triangle index are logged to the console and matched between Lite and Babylon.js.",
+        "tags": ["std", "procedural", "physics"],
+        "skipPerf": true
+    },
+    {
+        "id": 103,
+        "slug": "scene103-thin-instance-raycast",
+        "name": "Scene 103 — Thin-Instance Raycast Picking",
+        "maxMad": 0.5,
+        "maxRawKB": 63,
+        "maxGzipKB": 26,
+        "description": "Havok Physics V2 thin-instanced wall + raycast instance picking (port of PG #I6AR8X). A 10×6×3 wall of thin-instanced cylinders with seeded per-instance colors. STATIC (mass 0) per-instance BOX bodies resolve WHICH instance a camera-relative raycast hits; the hit instance index is matched between Lite and Babylon.js for a fixed set of deterministic rays. A green indicator sphere marks the last hit.",
+        "tags": ["std", "procedural", "physics", "thin-instance"],
+        "skipPerf": true
+    },
+    {
+        "id": 104,
+        "slug": "scene104-character-controller",
+        "name": "Scene 104 — Physics Character Controller",
+        "maxMad": 0.05,
+        "maxRawKB": 122,
+        "maxGzipKB": 48,
+        "description": "Havok Physics V2 PhysicsCharacterController level walk (port of PG #WO0H1U#165). A glTF-loaded level (levelTest.glb) provides a static MESH collider; a collide-and-slide capsule character controller walks forward over the level for a fixed number of 1/60 physics steps while the camera follows in camera space. The level keeps its native glTF PBR materials (metallic-roughness baseColor grid textures) with a baked lightmap (lightmap.jpg) applied as a shadowmap, matching the playground: multiplied into the lit colour in linear space (gammaSpace pow 2.2) on UV2, intensity 1.6, uAng=π V-flip. Decorative static boxes are built procedurally (Standard). The character trajectory and rendered frame are matched between Lite and Babylon.js.",
+        "tags": ["pbr", "gltf", "physics", "character-controller", "lightmap"],
+        "skipPerf": true
+    },
+    {
+        "id": 105,
+        "slug": "scene105-moving-platform",
+        "name": "Scene 105 — Character Controller + Moving Platform",
+        "maxMad": 0.05,
+        "maxRawKB": 122,
+        "maxGzipKB": 48,
+        "description": "Havok Physics V2 PhysicsCharacterController level walk with a kinematic moving platform (port of PG #WO0H1U#166). Extends scene104: the glTF-loaded level (levelTest.glb) provides a static MESH collider and keeps its native PBR materials with a baked lightmap (UV2 shadowmap, intensity 1.6, uAng=π); a collide-and-slide capsule character controller walks toward a procedural 4×0.2×4 ANIMATED (kinematic) platform at (-4,-12) that rotates about Y and bobs vertically — driven count-based from the fixed 1/60 physics step so Lite and Babylon.js stay bit-deterministic. The start camera is (5,5,-5) (vs scene104's (0,5,-5)), steering the character's camera-space forward toward −x,−z. En route the character pushes a gate of dynamic boxes; the controller's onTriggerCollisionObservable reports each contact. The character trajectory, contacted-collider set + first contact, and the rendered frame are matched between Lite and Babylon.js.",
+        "tags": ["pbr", "gltf", "physics", "character-controller", "lightmap"],
+        "skipPerf": true
+    },
+    {
+        "id": 106,
+        "slug": "scene106-prestep-motion-types",
+        "name": "Scene 106 — Prestep × Motion Types",
+        "maxMad": 0.05,
+        "maxRawKB": 56,
+        "maxGzipKB": 24,
+        "description": "Havok Physics V2 prestep-type × motion-type grid (port of PG #E9R16H#1). A 2×3 grid of cells: rows are prestep type [TELEPORT, ACTION], columns are motion type [STATIC, ANIMATED, DYNAMIC]. Each cell is a 10×1×10 box platform (its motion + prestep type set per cell) with a falling cylinder (diameter 2, height 2) resting 0.5 above. Every box node is nudged each step (x += cos(t)·0.03; z += sin(t)·0.03; y = 0); the box's prestep type governs how that node motion drives Havok — TELEPORT snaps the body (HP_Body_SetQTransform), ACTION sets a velocity toward the node (HP_Body_SetTargetQTransform), dragging the resting cylinder along via friction. The animation is advanced count-based from the fixed 1/60 physics step so Lite and Babylon.js stay bit-deterministic; the MAD frame is captured early (before the freely-falling cylinders diverge between the two Havok builds). The playground's DynamicTexture text labels are intentionally omitted. The rendered frame is matched against a live Babylon.js reference.",
+        "tags": ["physics", "prestep", "motion-types", "havok"],
+        "skipPerf": true
+    },
+    {
         "id": 110,
         "slug": "scene110-rtt-override",
         "name": "Scene 110 — RTT with material override",

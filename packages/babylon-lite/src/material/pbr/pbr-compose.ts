@@ -14,6 +14,7 @@ import {
     PBR2_HAS_UV_TRANSFORM,
     PBR2_HAS_REFLECTANCE_FACTORS,
     PBR2_HAS_UV2,
+    PBR2_LIGHTMAP_UV2,
     PBR2_HAS_BASE_COLOR_FACTOR,
     PBR_HAS_METALLIC_REFLECTANCE_MAP,
     PBR_HAS_REFLECTANCE_MAP,
@@ -129,7 +130,13 @@ export function createPbrComposer(deps: PbrComposerDeps): PbrComposeFn {
 
         const _hasUvTransform = (features2 & PBR2_HAS_UV_TRANSFORM) !== 0;
         const _hasVertexColor = hasMesh(MSH_HAS_VERTEX_COLOR);
-        const _hasUv2 = (features2 & PBR2_HAS_UV2) !== 0 && hasMesh(MSH_HAS_UV2);
+        // The uv2 vertex attribute/varying is needed when EITHER occlusion samples
+        // UV2 (PBR2_HAS_UV2) OR a lightmap samples UV2 (PBR2_LIGHTMAP_UV2). But the
+        // occlusion-texture binding + sample (occlusionOverride) must only be emitted
+        // when the material actually carries occlusion-on-UV2 — otherwise a lightmap-
+        // only material would sample an unbound occlusionTexture (WGSL/binding error).
+        const _hasOcclusionUv2 = (features2 & PBR2_HAS_UV2) !== 0 && hasMesh(MSH_HAS_UV2);
+        const _hasUv2 = (features2 & (PBR2_HAS_UV2 | PBR2_LIGHTMAP_UV2)) !== 0 && hasMesh(MSH_HAS_UV2);
         const needsExt = _hasUvTransform || _hasVertexColor || _hasUv2;
         const _hasSpecularAA = has(PBR_HAS_SPECULAR_AA);
         const _ext =
@@ -138,7 +145,7 @@ export function createPbrComposer(deps: PbrComposerDeps): PbrComposeFn {
                       _hasUvTransform,
                       _hasVertexColor,
                       _hasUv2,
-                      _hasOcclusionUv2: _hasUv2,
+                      _hasOcclusionUv2,
                       _hasAnyNormal,
                       _hasEmissiveTexture,
                       _hasSpecGloss: has(PBR_HAS_SPEC_GLOSS),
