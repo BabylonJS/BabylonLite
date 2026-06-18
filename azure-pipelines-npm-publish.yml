@@ -6,6 +6,11 @@
 # Manual runs can choose patch, minor, major, or auto. Scheduled runs use auto.
 # Pushes to master that change config/release.json read the release type from
 # that file, so repeated patch releases can be requested by bumping its nonce.
+#
+# The same run also publishes @babylonjs/lite-compat under the `preview` dist-tag
+# (never `latest`) with a unique `<base>-preview.<buildId>` version, so the
+# compatibility layer is opt-in via `@babylonjs/lite-compat@preview` until it
+# graduates to a stable release line.
 
 trigger:
     branches:
@@ -120,3 +125,36 @@ stages:
                       git tag "$TAG" -m "Publish @babylonjs/lite $(PACKAGE_VERSION)"
                       git push origin "refs/tags/$TAG"
                   displayName: "Tag published npm version"
+
+                # --- @babylonjs/lite-compat (preview dist-tag) ---------------------
+                # The compatibility layer is published under the `preview` dist-tag
+                # only (never `latest`), so `npm install @babylonjs/lite-compat`
+                # resolves nothing until it graduates, while early adopters can opt in
+                # with `@babylonjs/lite-compat@preview`. Each run stamps a unique
+                # `<base>-preview.<buildId>` version and records the @babylonjs/lite
+                # version it was built against.
+
+                - script: pnpm --filter @babylonjs/lite-compat build
+                  displayName: "Build @babylonjs/lite-compat"
+
+                - script: npx tsx scripts/prepare-compat-preview-release.ts
+                  displayName: "Resolve compat preview version"
+                  env:
+                      LITE_VERSION: $(PACKAGE_VERSION)
+
+                - script: npm pack --dry-run ./packages/babylon-lite-compat/dist
+                  displayName: "Validate compat package contents"
+
+                - script: |
+                      set -euo pipefail
+
+                      if [ -z "${NPM_TOKEN:-}" ]; then
+                        echo "NPM_TOKEN must be configured as a secret pipeline variable."
+                        exit 1
+                      fi
+
+                      printf "//registry.npmjs.org/:_authToken=%s\n" "$NPM_TOKEN" > ~/.npmrc
+                      npm publish ./packages/babylon-lite-compat/dist --tag "$(PACKAGE_DIST_TAG_COMPAT)" --access public --registry https://registry.npmjs.org/
+                  displayName: "Publish compat package to npm (preview)"
+                  env:
+                      NPM_TOKEN: $(NPM_TOKEN)
