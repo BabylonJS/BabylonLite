@@ -1787,5 +1787,16 @@
         "tags": ["multi-canvas", "surface", "demo", "std"],
         "skipParity": true,
         "skipPerf": true
+    },
+    {
+        "id": 229,
+        "slug": "scene229-triangle-without-indices",
+        "name": "Scene 229 — Triangle Without Indices",
+        "maxMad": 1,
+        "maxRegionMad": 0.05,
+        "maxRawKB": 66,
+        "description": "Minimal glTF tutorial asset whose single triangle primitive omits `indices`. Verifies Lite expands non-indexed triangle primitives to identity indices before GPU upload so the existing indexed draw path remains fast and unchanged.",
+        "tags": ["pbr", "gltf", "non-indexed"],
+        "skipPerf": true
     }
 ]

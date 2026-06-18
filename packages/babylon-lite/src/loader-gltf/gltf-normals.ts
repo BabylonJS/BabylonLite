@@ -1,11 +1,21 @@
 /** glTF smooth-normal generation — dynamically imported.
  *
- *  Isolated from the core loader so scenes whose assets always provide the NORMAL
- *  attribute (the common case) never bundle or fetch this code. Loaded lazily by
- *  `load-gltf.ts` only when a primitive omits NORMAL.
+ *  Isolated from the core loader so scenes whose assets always provide NORMAL and
+ *  indices (the common case) never bundle or fetch this code. Loaded lazily by
+ *  `load-gltf.ts` only when a primitive omits NORMAL or `indices`.
  *
  *  Zero module-level side effects — safe for tree-shaking.
  */
+
+/** Build an identity index buffer for non-indexed triangle primitives.
+ *  This keeps the renderer's indexed draw path branch-free. */
+export function createSequentialIndices(vertexCount: number): Uint16Array | Uint32Array {
+    const indices = vertexCount > 0xffff ? new Uint32Array(vertexCount) : new Uint16Array(vertexCount);
+    for (let i = 0; i < vertexCount; i++) {
+        indices[i] = i;
+    }
+    return indices;
+}
 
 /** Compute smooth (area-weighted) vertex normals from positions + indices. Used when a glTF
  *  primitive omits the NORMAL attribute (the spec allows this and requires clients to generate
