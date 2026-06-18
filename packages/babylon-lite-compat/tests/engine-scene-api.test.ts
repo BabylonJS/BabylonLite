@@ -137,6 +137,22 @@ describe("Scene entity registries", () => {
         expect(scene.getMeshById("missing")).toBeNull();
     });
 
+    it("finds cameras / lights / materials / nodes by id", () => {
+        const scene = fakeScene();
+        const cam = { name: "c", id: "cam-1" } as never;
+        const light = { name: "l", id: "light-1" } as never;
+        const mat = { name: "m", id: "mat-1" } as never;
+        scene._registerCamera(cam);
+        scene._registerLight(light);
+        scene._registerMaterial(mat);
+        expect(scene.getCameraById("cam-1")).toBe(cam);
+        expect(scene.getLightById("light-1")).toBe(light);
+        expect(scene.getMaterialById("mat-1")).toBe(mat);
+        expect(scene.getNodeById("cam-1")).toBe(cam);
+        expect(scene.getNodeById("light-1")).toBe(light);
+        expect(scene.getCameraById("missing")).toBeNull();
+    });
+
     it("reports its class name and a unique id", () => {
         const a = fakeScene() as Scene & { uniqueId: number };
         const b = fakeScene() as Scene & { uniqueId: number };
