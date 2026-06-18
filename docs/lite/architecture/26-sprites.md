@@ -1158,7 +1158,7 @@ A pure-2D app skips the scene entirely. It creates a `SpriteRenderer`,
 registers it on the engine, and lets `startEngine` drive the loop:
 
 ```typescript
-import { createEngine, loadSpriteAtlas, createSprite2DLayer, addSprite2DIndex, createSpriteRenderer, registerSpriteRenderer, startEngine } from "babylon-lite";
+import { createEngine, loadSpriteAtlas, createSprite2DLayer, addSprite2DIndex, createSpriteRenderer, registerSpriteRenderer, startEngine } from "@babylonjs/lite";
 
 const engine = await createEngine(canvas);
 const atlas = await loadSpriteAtlas(engine, "sprites.png", { gridSize: [32, 32] });

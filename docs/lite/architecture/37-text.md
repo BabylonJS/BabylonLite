@@ -242,7 +242,7 @@ import {
     createDefaultTextData,
     createTextLayer,
     createTextRenderer, registerTextRenderer,
-} from "babylon-lite";
+} from "@babylonjs/lite";
 
 const canvas = document.getElementById("canvas") as HTMLCanvasElement;
 const engine = await createEngine(canvas);
