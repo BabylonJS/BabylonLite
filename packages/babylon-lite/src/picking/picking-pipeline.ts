@@ -14,7 +14,8 @@ let _pipelineSets: Map<string, PickingPipelineSet> | null = null;
 export interface PickingDiscardPipelineOptions {
     readonly key: string;
     readonly wgsl: string;
-    readonly bindGroupLayoutEntries?: readonly GPUBindGroupLayoutEntry[];
+    /** @internal */
+    readonly _bindGroupLayoutEntries?: readonly GPUBindGroupLayoutEntry[];
 }
 
 export interface PickingPipelineSet {
@@ -81,7 +82,7 @@ function getPickingTIMeshBGL(engine: EngineContext): GPUBindGroupLayout {
 function createDiscardBGL(engine: EngineContext, discard: PickingDiscardPipelineOptions): GPUBindGroupLayout {
     return engine._device.createBindGroupLayout({
         label: `picking-discard-${discard.key}-bgl`,
-        entries: [...(discard.bindGroupLayoutEntries ?? [])],
+        entries: [...(discard._bindGroupLayoutEntries ?? [])],
     });
 }
 
@@ -148,7 +149,7 @@ export function getPickingPipelineSet(engine: EngineContext, discard?: PickingDi
         return cached;
     }
 
-    const discardBGL = discard?.bindGroupLayoutEntries?.length ? createDiscardBGL(engine, discard) : null;
+    const discardBGL = discard?._bindGroupLayoutEntries?.length ? createDiscardBGL(engine, discard) : null;
     const shaderOptions = discard ? { discardWgsl: discard.wgsl } : undefined;
     const regularPipeline = createPickingPipelineInternal(engine, {
         shader: pickingShaderSource(shaderOptions),

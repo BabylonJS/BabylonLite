@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { EngineContext } from "../../../packages/babylon-lite/src/engine/engine";
+import type { Mesh } from "../../../packages/babylon-lite/src/mesh/mesh";
+import { createGpuPicker, pickAsync } from "../../../packages/babylon-lite/src/picking/gpu-picker";
 import { getPickingPipelineSet } from "../../../packages/babylon-lite/src/picking/picking-pipeline";
 import { pickingShaderSource, pickingThinInstanceShaderSource } from "../../../packages/babylon-lite/src/picking/picking-shader";
 import type { PickDiscardRule, PickOptions } from "../../../packages/babylon-lite/src";
+
+const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
 function makeEngine(): {
     engine: EngineContext;
@@ -29,17 +33,133 @@ function makeEngine(): {
         },
         createPipelineLayout(descriptor: GPUPipelineLayoutDescriptor): GPUPipelineLayout {
             this.pipelineLayouts.push(descriptor);
-            return descriptor as unknown as GPUPipelineLayout;
+            return { descriptor, bindGroupLayouts: descriptor.bindGroupLayouts } as unknown as GPUPipelineLayout;
         },
         createRenderPipeline(descriptor: GPURenderPipelineDescriptor): GPURenderPipeline {
             this.renderPipelines.push(descriptor);
-            return descriptor as unknown as GPURenderPipeline;
+            const layout = descriptor.layout as unknown as { bindGroupLayouts?: readonly GPUBindGroupLayout[] };
+            return {
+                descriptor,
+                getBindGroupLayout(index: number): GPUBindGroupLayout {
+                    return layout.bindGroupLayouts?.[index] ?? ({ label: `layout-${index}` } as unknown as GPUBindGroupLayout);
+                },
+                _bindGroupLayoutCount: layout.bindGroupLayouts?.length ?? 0,
+            } as unknown as GPURenderPipeline;
         },
     };
 
     return {
         engine: { _device: device as unknown as GPUDevice } as unknown as EngineContext,
         device,
+    };
+}
+
+function makePickerEngine(): ReturnType<typeof makeEngine> & { pass: { drawCalls: { group2Bound: boolean }[] } } {
+    const base = makeEngine();
+    const passState = {
+        drawCalls: [] as { group2Bound: boolean }[],
+        pipeline: null as (GPURenderPipeline & { _bindGroupLayoutCount?: number }) | null,
+        bindGroups: new Set<number>(),
+        setPipeline(pipeline: GPURenderPipeline) {
+            this.pipeline = pipeline;
+            this.bindGroups.clear();
+        },
+        setBindGroup(index: number) {
+            this.bindGroups.add(index);
+        },
+        setVertexBuffer() {},
+        setIndexBuffer() {},
+        drawIndexed() {
+            if ((this.pipeline?._bindGroupLayoutCount ?? 0) > 2 && !this.bindGroups.has(2)) {
+                throw new Error("No bind group set at group index 2.");
+            }
+            this.drawCalls.push({ group2Bound: this.bindGroups.has(2) });
+        },
+        end() {},
+    };
+
+    const device = base.engine._device as unknown as {
+        createTexture: (descriptor: GPUTextureDescriptor) => GPUTexture;
+        createBuffer: (descriptor: GPUBufferDescriptor) => GPUBuffer;
+        createBindGroup: (descriptor: GPUBindGroupDescriptor) => GPUBindGroup;
+        createCommandEncoder: (descriptor?: GPUCommandEncoderDescriptor) => GPUCommandEncoder;
+        queue: { writeBuffer: GPUQueue["writeBuffer"]; submit: GPUQueue["submit"] };
+    };
+    device.queue = {
+        writeBuffer() {},
+        submit() {},
+    };
+    device.createTexture = () =>
+        ({
+            createView: () => ({}),
+            destroy() {},
+        }) as unknown as GPUTexture;
+    device.createBuffer = (descriptor) => {
+        const data = new ArrayBuffer(Math.max(256, descriptor.size));
+        if (descriptor.label === "pick-color-staging") {
+            new Uint8Array(data)[2] = 1;
+        } else if (descriptor.label === "pick-depth-staging") {
+            new Float32Array(data)[0] = 0.5;
+        }
+        return {
+            destroy() {},
+            getMappedRange: () => data,
+            mapAsync: async () => undefined,
+            unmap() {},
+        } as unknown as GPUBuffer;
+    };
+    device.createBindGroup = (descriptor) => descriptor as unknown as GPUBindGroup;
+    device.createCommandEncoder = () =>
+        ({
+            beginRenderPass: () => passState,
+            copyTextureToBuffer() {},
+            finish: () => ({}),
+        }) as unknown as GPUCommandEncoder;
+
+    (globalThis as unknown as { GPUMapMode: { READ: number } }).GPUMapMode ??= { READ: 1 };
+    return { ...base, pass: passState };
+}
+
+function makePickScene(engine: EngineContext): { scene: Parameters<typeof createGpuPicker>[0]; mesh: Mesh; discardBuffer: GPUBuffer } {
+    const discardBuffer = {} as GPUBuffer;
+    const mesh = {
+        name: "pickable",
+        material: {},
+        receiveShadows: false,
+        children: [],
+        worldMatrix: IDENTITY,
+        worldMatrixVersion: 1,
+        _gpu: {
+            positionBuffer: {},
+            normalBuffer: {},
+            uvBuffer: {},
+            indexBuffer: {},
+            indexCount: 3,
+            indexFormat: "uint32",
+        },
+    } as unknown as Mesh;
+    return {
+        mesh,
+        discardBuffer,
+        scene: {
+            surface: {
+                engine,
+                canvas: { width: 64, height: 64, clientWidth: 64, clientHeight: 64 },
+            },
+            camera: {
+                fov: Math.PI / 3,
+                nearPlane: 0.1,
+                farPlane: 100,
+                children: [],
+                worldMatrix: IDENTITY,
+                worldMatrixVersion: 1,
+                _viewCache: new Float32Array(16),
+                _projCache: new Float32Array(16),
+                _vpCache: new Float32Array(16),
+            },
+            meshes: [mesh],
+            _gsMeshes: [],
+        } as unknown as Parameters<typeof createGpuPicker>[0],
     };
 }
 
@@ -80,18 +200,21 @@ return input.hasThinInstance == 1u && input.instanceExtras.x > 4.0;
 });
 
 describe("picking discard pipeline API", () => {
-    it("keeps the public discard rule WGSL-only", () => {
+    it("supports internal discard rules with optional group-2 bind entries", () => {
+        const entry: GPUBindGroupLayoutEntry = {
+            binding: 0,
+            visibility: GPUShaderStage.FRAGMENT,
+            buffer: { type: "read-only-storage" },
+        };
         const discard: PickDiscardRule = {
-            key: "public-wgsl-only",
+            key: "public-bindings",
             wgsl: "fn shouldDiscardPick(input: PickDiscardInput) -> bool { return input.pickId == 1u; }",
+            _bindGroupLayoutEntries: [entry],
+            _bindGroupEntries: () => [{ binding: 0, resource: { buffer: {} as GPUBuffer } }],
         };
         const options: PickOptions = { discard };
 
-        // @ts-expect-error PickDiscardRule intentionally does not expose raw WebGPU bind-group layout entries.
-        const invalidPublicDiscardRule: PickDiscardRule = { key: "raw-webgpu", wgsl: discard.wgsl, bindGroupLayoutEntries: [] };
-
         expect(options.discard).toBe(discard);
-        void invalidPublicDiscardRule;
     });
 
     it("caches the default regular/thin pipeline set per device", () => {
@@ -117,7 +240,7 @@ describe("picking discard pipeline API", () => {
         const discard = {
             key: "clip-volume",
             wgsl: "fn shouldDiscardPick(input: PickDiscardInput) -> bool { return input.pickId == 7u; }",
-            bindGroupLayoutEntries: [entry],
+            _bindGroupLayoutEntries: [entry],
         };
 
         const set = getPickingPipelineSet(engine, discard);
@@ -130,6 +253,30 @@ describe("picking discard pipeline API", () => {
         expect(device.renderPipelines).toHaveLength(2);
         expect(device.shaderModules.every((module) => String(module.code).includes(discard.wgsl))).toBe(true);
         expect(device.pipelineLayouts.every((layout) => Array.from(layout.bindGroupLayouts).length === 3)).toBe(true);
+    });
+
+    it("binds discard group-2 resources before drawing a discard pipeline", async () => {
+        const { engine, pass } = makePickerEngine();
+        const { scene, mesh, discardBuffer } = makePickScene(engine);
+        const picker = createGpuPicker(scene);
+        const entry: GPUBindGroupLayoutEntry = {
+            binding: 0,
+            visibility: GPUShaderStage.FRAGMENT,
+            buffer: { type: "read-only-storage" },
+        };
+        const discard: PickDiscardRule = {
+            key: "storage-discard",
+            _bindGroupLayoutEntries: [entry],
+            wgsl: `
+@group(2) @binding(0) var<storage, read> data: array<vec4f>;
+fn shouldDiscardPick(input: PickDiscardInput) -> bool { return data[0].x > 1.0 && input.pickId == 0u; }`,
+            _bindGroupEntries: (m) => (m === mesh ? [{ binding: 0, resource: { buffer: discardBuffer } }] : null),
+        };
+
+        const info = await pickAsync(picker, 4, 4, { discard });
+
+        expect(info.hit).toBe(true);
+        expect(pass.drawCalls).toEqual([{ group2Bound: true }]);
     });
 
     it("invalidates cached pipeline sets when the WebGPU device changes", () => {

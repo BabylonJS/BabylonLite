@@ -142,7 +142,7 @@ export interface PickOptions {
 }
 
 /**
- * Optional WGSL-only discard rule for {@link pickAsync}.
+ * Optional WGSL discard rule for {@link pickAsync}.
  *
  * This lets apps remove pick hits with custom WGSL while keeping the main scene
  * render untouched. The WGSL must define
@@ -153,6 +153,22 @@ export interface PickDiscardRule {
     readonly key: string;
     /** WGSL source that defines `shouldDiscardPick(input: PickDiscardInput) -> bool`. */
     readonly wgsl: string;
+    /** @internal Optional group-2 bind group layout entries consumed by the discard WGSL. */
+    readonly _bindGroupLayoutEntries?: readonly GPUBindGroupLayoutEntry[];
+    /** @internal Optional per-mesh group-2 entries. Return `null` to use the default non-discard picker for that mesh. */
+    readonly _bindGroupEntries?: (mesh: Mesh) => readonly GPUBindGroupEntry[] | null;
+}
+
+function createPickDiscardBindGroup(device: GPUDevice, layout: GPUBindGroupLayout, discard: PickDiscardRule, mesh: Mesh): GPUBindGroup | null {
+    const entries = discard._bindGroupEntries?.(mesh);
+    if (entries === undefined || entries === null) {
+        return null;
+    }
+    return device.createBindGroup({
+        label: `pick-discard-${discard.key}-bg`,
+        layout,
+        entries: [...entries],
+    });
 }
 
 /** Pick the mesh at CSS-space canvas coordinates, matching Babylon.js Scene.pick. Returns a PickingInfo. */
@@ -244,7 +260,8 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number, options
         }
         const gpu = mesh._gpu;
         const ti = mesh.thinInstances;
-        const pipelines = discardPipelines ?? defaultPipelines;
+        const discardBG = pickDiscard && discardPipelines?.discardBGL ? createPickDiscardBindGroup(device, discardPipelines.discardBGL, pickDiscard, mesh) : null;
+        const pipelines = discardPipelines && (!discardPipelines.discardBGL || discardBG) ? discardPipelines : defaultPipelines;
 
         if (ti) {
             if (ti.count <= 0 || !ti._gpuBuffer) {
@@ -266,6 +283,9 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number, options
                     ],
                 })
             );
+            if (discardBG) {
+                pass.setBindGroup(2, discardBG);
+            }
             pass.setVertexBuffer(0, gpu.positionBuffer);
             pass.setIndexBuffer(gpu.indexBuffer, gpu.indexFormat);
             pass.drawIndexed(gpu.indexCount, ti.count);
@@ -293,6 +313,9 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number, options
                     entries: [{ binding: 0, resource: { buffer: meshUbo } }],
                 })
             );
+            if (discardBG) {
+                pass.setBindGroup(2, discardBG);
+            }
             pass.setVertexBuffer(0, positionBuffer);
             pass.setIndexBuffer(gpu.indexBuffer, gpu.indexFormat);
             pass.drawIndexed(gpu.indexCount);
