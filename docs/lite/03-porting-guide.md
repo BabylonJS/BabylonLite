@@ -285,7 +285,7 @@ Babylon Lite supports animating material properties at runtime (e.g. changing co
 Mutate the property, then call `markMaterialUboDirty()`:
 
 ```typescript
-import { markMaterialUboDirty } from "babylon-lite";
+import { markMaterialUboDirty } from "@babylonjs/lite";
 
 onBeforeRender(scene, () => {
     material.alpha = Math.sin(time) * 0.5 + 0.5;
@@ -300,7 +300,7 @@ This works for both PBR and Standard materials. Zero runtime cost when nothing c
 Call `enableMaterialTracking()` once on a material to install property setters that auto-detect changes — including in-place array mutations like `material.diffuseColor[0] = 0.5`:
 
 ```typescript
-import { enableMaterialTracking } from "babylon-lite";
+import { enableMaterialTracking } from "@babylonjs/lite";
 
 const mat = createPbrMaterial({ anisotropy: { isEnabled: true, intensity: 1.0 } });
 enableMaterialTracking(mat);

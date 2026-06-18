@@ -49,6 +49,7 @@ export {
     GamepadCamera,
     FlyCamera,
     FollowCamera,
+    GeospatialCamera,
     DeviceOrientationCamera,
     WebXRCamera,
     AnaglyphArcRotateCamera,
@@ -61,6 +62,7 @@ export { Light, HemisphericLight, DirectionalLight, PointLight, SpotLight } from
 export { Mesh, AbstractMesh, TransformNode, GroundMesh, InstancedMesh, VertexData, VertexBuffer, MeshBuilder } from "./meshes/meshes.js";
 export { CreateBox, CreateSphere, CreateGround, CreatePlane, CreateCylinder, CreateTorus, CreateDisc } from "./meshes/meshes.js";
 export { CSG, CSG2, InitializeCSG2Async } from "./meshes/csg.js";
+export { MeshoptCompression } from "./meshes/compression.js";
 export { MorphTarget, MorphTargetManager } from "./morph/morph.js";
 export { GaussianSplattingMesh } from "./meshes/gaussian-splatting.js";
 
@@ -84,6 +86,7 @@ export { BaseTexture, Texture, RawTexture, DynamicTexture, CubeTexture, HDRCubeT
 // ─── Loading ─────────────────────────────────────────────────────────
 export { SceneLoader, AssetContainer, ImportMeshAsync, AppendSceneAsync, LoadAssetContainerAsync } from "./loading/scene-loader.js";
 export { AssetsManager, AbstractAssetTask, CustomAssetTask } from "./loading/assets-manager.js";
+export { KHR_materials_variants } from "./loading/material-variants.js";
 
 // ─── Picking ─────────────────────────────────────────────────────────
 export { GPUPicker } from "./picking/gpu-picker.js";

@@ -119,7 +119,7 @@ overloads within a supported area may still be absent.
 | Math (`Vector*`, `Color*`, `Quaternion`, `Matrix`, `Plane`, `Ray`, `Frustum`, `Scalar`, `Axis`/`Space`) |   ✅    | `Angle` / `Curve3` / `Path3D` partial                                                                    |
 | Engine (`WebGPUEngine`, `Engine`, `ThinEngine`, `NullEngine`)                                           |   ⚡    | async startup + render loop; `beginFrame`/`endFrame` and manual `scene.render()` unsupported             |
 | Scene (clear color, cameras/lights, fog, environment, observables, ready state)                         |   ⚡    | sync `scene.pick` unsupported (use async `GPUPicker`); some scene enumeration needs Lite core            |
-| Cameras (`ArcRotateCamera`, `FreeCamera`/`Universal`/`Target`, `FollowCamera`)                          |   ✅    | XR / device-orientation / stereoscopic rigs unsupported                                                  |
+| Cameras (`ArcRotateCamera`, `FreeCamera`/`Universal`/`Target`, `FollowCamera`, `GeospatialCamera`)      |   ✅    | XR / device-orientation / stereoscopic rigs unsupported                                                  |
 | Lights (`Hemispheric`, `Directional`, `Point`, `Spot`)                                                  |   ✅    | `RectAreaLight` / clustered lights unsupported                                                           |
 | Shadows (`ShadowGenerator` directional ESM/PCF, spot PCF)                                               |   ⚡    | `CascadedShadowGenerator` falls back to single cascade                                                   |
 | Meshes & geometry (class chain, `MeshBuilder` primitives, transforms, thin instances, `VertexData`)     |   ⚡    | `CreateLines`/`CreateDecal`/`CreateText`, `InstancedMesh`, LOD/edges/outline, clone/instance unsupported |
@@ -147,7 +147,7 @@ overloads within a supported area may still be absent.
 
 | Feature area                                                     | Status | Notes                            |
 | ---------------------------------------------------------------- | :----: | -------------------------------- |
-| `RecastJSPlugin` (navmesh, crowd, path, raycast, off-mesh links) |   ✅    | over Lite's native Recast-V2 API |
+| `RecastJSPlugin` (navmesh, crowd, path, raycast, off-mesh links, tile-cache obstacles) |   ✅    | over Lite's native Recast-V2 API |
 
 ### `@babylonjs/materials`
 

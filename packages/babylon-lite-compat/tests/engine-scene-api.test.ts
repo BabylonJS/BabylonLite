@@ -56,6 +56,32 @@ describe("WebGPUEngine scalar getters", () => {
         // A zero delta (before the first frame) falls back to 60.
         expect(fakeEngine({ width: 1, height: 1 }, 0).getFps()).toBe(60);
     });
+
+    it("derives compressed-texture caps from the WebGPU device features", () => {
+        const engine = fakeEngine({ width: 1, height: 1 }, 16) as WebGPUEngine & { _lite: unknown };
+        (engine as unknown as { _lite: unknown })._lite = { _device: { features: new Set(["texture-compression-bc", "texture-compression-etc2"]) } };
+        const caps = engine.getCaps();
+        expect(caps.s3tc).toBe(true);
+        expect(caps.bc7).toBe(true);
+        expect(caps.astc).toBe(false);
+        expect(caps.etc2).toBe(true);
+        // ETC1 has no WebGPU feature flag — never reported as available, even when
+        // ETC2 (which can decode ETC1 content) is present.
+        expect(caps.etc1).toBe(false);
+        // WebGPU baseline flags are always reported.
+        expect(caps.textureFloat).toBe(true);
+        expect(caps.uintIndices).toBe(true);
+    });
+
+    it("reports all compressed caps off when there is no device (NullEngine)", () => {
+        const engine = fakeEngine({ width: 1, height: 1 }, 16) as WebGPUEngine & { _lite: unknown };
+        (engine as unknown as { _lite: unknown })._lite = {};
+        const caps = engine.getCaps();
+        expect(caps.s3tc).toBe(false);
+        expect(caps.astc).toBe(false);
+        expect(caps.etc2).toBe(false);
+        expect(caps.etc1).toBe(false);
+    });
 });
 
 describe("Scene entity registries", () => {
@@ -104,6 +130,31 @@ describe("Scene entity registries", () => {
         expect(scene.getMeshByName("box")).toBe(mesh);
         expect(scene.getMeshByName("missing")).toBeNull();
         expect(scene.getNodeByName("box")).toBe(mesh);
+    });
+
+    it("finds tracked meshes by id via getMeshById / getMeshByID (legacy alias)", () => {
+        const scene = fakeScene();
+        const mesh = { name: "dragon", id: "dragonLR" } as never;
+        (scene as unknown as { _trackedMeshes: unknown[] })._trackedMeshes.push(mesh);
+        expect(scene.getMeshById("dragonLR")).toBe(mesh);
+        expect(scene.getMeshByID("dragonLR")).toBe(mesh);
+        expect(scene.getMeshById("missing")).toBeNull();
+    });
+
+    it("finds cameras / lights / materials / nodes by id", () => {
+        const scene = fakeScene();
+        const cam = { name: "c", id: "cam-1" } as never;
+        const light = { name: "l", id: "light-1" } as never;
+        const mat = { name: "m", id: "mat-1" } as never;
+        scene._registerCamera(cam);
+        scene._registerLight(light);
+        scene._registerMaterial(mat);
+        expect(scene.getCameraById("cam-1")).toBe(cam);
+        expect(scene.getLightById("light-1")).toBe(light);
+        expect(scene.getMaterialById("mat-1")).toBe(mat);
+        expect(scene.getNodeById("cam-1")).toBe(cam);
+        expect(scene.getNodeById("light-1")).toBe(light);
+        expect(scene.getCameraById("missing")).toBeNull();
     });
 
     it("reports its class name and a unique id", () => {

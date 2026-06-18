@@ -327,6 +327,14 @@ export {
     setThinInstanceColor,
     enableThinInstanceGpuCulling,
 } from "./mesh/thin-instance.js";
+export {
+    addHierarchyInstance,
+    createHierarchyInstancePool,
+    removeHierarchyInstance,
+    setHierarchyInstanceCount,
+    setHierarchyInstanceMatrix,
+} from "./mesh/hierarchy-instance-pool.js";
+export type { HierarchyInstancePool } from "./mesh/hierarchy-instance-pool.js";
 export type { ThinInstanceData } from "./mesh/thin-instance.js";
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -408,7 +416,7 @@ export { CAP_NONE, CAP_START, CAP_END, CAP_ALL } from "./mesh/create-tube.js";
 
 // ─── Picking ─────────────────────────────────────────────────────────
 export { createGpuPicker, pickAsync, disposePicker } from "./picking/gpu-picker.js";
-export type { GpuPicker, PickOptions } from "./picking/gpu-picker.js";
+export type { GpuPicker, PickDiscardRule, PickOptions } from "./picking/gpu-picker.js";
 export type { PickingInfo } from "./picking/picking-info.js";
 export { enableDetailedPicking } from "./picking/detailed-picking.js";
 export { getPickedNormal, getPickedUV } from "./picking/picking-helpers.js";

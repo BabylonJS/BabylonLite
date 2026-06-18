@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from "vite";
 import { resolve } from "path";
 import { writeFileSync } from "fs";
 import dts from "vite-plugin-dts";
+import { trimInternalDts } from "../../scripts/vite-trim-internal-dts";
 
 /**
  * The package's public entry points. Each becomes a standalone ESM file in
@@ -22,24 +23,30 @@ const ENTRIES = {
 } as const;
 
 /**
- * `types` entry-point for each export subpath. vite-plugin-dts mirrors the `src`
- * tree into `dist/`, so the declaration paths follow the original filenames
- * (e.g. `navigation/navigation.ts` → `navigation/navigation.d.ts`) rather than
- * the bundled basenames.
+ * `types` entry-point for each export subpath. With `rollupTypes` on, api-extractor
+ * rolls each entry up into a single declaration whose basename matches the entry
+ * key (the same flattened basename Vite uses for the `.js` output), so every entry
+ * lands at the top level of `dist/` (e.g. `navigation` → `./navigation.d.ts`),
+ * not under a mirrored `src` subpath.
  */
-const TYPES_PATH: Record<keyof typeof ENTRIES, string> = {
-    index: "./index.d.ts",
-    vite: "./vite.d.ts",
-    rollup: "./rollup.d.ts",
-    webpack: "./webpack.d.ts",
-    esbuild: "./esbuild.d.ts",
-    navigation: "./navigation/navigation.d.ts",
-    "recast-shim": "./navigation/recast-shim.d.ts",
-};
+const TYPES_PATH: Record<keyof typeof ENTRIES, string> = Object.fromEntries((Object.keys(ENTRIES) as (keyof typeof ENTRIES)[]).map((name) => [name, `./${name}.d.ts`])) as Record<
+    keyof typeof ENTRIES,
+    string
+>;
 
 /** Map an entry key to its public export subpath (`index` → `.`). */
 function exportKey(name: keyof typeof ENTRIES): string {
     return name === "index" ? "." : `./${name}`;
+}
+
+/**
+ * Rewrite the workspace import specifier `babylon-lite` (and any subpath) to the
+ * published peer name `@babylonjs/lite` in a rolled-up declaration file, mirroring
+ * the JS bundle's `rollupOptions.output.paths` rewrite so the emitted types
+ * reference the package npm consumers actually install.
+ */
+function rewriteLiteSpecifier(content: string): string {
+    return content.replace(/(['"])babylon-lite(\/[^'"]*)?\1/g, "$1@babylonjs/lite$2$1");
 }
 
 /** Emit a publish-ready `package.json` into the build output directory. */
@@ -107,11 +114,28 @@ export default defineConfig(({ mode }) => {
         },
         plugins: [
             dts({
-                rollupTypes: false,
+                rollupTypes: !isWatch,
                 tsconfigPath: resolve(__dirname, "tsconfig.json"),
                 outDir,
             }),
-            ...(isWatch ? [] : [emitPackageJson(outDir)]),
+            // In watch mode vite-plugin-dts mirrors the src tree (no rollup), so the
+            // api-extractor trim pass is skipped; published builds roll up + trim every
+            // entry. `@internal` may sit on members that can't be underscore-prefixed
+            // (the internal camera constructor overloads), so allow that here; the peer
+            // `babylon-lite` publishes types from `.ts`, so silence that warning too.
+            ...(isWatch
+                ? []
+                : [
+                      trimInternalDts({
+                          outDir,
+                          projectFolder: __dirname,
+                          entries: Object.values(TYPES_PATH),
+                          internalMissingUnderscore: "off",
+                          silenceWrongInputFileType: true,
+                          transform: rewriteLiteSpecifier,
+                      }),
+                      emitPackageJson(outDir),
+                  ]),
         ],
     };
 });

@@ -751,8 +751,8 @@
     ]
   },
   "scene49": {
-    "rawKB": 92.1,
-    "gzipKB": 34.7,
+    "rawKB": 91.6,
+    "gzipKB": 34.5,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene49-standard-renderable-fZrqg-Lt.js",
@@ -1780,8 +1780,8 @@
     ]
   },
   "scene113": {
-    "rawKB": 62.6,
-    "gzipKB": 24.1,
+    "rawKB": 62.1,
+    "gzipKB": 23.9,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene113-standard-renderable-CKqnKIKi.js",
@@ -1790,8 +1790,8 @@
     ]
   },
   "scene114": {
-    "rawKB": 80.3,
-    "gzipKB": 31,
+    "rawKB": 79.8,
+    "gzipKB": 30.8,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene114-morph-fragment-Dk2lIIy7.js",
@@ -1804,8 +1804,8 @@
     ]
   },
   "scene115": {
-    "rawKB": 122.5,
-    "gzipKB": 49.8,
+    "rawKB": 122,
+    "gzipKB": 49.5,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene115-create-morph-targets-CCGnsqwn.js",
@@ -1922,8 +1922,8 @@
     ]
   },
   "scene129": {
-    "rawKB": 82.3,
-    "gzipKB": 31.3,
+    "rawKB": 81.8,
+    "gzipKB": 31.1,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene129-gs-picking-pipeline-wk9cVMav.js",
@@ -2791,8 +2791,8 @@
     ]
   },
   "scene221": {
-    "rawKB": 99.3,
-    "gzipKB": 37.6,
+    "rawKB": 98.8,
+    "gzipKB": 37.4,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene221-shader-renderable-I1dhLWNY.js",
@@ -2804,13 +2804,13 @@
     ]
   },
   "scene222": {
-    "rawKB": 109.3,
-    "gzipKB": 40.4,
+    "rawKB": 109.8,
+    "gzipKB": 40.5,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene222-gpu-pool-CHlSfwGp.js",
-      "scene222-shader-renderable-_Dh3iPUm.js",
-      "scene222-standard-renderable-Dh2Lj411.js",
+      "scene222-shader-renderable-DUVmkmRL.js",
+      "scene222-standard-renderable-ByTmRjD5.js",
       "scene222-swapchain-overlay-ilhN4El_.js",
       "scene222-ubo-layout-Cs5YvLYZ.js",
       "scene222-wgsl-helpers-CwHFFXvt.js",
@@ -2829,8 +2829,8 @@
     ]
   },
   "scene224": {
-    "rawKB": 81.3,
-    "gzipKB": 30.3,
+    "rawKB": 80.8,
+    "gzipKB": 30.1,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene224-standard-renderable-BBrgm_Ga.js",
