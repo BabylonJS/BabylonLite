@@ -373,7 +373,9 @@ export class Scene extends AbstractScene {
         return new Color4(c.r, c.g, c.b, c.a ?? 1);
     }
     public set clearColor(value: Color4) {
-        this._lite.clearColor = { r: value.r, g: value.g, b: value.b, a: value.a };
+        // Babylon.js accepts a `Color3` here (alpha defaults to 1). A `Color3` has no
+        // `a`, which would otherwise reach WebGPU's render pass as `undefined`.
+        this._lite.clearColor = { r: value.r, g: value.g, b: value.b, a: value.a ?? 1 };
     }
 
     public get activeCamera(): Camera | null {
