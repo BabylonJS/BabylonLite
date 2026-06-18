@@ -285,12 +285,30 @@ export type { VatBakeResult, VatClip, VatHandle } from "./vat/vat-baker.js";
 
 // ─── Math ────────────────────────────────────────────────────────────
 export { normalizeVec3 } from "./math/normalize-vec3.js";
+export { normalizeVec3 as normalizeVec3Object } from "./math/normalize-vec3-object.js";
+export { vec3 } from "./math/vec3-ctor.js";
+export { Vec3Up } from "./math/vec3-up.js";
+export { addVec3 } from "./math/add-vec3.js";
+export { subVec3 } from "./math/sub-vec3.js";
+export { scaleVec3 } from "./math/scale-vec3.js";
+export { dotVec3 } from "./math/dot-vec3.js";
+export { crossVec3 } from "./math/cross-vec3.js";
+export { lengthVec3 } from "./math/length-vec3.js";
+export { negateVec3 } from "./math/negate-vec3.js";
+export { lerpVec3 } from "./math/lerp-vec3.js";
+export { writeVec3 } from "./math/write-vec3.js";
 export { mat4Translation } from "./math/mat4-translation.js";
 export { mat4Identity } from "./math/mat4-identity.js";
 export { mat4Scale } from "./math/mat4-scale.js";
 export { mat4Compose } from "./math/mat4-compose.js";
 export { mat4Invert } from "./math/mat4-invert.js";
-export type { Vec3, Vec3Tuple, Mat4 } from "./math/types.js";
+export { mat4Multiply } from "./math/mat4-multiply.js";
+export { mat4LookAtLH } from "./math/mat4-look-at-lh.js";
+export { mat4PerspectiveLH } from "./math/mat4-perspective-lh.js";
+export { mat4FromQuat } from "./math/mat4-from-quat.js";
+export type { Vec3, Vec3Tuple, Vec4, Color3, Color4, Mat4, Quat } from "./math/types.js";
+export type { Aabb } from "./math/aabb.js";
+export { computeAabb } from "./math/aabb.js";
 
 // ─── Color ───────────────────────────────────────────────────────────
 export { linearToSrgbByte, srgbByteToLinear, packedSrgbToLinearRgba } from "./math/color.js";

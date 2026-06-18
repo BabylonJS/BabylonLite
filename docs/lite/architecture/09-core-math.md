@@ -51,7 +51,7 @@ export interface Mat4 {
 }
 
 /** @internal Writable backing for Mat4 used by kernels and the GPU packer.
- *  Raw typed-array union (no brand). Not re-exported from `index.ts`. */
+ *  Raw typed-array union (no brand). Not re-exported from the public root API. */
 export type Mat4Storage = Float32Array | Float64Array;
 
 /** Quaternion rotation */
@@ -69,9 +69,7 @@ export interface Quat {
 // --- Constructors ---
 export function vec3(x: number, y: number, z: number): Vec3;
 
-export const Vec3Zero: Readonly<Vec3>;     // { x: 0, y: 0, z: 0 }
-export const Vec3Up: Readonly<Vec3>;       // { x: 0, y: 1, z: 0 }
-export const Vec3Forward: Readonly<Vec3>;  // { x: 0, y: 0, z: 1 }
+export const Vec3Up: Readonly<Vec3>; // { x: 0, y: 1, z: 0 }
 
 // --- Arithmetic (all return new objects — no mutation) ---
 export function addVec3(a: Vec3, b: Vec3): Vec3;
@@ -81,6 +79,7 @@ export function dotVec3(a: Vec3, b: Vec3): number;
 export function crossVec3(a: Vec3, b: Vec3): Vec3;
 export function lengthVec3(v: Vec3): number;
 export function normalizeVec3(v: Vec3): Vec3;
+export function normalizeVec3Tuple(x: number, y: number, z: number, epsilon?: number): Vec3Tuple;
 export function negateVec3(v: Vec3): Vec3;
 export function lerpVec3(a: Vec3, b: Vec3, t: number): Vec3;
 
@@ -126,9 +125,19 @@ export function mat4Compose(
 ): Mat4;
 ```
 
+### Color Functions (`color.ts`)
+
+```typescript
+export function linearToSrgbByte(v: number): number;
+export function srgbByteToLinear(b: number): number;
+export function packedSrgbToLinearRgba(packed: number, alpha?: number): readonly [number, number, number, number];
+```
+
 ### Barrel Export (`index.ts`)
 
-Re-exports all types and functions from `types.ts`, `vec3.ts`, and `mat4.ts`.
+The internal math barrel (`math/index.ts`) re-exports every non-underscore math module surface, including internal helpers such as `Mat4Storage`, `mat4PerspectiveLHToRef`, `packMat4IntoF32`, and `shToPolynomial`.
+The public root API exports the public-safe subset: vector/matrix constructors and operations, AABB helpers, color conversion helpers, and the public math types.
+The object-based normalizer remains `normalizeVec3` in the math barrel. The public root keeps its existing tuple-based `normalizeVec3(x, y, z)` export and also exposes the object-based form as `normalizeVec3Object(v)`.
 
 ## Internal Architecture
 
