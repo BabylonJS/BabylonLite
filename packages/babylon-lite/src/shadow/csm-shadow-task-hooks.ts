@@ -454,6 +454,25 @@ function _castersWorldAabb(casterMeshes: readonly Mesh[]): { _min: [number, numb
         maxY = -Infinity,
         maxZ = -Infinity;
     for (const mesh of casterMeshes) {
+        // Thin-instanced casters render via their per-instance matrices (world0..world3), NOT
+        // `mesh.worldMatrix` — which can be stale/off-world for baked or skinned prototypes (e.g. a
+        // recentred Sketchfab rig whose loader transform lingers in mesh.world). Bounding such a caster
+        // by `mesh.worldMatrix × boundMin/Max` yields a wildly wrong AABB that wrecks the cascade Z-fit
+        // (one off-world chicken collapsed every shadow). Derive the AABB from the instance matrices so
+        // it matches what's actually drawn.
+        const ti = mesh.thinInstances;
+        if (ti && ti.count > 0 && ti.matrices) {
+            const a = _thinInstanceWorldAabb(mesh, ti);
+            if (a) {
+                minX = Math.min(minX, a._min[0]);
+                maxX = Math.max(maxX, a._max[0]);
+                minY = Math.min(minY, a._min[1]);
+                maxY = Math.max(maxY, a._max[1]);
+                minZ = Math.min(minZ, a._min[2]);
+                maxZ = Math.max(maxZ, a._max[2]);
+            }
+            continue;
+        }
         const world = mesh.worldMatrix;
         const bmin = mesh.boundMin ?? [-0.5, -0.5, -0.5];
         const bmax = mesh.boundMax ?? [0.5, 0.5, 0.5];
@@ -476,6 +495,89 @@ function _castersWorldAabb(casterMeshes: readonly Mesh[]): { _min: [number, numb
         return null;
     }
     return { _min: [minX, minY, minZ], _max: [maxX, maxY, maxZ] };
+}
+
+interface ThinCasterAabb {
+    _min: [number, number, number];
+    _max: [number, number, number];
+}
+
+/** Per-mesh cache of a thin-instanced caster's world AABB, keyed on the instance-matrix version so
+ *  the per-instance scan runs only when the matrices change (a rebake), not every frame. Lazily
+ *  allocated so this module keeps zero import-time side effects and stays tree-shakable. */
+let _thinCasterAabbCache: WeakMap<Mesh, { _version: number; _aabb: ThinCasterAabb | null }> | null = null;
+function _getThinCasterAabbCache(): WeakMap<Mesh, { _version: number; _aabb: ThinCasterAabb | null }> {
+    if (!_thinCasterAabbCache) {
+        _thinCasterAabbCache = new WeakMap();
+    }
+    return _thinCasterAabbCache;
+}
+
+/** World AABB of a thin-instanced caster, built from its instance matrices × local geometry bounds.
+ *  Parked/degenerate instances (zero linear part — drawn as zero-area, used to hide an unused tail)
+ *  are skipped so a tail parked far off-world can't balloon the box. */
+function _thinInstanceWorldAabb(mesh: Mesh, ti: NonNullable<Mesh["thinInstances"]>): ThinCasterAabb | null {
+    const cache = _getThinCasterAabbCache();
+    const cached = cache.get(mesh);
+    if (cached && cached._version === ti._version) {
+        return cached._aabb;
+    }
+    const bmin = mesh.boundMin ?? [-0.5, -0.5, -0.5];
+    const bmax = mesh.boundMax ?? [0.5, 0.5, 0.5];
+    const mats = ti.matrices;
+    const count = Math.min(ti.count, (mats.length / 16) | 0);
+    let minX = Infinity,
+        minY = Infinity,
+        minZ = Infinity,
+        maxX = -Infinity,
+        maxY = -Infinity,
+        maxZ = -Infinity;
+    for (let i = 0; i < count; i++) {
+        const o = i * 16;
+        // Skip parked instances (zero 3×3 linear part → zero-area triangles that rasterize to nothing).
+        const lin =
+            Math.abs(mats[o]!) +
+            Math.abs(mats[o + 1]!) +
+            Math.abs(mats[o + 2]!) +
+            Math.abs(mats[o + 4]!) +
+            Math.abs(mats[o + 5]!) +
+            Math.abs(mats[o + 6]!) +
+            Math.abs(mats[o + 8]!) +
+            Math.abs(mats[o + 9]!) +
+            Math.abs(mats[o + 10]!);
+        if (lin < 1e-9) {
+            continue;
+        }
+        for (let k = 0; k < 8; k++) {
+            const lx = k & 1 ? bmax[0]! : bmin[0]!;
+            const ly = k & 2 ? bmax[1]! : bmin[1]!;
+            const lz = k & 4 ? bmax[2]! : bmin[2]!;
+            const wx = mats[o]! * lx + mats[o + 4]! * ly + mats[o + 8]! * lz + mats[o + 12]!;
+            const wy = mats[o + 1]! * lx + mats[o + 5]! * ly + mats[o + 9]! * lz + mats[o + 13]!;
+            const wz = mats[o + 2]! * lx + mats[o + 6]! * ly + mats[o + 10]! * lz + mats[o + 14]!;
+            if (wx < minX) {
+                minX = wx;
+            }
+            if (wx > maxX) {
+                maxX = wx;
+            }
+            if (wy < minY) {
+                minY = wy;
+            }
+            if (wy > maxY) {
+                maxY = wy;
+            }
+            if (wz < minZ) {
+                minZ = wz;
+            }
+            if (wz > maxZ) {
+                maxZ = wz;
+            }
+        }
+    }
+    const aabb: ThinCasterAabb | null = Number.isFinite(minX) ? { _min: [minX, minY, minZ], _max: [maxX, maxY, maxZ] } : null;
+    cache.set(mesh, { _version: ti._version, _aabb: aabb });
+    return aabb;
 }
 
 function _writeCsmUbo(out: Float32Array, cascades: CsmCascades, cfg: CsmConfig): void {
