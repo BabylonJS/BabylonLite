@@ -9,7 +9,7 @@ let _cachedDevice: GPUDevice | null = null;
 let _sceneBGL: GPUBindGroupLayout | null = null;
 let _meshBGL: GPUBindGroupLayout | null = null;
 let _tiMeshBGL: GPUBindGroupLayout | null = null;
-let _pipelineSets = new Map<string, PickingPipelineSet>();
+let _pipelineSets: Map<string, PickingPipelineSet> | null = null;
 
 export interface PickingDiscardPipelineOptions {
     readonly key: string;
@@ -29,7 +29,7 @@ function invalidateIfNeeded(engine: EngineContext): void {
         _sceneBGL = null;
         _meshBGL = null;
         _tiMeshBGL = null;
-        _pipelineSets = new Map();
+        _pipelineSets = null;
         _cachedDevice = device;
     }
 }
@@ -142,12 +142,13 @@ function createPickingPipelineInternal(engine: EngineContext, opts: PickingPipel
 export function getPickingPipelineSet(engine: EngineContext, discard?: PickingDiscardPipelineOptions | null): PickingPipelineSet {
     invalidateIfNeeded(engine);
     const key = discard ? `discard:${discard.key}` : "default";
-    const cached = _pipelineSets.get(key);
+    const pipelineSets = _pipelineSets ?? (_pipelineSets = new Map());
+    const cached = pipelineSets.get(key);
     if (cached) {
         return cached;
     }
 
-    const discardBGL = discard ? createDiscardBGL(engine, discard) : null;
+    const discardBGL = discard?.bindGroupLayoutEntries?.length ? createDiscardBGL(engine, discard) : null;
     const shaderOptions = discard ? { discardWgsl: discard.wgsl } : undefined;
     const regularPipeline = createPickingPipelineInternal(engine, {
         shader: pickingShaderSource(shaderOptions),
@@ -162,6 +163,6 @@ export function getPickingPipelineSet(engine: EngineContext, discard?: PickingDi
         label: discard ? `picking-ti-${discard.key}` : "picking-ti",
     });
     const set = { regularPipeline, thinInstancePipeline, discardBGL };
-    _pipelineSets.set(key, set);
+    pipelineSets.set(key, set);
     return set;
 }

@@ -80,6 +80,20 @@ return input.hasThinInstance == 1u && input.instanceExtras.x > 4.0;
 });
 
 describe("picking discard pipeline API", () => {
+    it("keeps the public discard rule WGSL-only", () => {
+        const discard: PickDiscardRule = {
+            key: "public-wgsl-only",
+            wgsl: "fn shouldDiscardPick(input: PickDiscardInput) -> bool { return input.pickId == 1u; }",
+        };
+        const options: PickOptions = { discard };
+
+        // @ts-expect-error PickDiscardRule intentionally does not expose raw WebGPU bind-group layout entries.
+        const invalidPublicDiscardRule: PickDiscardRule = { key: "raw-webgpu", wgsl: discard.wgsl, bindGroupLayoutEntries: [] };
+
+        expect(options.discard).toBe(discard);
+        void invalidPublicDiscardRule;
+    });
+
     it("caches the default regular/thin pipeline set per device", () => {
         const { engine, device } = makeEngine();
 
@@ -100,14 +114,13 @@ describe("picking discard pipeline API", () => {
             visibility: GPUShaderStage.FRAGMENT,
             buffer: { type: "read-only-storage" },
         };
-        const discard: PickDiscardRule = {
+        const discard = {
             key: "clip-volume",
             wgsl: "fn shouldDiscardPick(input: PickDiscardInput) -> bool { return input.pickId == 7u; }",
             bindGroupLayoutEntries: [entry],
         };
-        const options: PickOptions = { discard };
 
-        const set = getPickingPipelineSet(engine, options.discard);
+        const set = getPickingPipelineSet(engine, discard);
 
         expect(set.discardBGL).not.toBeNull();
         expect(device.bindGroupLayouts.find((layout) => layout.label === "picking-discard-clip-volume-bgl")).toMatchObject({
