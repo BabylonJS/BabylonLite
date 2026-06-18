@@ -29,7 +29,7 @@ parameters:
     - name: releaseType
       displayName: "Release type"
       type: string
-      default: auto
+      default: minor
       values:
           - auto
           - patch
