@@ -751,8 +751,8 @@
     ]
   },
   "scene49": {
-    "rawKB": 91.8,
-    "gzipKB": 34.6,
+    "rawKB": 91.3,
+    "gzipKB": 34.4,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene49-standard-renderable-C3IPeUHN.js",
@@ -1698,8 +1698,8 @@
     ]
   },
   "scene113": {
-    "rawKB": 62.4,
-    "gzipKB": 24.1,
+    "rawKB": 61.9,
+    "gzipKB": 23.9,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene113-standard-renderable-D5DFpJqg.js",
@@ -1708,8 +1708,8 @@
     ]
   },
   "scene114": {
-    "rawKB": 80.3,
-    "gzipKB": 31,
+    "rawKB": 79.8,
+    "gzipKB": 30.8,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene114-morph-fragment-Dk2lIIy7.js",
@@ -1722,8 +1722,8 @@
     ]
   },
   "scene115": {
-    "rawKB": 122.4,
-    "gzipKB": 49.7,
+    "rawKB": 121.9,
+    "gzipKB": 49.4,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene115-create-morph-targets-_ECgIusp.js",
@@ -1840,8 +1840,8 @@
     ]
   },
   "scene129": {
-    "rawKB": 82.2,
-    "gzipKB": 31.3,
+    "rawKB": 81.7,
+    "gzipKB": 31,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene129-gs-picking-pipeline-wk9cVMav.js",
@@ -2709,8 +2709,8 @@
     ]
   },
   "scene221": {
-    "rawKB": 99.2,
-    "gzipKB": 37.6,
+    "rawKB": 98.7,
+    "gzipKB": 37.3,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene221-shader-renderable-D9GHG1j9.js",
@@ -2723,7 +2723,7 @@
   },
   "scene222": {
     "rawKB": 109.2,
-    "gzipKB": 40.3,
+    "gzipKB": 40.2,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene222-gpu-pool-CHlSfwGp.js",
@@ -2747,8 +2747,8 @@
     ]
   },
   "scene224": {
-    "rawKB": 81.2,
-    "gzipKB": 30.2,
+    "rawKB": 80.7,
+    "gzipKB": 30,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene224-standard-renderable-ZqgL6_fO.js",

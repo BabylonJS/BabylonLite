@@ -57,6 +57,29 @@ export function setThinInstanceColors(mesh: Mesh, colors: Float32Array): void;
 export function enableThinInstanceGpuCulling(mesh: Mesh, enabled?: boolean): void;
 ```
 
+### Functions — Hierarchy Instance Pools (`hierarchy-instance-pool.ts`)
+
+For the old Babylon.js `parentNode.instantiateHierarchy()` prop workflow, Lite exposes a small opt-in helper that keeps the rendering path thin-instance based while preserving child mesh offsets/rotations/scales:
+
+```typescript
+/** Build a fixed-capacity pool from a template hierarchy. Call before registerScene(). */
+export function createHierarchyInstancePool(root: SceneNode, capacity: number): HierarchyInstancePool;
+
+/** Add one logical hierarchy instance and return its slot index. */
+export function addHierarchyInstance(pool: HierarchyInstancePool, matrix: Mat4): number;
+
+/** Update one logical hierarchy instance root matrix. */
+export function setHierarchyInstanceMatrix(pool: HierarchyInstancePool, index: number, matrix: Mat4): void;
+
+/** Remove one logical hierarchy instance via swap-remove. */
+export function removeHierarchyInstance(pool: HierarchyInstancePool, index: number): void;
+
+/** Change active logical count without reallocating buffers. */
+export function setHierarchyInstanceCount(pool: HierarchyInstancePool, count: number): void;
+```
+
+`createHierarchyInstancePool()` walks all descendant meshes and assigns each one its own thin-instance matrix buffer at the requested capacity, then sets active count to zero. The source meshes therefore become render carriers for the pool: they do not draw the template by themselves, but they must stay `visible !== false` so their thin instances can draw. Do not hide a hierarchy pool with `setSubtreeVisible(root, false)`; clear it with `setHierarchyInstanceCount(pool, 0)` instead. When growing, prefer `addHierarchyInstance(pool, matrix)` so the newly visible slot has a defined matrix before the next frame.
+
 ### Functions — GPU Sync (`thin-instance-gpu.ts`)
 
 ```typescript
@@ -461,7 +484,7 @@ Scene 16 chunk breakdown: `scene16.js` (18.1 KB) + `standard-renderable` (22.5 K
 
 ### Initialization
 
-1. User calls `setThinInstances(mesh, matrices, count)` or `addThinInstance(mesh, matrix)`.
+1. User calls `setThinInstances(mesh, matrices, count)` / `addThinInstance(mesh, matrix)` for a single mesh, or `createHierarchyInstancePool(root, capacity)` for a prop hierarchy.
 2. `ThinInstanceData` is created on `mesh.thinInstances` with initial capacity.
 3. Optionally, user calls `setThinInstanceColors(mesh, colors)` for per-instance RGBA.
 4. Optionally, user calls `enableThinInstanceGpuCulling(mesh)` before `registerScene()`.
@@ -489,6 +512,9 @@ Scene 16 chunk breakdown: `scene16.js` (18.1 KB) + `standard-renderable` (22.5 K
 - `setThinInstanceMatrix` → overwrites 16 floats in-place, bumps `_version`.
 - `flushThinInstances` → bumps `_version` only (for direct array manipulation).
 - `setThinInstanceColors` → replaces colors array, bumps `_colorVersion`.
+- `addHierarchyInstance` → writes one logical root matrix into every descendant mesh buffer and bumps all counts.
+- `removeHierarchyInstance` → swap-removes the same logical slot from every descendant mesh buffer.
+- `setHierarchyInstanceCount` → changes the active logical count on every descendant mesh without reallocating.
 
 ---
 
