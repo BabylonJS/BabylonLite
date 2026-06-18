@@ -1732,7 +1732,8 @@
         "description": "KhronosGroup BrainStem (glTF-Meshopt-EXT) exercising EXT_meshopt_compression + KHR_mesh_quantization; skinned and animated, decoded via dynamic-imported loader features so non-meshopt scenes pay nothing. Frozen via seekTime for deterministic parity.",
         "tags": ["pbr", "gltf", "meshopt", "quantization", "skeleton", "animation"],
         "skipPerf": true,
-        "bundleTimeoutMs": 120000
+        "bundleTimeoutMs": 120000,
+        "compatParity": true
     },
     {
         "id": 212,
