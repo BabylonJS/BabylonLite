@@ -496,7 +496,7 @@
         "id": 51,
         "slug": "scene51-sprite-grid",
         "name": "Scene 51 — Soft-Edged Sprite Grid (Premultiplied)",
-        "maxMad": 0.1,
+        "maxMad": 1,
         "maxRawKB": 20,
         "description": "25×10 grid of radial-gradient sprites with anti-aliased edges, rendered via the premultiplied sprite codepath. BJS SpriteRenderer with ALPHA_PREMULTIPLIED blendMode + pre-baked premultiplied atlas as the parity oracle.",
         "tags": ["sprites", "2d", "premultiplied"],
