@@ -49,6 +49,7 @@ export {
     GamepadCamera,
     FlyCamera,
     FollowCamera,
+    GeospatialCamera,
     DeviceOrientationCamera,
     WebXRCamera,
     AnaglyphArcRotateCamera,

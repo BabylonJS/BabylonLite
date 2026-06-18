@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { NullEngine } from "../src/engine/engine";
 import { Scene } from "../src/scene/scene";
-import { FreeCamera } from "../src/cameras/cameras";
+import { FreeCamera, GeospatialCamera } from "../src/cameras/cameras";
+import { Vector3 } from "../src/math/vector";
 import type { FreeCamera as LiteFreeCamera } from "babylon-lite";
 
 /**
@@ -63,5 +64,26 @@ describe("Camera adoption (loaded .babylon cameras)", () => {
         scene._lite.camera = fakeLiteCamera();
         scene._surfaceLoadedCamera();
         expect(scene.activeCamera).toBe(first);
+    });
+});
+
+describe("GeospatialCamera", () => {
+    it("wraps Lite's geospatial camera and proxies orientation", () => {
+        const cam = new GeospatialCamera("geo", undefined, { planetRadius: 100 });
+        expect(cam.getClassName()).toBe("GeospatialCamera");
+
+        // radius must be set before pitch (pitch is clamped against the radius-dependent
+        // max), mirroring the BJS oracle's property order.
+        cam.radius = 170;
+        expect(cam.radius).toBeCloseTo(170, 5);
+
+        cam.yaw = 0.6;
+        expect(cam.yaw).toBeCloseTo(0.6, 5);
+
+        cam.center = new Vector3(20, 30, 40);
+        const c = cam.center;
+        expect(c.x).toBeCloseTo(20, 5);
+        expect(c.y).toBeCloseTo(30, 5);
+        expect(c.z).toBeCloseTo(40, 5);
     });
 });
