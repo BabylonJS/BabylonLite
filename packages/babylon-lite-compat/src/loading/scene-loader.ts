@@ -17,15 +17,25 @@ import { collectLoadedMeshes, type LoadedMesh } from "./loaded-mesh.js";
 import { GaussianSplattingMesh } from "../meshes/gaussian-splatting.js";
 import type { Scene } from "../scene/scene.js";
 
+/** Path portion of a URL, without any query string (`?…`) or hash fragment (`#…`). */
+function urlPath(url: string): string {
+    return url.split(/[?#]/)[0]!;
+}
+
 /** Splat asset extensions Babylon Lite can parse (`loadSplat` / `loadSOG` / `loadSPZ`). */
 function isSplatUrl(url: string): boolean {
-    const u = url.split("?")[0]!.toLowerCase();
+    const u = urlPath(url).toLowerCase();
     return u.endsWith(".ply") || u.endsWith(".splat") || u.endsWith(".sog") || u.endsWith(".spz");
+}
+
+/** True when a URL points at a `.babylon` file, ignoring any query string or hash. */
+function isBabylonUrl(url: string): boolean {
+    return urlPath(url).toLowerCase().endsWith(".babylon");
 }
 
 /** Last path segment of a URL, used to name a loaded Gaussian-Splatting mesh. */
 function baseName(url: string): string {
-    const path = url.split("?")[0]!;
+    const path = urlPath(url);
     return path.slice(path.lastIndexOf("/") + 1) || "splat";
 }
 
@@ -88,7 +98,9 @@ function joinUrl(rootUrl: string, fileName: string): string {
 async function load(rootUrl: string, fileName: string, scene: Scene): Promise<AssetContainer> {
     const url = joinUrl(rootUrl, fileName);
     const engine = scene.getEngine()._lite;
-    const lite = url.endsWith(".babylon") ? await loadBabylon(engine, url) : await loadGltf(engine, url);
+    // Detect the format from the path (ignoring query/hash), but hand the full URL
+    // to the loader so any query string is preserved.
+    const lite = isBabylonUrl(url) ? await loadBabylon(engine, url) : await loadGltf(engine, url);
     return new AssetContainer(lite);
 }
 
@@ -178,6 +190,8 @@ export async function LoadAssetContainerAsync(source: string, scene: Scene, _opt
 /** @internal Load a glTF/.babylon asset from a single source URL (function-loader form). */
 async function loadFromSource(source: string, scene: Scene): Promise<AssetContainer> {
     const engine = scene.getEngine()._lite;
-    const lite = source.endsWith(".babylon") ? await loadBabylon(engine, source) : await loadGltf(engine, source);
+    // Detect the format from the path (ignoring query/hash), but pass the full URL
+    // to the loader so any query string is preserved.
+    const lite = isBabylonUrl(source) ? await loadBabylon(engine, source) : await loadGltf(engine, source);
     return new AssetContainer(lite);
 }

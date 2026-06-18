@@ -38,10 +38,10 @@ export class Observable<T> {
         return false;
     }
 
-    public notifyObservers(eventData: T): void {
+    public notifyObservers(eventData?: T): void {
         // Iterate a copy so observers can add/remove during notification.
         for (const observer of this._observers.slice()) {
-            observer(eventData);
+            observer(eventData as T);
         }
     }
 

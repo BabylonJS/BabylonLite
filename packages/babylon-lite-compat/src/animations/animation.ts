@@ -208,7 +208,7 @@ function applyAnimatedValue(target: unknown, path: string, value: number | numbe
  */
 export class Animatable {
     public masterFrame = 0;
-    public speedRatio = 1;
+    public speedRatio: number;
     private _paused = false;
     private _stopped = false;
 

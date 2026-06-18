@@ -84,6 +84,11 @@ export class GPUPicker {
             unsupported("GPUPicker.setPickingList", "Picking-list meshes must belong to a Scene (create them with a scene argument).");
         }
         if (!this._picker || this._scene !== scene) {
+            // Switching to a different scene: release the previous Lite picker so
+            // we don't leak its GPU resources.
+            if (this._picker) {
+                disposePicker(this._picker);
+            }
             this._scene = scene;
             this._picker = createGpuPicker(scene._lite);
         }

@@ -68,7 +68,10 @@ export class AssetsManager {
     public readonly onTaskErrorObservable = new Observable<AbstractAssetTask>();
     public readonly onFinishObservable = new Observable<AbstractAssetTask[]>();
 
-    /** When true (default), one failed task rejects the whole `loadAsync`. */
+    // Kept for Babylon.js API parity only. The compat AssetsManager has no
+    // loading-screen UI, and `loadAsync` never rejects on task failure (per-task
+    // errors surface via `onTaskErrorObservable`), so neither flag affects
+    // loading behavior.
     public useDefaultLoadingScreen = false;
     public autoHideLoadingUI = false;
 
