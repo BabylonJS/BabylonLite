@@ -8,24 +8,24 @@
     "gzipKB": 8.8
   },
   "doom": {
-    "rawKB": 126.6,
+    "rawKB": 126.8,
     "gzipKB": 42.5
   },
   "quake": {
-    "rawKB": 127.8,
-    "gzipKB": 46.3
+    "rawKB": 128.6,
+    "gzipKB": 46.5
   },
   "minecraft": {
-    "rawKB": 107.2,
-    "gzipKB": 38.8
+    "rawKB": 108,
+    "gzipKB": 38.9
   },
   "freeciv": {
     "rawKB": 67.1,
     "gzipKB": 25.2
   },
   "tetris": {
-    "rawKB": 70.5,
-    "gzipKB": 26
+    "rawKB": 70.8,
+    "gzipKB": 26.1
   },
   "mosquito-amber": {
     "rawKB": 105,

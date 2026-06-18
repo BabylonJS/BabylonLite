@@ -46,6 +46,14 @@ test("Scene 47 — Physics heightfield matches Babylon.js reference", async ({ p
     await waitForCanvasReady(page, { timeout: 60_000, label: "Scene 47 Lite" });
     await waitForCanvasReady(page, { timeout: 60_000, label: `Scene 47 Lite at frame ${CAPTURE_FRAME}`, flag: "captureReady", pollMs: 100 });
 
+    // The Lite page includes /loader.js, whose #loader-overlay spinner fades out over 0.4s once
+    // the scene is ready. Frame 1 capture fires before that fade completes, so the alpha-blended
+    // overlay would otherwise be composited into the canvas screenshot. The engine is already
+    // stopped (frame frozen), so wait for the overlay to be fully removed before capturing.
+    await page.waitForFunction(() => !document.getElementById("loader-overlay"), { timeout: 10_000 }).catch(() => {
+        // Overlay may have already been removed — that's fine.
+    });
+
     const screenshotPath = path.join(REFERENCE_DIR, "test-actual.png");
     await page.locator("canvas").screenshot({ path: screenshotPath });
 
