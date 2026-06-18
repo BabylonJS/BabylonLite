@@ -152,9 +152,10 @@ const previousReleaseTag = getPreviousReleaseTag(latestPublishedVersion);
 const breakingChangesDetected = hasBreakingChanges(previousReleaseTag);
 
 if (breakingChangesDetected && requestedReleaseType !== "auto" && requestedReleaseType !== "major") {
-    throw new Error(
-        `Breaking changes were detected since ${previousReleaseTag || "the start of history"}. ` +
-            `A ${requestedReleaseType} release would hide those changes from the next auto release; request a major release or remove the breaking-change marker if it is incorrect.`
+    console.warn(
+        `##vso[task.logissue type=warning]Breaking changes were detected since ${previousReleaseTag || "the start of history"}. ` +
+            `A ${requestedReleaseType} release will hide those changes from the next auto release. ` +
+            `This is currently allowed to avoid premature major releases; request a major release or remove the breaking-change marker if it is incorrect.`
     );
 }
 
