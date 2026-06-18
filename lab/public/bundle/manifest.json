@@ -2722,8 +2722,8 @@
     ]
   },
   "scene222": {
-    "rawKB": 109.1,
-    "gzipKB": 40.2,
+    "rawKB": 109.6,
+    "gzipKB": 40.4,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene222-gpu-pool-CHlSfwGp.js",

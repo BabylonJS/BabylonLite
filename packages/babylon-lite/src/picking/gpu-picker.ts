@@ -135,14 +135,14 @@ export interface PickOptions {
      *
      *  The input exposes only generic picker data: `worldPos`, `pickId`, `thinInstanceIndex`,
      *  `hasThinInstance`, and `instanceExtras` (the original thin-instance matrix w lanes, zero for
-     *  non-instanced meshes). */
+     *  non-instanced meshes). Storage entries are uploaded and bound by Lite for the current pick only. */
     discard?: PickDiscardRule;
     /** Dev-only diagnostics: logs the pick ray, pixel, pick id/depth and resolved mesh. */
     debugLabel?: string;
 }
 
 /**
- * Optional WGSL discard rule for {@link pickAsync}.
+ * Optional GPU-side discard rule for {@link pickAsync}.
  *
  * This lets apps remove pick hits with custom WGSL while keeping the main scene
  * render untouched. The WGSL must define
@@ -153,21 +153,40 @@ export interface PickDiscardRule {
     readonly key: string;
     /** WGSL source that defines `shouldDiscardPick(input: PickDiscardInput) -> bool`. */
     readonly wgsl: string;
-    /** @internal Optional group-2 bind group layout entries consumed by the discard WGSL. */
-    readonly _bindGroupLayoutEntries?: readonly GPUBindGroupLayoutEntry[];
-    /** @internal Optional per-mesh group-2 entries. Return `null` to use the default non-discard picker for that mesh. */
-    readonly _bindGroupEntries?: (mesh: Mesh) => readonly GPUBindGroupEntry[] | null;
+    /** Optional typed-array storage inputs exposed to the discard WGSL at group 2. */
+    readonly storage?: readonly PickDiscardStorage[];
 }
 
-function createPickDiscardBindGroup(device: GPUDevice, layout: GPUBindGroupLayout, discard: PickDiscardRule, mesh: Mesh): GPUBindGroup | null {
-    const entries = discard._bindGroupEntries?.(mesh);
-    if (entries === undefined || entries === null) {
+/** Storage data for a pick discard rule. Lite injects the WGSL declaration and owns the GPU buffer upload. */
+export interface PickDiscardStorage {
+    /** WGSL variable name declared at `@group(2) @binding(index)`; must be unique within the rule. */
+    readonly name: string;
+    /** WGSL storage type, for example `array<vec4<f32>>`. */
+    readonly type: string;
+    /** Per-mesh data for the current pick. Return `null` to draw that mesh with the default picker. */
+    readonly data: (mesh: Mesh) => ArrayBufferView | null | undefined;
+}
+
+function createPickDiscardBindGroup(engine: EngineContext, layout: GPUBindGroupLayout, discard: PickDiscardRule, mesh: Mesh, tempBuffers: GPUBuffer[]): GPUBindGroup | null {
+    const storage = discard.storage;
+    if (!storage || storage.length === 0) {
         return null;
     }
+    const entries: GPUBindGroupEntry[] = [];
+    for (let i = 0; i < storage.length; i++) {
+        const data = storage[i]!.data(mesh);
+        if (!data) {
+            return null;
+        }
+        const buffer = createMappedBuffer(engine, data, BU.STORAGE);
+        tempBuffers.push(buffer);
+        entries.push({ binding: i, resource: { buffer } });
+    }
+    const device = engine._device;
     return device.createBindGroup({
         label: `pick-discard-${discard.key}-bg`,
         layout,
-        entries: [...entries],
+        entries,
     });
 }
 
@@ -260,7 +279,7 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number, options
         }
         const gpu = mesh._gpu;
         const ti = mesh.thinInstances;
-        const discardBG = pickDiscard && discardPipelines?.discardBGL ? createPickDiscardBindGroup(device, discardPipelines.discardBGL, pickDiscard, mesh) : null;
+        const discardBG = pickDiscard && discardPipelines?.discardBGL ? createPickDiscardBindGroup(engine, discardPipelines.discardBGL, pickDiscard, mesh, tempBuffers) : null;
         const pipelines = discardPipelines && (!discardPipelines.discardBGL || discardBG) ? discardPipelines : defaultPipelines;
 
         if (ti) {

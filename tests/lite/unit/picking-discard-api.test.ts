@@ -200,17 +200,11 @@ return input.hasThinInstance == 1u && input.instanceExtras.x > 4.0;
 });
 
 describe("picking discard pipeline API", () => {
-    it("supports internal discard rules with optional group-2 bind entries", () => {
-        const entry: GPUBindGroupLayoutEntry = {
-            binding: 0,
-            visibility: GPUShaderStage.FRAGMENT,
-            buffer: { type: "read-only-storage" },
-        };
+    it("allows public discard rules to supply typed-array storage data", () => {
         const discard: PickDiscardRule = {
             key: "public-bindings",
             wgsl: "fn shouldDiscardPick(input: PickDiscardInput) -> bool { return input.pickId == 1u; }",
-            _bindGroupLayoutEntries: [entry],
-            _bindGroupEntries: () => [{ binding: 0, resource: { buffer: {} as GPUBuffer } }],
+            storage: [{ name: "clipData", type: "array<vec4<f32>>", data: () => new Float32Array(4) }],
         };
         const options: PickOptions = { discard };
 
@@ -232,15 +226,10 @@ describe("picking discard pipeline API", () => {
 
     it("creates a discard pipeline set with a group-2 layout and injected WGSL", () => {
         const { engine, device } = makeEngine();
-        const entry: GPUBindGroupLayoutEntry = {
-            binding: 0,
-            visibility: GPUShaderStage.FRAGMENT,
-            buffer: { type: "read-only-storage" },
-        };
         const discard = {
             key: "clip-volume",
-            wgsl: "fn shouldDiscardPick(input: PickDiscardInput) -> bool { return input.pickId == 7u; }",
-            _bindGroupLayoutEntries: [entry],
+            wgsl: "fn shouldDiscardPick(input: PickDiscardInput) -> bool { return clipData[0].x > 0.0 && input.pickId == 7u; }",
+            storage: [{ name: "clipData", type: "array<vec4<f32>>" }],
         };
 
         const set = getPickingPipelineSet(engine, discard);
@@ -248,29 +237,23 @@ describe("picking discard pipeline API", () => {
         expect(set.discardBGL).not.toBeNull();
         expect(device.bindGroupLayouts.find((layout) => layout.label === "picking-discard-clip-volume-bgl")).toMatchObject({
             label: "picking-discard-clip-volume-bgl",
-            entries: [entry],
+            entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } }],
         });
         expect(device.renderPipelines).toHaveLength(2);
         expect(device.shaderModules.every((module) => String(module.code).includes(discard.wgsl))).toBe(true);
+        expect(device.shaderModules.every((module) => String(module.code).includes("@group(2) @binding(0) var<storage, read> clipData: array<vec4<f32>>;"))).toBe(true);
         expect(device.pipelineLayouts.every((layout) => Array.from(layout.bindGroupLayouts).length === 3)).toBe(true);
     });
 
     it("binds discard group-2 resources before drawing a discard pipeline", async () => {
         const { engine, pass } = makePickerEngine();
-        const { scene, mesh, discardBuffer } = makePickScene(engine);
+        const { scene, mesh } = makePickScene(engine);
         const picker = createGpuPicker(scene);
-        const entry: GPUBindGroupLayoutEntry = {
-            binding: 0,
-            visibility: GPUShaderStage.FRAGMENT,
-            buffer: { type: "read-only-storage" },
-        };
         const discard: PickDiscardRule = {
             key: "storage-discard",
-            _bindGroupLayoutEntries: [entry],
             wgsl: `
-@group(2) @binding(0) var<storage, read> data: array<vec4f>;
 fn shouldDiscardPick(input: PickDiscardInput) -> bool { return data[0].x > 1.0 && input.pickId == 0u; }`,
-            _bindGroupEntries: (m) => (m === mesh ? [{ binding: 0, resource: { buffer: discardBuffer } }] : null),
+            storage: [{ name: "data", type: "array<vec4f>", data: (m) => (m === mesh ? new Float32Array([2, 0, 0, 0]) : null) }],
         };
 
         const info = await pickAsync(picker, 4, 4, { discard });

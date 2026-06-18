@@ -3,6 +3,7 @@
 
 export interface PickingShaderOptions {
     readonly discardWgsl?: string | null;
+    readonly storage?: readonly { readonly name: string; readonly type: string }[];
 }
 
 const PICK_DISCARD_INPUT = /* wgsl */ `
@@ -23,6 +24,14 @@ return false;
 
 function pickDiscardSource(opts?: PickingShaderOptions): string {
     return opts?.discardWgsl ?? DEFAULT_PICK_DISCARD;
+}
+
+function pickDiscardStorageDecls(opts?: PickingShaderOptions): string {
+    const storage = opts?.storage;
+    if (!storage || storage.length === 0) {
+        return "";
+    }
+    return storage.map((s, binding) => `@group(2) @binding(${binding}) var<storage, read> ${s.name}: ${s.type};`).join("\n");
 }
 
 // ─── Shared structs + fragment shader ───────────────────────────────
@@ -60,6 +69,7 @@ pickId: u32,
 @group(0) @binding(0) var<uniform> scene: SceneUniforms;
 @group(1) @binding(0) var<uniform> mesh: MeshUniforms;
 ${PICK_DISCARD_INPUT}
+${pickDiscardStorageDecls(opts)}
 ${pickDiscardSource(opts)}
 ${PICK_FS}
 @vertex fn vs(@location(0) position: vec3f) -> VsOut {
@@ -88,6 +98,7 @@ baseMeshPickId: u32,
 @group(1) @binding(0) var<uniform> tiMesh: TIMeshUniforms;
 @group(1) @binding(1) var<storage, read> instances: array<mat4x4f>;
 ${PICK_DISCARD_INPUT}
+${pickDiscardStorageDecls(opts)}
 ${pickDiscardSource(opts)}
 ${PICK_FS}
 @vertex fn vs(@location(0) position: vec3f, @builtin(instance_index) instanceIndex: u32) -> VsOut {
