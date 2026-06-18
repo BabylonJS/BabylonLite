@@ -26,7 +26,6 @@ import {
     PBR2_NO_COLOR_OUTPUT,
     PBR2_HAS_REFRACTION,
     PBR2_HAS_UV2,
-    PBR2_LIGHTMAP_UV2,
     PBR_HAS_ENV,
     PBR_HAS_TONEMAP,
     PBR_HAS_FOG,
@@ -104,7 +103,6 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     let hasAnyUnlit = false;
     let hasAnyUvTransform = false;
     let hasAnyUv2 = false;
-    let hasLightmap = false;
     let hasAnyVertexColor = false;
     for (let i = 0; i < meshes.length; i++) {
         const m = meshes[i]!;
@@ -126,9 +124,8 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         hasCullingTI ||= !!m.thinInstances?._gpuCullingEnabled;
         hasAnyUnlit ||= !!mat.unlit;
         hasAnyUvTransform ||= !!mat._hasUvTx;
-        // UV2 only counts when occlusion samples texcoord 1 OR a lightmap samples UV2.
-        hasLightmap ||= !!mat.lightmapTexture;
-        hasAnyUv2 ||= !!m._gpu.uv2Buffer && (mat.occlusionTexCoord === 1 || (!!mat.lightmapTexture && (mat.lightmapCoordIndex ?? 1) === 1));
+        // UV2 only counts when occlusion samples texcoord 1.
+        hasAnyUv2 ||= !!m._gpu.uv2Buffer && mat.occlusionTexCoord === 1;
         hasAnyVertexColor ||= !!m._gpu.colorBuffer;
     }
 
@@ -206,7 +203,6 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         [hasSomeSkeletons, () => import("./fragments/skeleton-fragment.js")],
         [hasSomeMorphs, () => import("./fragments/morph-fragment.js")],
         [hasAnyUvTransform, () => import("./fragments/uv-transform-fragment.js")],
-        [hasLightmap, () => import("./fragments/pbr-lightmap-fragment.js")],
     ]);
 
     // Anisotropy needs its module reference retained (for ANISO_BRDF_FUNCTIONS /
@@ -388,7 +384,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         const order = mesh.renderOrder ?? (isTransparent || needsTaskRefraction ? 150 : 100);
 
         const hasNormalMap = (features & PBR_HAS_NORMAL_MAP) !== 0;
-        const hasUV2 = (features2 & (PBR2_HAS_UV2 | PBR2_LIGHTMAP_UV2)) !== 0 && (meshFeatures & MSH_HAS_UV2) !== 0;
+        const hasUV2 = (features2 & PBR2_HAS_UV2) !== 0 && (meshFeatures & MSH_HAS_UV2) !== 0;
         const hasVertexColor = (meshFeatures & MSH_HAS_VERTEX_COLOR) !== 0;
         const hasTI = (meshFeatures & MSH_HAS_THIN_INSTANCES) !== 0;
         const hasTIColor = (meshFeatures & MSH_HAS_INSTANCE_COLOR) !== 0;

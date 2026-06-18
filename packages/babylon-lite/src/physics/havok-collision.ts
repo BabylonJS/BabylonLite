@@ -79,7 +79,7 @@ export function onPhysicsCollision(world: PhysicsWorld, cb: (info: PhysicsCollis
                 impulse: floatBuf[offB + 13 + 3]!,
             };
             cb(info);
-            addr = hknp.HP_World_GetNextCollisionEvent(Number(world._hkWorld), addr);
+            addr = hknp.HP_World_GetNextCollisionEvent(world._hkWorld, addr);
         }
     });
 }

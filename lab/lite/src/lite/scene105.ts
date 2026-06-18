@@ -259,11 +259,11 @@ async function main(): Promise<void> {
     const levelMeshes = owners.get("level") ?? [];
     const levelSet = new Set(levelMeshes);
     // Baked lightmap (PG #WO0H1U#165): multiplied into the level as a shadowmap, sampled on UV2,
-    // intensity 1.6, with the BJS uAng = π V-flip.
+    // intensity 3.2, with the BJS uAng = π V-flip.
     const lightmap = await loadTexture2D(engine, LIGHTMAP_URL);
     lightmap.uAng = Math.PI;
-    // The level keeps its NATIVE glTF PBR materials (baseColor grid textures); the baked lightmap
-    // is applied as a shadowmap on UV2. Non-level prop meshes are hidden (rebuilt procedurally).
+    // The level uses Standard materials (glTF baseColor grid texture as diffuse); the baked lightmap
+    // is applied as a shadowmap (multiply) on UV2 (zero PBR bundle cost). Non-level prop meshes are hidden (rebuilt procedurally).
     const allMeshes: Mesh[] = [];
     for (const entity of container.entities) {
         collectAllMeshes(entity, allMeshes);
@@ -271,11 +271,17 @@ async function main(): Promise<void> {
     for (const mesh of allMeshes) {
         const isLevel = levelSet.has(mesh);
         if (isLevel) {
-            const mat = mesh.material as PbrMaterialProps;
+            const pbr = mesh.material as PbrMaterialProps;
+            const mat = createStandardMaterial();
+            if (pbr.baseColorTexture) {
+                mat.diffuseTexture = pbr.baseColorTexture;
+            }
+            mat.specularColor = [0, 0, 0];
             mat.lightmapTexture = lightmap;
             mat.useLightmapAsShadowmap = true;
-            mat.lightmapLevel = 1.6;
+            mat.lightmapLevel = 3.2;
             mat.lightmapCoordIndex = 1;
+            mesh.material = mat;
         } else {
             mesh.material = makeMaterial(CUBE_COLOR);
             mesh.visible = false;

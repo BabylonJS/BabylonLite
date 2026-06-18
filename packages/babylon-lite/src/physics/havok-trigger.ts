@@ -59,15 +59,20 @@ export function onPhysicsTrigger(world: PhysicsWorld, cb: (info: PhysicsTriggerI
     const hknp = world._hknp;
     // Native Havok trigger event types: 8 = ENTERED, 16 = EXITED. The Havok `EventType` enum
     // only enumerates the collision types, so the trigger values are matched literally (mirroring
-    // Babylon.js' `_nativeTriggerCollisionValueToCollisionType`).
+    // Babylon.js' `_nativeTriggerCollisionValueToCollisionType`). Unknown values are skipped.
     const TRIGGER_ENTERED = 8;
+    const TRIGGER_EXITED = 16;
 
     onPhysicsAfterStep(world, () => {
         let addr = hknp.HP_World_GetTriggerEvents(world._hkWorld)[1];
         while (addr) {
             const intBuf = new Int32Array(hknp.HEAPU8.buffer, addr);
             const type = intBuf[0];
-            cb({ type: type === TRIGGER_ENTERED ? "ENTERED" : "EXITED" });
+            if (type === TRIGGER_ENTERED) {
+                cb({ type: "ENTERED" });
+            } else if (type === TRIGGER_EXITED) {
+                cb({ type: "EXITED" });
+            }
             addr = hknp.HP_World_GetNextTriggerEvent(world._hkWorld, addr);
         }
     });

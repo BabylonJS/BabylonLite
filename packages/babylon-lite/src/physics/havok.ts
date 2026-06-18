@@ -495,12 +495,17 @@ export function setPhysicsBodyPreStep(body: PhysicsBody, enabled: boolean): void
 /**
  * Sets how a moved transform node is propagated to its physics body before each step.
  * `TELEPORT` snaps the body to the node, `ACTION` sets a velocity toward it (so resting bodies are
- * dragged along by friction), and `DISABLED` skips the pre-step sync entirely.
+ * dragged along by friction), and `DISABLED` skips the pre-step sync entirely. Setting any type
+ * other than `DISABLED` automatically enables prestep syncing for the body (equivalent to
+ * {@link setPhysicsBodyPreStep}), so STATIC/DYNAMIC bodies are synced without an extra call.
  * @param body - The physics body to update.
  * @param type - The prestep behaviour to apply.
  */
 export function setPhysicsBodyPrestepType(body: PhysicsBody, type: PhysicsPrestepType): void {
     body._prestepType = type;
+    if (type !== PhysicsPrestepType.DISABLED) {
+        body._preStep = true;
+    }
 }
 
 /**

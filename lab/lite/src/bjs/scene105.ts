@@ -98,19 +98,23 @@ function round(value: number): number {
     // Load the level and keep only the level meshes visible (props are rebuilt procedurally).
     const result = await SceneLoader.ImportMeshAsync("", LEVEL_BASE, "levelTest.glb", scene);
     // Baked lightmap (PG #WO0H1U#165): multiplied into the level as a shadowmap, sampled on UV2,
-    // intensity 1.6, with the uAng = π V-flip. Applied to the level's NATIVE glTF PBR materials.
+    // intensity 3.2, with the uAng = π V-flip.
     const lightmap = new Texture(LEVEL_BASE + "lightmap.jpg", scene);
     lightmap.uAng = Math.PI;
-    lightmap.level = 1.6;
+    lightmap.level = 3.2;
     lightmap.coordinatesIndex = 1;
     for (const mesh of result.meshes) {
         const name = mesh.name;
         if (name === "level" || name.startsWith("level_primitive")) {
-            const mat = (mesh as Mesh).material as PBRMaterial;
-            if (mat) {
-                mat.lightmapTexture = lightmap;
-                mat.useLightmapAsShadowmap = true;
+            const pbr = (mesh as Mesh).material as PBRMaterial;
+            const mat = new StandardMaterial("level", scene);
+            if (pbr && pbr.albedoTexture) {
+                mat.diffuseTexture = pbr.albedoTexture;
             }
+            mat.specularColor = new Color3(0, 0, 0);
+            mat.lightmapTexture = lightmap;
+            mat.useLightmapAsShadowmap = true;
+            (mesh as Mesh).material = mat;
             new PhysicsAggregate(mesh as Mesh, PhysicsShapeType.MESH, { mass: 0 }, scene);
         } else if (name.startsWith("Cube")) {
             mesh.setEnabled(false);

@@ -77,12 +77,3 @@ export const PBR2_HAS_DISPERSION = 1 << 20;
  *  colour. Consumed only by the geometry-renderer task; PBR scenes without
  *  geometry rendering never set this bit. */
 export const PBR2_GEOMETRY_OUTPUT = 1 << 21;
-/** Material has a baked lightmap texture (multiplied/added into final color). */
-export const PBR2_HAS_LIGHTMAP = 1 << 22;
-/** Lightmap is used as a shadowmap (multiply: color=(color-emissive)*lm+emissive)
- *  instead of additive (color=color+lm). */
-export const PBR2_LIGHTMAP_SHADOWMAP = 1 << 23;
-/** Lightmap UVs are V-flipped (BJS Texture.uAng === π → uv'=(u,1-v)). */
-export const PBR2_LIGHTMAP_FLIP_V = 1 << 24;
-/** Lightmap samples TEXCOORD_1 (UV2) instead of TEXCOORD_0. */
-export const PBR2_LIGHTMAP_UV2 = 1 << 25;

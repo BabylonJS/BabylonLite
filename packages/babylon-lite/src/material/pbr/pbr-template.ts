@@ -499,7 +499,6 @@ ${directLightBlock}
 var color=directDiffuse+directSpecular+emissive;
 /*AI*/
 /*NI*/
-/*LM*/
 ${fogBlock}
 ${tonemapBlock}
 color=pow(color,vec3<f32>(1.0/2.2));

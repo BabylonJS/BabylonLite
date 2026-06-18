@@ -13,10 +13,6 @@ import {
     PBR2_HAS_BASE_COLOR_FACTOR,
     PBR2_HAS_UV_TRANSFORM,
     PBR2_HAS_UV2,
-    PBR2_HAS_LIGHTMAP,
-    PBR2_LIGHTMAP_SHADOWMAP,
-    PBR2_LIGHTMAP_FLIP_V,
-    PBR2_LIGHTMAP_UV2,
     PBR_HAS_ALPHA_TEST,
     PBR_HAS_ALPHA_BLEND,
     PBR_HAS_ANISOTROPY,
@@ -96,23 +92,6 @@ export interface PbrMaterialProps extends Material {
     /** Separate occlusion texture sampled with UV2 when occlusionTexCoord=1.
      *  R channel is occlusion. When set, ORM.r is NOT used for occlusion. */
     occlusionTexture?: Texture2D;
-    /** Baked lightmap texture, applied to the final color just before fog/tonemap.
-     *  RGB is sampled and gamma-decoded (pow 2.2) before scaling by `lightmapLevel`.
-     *  Sampled on UV2 when `lightmapCoordIndex === 1` (the default). When
-     *  `useLightmapAsShadowmap` is true the lightmap multiplies the lit color
-     *  (preserving emissive); otherwise it is added. Tree-shakable — only bundled
-     *  when a material in the scene sets it. */
-    lightmapTexture?: Texture2D | null;
-    /** Scalar intensity applied to the sampled lightmap. Default 1.0. Maps to BJS
-     *  Texture.level / vLightmapInfos.y. */
-    lightmapLevel?: number;
-    /** UV set index for the lightmap texture (0 = UV1/TEXCOORD_0, 1 = UV2/TEXCOORD_1).
-     *  Default 1. */
-    lightmapCoordIndex?: 0 | 1;
-    /** When true, the lightmap is treated as a baked shadowmap and multiplies the
-     *  lit color (`color = (color - emissive) * lightmap + emissive`) instead of
-     *  being added. Matches BJS PBRMaterial.useLightmapAsShadowmap. Default false. */
-    useLightmapAsShadowmap?: boolean;
     /** Scales dielectric F0 (default 1.0). Maps to BJS metallicF0Factor. */
     metallicF0Factor?: number;
     /** Grazing specular/F90 weight (default follows metallicF0Factor for legacy callers). */
@@ -212,18 +191,6 @@ export function _computePbrMaterialFeatures(mat: PbrMaterialProps): { features: 
     }
     if (mat.occlusionTexCoord) {
         features2 |= PBR2_HAS_UV2;
-    }
-    if (mat.lightmapTexture) {
-        features2 |= PBR2_HAS_LIGHTMAP;
-        if (mat.useLightmapAsShadowmap) {
-            features2 |= PBR2_LIGHTMAP_SHADOWMAP;
-        }
-        if (mat.lightmapTexture.uAng === Math.PI) {
-            features2 |= PBR2_LIGHTMAP_FLIP_V;
-        }
-        if ((mat.lightmapCoordIndex ?? 1) === 1) {
-            features2 |= PBR2_LIGHTMAP_UV2;
-        }
     }
     if (mat.baseColorFactor) {
         features2 |= PBR2_HAS_BASE_COLOR_FACTOR;
