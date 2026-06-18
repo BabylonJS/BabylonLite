@@ -109,7 +109,7 @@ import {
     attachControl,
     registerScene,
     startEngine,
-} from "babylon-lite";
+} from "@babylonjs/lite";
 
 const engine = await createEngine(canvas);
 const scene = createSceneContext(engine);
