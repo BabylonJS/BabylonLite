@@ -153,7 +153,6 @@ async function main(): Promise<void> {
 - **Iterate on one scene first.** When working on a specific scene, run only that scene's parity spec during the edit/test loop (e.g. `npx playwright test tests/lite/parity/scenes/scene36-basis-texture.spec.ts`) instead of the full `pnpm test:parity` suite. This dramatically cuts iteration time. Only run the full suite + `pnpm build:bundle-scenes` as the final guardrail check before declaring success.
 - If perf validation is needed, ask the user to run `pnpm test:perf` locally.
 
-
 ### 1. Live Inspection Tooling (Zero Guesswork)
 
 - Use the **Spector.GPU** MCP tools (`spector-gpu-navigate`, `spector-gpu-capture`, `spector-gpu-get_resource`, etc.) to capture reference frames from Babylon.js (WebGPU mode).
