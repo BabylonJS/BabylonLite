@@ -8,7 +8,7 @@
 # that file, so repeated patch releases can be requested by bumping its nonce.
 #
 # The same run also publishes @babylonjs/lite-compat under the `preview` dist-tag
-# (never `latest`) with a unique `<base>-preview.<buildId>` version, so the
+# (never `latest`) as `<lite-version>-preview`, so the
 # compatibility layer is opt-in via `@babylonjs/lite-compat@preview` until it
 # graduates to a stable release line.
 #
@@ -151,8 +151,8 @@ stages:
                 # The compatibility layer is published under the `preview` dist-tag
                 # only (never `latest`), so `npm install @babylonjs/lite-compat`
                 # resolves nothing until it graduates, while early adopters can opt in
-                # with `@babylonjs/lite-compat@preview`. Each run stamps a unique
-                # `<base>-preview.<buildId>` version and records the @babylonjs/lite
+                # with `@babylonjs/lite-compat@preview`. Each run versions compat as
+                # `<lite-version>-preview` and records the @babylonjs/lite
                 # version it was built against.
 
                 - script: pnpm --filter @babylonjs/lite-compat build
@@ -183,5 +183,31 @@ stages:
                       fi
                       npm publish ./packages/babylon-lite-compat/dist $EXTRA --tag "$(PACKAGE_DIST_TAG_COMPAT)" --access public --registry https://registry.npmjs.org/
                   displayName: "Publish compat package to npm (preview)"
+                  env:
+                      NPM_TOKEN: $(NPM_TOKEN)
+
+                - script: |
+                      set -euo pipefail
+
+                      if [ -z "${NPM_TOKEN:-}" ]; then
+                        echo "NPM_TOKEN must be configured as a secret pipeline variable."
+                        exit 1
+                      fi
+
+                      if [ "$(echo "${DRY_RUN:-false}" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+                        echo "DRY RUN: skipping compat dist-tag cleanup."
+                        exit 0
+                      fi
+
+                      printf "//registry.npmjs.org/:_authToken=%s\n" "$NPM_TOKEN" > ~/.npmrc
+
+                      TAGS="$(npm dist-tag ls @babylonjs/lite-compat --registry https://registry.npmjs.org/)"
+                      if echo "$TAGS" | grep -q '^latest:'; then
+                        npm dist-tag rm @babylonjs/lite-compat latest --registry https://registry.npmjs.org/
+                        echo "Removed @babylonjs/lite-compat@latest so compat remains preview-only."
+                      else
+                        echo "@babylonjs/lite-compat has no latest dist-tag to remove."
+                      fi
+                  displayName: "Ensure compat package has no latest tag"
                   env:
                       NPM_TOKEN: $(NPM_TOKEN)
