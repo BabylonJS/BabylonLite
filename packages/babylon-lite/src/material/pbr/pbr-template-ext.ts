@@ -90,7 +90,7 @@ return vec2<f32>(dot(m.xy, uv), dot(m.zw, uv)) + t;
         extraVertexAttributes.push({ _name: "uv2", _type: "vec2<f32>", _gpuFormat: "float32x2", _arrayStride: 8 });
     }
     if (_hasVertexColor) {
-        extraVertexAttributes.push({ _name: "color", _type: "vec3<f32>", _gpuFormat: "float32x3", _arrayStride: 12 });
+        extraVertexAttributes.push({ _name: "color", _type: "vec4<f32>", _gpuFormat: "float32x4", _arrayStride: 16 });
     }
 
     // ── Extra varyings ──────────────────────────────────────────
@@ -99,7 +99,7 @@ return vec2<f32>(dot(m.xy, uv), dot(m.zw, uv)) + t;
         extraVaryings.push({ _name: "uv2", _type: "vec2<f32>" });
     }
     if (_hasVertexColor) {
-        extraVaryings.push({ _name: "vColor", _type: "vec3<f32>" });
+        extraVaryings.push({ _name: "vColor", _type: "vec4<f32>" });
     }
 
     // ── Extra material UBO fields ────────────────────────────────
@@ -160,7 +160,7 @@ return vec2<f32>(dot(m.xy, uv), dot(m.zw, uv)) + t;
     // rewrites `baseColor` here to match the mangled `var bc=` declaration in
     // pbr-template.ts. A plain string is skipped by the mangler and produces
     // `unresolved value 'baseColor'` in the bundled shader. See thin-instance-fragment.ts.
-    const baseColorMod = _hasVertexColor ? `\nbaseColor *= input.vColor;` : "";
+    const baseColorMod = _hasVertexColor ? `\nbaseColor *= input.vColor.rgb;\nalpha *= input.vColor.a;` : "";
 
     // ── Normal scale modifier ───────────────────────────────────
     // When ext is active, emit the scaledNormal line (replaces default normalMapRaw).

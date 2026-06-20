@@ -427,12 +427,13 @@ async function extractAllMeshes(
                   : null;
             const normalsHelper = !idxData || !normData ? await import("./gltf-normals.js") : null;
             // glTF COLOR_0 may be VEC3 or VEC4 with float, normalized ubyte, or normalized
-            // ushort components, but the PBR/standard pipelines bind vertex color as a single
-            // float32x3 layout. Normalize any source to a tight float32 RGB buffer so the GPU
-            // stride matches the layout (otherwise every vertex misaligns -> garbage/black).
+            // ushort components, but the PBR pipeline binds vertex color as a single
+            // float32x4 layout (rgb modulates base color, a modulates alpha). Normalize any
+            // source to a tight float32 RGBA buffer so the GPU stride matches the layout
+            // (otherwise every vertex misaligns -> garbage/black); a VEC3 source gets a=1.
             // The normalizer is imported lazily on first need — colorless assets never fetch it
             // (the runtime caches the module, so the per-primitive import() resolves instantly).
-            const colors = colorData ? (await import("./gltf-color-normalize.js")).normalizeColorToVec3(colorData._data, colorData._count, colorData._componentCount) : null;
+            const colors = colorData ? (await import("./gltf-color-normalize.js")).normalizeColorToVec4(colorData._data, colorData._count, colorData._componentCount) : null;
 
             // Keep vertex data as-is from glTF — RH→LH conversion handled by root world matrix
             const indices = idxData
