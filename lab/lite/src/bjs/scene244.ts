@@ -26,6 +26,9 @@ import "@babylonjs/loaders/glTF";
     });
     scene.environmentTexture = envTex;
 
+    scene.imageProcessingConfiguration.exposure = 0.8;
+    scene.imageProcessingConfiguration.contrast = 1.2;
+
     const camera = new ArcRotateCamera("camera", 1.5707963, 1.5707963, 6.25, new Vector3(0, 0.2, 0), scene);
     camera.fov = 0.8;
     camera.minZ = 6.25 * 0.01;
