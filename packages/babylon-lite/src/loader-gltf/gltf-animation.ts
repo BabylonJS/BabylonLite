@@ -24,7 +24,13 @@ import type { SceneNode } from "../scene/scene-node.js";
  *  calls `_installPointerHandlers` on side-effect import; if never called,
  *  pointer channels are skipped and non-Float32 samplers fall back to the
  *  aliasing fast path (which throws on misaligned/short accessors). */
-export type PointerChannelParser = (ptr: string, channel: any, nodeMap: readonly (SceneNode | undefined)[] | undefined) => AnimationChannel | null;
+export type PointerChannelParser = (
+    ptr: string,
+    channel: any,
+    nodeMap: readonly (SceneNode | undefined)[] | undefined,
+    json: any,
+    meshes: readonly Mesh[]
+) => AnimationChannel | null;
 export type SamplerConverter = (src: ArrayBufferView, length: number, normalized: boolean) => Float32Array;
 let _parsePointerChannel: PointerChannelParser | null = null;
 let _convertSampler: SamplerConverter | null = null;
@@ -165,7 +171,7 @@ export function parseAnimationData(
                 if (!_parsePointerChannel) {
                     continue;
                 }
-                const ch = _parsePointerChannel(ptr, c, nodeMap);
+                const ch = _parsePointerChannel(ptr, c, nodeMap, json, meshes);
                 if (ch) {
                     channels.push(ch);
                     pointerChannelCount++;

@@ -400,6 +400,17 @@
         "compatParity": true
     },
     {
+        "id": 39,
+        "slug": "scene39-animation-pointer-waterfall",
+        "name": "Scene 39 — KHR_animation_pointer (Animated Waterfall)",
+        "maxMad": 0.6,
+        "maxRawKB": 104,
+        "description": "AnimatedWaterfall.gltf — grass blades rotate via /nodes/{n}/rotation pointers and water/foam surfaces scroll via /materials/{m}/.../KHR_texture_transform offset+scale pointers. Default IBL env, no skybox/ground. Validates KHR_animation_pointer node-TRS + texture-transform handlers.",
+        "tags": ["pbr", "gltf", "env", "lights-punctual", "texture-transform", "animation-pointer"],
+        "skipPerf": true,
+        "compatParity": true
+    },
+    {
         "id": 40,
         "slug": "scene40-physics",
         "name": "Scene 40 — Physics",
