@@ -391,7 +391,11 @@ async function extractAllMeshes(
             // first need — non-interleaved assets never fetch it. Tight primitives
             // fall through to the path below (byte-identical to non-interleaved).
             if (!decoded && _strided(primitive)) {
-                const ip = (await loadInterleave()).buildInterleavedPartial(json, binChunk, primitive, worldMatrix, nodeIdx);
+                // Lazily load smooth-normal generation only when this interleaved
+                // primitive omits NORMAL (rare) — keeps gltf-normals out of the
+                // bundle for the common interleaved-with-normals case.
+                const smoothNormals = primitive.attributes?.NORMAL === undefined ? (await import("./gltf-normals.js")).computeSmoothNormals : undefined;
+                const ip = (await loadInterleave()).buildInterleavedPartial(json, binChunk, primitive, worldMatrix, nodeIdx, smoothNormals);
                 if (ip) {
                     matPromises.push(getMat(primitive.material));
                     partials.push(ip);

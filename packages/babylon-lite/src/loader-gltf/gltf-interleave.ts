@@ -137,7 +137,14 @@ function destrideToTight(il: AccessorInterleave): Float32Array {
  *  {@link installLazyCpu}). Strided TANGENT/TEXCOORD_1/COLOR are eagerly
  *  de-strided (they feed device-lost recovery), but no current asset interleaves
  *  them. Tight attributes resolve exactly like the core loader. */
-export function buildInterleavedPartial(json: any, binChunk: DataView, primitive: any, worldMatrix: Mat4, nodeIdx: number): Omit<GltfMeshData, "_material"> | undefined {
+export function buildInterleavedPartial(
+    json: any,
+    binChunk: DataView,
+    primitive: any,
+    worldMatrix: Mat4,
+    nodeIdx: number,
+    computeSmoothNormals?: (positions: Float32Array, indices: Uint16Array | Uint32Array, vertexCount: number) => Float32Array
+): Omit<GltfMeshData, "_material"> | undefined {
     const attrs = primitive.attributes;
 
     // Per-primitive gate: bail (→ tight path) unless a vertex attribute is strided.
@@ -196,15 +203,6 @@ export function buildInterleavedPartial(json: any, binChunk: DataView, primitive
     const uv2s = uv2._tight;
     const colors = col._tight;
 
-    // Absent (not merely strided) NORMAL/UV need a tight zero-filled buffer so the
-    // GPU has a bindable vertex buffer — matches the core loader's tight path.
-    if (!normals && !vb._n) {
-        normals = new F32(vertexCount * 3);
-    }
-    if (!uvs && !vb._u) {
-        uvs = new F32(vertexCount * 2);
-    }
-
     const idxData = primitive.indices !== undefined ? resolveAccessor(json, binChunk, primitive.indices) : null;
     const indices = idxData
         ? idxData._data instanceof U32
@@ -213,6 +211,24 @@ export function buildInterleavedPartial(json: any, binChunk: DataView, primitive
               ? Uint16Array.from(idxData._data)
               : new U16(idxData._data.buffer, idxData._data.byteOffset, idxData._count)
         : createSequentialIndices(vertexCount);
+
+    // Absent (not merely strided) NORMAL: generate smooth normals to match the core
+    // loader's tight path. A zero-filled normal buffer makes every lit fragment's
+    // worldNormal NaN/black — e.g. a material-less skinned mesh whose interleaved
+    // JOINTS/WEIGHTS route it here (SimpleSkin). `computeSmoothNormals` is passed in
+    // lazily by the caller only when NORMAL is missing, so non-affected interleaved
+    // scenes pay zero bundle cost. Falls back to a bindable zero buffer if unavailable.
+    if (!normals && !vb._n) {
+        if (computeSmoothNormals) {
+            const tightPos = positions ?? (vb._p ? destrideToTight(vb._p) : new F32(vertexCount * 3));
+            normals = computeSmoothNormals(tightPos, indices, vertexCount);
+        } else {
+            normals = new F32(vertexCount * 3);
+        }
+    }
+    if (!uvs && !vb._u) {
+        uvs = new F32(vertexCount * 2);
+    }
 
     return {
         _positions: positions,
