@@ -2,16 +2,51 @@
  *  core loader doesn't carry any skinning-related code for non-skinned assets. */
 
 import type { GltfFeature } from "./gltf-feature.js";
-import { resolveAccessor } from "./gltf-parser.js";
+import { resolveAccessor, TYPE_SIZES } from "./gltf-parser.js";
+import { F32, U32, U16, U8 } from "../engine/typed-arrays.js";
+
+const FLOAT = 5126;
+const UNSIGNED_SHORT = 5123;
+const UNSIGNED_INT = 5125;
+const COMP_BYTES: Record<number, number> = { 5121: 1, 5123: 2, 5125: 4, 5126: 4 };
 
 /** Resolve a vertex attribute by name, preferring any pre-decoded
- *  (e.g. Draco) data over the raw accessor. */
+ *  (e.g. Draco) data over the raw accessor. De-strides interleaved sources:
+ *  `resolveAccessor` assumes tight packing, so strided JOINTS/WEIGHTS — common
+ *  in skinned rigs that pack both into one bufferView with a byteStride — would
+ *  otherwise read neighbouring/padding bytes and corrupt the skin (wrong joint
+ *  indices → exploded or mis-posed mesh). */
 function resolveAttr(name: string, primitive: any, decoded: any, json: any, binChunk: DataView): ArrayBufferView | null {
     if (decoded && decoded._attributes.has(name)) {
         return decoded._attributes.get(name)!;
     }
     const idx = primitive.attributes?.[name];
-    return idx !== undefined ? (resolveAccessor(json, binChunk, idx)._data as ArrayBufferView) : null;
+    if (idx === undefined) {
+        return null;
+    }
+    const accessor = json.accessors[idx];
+    const bv = accessor.bufferView !== undefined ? json.bufferViews[accessor.bufferView] : undefined;
+    const componentCount = TYPE_SIZES[accessor.type] ?? 1;
+    const compBytes = COMP_BYTES[accessor.componentType] ?? 4;
+    const stride = bv?.byteStride;
+    if (bv === undefined || stride === undefined || stride === componentCount * compBytes) {
+        return resolveAccessor(json, binChunk, idx)._data as ArrayBufferView;
+    }
+
+    // Interleaved source: copy each element into a tight array, honoring byteStride.
+    const ct = accessor.componentType;
+    const count = accessor.count;
+    const Ctor = ct === FLOAT ? F32 : ct === UNSIGNED_INT ? U32 : ct === UNSIGNED_SHORT ? U16 : U8;
+    const out = new Ctor(count * componentCount);
+    const base = (bv.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
+    for (let v = 0; v < count; v++) {
+        const row = base + v * stride;
+        for (let c = 0; c < componentCount; c++) {
+            const off = row + c * compBytes;
+            out[v * componentCount + c] = ct === FLOAT ? binChunk.getFloat32(off, true) : ct === UNSIGNED_INT ? binChunk.getUint32(off, true) : ct === UNSIGNED_SHORT ? binChunk.getUint16(off, true) : binChunk.getUint8(off);
+        }
+    }
+    return out;
 }
 
 const feature: GltfFeature = {
