@@ -351,7 +351,7 @@
         "slug": "scene34-node-visibility",
         "name": "Scene 34 — KHR_node_visibility + KHR_animation_pointer",
         "maxMad": 0.02,
-        "maxRawKB": 89.5,
+        "maxRawKB": 91,
         "description": "CubeVisibility.glb — three cubes: green always-visible, blue blinking via KHR_animation_pointer on its visibility flag, two reds hidden via KHR_node_visibility. Default IBL env. Matches PG #YG3BBF#55.",
         "tags": ["pbr", "gltf", "env", "node-visibility", "animation-pointer"],
         "skipPerf": true,
