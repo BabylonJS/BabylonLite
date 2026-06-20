@@ -34,6 +34,18 @@ export function _installPbrStencilResolver(resolve: (stencil: StencilState) => R
     _stencilResolver = resolve;
 }
 
+/** Fallback-texture resolver, installed only by `createPbrMaterial` (called on every
+ *  use). Provides the shared 1×1 white default for a factor-only material's baseColor /
+ *  ORM slots (the shader always samples both). Module-local with a single exported setter:
+ *  glTF-only scenes never call `createPbrMaterial`, so the setter tree-shakes, the bundler
+ *  proves this is always null, and the `?? _pbrFallbackResolver?.(engine)` reads below fold
+ *  away — loader-driven PBR scenes (e.g. BoomBox) stay byte-identical. */
+let _pbrFallbackResolver: ((engine: EngineContext) => Texture2D) | null = null;
+/** @internal Install the factor-only fallback-texture resolver (called by `createPbrMaterial`). */
+export function _installPbrFallbackResolver(resolve: (engine: EngineContext) => Texture2D): void {
+    _pbrFallbackResolver = resolve;
+}
+
 interface _PbrShaderBindings {
     _features: number;
     _features2: number;
@@ -221,11 +233,11 @@ export function createPbrMeshBindGroup(
             b = ext.bind(ctx, entries, b);
         }
     }
-    addTex(material.baseColorTexture!);
+    addTex(material.baseColorTexture ?? _pbrFallbackResolver?.(engine)!);
     if (hasAnyNormal) {
         addTex(material.normalTexture!);
     }
-    addTex(material.ormTexture!);
+    addTex(material.ormTexture ?? _pbrFallbackResolver?.(engine)!);
     if ((features2 & PBR2_HAS_UV2) !== 0 && (meshFeatures & MSH_HAS_UV2) !== 0 && material.occlusionTexture) {
         addTex(material.occlusionTexture);
     }
