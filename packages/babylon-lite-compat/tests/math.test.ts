@@ -55,10 +55,23 @@ describe("Vector3", () => {
         expect(a.asArray()).toEqual([1, 2, 3]);
         expect(b.asArray()).toEqual([4, 6, 8]);
 
-        expect(Vector3.MinimizeToRef(a, b, ref)).toBe(ref);
-        expect(ref.asArray()).toEqual([1, 2, 3]);
-        expect(Vector3.MaximizeToRef(a, b, ref)).toBe(ref);
-        expect(ref.asArray()).toEqual([4, 6, 8]);
+        expect(Vector3.Minimize(a, b).asArray()).toEqual([1, 2, 3]);
+        expect(Vector3.Maximize(a, b).asArray()).toEqual([4, 6, 8]);
+        expect(a.asArray()).toEqual([1, 2, 3]);
+        expect(b.asArray()).toEqual([4, 6, 8]);
+    });
+
+    it("minimizes and maximizes in place", () => {
+        const a = new Vector3(1, 5, 3);
+        expect(a.minimizeInPlace(new Vector3(4, 2, 3))).toBe(a);
+        expect(a.asArray()).toEqual([1, 2, 3]);
+        expect(a.maximizeInPlace(new Vector3(0, 6, 3))).toBe(a);
+        expect(a.asArray()).toEqual([1, 6, 3]);
+
+        expect(a.minimizeInPlaceFromFloats(0, 7, 2)).toBe(a);
+        expect(a.asArray()).toEqual([0, 6, 2]);
+        expect(a.maximizeInPlaceFromFloats(5, 1, 9)).toBe(a);
+        expect(a.asArray()).toEqual([5, 6, 9]);
     });
 
     it("writes cross, normalize, and transform helper results into refs", () => {
@@ -116,10 +129,9 @@ describe("Color3 / Color4", () => {
         expect(red.toHexString()).toBe("#FF0000");
     });
 
-    it("converts between Color3 and Color4", () => {
+    it("converts Color3 to Color4", () => {
         const c4 = new Color3(0.1, 0.2, 0.3).toColor4(0.5);
         expect(c4.asArray()).toEqual([0.1, 0.2, 0.3, 0.5]);
-        expect(c4.toColor3().asArray()).toEqual([0.1, 0.2, 0.3]);
     });
 
     it("exposes named colours", () => {

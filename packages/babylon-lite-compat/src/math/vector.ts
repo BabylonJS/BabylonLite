@@ -180,6 +180,40 @@ export class Vector3 {
         return new Vector3(-this.x, -this.y, -this.z);
     }
 
+    public minimizeInPlace(other: Vector3): this {
+        return this.minimizeInPlaceFromFloats(other.x, other.y, other.z);
+    }
+
+    public maximizeInPlace(other: Vector3): this {
+        return this.maximizeInPlaceFromFloats(other.x, other.y, other.z);
+    }
+
+    public minimizeInPlaceFromFloats(x: number, y: number, z: number): this {
+        if (x < this.x) {
+            this.x = x;
+        }
+        if (y < this.y) {
+            this.y = y;
+        }
+        if (z < this.z) {
+            this.z = z;
+        }
+        return this;
+    }
+
+    public maximizeInPlaceFromFloats(x: number, y: number, z: number): this {
+        if (x > this.x) {
+            this.x = x;
+        }
+        if (y > this.y) {
+            this.y = y;
+        }
+        if (z > this.z) {
+            this.z = z;
+        }
+        return this;
+    }
+
     public length(): number {
         return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
     }
@@ -325,21 +359,11 @@ export class Vector3 {
     }
 
     public static Minimize(a: Vector3, b: Vector3): Vector3 {
-        return Vector3.MinimizeToRef(a, b, new Vector3());
-    }
-
-    public static MinimizeToRef<T extends Vector3>(a: Vector3, b: Vector3, result: T): T {
-        result.set(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.min(a.z, b.z));
-        return result;
+        return a.clone().minimizeInPlace(b);
     }
 
     public static Maximize(a: Vector3, b: Vector3): Vector3 {
-        return Vector3.MaximizeToRef(a, b, new Vector3());
-    }
-
-    public static MaximizeToRef<T extends Vector3>(a: Vector3, b: Vector3, result: T): T {
-        result.set(Math.max(a.x, b.x), Math.max(a.y, b.y), Math.max(a.z, b.z));
-        return result;
+        return a.clone().maximizeInPlace(b);
     }
 
     /** Transform a coordinate (point) by a matrix using the row-vector convention. */
