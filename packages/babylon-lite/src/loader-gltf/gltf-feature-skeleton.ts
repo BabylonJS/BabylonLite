@@ -43,7 +43,14 @@ function resolveAttr(name: string, primitive: any, decoded: any, json: any, binC
         const row = base + v * stride;
         for (let c = 0; c < componentCount; c++) {
             const off = row + c * compBytes;
-            out[v * componentCount + c] = ct === FLOAT ? binChunk.getFloat32(off, true) : ct === UNSIGNED_INT ? binChunk.getUint32(off, true) : ct === UNSIGNED_SHORT ? binChunk.getUint16(off, true) : binChunk.getUint8(off);
+            out[v * componentCount + c] =
+                ct === FLOAT
+                    ? binChunk.getFloat32(off, true)
+                    : ct === UNSIGNED_INT
+                      ? binChunk.getUint32(off, true)
+                      : ct === UNSIGNED_SHORT
+                        ? binChunk.getUint16(off, true)
+                        : binChunk.getUint8(off);
         }
     }
     return out;
