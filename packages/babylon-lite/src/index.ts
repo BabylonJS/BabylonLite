@@ -186,7 +186,7 @@ export { createTexture2DFromPixels, updateTexture2DFromPixels, createRenderTextu
 export type { PixelsTexture2DOptions, RenderTexture2DOptions } from "./texture/pixels-texture.js";
 export { loadKtxTexture2D } from "./texture/ktx-loader.js";
 export { loadBasisTexture2D } from "./texture/basis-loader.js";
-export { setKtx2DecoderUrl } from "./texture/ktx2-loader.js";
+export { setKtx2DecoderUrl, loadKtx2Texture2D } from "./texture/ktx2-loader.js";
 
 // ─── Materials ───────────────────────────────────────────────────────
 export { createStandardMaterial } from "./material/standard/create-standard-material.js";

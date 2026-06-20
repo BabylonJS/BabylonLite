@@ -303,6 +303,20 @@ export async function uploadKtx2Texture2D(engine: EngineContext, buffer: ArrayBu
     throw new Error(`KTX2: unsupported transcoded format 0x${decoded.transcodedFormat.toString(16)}`);
 }
 
+/** Fetch and decode a standalone KTX2 (Basis Universal) texture from a URL into a Texture2D, transcoded to the
+ *  device's best GPU-compressed format (BC7/ETC2/ASTC) so it STAYS compressed in VRAM (a few times less than the
+ *  uncompressed RGBA8 `loadTexture2D` always uploads). Mirrors `loadKtxTexture2D` (KTX1) for app textures that
+ *  live outside a glTF. Requires the KTX2 decoder (configure self-hosting via `setKtx2DecoderUrl`). `sRGB`
+ *  selects the `*-srgb` GPU format (default false: raw/linear sampling, matching `loadTexture2D`'s `srgb:false`).
+ *  The decoder uploads the stored mips as-is (no V-flip), so author the .ktx2 in the orientation you want. */
+export async function loadKtx2Texture2D(engine: EngineContext, url: string, sRGB = false): Promise<Texture2D> {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+        throw new Error(`KTX2 fetch failed: ${resp.status} for ${url}`);
+    }
+    return uploadKtx2Texture2D(engine, await resp.arrayBuffer(), sRGB);
+}
+
 /** Decode the first mip level of a KTX2 texture into an ImageBitmap so glTF
  *  material extensions can reuse the core image upload path. */
 export async function decodeKtx2ImageBitmapFromBuffer(buffer: ArrayBuffer): Promise<ImageBitmap> {
