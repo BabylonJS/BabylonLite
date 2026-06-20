@@ -44,6 +44,22 @@ function materialMap(json: any, meshes: readonly Mesh[]): (PointerMaterial | und
     }
     _matMapKey = meshes;
     const map: (PointerMaterial | undefined)[] = [];
+
+    // Collect material indices targeted by a baseColorFactor pointer. Those materials
+    // must carry a baseColorFactor UBO slot for the animation to have any effect, so
+    // we seed `baseColorFactor` below — this runs at load (before the first render
+    // computes material flags), forcing PBR2_HAS_BASE_COLOR_FACTOR on.
+    const baseColorAnimated = new Set<number>();
+    for (const anim of json.animations ?? []) {
+        for (const ch of anim.channels ?? []) {
+            const ptr = ch.target?.extensions?.KHR_animation_pointer?.pointer as string | undefined;
+            const m = ptr && /^\/materials\/(\d+)\/pbrMetallicRoughness\/baseColorFactor$/.exec(ptr);
+            if (m) {
+                baseColorAnimated.add(+m[1]!);
+            }
+        }
+    }
+
     const nodes = json.nodes ?? [];
     let gpuIdx = 0;
     for (let ni = 0; ni < nodes.length; ni++) {
@@ -56,7 +72,23 @@ function materialMap(json: any, meshes: readonly Mesh[]): (PointerMaterial | und
             const matIdx = prims[p]?.material;
             const mesh = meshes[gpuIdx++];
             if (matIdx !== undefined && mesh) {
-                map[matIdx] = mesh.material as unknown as PointerMaterial;
+                const pm = mesh.material as unknown as PointerMaterial;
+                const def = json.materials?.[matIdx];
+                // Seed the separated emissive factor/strength from the asset so an
+                // emissiveFactor or emissiveStrength pointer can recombine them
+                // (emissiveColor is stored pre-multiplied at load).
+                if (def && pm.emissiveColor) {
+                    const ef = def.emissiveFactor ?? [0, 0, 0];
+                    pm._animEmissiveFactor = [ef[0] ?? 0, ef[1] ?? 0, ef[2] ?? 0];
+                    pm._animEmissiveStrength = def.extensions?.KHR_materials_emissive_strength?.emissiveStrength ?? 1;
+                }
+                // Force a baseColorFactor slot when a pointer animates it (the loader
+                // omits it for untextured/default materials).
+                if (baseColorAnimated.has(matIdx) && !pm.baseColorFactor) {
+                    const bcf = def?.pbrMetallicRoughness?.baseColorFactor ?? [1, 1, 1, 1];
+                    pm.baseColorFactor = [bcf[0] ?? 1, bcf[1] ?? 1, bcf[2] ?? 1, bcf[3] ?? 1];
+                }
+                map[matIdx] = pm;
             }
         }
     }
