@@ -8,6 +8,8 @@ import type { MeshGroupBuilder } from "../../render/renderable.js";
 import type { SceneContext } from "../../scene/scene.js";
 import type { Material, StencilState } from "../material.js";
 import type { MaterialPlugin } from "../plugin/material-plugin.js";
+import { createSolidTexture2D } from "../../texture/solid-texture.js";
+import { _installPbrFallbackResolver } from "./pbr-pipeline.js";
 import {
     _getPbrExts,
     PBR2_HAS_BASE_COLOR_FACTOR,
@@ -355,6 +357,12 @@ export interface SubSurfaceProps {
 
 /** Create a PbrMaterialProps with optional overrides. */
 export function createPbrMaterial(props?: Partial<PbrMaterialProps>): PbrMaterialProps {
+    // A material may be created without baseColor / ORM textures (only factors). Both
+    // slots are always sampled, so install the resolver that lazily provides a shared
+    // 1×1 white default (white ORM → metallic = metallicFactor, roughness =
+    // roughnessFactor — the glTF defaults). Reachable only via createPbrMaterial, so
+    // loader-only PBR scenes (e.g. BoomBox) tree-shake it entirely.
+    _installPbrFallbackResolver((engine) => (engine._pbrFallbackTex ??= createSolidTexture2D(engine, 1, 1, 1)));
     const mat = {
         ...props,
         _buildGroup: pbrGroupBuilder,

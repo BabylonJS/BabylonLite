@@ -108,6 +108,14 @@ export interface EngineContext extends SurfaceContext {
 
     /** @internal */
     _device: GPUDevice;
+    /** @internal Shared 1×1 white texture used as the default baseColor / ORM for
+     *  factor-only PBR materials (created via `createPbrMaterial` without textures).
+     *  A white ORM yields `metallic = metallicFactor`, `roughness = roughnessFactor`,
+     *  matching the glTF/Babylon.js defaults. Lazily created on first use by the
+     *  fallback resolver that `createPbrMaterial` installs into the PBR pipeline, so
+     *  loader-only PBR scenes pay zero bundle bytes. Device-lost recovery rebuilds it
+     *  in place via the solid-texture recovery path. */
+    _pbrFallbackTex?: Texture2D;
     /** @internal */
     _dlr?: DeviceLostRecoveryCapture;
     /** @internal */
