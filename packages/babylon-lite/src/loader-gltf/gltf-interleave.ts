@@ -127,6 +127,34 @@ function destrideToTight(il: AccessorInterleave): Float32Array {
     return out;
 }
 
+/** Resolve COLOR_0 to a tight float32 VEC3 [0,1] buffer — the only vertex-color
+ *  layout the PBR/standard pipelines bind (float32x3). glTF COLOR_0 may be VEC3
+ *  or VEC4, FLOAT or normalized UNSIGNED_BYTE/SHORT, and (here) interleaved with a
+ *  byteStride. Binding the raw strided/ubyte source as float32x3 reads neighbouring
+ *  bytes as floats (garbage / rainbow colors). This normalizes integer types to
+ *  [0,1], drops VEC4 alpha, and de-strides — mirroring the tight path's
+ *  normalizeColorToVec3. Reads relative to `binChunk` (its byteOffset is the base). */
+function resolveColorVec3(json: any, binChunk: DataView, idx: number): Float32Array {
+    const accessor = json.accessors[idx];
+    const ct = accessor.componentType;
+    const cb = COMP_BYTES[ct] ?? 4;
+    const comps = TYPE_SIZES[accessor.type] ?? 4;
+    const bv = json.bufferViews[accessor.bufferView];
+    const stride = bv.byteStride ?? comps * cb;
+    const inv = ct === UNSIGNED_BYTE ? 1 / 255 : ct === UNSIGNED_SHORT ? 1 / 65535 : 1;
+    const base = (bv.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
+    const out = new F32(accessor.count * 3);
+    for (let v = 0; v < accessor.count; v++) {
+        const row = base + v * stride;
+        for (let c = 0; c < 3; c++) {
+            const off = row + c * cb;
+            const raw = ct === FLOAT ? binChunk.getFloat32(off, true) : ct === UNSIGNED_SHORT ? binChunk.getUint16(off, true) : binChunk.getUint8(off);
+            out[v * 3 + c] = raw * inv;
+        }
+    }
+    return out;
+}
+
 /** Build a mesh-data partial for a primitive, but ONLY if it actually sources
  *  ≥1 attribute from an interleaved (strided) bufferView. Returns `undefined`
  *  for fully-tight primitives so the caller falls back to its tight path.
@@ -134,9 +162,10 @@ function destrideToTight(il: AccessorInterleave): Float32Array {
  *  Strided POSITION/NORMAL/TEXCOORD_0 attributes keep their raw slice in `_vb`
  *  (for genuine GPU interleaving) and leave the tight CPU field `null` — the
  *  de-strided copy is materialized lazily on first CPU read (see
- *  {@link installLazyCpu}). Strided TANGENT/TEXCOORD_1/COLOR are eagerly
- *  de-strided (they feed device-lost recovery), but no current asset interleaves
- *  them. Tight attributes resolve exactly like the core loader. */
+ *  {@link installLazyCpu}). Strided TANGENT/TEXCOORD_1 are eagerly de-strided
+ *  (they feed device-lost recovery), but no current asset interleaves them.
+ *  COLOR_0 is always normalized to a tight float32x3 buffer (see
+ *  {@link resolveColorVec3}). Tight attributes resolve exactly like the core loader. */
 export function buildInterleavedPartial(
     json: any,
     binChunk: DataView,
@@ -193,15 +222,17 @@ export function buildInterleavedPartial(
     vb._t = tan._il;
     const uv2 = resolveOne("TEXCOORD_1", true);
     vb._u2 = uv2._il;
-    const col = resolveOne("COLOR_0", true);
-    vb._c = col._il;
+    // COLOR_0 is always materialized as a tight float32x3 [0,1] buffer (see
+    // resolveColorVec3) — never bound strided — so ubyte/ushort/VEC4 sources don't
+    // misalign against the pipeline's float32x3 vertex-color layout.
+    const colorIdx = attrs["COLOR_0"];
+    const colors = colorIdx !== undefined ? resolveColorVec3(json, binChunk, colorIdx) : null;
 
     const positions = pos._tight;
     let normals = nrm._tight;
     let uvs = uv._tight;
     const tangents = tan._tight;
     const uv2s = uv2._tight;
-    const colors = col._tight;
 
     const idxData = primitive.indices !== undefined ? resolveAccessor(json, binChunk, primitive.indices) : null;
     const indices = idxData
