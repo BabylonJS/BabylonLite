@@ -1,5 +1,5 @@
-// Scene 242 — ClearCoatTest (cx20 gltf-test parity)
-import { addToScene, startEngine, createEngine, createSceneContext, createArcRotateCamera, loadEnvironment, loadGltf, attachControl, registerScene } from "babylon-lite";
+// Scene 242 — EmissiveFireflies (cx20 gltf-test parity)
+import { addToScene, startEngine, createEngine, createSceneContext, createArcRotateCamera, loadEnvironment, loadGltf, attachControl, registerScene, onBeforeRender, goToFrame, pauseAnimation } from "babylon-lite";
 
 async function main(): Promise<void> {
     const __initStart = performance.now();
@@ -8,19 +8,36 @@ async function main(): Promise<void> {
     const engine = await createEngine(canvas);
     const scene = createSceneContext(engine);
 
-    const root = await loadGltf(engine, "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/ClearCoatTest/glTF/ClearCoatTest.gltf");
+    const root = await loadGltf(engine, "https://cx20.github.io/gltf-test/tutorialModels/EmissiveFireflies/glTF/EmissiveFireflies.gltf");
     addToScene(scene, root);
 
     scene.clearColor = { r: 0.2, g: 0.2, b: 0.3, a: 1.0 };
     await loadEnvironment(scene, "https://assets.babylonjs.com/environments/environmentSpecular.env", { skipSkybox: true, skipGround: true, brdfUrl: "/brdf-lut.png" });
 
-    const cam = createArcRotateCamera(1.5707963, 1.5707963, 25.2, { x: 2.129, y: 0.302, z: 0.495 });
+    const cam = createArcRotateCamera(1.5707963, 1.5707963, 5.63, { x: 0.063, y: 0.51, z: -0.079 });
     cam.fov = 0.8;
-    cam.nearPlane = 25.2 * 0.01;
-    cam.farPlane = 25.2 * 1000;
+    cam.nearPlane = 5.63 * 0.01;
+    cam.farPlane = 5.63 * 1000;
     scene.camera = cam;
     attachControl(cam, canvas, scene);
 
+    scene.fixedDeltaMs = 16.0;
+    const params = new URLSearchParams(window.location.search);
+    const seekTimeParam = parseFloat(params.get("seekTime") || "");
+    let frameCount = 0;
+    let seekDone = false;
+    onBeforeRender(scene, () => {
+        frameCount++;
+        if (!isNaN(seekTimeParam) && frameCount === 10 && !seekDone) {
+            const seekFrame = seekTimeParam * 60;
+            for (const g of scene.animationGroups) {
+                goToFrame(g, seekFrame);
+                pauseAnimation(g);
+            }
+            seekDone = true;
+            canvas.dataset.animationFrozen = "true";
+        }
+    });
 
     await registerScene(scene);
     await startEngine(engine);

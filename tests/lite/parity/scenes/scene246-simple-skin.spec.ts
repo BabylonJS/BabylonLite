@@ -1,22 +1,23 @@
 /**
- * Scene 249 — TextureSettingsTest (cx20 gltf-test parity).
+ * Scene 246 — SimpleSkin (cx20 gltf-test parity).
  */
 import { test, expect } from "@playwright/test";
 import * as path from "path";
 import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
 
-const sceneConfig = getSceneConfig(249);
-const REFERENCE_DIR = path.resolve(__dirname, "../../../../reference/lite/scene249-texture-settings-test");
+const sceneConfig = getSceneConfig(246);
+const REFERENCE_DIR = path.resolve(__dirname, "../../../../reference/lite/scene246-simple-skin");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test.skip(!!sceneConfig.skipParity, "Scene 249 skipped via skipParity in scene-config.json");
+test.skip(!!sceneConfig.skipParity, "Scene 246 skipped via skipParity in scene-config.json");
 
-test("Scene 249 — TextureSettingsTest matches Babylon.js reference", async ({ page }, testInfo) => {
+test("Scene 246 — SimpleSkin matches Babylon.js reference", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
-    await captureGolden(browser, { sceneId: 249, timeout: 90_000 });
+    await captureGolden(browser, { sceneId: 246, seekTime: 1, timeout: 90_000 });
 
-    await page.goto("/scene249.html");
+    await page.goto("/scene246.html?seekTime=1");
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 60_000 });
+    await page.waitForFunction(() => document.querySelector("canvas")?.dataset.animationFrozen === "true", { timeout: 60_000 });
     await page.waitForTimeout(500);
 
     const screenshotPath = path.join(REFERENCE_DIR, "test-actual.png");

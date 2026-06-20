@@ -18,7 +18,7 @@ import "@babylonjs/loaders/glTF";
 
     const scene = new Scene(engine);
 
-    await SceneLoader.AppendAsync("", "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/RecursiveSkeletons/glTF/RecursiveSkeletons.gltf", scene);
+    await SceneLoader.AppendAsync("", "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/SimpleSkin/glTF/SimpleSkin.gltf", scene);
 
     scene.clearColor = new Color4(0.2, 0.2, 0.3, 1.0);
     const envTex = await new Promise<CubeTexture>((resolve) => {
@@ -30,10 +30,10 @@ import "@babylonjs/loaders/glTF";
     scene.imageProcessingConfiguration.contrast = 1.2;
     scene.imageProcessingConfiguration.toneMappingEnabled = true;
 
-    const camera = new ArcRotateCamera("camera", 1.5707963, 1.5707963, 226.74, new Vector3(0, 62.55, 0), scene);
+    const camera = new ArcRotateCamera("camera", 1.5707963, 1.5707963, 3.35, new Vector3(0, 1, 0), scene);
     camera.fov = 0.8;
-    camera.minZ = 226.74 * 0.01;
-    camera.maxZ = 226.74 * 1000;
+    camera.minZ = 3.35 * 0.01;
+    camera.maxZ = 3.35 * 1000;
     camera.attachControl(canvas, true);
     scene.activeCamera = camera;
 

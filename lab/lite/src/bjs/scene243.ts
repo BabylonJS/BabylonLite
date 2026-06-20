@@ -18,7 +18,7 @@ import "@babylonjs/loaders/glTF";
 
     const scene = new Scene(engine);
 
-    await SceneLoader.AppendAsync("", "https://cx20.github.io/gltf-test/tutorialModels/EmissiveFireflies/glTF/EmissiveFireflies.gltf", scene);
+    await SceneLoader.AppendAsync("", "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/MorphStressTest/glTF/MorphStressTest.gltf", scene);
 
     scene.clearColor = new Color4(0.2, 0.2, 0.3, 1.0);
     const envTex = await new Promise<CubeTexture>((resolve) => {
@@ -30,10 +30,10 @@ import "@babylonjs/loaders/glTF";
     scene.imageProcessingConfiguration.contrast = 1.2;
     scene.imageProcessingConfiguration.toneMappingEnabled = true;
 
-    const camera = new ArcRotateCamera("camera", 1.5707963, 1.5707963, 5.63, new Vector3(0.063, 0.51, -0.079), scene);
+    const camera = new ArcRotateCamera("camera", 1.5707963, 1.5707963, 6.25, new Vector3(0, 0.2, 0), scene);
     camera.fov = 0.8;
-    camera.minZ = 5.63 * 0.01;
-    camera.maxZ = 5.63 * 1000;
+    camera.minZ = 6.25 * 0.01;
+    camera.maxZ = 6.25 * 1000;
     camera.attachControl(canvas, true);
     scene.activeCamera = camera;
 

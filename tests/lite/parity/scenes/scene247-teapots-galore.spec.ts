@@ -1,21 +1,21 @@
 /**
- * Scene 248 — TeapotsGalore (cx20 gltf-test parity).
+ * Scene 247 — TeapotsGalore (cx20 gltf-test parity).
  */
 import { test, expect } from "@playwright/test";
 import * as path from "path";
 import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
 
-const sceneConfig = getSceneConfig(248);
-const REFERENCE_DIR = path.resolve(__dirname, "../../../../reference/lite/scene248-teapots-galore");
+const sceneConfig = getSceneConfig(247);
+const REFERENCE_DIR = path.resolve(__dirname, "../../../../reference/lite/scene247-teapots-galore");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test.skip(!!sceneConfig.skipParity, "Scene 248 skipped via skipParity in scene-config.json");
+test.skip(!!sceneConfig.skipParity, "Scene 247 skipped via skipParity in scene-config.json");
 
-test("Scene 248 — TeapotsGalore matches Babylon.js reference", async ({ page }, testInfo) => {
+test("Scene 247 — TeapotsGalore matches Babylon.js reference", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
-    await captureGolden(browser, { sceneId: 248, timeout: 90_000 });
+    await captureGolden(browser, { sceneId: 247, timeout: 90_000 });
 
-    await page.goto("/scene248.html");
+    await page.goto("/scene247.html");
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 60_000 });
     await page.waitForTimeout(500);
 

@@ -18,7 +18,7 @@ import "@babylonjs/loaders/glTF";
 
     const scene = new Scene(engine);
 
-    await SceneLoader.AppendAsync("", "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/ClearCoatTest/glTF/ClearCoatTest.gltf", scene);
+    await SceneLoader.AppendAsync("", "https://cx20.github.io/gltf-test/tutorialModels/EmissiveFireflies/glTF/EmissiveFireflies.gltf", scene);
 
     scene.clearColor = new Color4(0.2, 0.2, 0.3, 1.0);
     const envTex = await new Promise<CubeTexture>((resolve) => {
@@ -30,13 +30,32 @@ import "@babylonjs/loaders/glTF";
     scene.imageProcessingConfiguration.contrast = 1.2;
     scene.imageProcessingConfiguration.toneMappingEnabled = true;
 
-    const camera = new ArcRotateCamera("camera", 1.5707963, 1.5707963, 25.2, new Vector3(2.129, 0.302, 0.495), scene);
+    const camera = new ArcRotateCamera("camera", 1.5707963, 1.5707963, 5.63, new Vector3(0.063, 0.51, -0.079), scene);
     camera.fov = 0.8;
-    camera.minZ = 25.2 * 0.01;
-    camera.maxZ = 25.2 * 1000;
+    camera.minZ = 5.63 * 0.01;
+    camera.maxZ = 5.63 * 1000;
     camera.attachControl(canvas, true);
     scene.activeCamera = camera;
 
+    const params = new URLSearchParams(window.location.search);
+    const seekTimeParam = parseFloat(params.get("seekTime") || "");
+    let frameCount = 0;
+    let seekDone = false;
+    scene.onBeforeRenderObservable.add(() => {
+        frameCount++;
+        if (!isNaN(seekTimeParam) && frameCount === 10 && !seekDone) {
+            scene.animationGroups.forEach((g) => {
+                const range = g.to - g.from;
+                const frame = range > 0 ? g.from + ((seekTimeParam * 60 - g.from) % range) : g.from;
+                g.goToFrame(frame);
+            });
+            scene.animatables.forEach((a) => a.pause());
+            seekDone = true;
+            canvas.dataset.animationFrozen = "true";
+        }
+    });
+    engine.getDeltaTime = function () { return 16; };
+    scene.useConstantAnimationDeltaTime = true;
 
     await scene.whenReadyAsync();
     engine.runRenderLoop(() => scene.render());

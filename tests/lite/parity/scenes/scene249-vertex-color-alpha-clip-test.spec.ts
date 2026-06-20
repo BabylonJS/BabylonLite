@@ -1,23 +1,22 @@
 /**
- * Scene 244 — MorphStressTest (cx20 gltf-test parity).
+ * Scene 249 — VertexColorAlphaClipTest (cx20 gltf-test parity).
  */
 import { test, expect } from "@playwright/test";
 import * as path from "path";
 import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
 
-const sceneConfig = getSceneConfig(244);
-const REFERENCE_DIR = path.resolve(__dirname, "../../../../reference/lite/scene244-morph-stress-test");
+const sceneConfig = getSceneConfig(249);
+const REFERENCE_DIR = path.resolve(__dirname, "../../../../reference/lite/scene249-vertex-color-alpha-clip-test");
 const GOLDEN_REF = path.join(REFERENCE_DIR, "babylon-ref-golden.png");
 
-test.skip(!!sceneConfig.skipParity, "Scene 244 skipped via skipParity in scene-config.json");
+test.skip(!!sceneConfig.skipParity, "Scene 249 skipped via skipParity in scene-config.json");
 
-test("Scene 244 — MorphStressTest matches Babylon.js reference", async ({ page }, testInfo) => {
+test("Scene 249 — VertexColorAlphaClipTest matches Babylon.js reference", async ({ page }, testInfo) => {
     const browser = page.context().browser()!;
-    await captureGolden(browser, { sceneId: 244, seekTime: 1, timeout: 90_000 });
+    await captureGolden(browser, { sceneId: 249, timeout: 90_000 });
 
-    await page.goto("/scene244.html?seekTime=1");
+    await page.goto("/scene249.html");
     await page.waitForFunction(() => document.querySelector("canvas")?.dataset.ready === "true", { timeout: 60_000 });
-    await page.waitForFunction(() => document.querySelector("canvas")?.dataset.animationFrozen === "true", { timeout: 60_000 });
     await page.waitForTimeout(500);
 
     const screenshotPath = path.join(REFERENCE_DIR, "test-actual.png");

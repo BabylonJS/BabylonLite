@@ -1,4 +1,4 @@
-// Scene 244 — MorphStressTest (cx20 gltf-test parity)
+// Scene 244 — PotOfCoalsAnimationPointer (cx20 gltf-test parity)
 import { addToScene, startEngine, createEngine, createSceneContext, createArcRotateCamera, loadEnvironment, loadGltf, attachControl, registerScene, onBeforeRender, goToFrame, pauseAnimation } from "babylon-lite";
 
 async function main(): Promise<void> {
@@ -8,16 +8,16 @@ async function main(): Promise<void> {
     const engine = await createEngine(canvas);
     const scene = createSceneContext(engine);
 
-    const root = await loadGltf(engine, "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/MorphStressTest/glTF/MorphStressTest.gltf");
+    const root = await loadGltf(engine, "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/PotOfCoalsAnimationPointer/glTF/PotOfCoalsAnimationPointer.gltf");
     addToScene(scene, root);
 
     scene.clearColor = { r: 0.2, g: 0.2, b: 0.3, a: 1.0 };
     await loadEnvironment(scene, "https://assets.babylonjs.com/environments/environmentSpecular.env", { skipSkybox: true, skipGround: true, brdfUrl: "/brdf-lut.png" });
 
-    const cam = createArcRotateCamera(1.5707963, 1.5707963, 6.25, { x: 0, y: 0.2, z: 0 });
+    const cam = createArcRotateCamera(1.5707963, 1.5707963, 0.19, { x: 0, y: 0.0256, z: 0 });
     cam.fov = 0.8;
-    cam.nearPlane = 6.25 * 0.01;
-    cam.farPlane = 6.25 * 1000;
+    cam.nearPlane = 0.19 * 0.01;
+    cam.farPlane = 0.19 * 1000;
     scene.camera = cam;
     attachControl(cam, canvas, scene);
 

@@ -18,7 +18,7 @@ import "@babylonjs/loaders/glTF";
 
     const scene = new Scene(engine);
 
-    await SceneLoader.AppendAsync("", "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/TextureSettingsTest/glTF/TextureSettingsTest.gltf", scene);
+    await SceneLoader.AppendAsync("", "https://cx20.github.io/gltf-test/tutorialModels/VertexColorAlphaClipTest/glTF/VertexColorAlphaClipTest.gltf", scene);
 
     scene.clearColor = new Color4(0.2, 0.2, 0.3, 1.0);
     const envTex = await new Promise<CubeTexture>((resolve) => {
@@ -30,10 +30,10 @@ import "@babylonjs/loaders/glTF";
     scene.imageProcessingConfiguration.contrast = 1.2;
     scene.imageProcessingConfiguration.toneMappingEnabled = true;
 
-    const camera = new ArcRotateCamera("camera", 1.5707963, 1.5707963, 21.64, new Vector3(0, -0.583, -0.025), scene);
+    const camera = new ArcRotateCamera("camera", 1.5707963, 1.5707963, 28.22, new Vector3(0, 0.728, 0), scene);
     camera.fov = 0.8;
-    camera.minZ = 21.64 * 0.01;
-    camera.maxZ = 21.64 * 1000;
+    camera.minZ = 28.22 * 0.01;
+    camera.maxZ = 28.22 * 1000;
     camera.attachControl(canvas, true);
     scene.activeCamera = camera;
 

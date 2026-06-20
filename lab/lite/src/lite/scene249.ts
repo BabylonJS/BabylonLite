@@ -1,4 +1,4 @@
-// Scene 249 — TextureSettingsTest (cx20 gltf-test parity)
+// Scene 249 — VertexColorAlphaClipTest (cx20 gltf-test parity)
 import { addToScene, startEngine, createEngine, createSceneContext, createArcRotateCamera, loadEnvironment, loadGltf, attachControl, registerScene } from "babylon-lite";
 
 async function main(): Promise<void> {
@@ -8,16 +8,16 @@ async function main(): Promise<void> {
     const engine = await createEngine(canvas);
     const scene = createSceneContext(engine);
 
-    const root = await loadGltf(engine, "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/TextureSettingsTest/glTF/TextureSettingsTest.gltf");
+    const root = await loadGltf(engine, "https://cx20.github.io/gltf-test/tutorialModels/VertexColorAlphaClipTest/glTF/VertexColorAlphaClipTest.gltf");
     addToScene(scene, root);
 
     scene.clearColor = { r: 0.2, g: 0.2, b: 0.3, a: 1.0 };
     await loadEnvironment(scene, "https://assets.babylonjs.com/environments/environmentSpecular.env", { skipSkybox: true, skipGround: true, brdfUrl: "/brdf-lut.png" });
 
-    const cam = createArcRotateCamera(1.5707963, 1.5707963, 21.64, { x: 0, y: -0.583, z: -0.025 });
+    const cam = createArcRotateCamera(1.5707963, 1.5707963, 28.22, { x: 0, y: 0.728, z: 0 });
     cam.fov = 0.8;
-    cam.nearPlane = 21.64 * 0.01;
-    cam.farPlane = 21.64 * 1000;
+    cam.nearPlane = 28.22 * 0.01;
+    cam.farPlane = 28.22 * 1000;
     scene.camera = cam;
     attachControl(cam, canvas, scene);
 
