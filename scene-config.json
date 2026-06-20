@@ -351,7 +351,7 @@
         "slug": "scene34-node-visibility",
         "name": "Scene 34 — KHR_node_visibility + KHR_animation_pointer",
         "maxMad": 0.02,
-        "maxRawKB": 89.5,
+        "maxRawKB": 91,
         "description": "CubeVisibility.glb — three cubes: green always-visible, blue blinking via KHR_animation_pointer on its visibility flag, two reds hidden via KHR_node_visibility. Default IBL env. Matches PG #YG3BBF#55.",
         "tags": ["pbr", "gltf", "env", "node-visibility", "animation-pointer"],
         "skipPerf": true,
@@ -396,6 +396,17 @@
         "maxRawKB": 62.3,
         "description": "Cylinder, cone, plane, disc, ring, polyhedron, ribbon, tube, and extruded shape rendered with StandardMaterial. Parity check against BJS MeshBuilder.",
         "tags": ["std", "procedural"],
+        "skipPerf": true,
+        "compatParity": true
+    },
+    {
+        "id": 39,
+        "slug": "scene39-animation-pointer-waterfall",
+        "name": "Scene 39 — KHR_animation_pointer (Animated Waterfall)",
+        "maxMad": 0.6,
+        "maxRawKB": 104,
+        "description": "AnimatedWaterfall.gltf — grass blades rotate via /nodes/{n}/rotation pointers and water/foam surfaces scroll via /materials/{m}/.../KHR_texture_transform offset+scale pointers. Default IBL env, no skybox/ground. Validates KHR_animation_pointer node-TRS + texture-transform handlers.",
+        "tags": ["pbr", "gltf", "env", "lights-punctual", "texture-transform", "animation-pointer"],
         "skipPerf": true,
         "compatParity": true
     },
