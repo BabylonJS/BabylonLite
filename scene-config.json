@@ -2001,110 +2001,99 @@
         "id": 240,
         "slug": "scene240-animated-triangle",
         "name": "Scene 240 — AnimatedTriangle",
-        "maxMad": 1,
-        "description": "AnimatedTriangle.gltf — cx20 gltf-test. multi-buffer load fixed; parity WIP (material-less default-material IBL).",
+        "maxMad": 4,
+        "description": "AnimatedTriangle.gltf — cx20 gltf-test. Node-rotation animation; material-less no-NORMAL mesh (smooth normals).",
         "tags": ["gltf"],
-        "skipPerf": true,
-        "skipParity": true
+        "skipPerf": true
     },
     {
         "id": 241,
         "slug": "scene241-animation-pointer-uvs",
         "name": "Scene 241 — AnimationPointerUVs",
-        "maxMad": 1,
-        "description": "AnimationPointerUVs.gltf — cx20 gltf-test. near-perfect (MAD ~1.0).",
+        "maxMad": 4,
+        "description": "AnimationPointerUVs.gltf — cx20 gltf-test. KHR_animation_pointer UV-transform across 82 materials.",
         "tags": ["gltf"],
-        "skipPerf": true,
-        "skipParity": true
+        "skipPerf": true
     },
     {
         "id": 242,
         "slug": "scene242-clearcoat-test",
         "name": "Scene 242 — ClearCoatTest",
-        "maxMad": 1,
-        "description": "ClearCoatTest.gltf — cx20 gltf-test. renders clearcoat matrix correctly; brightness/IBL-reflection WIP.",
+        "maxMad": 4,
+        "description": "ClearCoatTest.gltf — cx20 gltf-test. KHR_materials_clearcoat.",
         "tags": ["gltf"],
-        "skipPerf": true,
-        "skipParity": true
+        "skipPerf": true
     },
     {
         "id": 243,
         "slug": "scene243-emissive-fireflies",
         "name": "Scene 243 — EmissiveFireflies",
-        "maxMad": 1,
-        "description": "EmissiveFireflies.gltf — cx20 gltf-test. renders; material-factor pointer parity WIP.",
+        "maxMad": 3,
+        "description": "EmissiveFireflies.gltf — cx20 gltf-test. KHR_animation_pointer material emissiveFactor/emissiveStrength/baseColorFactor.",
         "tags": ["gltf"],
-        "skipPerf": true,
-        "skipParity": true
+        "skipPerf": true
     },
     {
         "id": 244,
         "slug": "scene244-morph-stress-test",
         "name": "Scene 244 — MorphStressTest",
-        "maxMad": 1,
-        "description": "MorphStressTest.gltf — cx20 gltf-test. morph renders; parity WIP.",
+        "maxMad": 3,
+        "description": "MorphStressTest.gltf — cx20 gltf-test. Morph-target weight animation.",
         "tags": ["gltf"],
-        "skipPerf": true,
-        "skipParity": true
+        "skipPerf": true
     },
     {
         "id": 245,
         "slug": "scene245-pot-of-coals-animation-pointer",
         "name": "Scene 245 — PotOfCoalsAnimationPointer",
-        "maxMad": 1,
-        "description": "PotOfCoalsAnimationPointer.gltf — cx20 gltf-test. renders; parity WIP.",
+        "maxMad": 3,
+        "description": "PotOfCoalsAnimationPointer.gltf — cx20 gltf-test. KHR_animation_pointer texture-transform rotation.",
         "tags": ["gltf"],
-        "skipPerf": true,
-        "skipParity": true
+        "skipPerf": true
     },
     {
         "id": 246,
         "slug": "scene246-recursive-skeletons",
         "name": "Scene 246 — RecursiveSkeletons",
-        "maxMad": 1,
-        "description": "RecursiveSkeletons.gltf — cx20 gltf-test. recursive skeletons render; parity WIP.",
+        "maxMad": 6,
+        "description": "RecursiveSkeletons.gltf — cx20 gltf-test. Deep recursive skeletons; interleaved JOINTS/WEIGHTS/COLOR_0.",
         "tags": ["gltf"],
-        "skipPerf": true,
-        "skipParity": true
+        "skipPerf": true
     },
     {
         "id": 247,
         "slug": "scene247-simple-skin",
         "name": "Scene 247 — SimpleSkin",
-        "maxMad": 1,
-        "description": "SimpleSkin.gltf — cx20 gltf-test. multi-buffer load fixed; skinned material-less renders black (skinned-normals IBL) WIP.",
+        "maxMad": 6,
+        "description": "SimpleSkin.gltf — cx20 gltf-test. Material-less skinned mesh; interleaved JOINTS/WEIGHTS, no-NORMAL smooth normals.",
         "tags": ["gltf"],
-        "skipPerf": true,
-        "skipParity": true
+        "skipPerf": true
     },
     {
         "id": 248,
         "slug": "scene248-teapots-galore",
         "name": "Scene 248 — TeapotsGalore",
-        "maxMad": 1,
-        "description": "TeapotsGalore.gltf — cx20 gltf-test. gpu instancing renders; parity WIP.",
+        "maxMad": 4,
+        "description": "TeapotsGalore.gltf — cx20 gltf-test. EXT_mesh_gpu_instancing, top-down view.",
         "tags": ["gltf"],
-        "skipPerf": true,
-        "skipParity": true
+        "skipPerf": true
     },
     {
         "id": 249,
         "slug": "scene249-texture-settings-test",
         "name": "Scene 249 — TextureSettingsTest",
-        "maxMad": 1,
-        "description": "TextureSettingsTest.gltf — cx20 gltf-test. renders; Lite ignores glTF sampler wrap modes (clamp/mirror) WIP.",
+        "maxMad": 6,
+        "description": "TextureSettingsTest.gltf — cx20 gltf-test. glTF sampler wrap/filter modes (clamp/mirror/repeat).",
         "tags": ["gltf"],
-        "skipPerf": true,
-        "skipParity": true
+        "skipPerf": true
     },
     {
         "id": 250,
         "slug": "scene250-vertex-color-alpha-clip-test",
         "name": "Scene 250 — VertexColorAlphaClipTest",
-        "maxMad": 1,
-        "description": "VertexColorAlphaClipTest.gltf — cx20 gltf-test. renders; vertex-color alpha-clip parity WIP.",
+        "maxMad": 3,
+        "description": "VertexColorAlphaClipTest.gltf — cx20 gltf-test. Vertex-color alpha with alpha-clip.",
         "tags": ["gltf"],
-        "skipPerf": true,
-        "skipParity": true
+        "skipPerf": true
     }
 ]
