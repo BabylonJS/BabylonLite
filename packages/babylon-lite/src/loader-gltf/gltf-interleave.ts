@@ -127,6 +127,25 @@ function destrideToTight(il: AccessorInterleave): Float32Array {
     return out;
 }
 
+/** AMD (Renoir / some Dawn vertex-fetch paths) corrupt a `float32x3` vertex attribute
+ *  whose interleaved byte span crosses a 16-byte boundary — e.g. a NORMAL at stride-48
+ *  offset 12, whose bytes 12..23 straddle the 16-byte line. The mis-fetched normal comes
+ *  back as garbage → `normalize()` = NaN → black fragments, but ONLY on AMD (NVIDIA/Intel
+ *  read it fine). When such an attribute is detected, de-interleave it into a tight,
+ *  offset-0 buffer (the universally-safe layout that separate-buffer assets already use)
+ *  so the GPU never performs the boundary-crossing fetch. Boundary-safe attributes keep
+ *  genuine interleaving, so only the offending attribute pays the de-stride cost.
+ *
+ *  A 12-byte (vec3) span at byte `offset` crosses a 16-byte boundary iff
+ *  `(offset % 16) + 12 > 16`. Offsets are always 4-aligned, so this is `(offset & 15) > 4`. */
+function deStraddleVec3(a: { _tight: Float32Array | null; _il?: AccessorInterleave }): void {
+    const il = a._il;
+    if (il && il._componentType === FLOAT && il._componentCount === 3 && (il._offset & 15) + 12 > 16) {
+        a._tight = destrideToTight(il);
+        a._il = undefined;
+    }
+}
+
 /** Build a mesh-data partial for a primitive, but ONLY if it actually sources
  *  ≥1 attribute from an interleaved (strided) bufferView. Returns `undefined`
  *  for fully-tight primitives so the caller falls back to its tight path.
@@ -176,9 +195,11 @@ export function buildInterleavedPartial(json: any, binChunk: DataView, primitive
     };
 
     const pos = resolveOne("POSITION", false);
+    deStraddleVec3(pos);
     vb._p = pos._il;
     vertexCount = pos._count;
     const nrm = resolveOne("NORMAL", false);
+    deStraddleVec3(nrm);
     vb._n = nrm._il;
     const uv = resolveOne("TEXCOORD_0", false);
     vb._u = uv._il;
