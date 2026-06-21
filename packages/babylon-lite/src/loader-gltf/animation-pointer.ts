@@ -72,6 +72,61 @@ const TX_SLOT: Record<string, keyof PointerMaterial> = {
     "pbrMetallicRoughness/metallicRoughnessTexture": "ormTexture",
 };
 
+/** Resolve a glTF material-extension texture slot to the runtime PBR material's
+ *  mutable texture object, so a KHR_texture_transform pointer on an extension
+ *  texture can drive its UV transform. Only slots whose fragment actually applies
+ *  the per-texture UV transform are listed (others would animate a value the
+ *  shader ignores). */
+function resolveExtTexture(mat: PointerMaterial, ext: string, field: string): PointerUvTexture | undefined {
+    const m = mat as unknown as {
+        iridescence?: { texture?: PointerUvTexture; thicknessTexture?: PointerUvTexture };
+        sheen?: { texture?: PointerUvTexture };
+        subsurface?: { translucency?: { colorTexture?: PointerUvTexture; intensityTexture?: PointerUvTexture } };
+    };
+    switch (`${ext}/${field}`) {
+        case "KHR_materials_iridescence/iridescenceTexture":
+            return m.iridescence?.texture;
+        case "KHR_materials_iridescence/iridescenceThicknessTexture":
+            return m.iridescence?.thicknessTexture;
+        case "KHR_materials_sheen/sheenColorTexture":
+        case "KHR_materials_sheen/sheenRoughnessTexture":
+            return m.sheen?.texture;
+        case "KHR_materials_diffuse_transmission/diffuseTransmissionColorTexture":
+            return m.subsurface?.translucency?.colorTexture;
+        case "KHR_materials_diffuse_transmission/diffuseTransmissionTexture":
+            return m.subsurface?.translucency?.intensityTexture;
+        default:
+            return undefined;
+    }
+}
+
+/** Build an offset/scale/rotation UV-transform writer for a resolved texture. */
+function uvTransformWriter(mat: PointerMaterial, tex: PointerUvTexture, kind: string | undefined): ResolvedPointer {
+    if (kind === "rotation") {
+        return {
+            arity: 1,
+            writer: (out, off) => {
+                tex.uAng = out[off]!;
+                mat._uboVersion++;
+            },
+        };
+    }
+    const isScale = kind === "scale";
+    return {
+        arity: 2,
+        writer: (out, off) => {
+            if (isScale) {
+                tex.uScale = out[off]!;
+                tex.vScale = out[off + 1]!;
+            } else {
+                tex.uOffset = out[off]!;
+                tex.vOffset = out[off + 1]!;
+            }
+            mat._uboVersion++;
+        },
+    };
+}
+
 const _registry: [RegExp, PointerFactory][] = [
     // /nodes/{n}/extensions/KHR_node_visibility/visible — scalar (0 = hidden).
     // The setter cascade handles descendants per the KHR_node_visibility spec
@@ -104,30 +159,22 @@ const _registry: [RegExp, PointerFactory][] = [
             if (!mat || !tex) {
                 return null;
             }
-            const kind = m[3];
-            if (kind === "rotation") {
-                return {
-                    arity: 1,
-                    writer: (out, off) => {
-                        tex.uAng = out[off]!;
-                        mat._uboVersion++;
-                    },
-                };
+            return uvTransformWriter(mat, tex, m[3]);
+        },
+    ],
+    // /materials/{m}/extensions/{KHR_materials_*}/{slot}Texture/.../KHR_texture_transform/{offset|scale|rotation}
+    // — animated UV transform on a material-extension texture (iridescence, sheen,
+    // diffuse transmission). Resolves the runtime extension texture and drives its
+    // UV transform exactly like the core slots.
+    [
+        /^\/materials\/(\d+)\/extensions\/(KHR_materials_\w+)\/(\w+Texture)\/extensions\/KHR_texture_transform\/(offset|scale|rotation)$/,
+        (m, ctx) => {
+            const mat = ctx.materials?.[+m[1]!];
+            const tex = mat && resolveExtTexture(mat, m[2]!, m[3]!);
+            if (!mat || !tex) {
+                return null;
             }
-            const isScale = kind === "scale";
-            return {
-                arity: 2,
-                writer: (out, off) => {
-                    if (isScale) {
-                        tex.uScale = out[off]!;
-                        tex.vScale = out[off + 1]!;
-                    } else {
-                        tex.uOffset = out[off]!;
-                        tex.vOffset = out[off + 1]!;
-                    }
-                    mat._uboVersion++;
-                },
-            };
+            return uvTransformWriter(mat, tex, m[4]);
         },
     ],
     // /materials/{m}/emissiveFactor — vec3. Recombined with emissiveStrength into

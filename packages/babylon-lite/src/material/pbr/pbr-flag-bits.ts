@@ -83,3 +83,6 @@ export const PBR2_HAS_TRANSLUCENCY_COLOR_MAP = 1 << 22;
 /** Translucency intensity texture (A channel) — multiplies translucency intensity.
  *  KHR_materials_diffuse_transmission.diffuseTransmissionTexture. */
 export const PBR2_HAS_TRANSLUCENCY_INTENSITY_MAP = 1 << 23;
+/** Translucency color/intensity texture carries a KHR_texture_transform. Adds
+ *  `translucencyUVm`/`translucencyUVt` UBO fields + transformed-UV sampling. */
+export const PBR2_HAS_TRANSLUCENCY_UV_TX = 1 << 24;
