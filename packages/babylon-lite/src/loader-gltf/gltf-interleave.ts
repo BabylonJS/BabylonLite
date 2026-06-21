@@ -127,20 +127,36 @@ function destrideToTight(il: AccessorInterleave): Float32Array {
     return out;
 }
 
+/** True if any vertex of a 12-byte (vec3) FLOAT attribute interleaved at byte
+ *  `offset` with `stride` crosses a 16-byte boundary. A vec3 occupying bytes
+ *  `[a, a+12)` crosses iff `(a & 15) > 4`. The per-vertex base address is
+ *  `offset + v*stride`, whose residue mod 16 repeats with period ≤ 16, so the
+ *  first `min(count, 16)` vertices cover every distinct residue. Checking only
+ *  `offset` would miss layouts whose `stride` is not a multiple of 16 (e.g.
+ *  stride 24, offset 0 → vertex 1 base 24, residue 8, straddles). */
+function vec3CrossesBoundary(offset: number, stride: number, count: number): boolean {
+    const n = Math.min(count, 16);
+    for (let v = 0; v < n; v++) {
+        if (((offset + v * stride) & 15) > 4) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /** AMD (Renoir / some Dawn vertex-fetch paths) corrupt a `float32x3` vertex attribute
  *  whose interleaved byte span crosses a 16-byte boundary — e.g. a NORMAL at stride-48
  *  offset 12, whose bytes 12..23 straddle the 16-byte line. The mis-fetched normal comes
  *  back as garbage → `normalize()` = NaN → black fragments, but ONLY on AMD (NVIDIA/Intel
- *  read it fine). When such an attribute is detected, de-interleave it into a tight,
+ *  read it fine; this is why stock Babylon.js, which uploads one tight buffer per attribute,
+ *  is unaffected). When such an attribute is detected, de-interleave it into a tight,
  *  offset-0 buffer (the universally-safe layout that separate-buffer assets already use)
  *  so the GPU never performs the boundary-crossing fetch. Boundary-safe attributes keep
- *  genuine interleaving, so only the offending attribute pays the de-stride cost.
- *
- *  A 12-byte (vec3) span at byte `offset` crosses a 16-byte boundary iff
- *  `(offset % 16) + 12 > 16`. Offsets are always 4-aligned, so this is `(offset & 15) > 4`. */
+ *  genuine interleaving, so only the offending attribute pays the de-stride cost, and
+ *  rendering stays byte-identical on GPUs that were already correct. */
 function deStraddleVec3(a: { _tight: Float32Array | null; _il?: AccessorInterleave }): void {
     const il = a._il;
-    if (il && il._componentType === FLOAT && il._componentCount === 3 && (il._offset & 15) + 12 > 16) {
+    if (il && il._componentType === FLOAT && il._componentCount === 3 && vec3CrossesBoundary(il._offset, il._stride, il._count)) {
         a._tight = destrideToTight(il);
         a._il = undefined;
     }
