@@ -450,18 +450,22 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
                 pass.setBindGroup(2, shadowBindGroup);
             }
             let slot = 0;
-            const vb = gpu._vbLayout;
-            pass.setVertexBuffer(slot++, gpu.positionBuffer, vb?._p?._offset);
-            pass.setVertexBuffer(slot++, gpu.normalBuffer, vb?._n?._offset);
+            // Interleaved meshes share one GPU buffer across attributes; the per-attribute
+            // byte offset is baked into the pipeline vertex layout (attributes[].offset), so
+            // every slot binds at offset 0. This matches Babylon.js WebGPU and avoids a
+            // non-zero setVertexBuffer bind offset, which corrupts vertex fetch on some
+            // AMD (Renoir) / Dawn paths (interleaved ClearCoatTest labels went black/garbage).
+            pass.setVertexBuffer(slot++, gpu.positionBuffer);
+            pass.setVertexBuffer(slot++, gpu.normalBuffer);
             if (hasNormalMap && gpu.tangentBuffer) {
-                pass.setVertexBuffer(slot++, gpu.tangentBuffer, vb?._t?._offset);
+                pass.setVertexBuffer(slot++, gpu.tangentBuffer);
             }
-            pass.setVertexBuffer(slot++, gpu.uvBuffer, vb?._u?._offset);
+            pass.setVertexBuffer(slot++, gpu.uvBuffer);
             if (hasUV2 && gpu.uv2Buffer) {
-                pass.setVertexBuffer(slot++, gpu.uv2Buffer, vb?._u2?._offset);
+                pass.setVertexBuffer(slot++, gpu.uv2Buffer);
             }
             if (hasVertexColor && gpu.colorBuffer) {
-                pass.setVertexBuffer(slot++, gpu.colorBuffer, vb?._c?._offset);
+                pass.setVertexBuffer(slot++, gpu.colorBuffer);
             }
             // Skinning vertex buffers: live skeleton OR baked VAT (same field names, mutually exclusive).
             const skin = mesh.skeleton ?? mesh.vat;

@@ -2,9 +2,12 @@
  * Interleaved (strided) glTF vertex-buffer support — dynamically imported.
  *
  * The engine renders interleaved attributes genuinely: the raw strided
- * bufferView slice is uploaded ONCE as a shared GPU buffer and bound to each
- * attribute at its byte offset with the pipeline's vertex `arrayStride` set to
- * the bufferView byteStride. The loader never rewrites the asset.
+ * bufferView slice is uploaded ONCE as a shared GPU buffer, bound to each
+ * attribute slot at byte offset 0, with the per-attribute byte offset encoded in
+ * the pipeline vertex layout (`attributes[].offset`) and `arrayStride` set to the
+ * bufferView byteStride. This mirrors stock Babylon.js's WebGPU vertex state and
+ * avoids a non-zero `setVertexBuffer` bind offset, which corrupts vertex fetch on
+ * some AMD (Renoir) / Dawn paths. The loader never rewrites the asset.
  *
  * This whole module is loaded via `await import()` only when an asset actually
  * contains an interleaved bufferView, so non-interleaved scenes pay ZERO bundle
@@ -49,7 +52,8 @@ export interface AccessorInterleave {
     _bufferView: number;
     /** @internal Interleave byte stride (bufferView.byteStride) → pipeline arrayStride. */
     _stride: number;
-    /** @internal Attribute byte offset within the bufferView → setVertexBuffer bind offset. */
+    /** @internal Attribute byte offset within the bufferView → pipeline vertex layout
+     *  `attributes[].offset` (the shared buffer is bound at offset 0). */
     _offset: number;
     /** @internal glTF component type (FLOAT, UNSIGNED_SHORT, …). */
     _componentType: number;
@@ -127,41 +131,6 @@ function destrideToTight(il: AccessorInterleave): Float32Array {
     return out;
 }
 
-/** True if any vertex of a 12-byte (vec3) FLOAT attribute interleaved at byte
- *  `offset` with `stride` crosses a 16-byte boundary. A vec3 occupying bytes
- *  `[a, a+12)` crosses iff `(a & 15) > 4`. The per-vertex base address is
- *  `offset + v*stride`, whose residue mod 16 repeats with period ≤ 16, so the
- *  first `min(count, 16)` vertices cover every distinct residue. Checking only
- *  `offset` would miss layouts whose `stride` is not a multiple of 16 (e.g.
- *  stride 24, offset 0 → vertex 1 base 24, residue 8, straddles). */
-function vec3CrossesBoundary(offset: number, stride: number, count: number): boolean {
-    const n = Math.min(count, 16);
-    for (let v = 0; v < n; v++) {
-        if (((offset + v * stride) & 15) > 4) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/** AMD (Renoir / some Dawn vertex-fetch paths) corrupt a `float32x3` vertex attribute
- *  whose interleaved byte span crosses a 16-byte boundary — e.g. a NORMAL at stride-48
- *  offset 12, whose bytes 12..23 straddle the 16-byte line. The mis-fetched normal comes
- *  back as garbage → `normalize()` = NaN → black fragments, but ONLY on AMD (NVIDIA/Intel
- *  read it fine; this is why stock Babylon.js, which uploads one tight buffer per attribute,
- *  is unaffected). When such an attribute is detected, de-interleave it into a tight,
- *  offset-0 buffer (the universally-safe layout that separate-buffer assets already use)
- *  so the GPU never performs the boundary-crossing fetch. Boundary-safe attributes keep
- *  genuine interleaving, so only the offending attribute pays the de-stride cost, and
- *  rendering stays byte-identical on GPUs that were already correct. */
-function deStraddleVec3(a: { _tight: Float32Array | null; _il?: AccessorInterleave }): void {
-    const il = a._il;
-    if (il && il._componentType === FLOAT && il._componentCount === 3 && vec3CrossesBoundary(il._offset, il._stride, il._count)) {
-        a._tight = destrideToTight(il);
-        a._il = undefined;
-    }
-}
-
 /** Build a mesh-data partial for a primitive, but ONLY if it actually sources
  *  ≥1 attribute from an interleaved (strided) bufferView. Returns `undefined`
  *  for fully-tight primitives so the caller falls back to its tight path.
@@ -211,11 +180,9 @@ export function buildInterleavedPartial(json: any, binChunk: DataView, primitive
     };
 
     const pos = resolveOne("POSITION", false);
-    deStraddleVec3(pos);
     vb._p = pos._il;
     vertexCount = pos._count;
     const nrm = resolveOne("NORMAL", false);
-    deStraddleVec3(nrm);
     vb._n = nrm._il;
     const uv = resolveOne("TEXCOORD_0", false);
     vb._u = uv._il;
@@ -269,7 +236,8 @@ export function buildInterleavedPartial(json: any, binChunk: DataView, primitive
 }
 
 /** Build the GPU geometry for an interleaved mesh: one shared buffer per
- *  bufferView for strided attributes (bound at offset with arrayStride), tight
+ *  bufferView for strided attributes (bound at offset 0; the per-attribute byte
+ *  offset goes into the pipeline vertex layout, matching stock Babylon.js), tight
  *  attributes get their own buffer — byte-identical to non-interleaved meshes.
  *  The raw `_slice` is intentionally retained on `_vb` so the CPU copy can be
  *  de-strided lazily later (see {@link installLazyCpu}). */
@@ -286,6 +254,10 @@ function buildInterleavedGpu(engine: EngineContext, m: GltfMeshData): MeshGPU {
         }
         return b;
     };
+    // Cache key encodes both stride AND byte offset per attribute: the offsets are
+    // now baked into the pipeline vertex layout (attributes[].offset), so two meshes
+    // with identical strides but different offsets need distinct pipelines.
+    const k = (a: AccessorInterleave | undefined) => `${a?._stride ?? 0},${a?._offset ?? 0}`;
     return {
         positionBuffer: vbuf(vbsrc._p, m._positions)!,
         normalBuffer: vbuf(vbsrc._n, m._normals)!,
@@ -297,7 +269,7 @@ function buildInterleavedGpu(engine: EngineContext, m: GltfMeshData): MeshGPU {
         indexCount: m._indexCount,
         indexFormat: (m._indices instanceof U32 ? "uint32" : "uint16") as GPUIndexFormat,
         _vbLayout: vbsrc,
-        _vbKey: `vb${vbsrc._p?._stride ?? 0}.${vbsrc._n?._stride ?? 0}.${vbsrc._t?._stride ?? 0}.${vbsrc._u?._stride ?? 0}`,
+        _vbKey: `vb${k(vbsrc._p)}.${k(vbsrc._n)}.${k(vbsrc._t)}.${k(vbsrc._u)}`,
     };
 }
 

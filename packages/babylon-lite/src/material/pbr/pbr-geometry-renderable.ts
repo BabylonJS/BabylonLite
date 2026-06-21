@@ -218,18 +218,20 @@ export function buildPbrGeometryRenderable(scene: SceneContext, mesh: Mesh, view
             pass.setBindGroup(2, shadowBindGroup);
         }
         let slot = 0;
-        const vb = gpu._vbLayout;
-        pass.setVertexBuffer(slot++, gpu.positionBuffer, vb?._p?._offset);
-        pass.setVertexBuffer(slot++, gpu.normalBuffer, vb?._n?._offset);
+        // Bind every attribute at offset 0 — the per-attribute byte offset is baked into the
+        // pipeline vertex layout (see pbr-template). A non-zero setVertexBuffer bind offset
+        // corrupts vertex fetch on some AMD/Dawn paths; this mirrors the color pass and BJS.
+        pass.setVertexBuffer(slot++, gpu.positionBuffer);
+        pass.setVertexBuffer(slot++, gpu.normalBuffer);
         if (hasNormalMap && gpu.tangentBuffer) {
-            pass.setVertexBuffer(slot++, gpu.tangentBuffer, vb?._t?._offset);
+            pass.setVertexBuffer(slot++, gpu.tangentBuffer);
         }
-        pass.setVertexBuffer(slot++, gpu.uvBuffer, vb?._u?._offset);
+        pass.setVertexBuffer(slot++, gpu.uvBuffer);
         if (hasUV2 && gpu.uv2Buffer) {
-            pass.setVertexBuffer(slot++, gpu.uv2Buffer, vb?._u2?._offset);
+            pass.setVertexBuffer(slot++, gpu.uv2Buffer);
         }
         if (hasVertexColor && gpu.colorBuffer) {
-            pass.setVertexBuffer(slot++, gpu.colorBuffer, vb?._c?._offset);
+            pass.setVertexBuffer(slot++, gpu.colorBuffer);
         }
         // Skinning vertex buffers: live skeleton OR baked VAT (same field names, mutually exclusive).
         // Mirrors the main PBR renderable — without the VAT branch, VAT-animated thin instances leave the
