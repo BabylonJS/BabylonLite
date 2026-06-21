@@ -37,6 +37,22 @@ function wrapTexCoord(tex: Texture2D, texInfo: unknown): Texture2D {
     return tc === 1 ? cloneTexture2D(tex, { _texCoord: 1 }) : tex;
 }
 
+/** True when occlusion shares the ORM image with metallic-roughness but must be sampled
+ *  with its OWN UV transform — i.e. occlusion references a distinct glTF texture object,
+ *  or it carries its own KHR_texture_transform that an animation pointer can drive apart
+ *  from the MR transform. Drives the orm-unpack split in buildDefaultPbrTexturesExt. */
+function occlusionNeedsSplit(raw: {
+    occlusionTexture?: { index?: number; extensions?: { KHR_texture_transform?: unknown } };
+    pbrMetallicRoughness?: { metallicRoughnessTexture?: { index?: number } };
+}): boolean {
+    const occ = raw.occlusionTexture;
+    const mr = raw.pbrMetallicRoughness?.metallicRoughnessTexture;
+    if (!occ || !mr) {
+        return false;
+    }
+    return occ.index !== mr.index || occ.extensions?.KHR_texture_transform != null;
+}
+
 /** Build textures with wrapTex + occlusionOnUv2 support. Mirrors master's
  *  default texture building but honors per-textureInfo wrapping so
  *  KHR_texture_transform can attach per-texture UV state. */
@@ -83,6 +99,17 @@ export function buildDefaultPbrTexturesExt(
         ormTexture = uploadTex(engine, null, false, sampler, generateMipmaps, new U8([255, clamp(mat._roughnessFactor), clamp(mat._metallicFactor), 255]));
     } else {
         ormTexture = wrap(getCachedTex(mat._metallicRoughnessImage!, false), pbr.metallicRoughnessTexture);
+    }
+    // Independent-occlusion UV transform (orm-unpack): occlusion and metallic-roughness
+    // share the ORM texture (same image), but the glTF gives occlusion its OWN
+    // KHR_texture_transform (or a distinct texture object) so the two can be animated
+    // independently via KHR_animation_pointer. Sampling occlusion with MR's transform
+    // (the single ormUV) would wrongly animate it. Build a transform-carrying occlusion
+    // texture (shares the ORM GPU image) so the shader can sample occlusion with occlUV.
+    // Requires the same underlying image as the ORM texture, since the shader re-samples
+    // ormTexture at occlUV.
+    if (!occlusionTexture && mat._occlusionImage && mat._occlusionImage === mat._metallicRoughnessImage && occlusionNeedsSplit(raw)) {
+        occlusionTexture = wrap(getCachedTex(mat._occlusionImage, false), raw.occlusionTexture);
     }
     return { baseColorTexture, ormTexture, normalTexture, emissiveTexture, occlusionTexture };
 }

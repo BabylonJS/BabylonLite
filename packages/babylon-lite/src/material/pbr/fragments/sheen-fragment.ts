@@ -197,8 +197,8 @@ export function writeSheenUBO(data: Float32Array, material: PbrMaterialProps, of
         const c = Math.cos(ang);
         const s = Math.sin(ang);
         data[mi] = c * sx;
-        data[mi + 1] = -s * sy;
-        data[mi + 2] = s * sx;
+        data[mi + 1] = s * sy;
+        data[mi + 2] = -s * sx;
         data[mi + 3] = c * sy;
     }
     data[ti] = ox;

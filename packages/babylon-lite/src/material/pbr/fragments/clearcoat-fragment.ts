@@ -308,8 +308,8 @@ function writeCcUvTransform(
         const c = Math.cos(ang);
         const s = Math.sin(ang);
         data[mi] = c * sx;
-        data[mi + 1] = -s * sy;
-        data[mi + 2] = s * sx;
+        data[mi + 1] = s * sy;
+        data[mi + 2] = -s * sx;
         data[mi + 3] = c * sy;
     }
     const ti = tOff / 4;

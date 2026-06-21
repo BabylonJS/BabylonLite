@@ -61,6 +61,9 @@ export function createPbrTemplateExt(flags: {
     _hasUv2: boolean;
     /** @internal */
     _hasOcclusionUv2: boolean;
+    /** @internal features2 bitfield — read locally for orm-unpack (occlusion split) without
+     *  adding a flag branch to the shared composer. */
+    _features2?: number;
     /** @internal */
     _hasAnyNormal: boolean;
     /** @internal */
@@ -69,6 +72,11 @@ export function createPbrTemplateExt(flags: {
     _hasSpecGloss: boolean;
 }): PbrTemplateExt {
     const { _hasUvTransform, _hasVertexColor, _hasUv2, _hasOcclusionUv2, _hasAnyNormal, _hasEmissiveTexture, _hasSpecGloss } = flags;
+    // orm-unpack: occlusion sampled from the ORM texture with its own UV transform.
+    // PBR2_OCCL_UV_SPLIT is defined locally (not in shared pbr-flag-bits.ts) per GUIDANCE
+    // §4c′ — it is set in uv-transform-fragment.detect and read only here, both lazy.
+    const PBR2_OCCL_UV_SPLIT = 1 << 28;
+    const _hasOcclusionSplit = ((flags._features2 ?? 0) & PBR2_OCCL_UV_SPLIT) !== 0;
 
     // ── UV transform helpers ────────────────────────────────────
     const uvTransformUboFields = (name: string): UboField[] => [
@@ -110,6 +118,9 @@ return vec2<f32>(dot(m.xy, uv), dot(m.zw, uv)) + t;
             extraMaterialUboFields.push(...uvTransformUboFields("normal"));
         }
         extraMaterialUboFields.push(...uvTransformUboFields("orm"));
+        if (_hasOcclusionSplit) {
+            extraMaterialUboFields.push(...uvTransformUboFields("occl"));
+        }
         if (_hasEmissiveTexture) {
             extraMaterialUboFields.push(...uvTransformUboFields("emissive"));
         }
@@ -144,6 +155,7 @@ return vec2<f32>(dot(m.xy, uv), dot(m.zw, uv)) + t;
         ? uvTransformDecl("baseColor") +
           (_hasAnyNormal ? uvTransformDecl("normal") : "") +
           uvTransformDecl("orm") +
+          (_hasOcclusionSplit ? uvTransformDecl("occl") : "") +
           (_hasEmissiveTexture ? uvTransformDecl("emissive") : "") +
           (_hasSpecGloss ? uvTransformDecl("specGloss") : "")
         : "";
@@ -170,7 +182,13 @@ return vec2<f32>(dot(m.xy, uv), dot(m.zw, uv)) + t;
     // ── Occlusion override ──────────────────────────────────────
     // When hasReflectanceExt=false AND _hasOcclusionUv2=true, override occlusion sampling.
     // When hasReflectanceExt=true, the reflectance fragment handles occlusion.
-    const occlusionOverride = _hasOcclusionUv2 ? "let occlusion = textureSample(occlusionTexture, occlusionSampler_, input.uv2).r;" : null;
+    // orm-unpack: when occlusion has its own UV transform (split), sample the ORM texture
+    // a second time at occlUV so occlusion's animated transform stays independent of MR's.
+    const occlusionOverride = _hasOcclusionUv2
+        ? "let occlusion = textureSample(occlusionTexture, occlusionSampler_, input.uv2).r;"
+        : _hasOcclusionSplit
+          ? "let occlusion = textureSample(ormTexture, ormSampler, occlUV).r;"
+          : null;
 
     return {
         extraVertexAttributes,

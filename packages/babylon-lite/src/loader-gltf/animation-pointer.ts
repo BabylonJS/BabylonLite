@@ -29,6 +29,9 @@ export interface PointerMaterial {
     emissiveTexture?: PointerUvTexture;
     normalTexture?: PointerUvTexture;
     ormTexture?: PointerUvTexture;
+    /** Independent-occlusion UV carrier (orm-unpack); present only when occlusion
+     *  is sampled from the ORM texture with its own transform. */
+    occlusionTexture?: PointerUvTexture;
     specGlossTexture?: PointerUvTexture;
     /** Runtime emissive (linear RGB) = emissiveFactor × emissiveStrength. */
     emissiveColor?: [number, number, number];
@@ -168,7 +171,10 @@ const _registry: [RegExp, PointerFactory][] = [
         /^\/materials\/(\d+)\/(pbrMetallicRoughness\/baseColorTexture|pbrMetallicRoughness\/metallicRoughnessTexture|emissiveTexture|normalTexture|occlusionTexture)\/extensions\/KHR_texture_transform\/(offset|scale|rotation)$/,
         (m, ctx) => {
             const mat = ctx.materials?.[+m[1]!];
-            const tex = mat?.[TX_SLOT[m[2]!]!] as PointerUvTexture | undefined;
+            const slot = m[2]!;
+            // orm-unpack: when occlusion has its own UV carrier (independent transform), drive
+            // that; otherwise occlusion shares the single ORM transform (TX_SLOT fallback).
+            const tex = (slot === "occlusionTexture" && mat?.occlusionTexture ? mat.occlusionTexture : mat?.[TX_SLOT[slot]!]) as PointerUvTexture | undefined;
             if (!mat || !tex) {
                 return null;
             }

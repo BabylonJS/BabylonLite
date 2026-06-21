@@ -144,6 +144,7 @@ export function createPbrComposer(deps: PbrComposerDeps): PbrComposeFn {
                       _hasVertexColor,
                       _hasUv2,
                       _hasOcclusionUv2: _hasUv2,
+                      _features2: features2,
                       _hasAnyNormal,
                       _hasEmissiveTexture,
                       _hasSpecGloss: has(PBR_HAS_SPEC_GLOSS),
