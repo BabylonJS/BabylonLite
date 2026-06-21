@@ -50,12 +50,24 @@ function materialMap(json: any, meshes: readonly Mesh[]): (PointerMaterial | und
     // we seed `baseColorFactor` below — this runs at load (before the first render
     // computes material flags), forcing PBR2_HAS_BASE_COLOR_FACTOR on.
     const baseColorAnimated = new Set<number>();
+    // Materials whose texture UV transform is animated. The loader only enables the
+    // UV-transform machinery (PBR2_HAS_UV_TRANSFORM) when a texture carries a
+    // *non-identity* static KHR_texture_transform. A material whose transform is
+    // identity at load but animated at runtime (e.g. an occlusion rotation that
+    // starts at 0) would otherwise compile without the per-texture UV matrices, so
+    // the animation writes a transform the shader never samples. Force the flag for
+    // these materials so the animation actually drives the UV.
+    const uvTransformAnimated = new Set<number>();
     for (const anim of json.animations ?? []) {
         for (const ch of anim.channels ?? []) {
             const ptr = ch.target?.extensions?.KHR_animation_pointer?.pointer as string | undefined;
             const m = ptr && /^\/materials\/(\d+)\/pbrMetallicRoughness\/baseColorFactor$/.exec(ptr);
             if (m) {
                 baseColorAnimated.add(+m[1]!);
+            }
+            const tx = ptr && /^\/materials\/(\d+)\/.*\/KHR_texture_transform\/(offset|scale|rotation)$/.exec(ptr);
+            if (tx) {
+                uvTransformAnimated.add(+tx[1]!);
             }
         }
     }
@@ -87,6 +99,12 @@ function materialMap(json: any, meshes: readonly Mesh[]): (PointerMaterial | und
                 if (baseColorAnimated.has(matIdx) && !pm.baseColorFactor) {
                     const bcf = def?.pbrMetallicRoughness?.baseColorFactor ?? [1, 1, 1, 1];
                     pm.baseColorFactor = [bcf[0] ?? 1, bcf[1] ?? 1, bcf[2] ?? 1, bcf[3] ?? 1];
+                }
+                // Force the per-texture UV-transform machinery when a pointer animates a
+                // texture transform that is identity at load (so the matrices exist for the
+                // animation to drive — see uvTransformAnimated above).
+                if (uvTransformAnimated.has(matIdx)) {
+                    (pm as { _hasUvTx?: boolean })._hasUvTx = true;
                 }
                 map[matIdx] = pm;
             }
