@@ -282,6 +282,12 @@ export interface TranslucencyProps {
     intensity?: number;
     /** Translucency color (linear RGB). Tints the transmitted light. Default [1,1,1]. */
     color?: [number, number, number];
+    /** Translucency color texture (sampled sRGB). RGB multiplies `color`.
+     *  KHR_materials_diffuse_transmission.diffuseTransmissionColorTexture. */
+    colorTexture?: Texture2D;
+    /** Translucency intensity texture. Alpha channel multiplies `intensity`.
+     *  KHR_materials_diffuse_transmission.diffuseTransmissionTexture. */
+    intensityTexture?: Texture2D;
     /** Diffusion distance for the Burley transmittance BRDF. Controls how far
      *  light travels through the material per RGB channel. Default [1,1,1]. */
     diffusionDistance?: [number, number, number];

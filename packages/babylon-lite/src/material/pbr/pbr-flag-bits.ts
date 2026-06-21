@@ -77,3 +77,9 @@ export const PBR2_HAS_DISPERSION = 1 << 20;
  *  colour. Consumed only by the geometry-renderer task; PBR scenes without
  *  geometry rendering never set this bit. */
 export const PBR2_GEOMETRY_OUTPUT = 1 << 21;
+/** Translucency color texture (RGB, sRGB) — multiplies the translucency color.
+ *  KHR_materials_diffuse_transmission.diffuseTransmissionColorTexture. */
+export const PBR2_HAS_TRANSLUCENCY_COLOR_MAP = 1 << 22;
+/** Translucency intensity texture (A channel) — multiplies translucency intensity.
+ *  KHR_materials_diffuse_transmission.diffuseTransmissionTexture. */
+export const PBR2_HAS_TRANSLUCENCY_INTENSITY_MAP = 1 << 23;
