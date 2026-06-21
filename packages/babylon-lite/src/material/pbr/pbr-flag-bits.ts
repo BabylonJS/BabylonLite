@@ -77,15 +77,12 @@ export const PBR2_HAS_DISPERSION = 1 << 20;
  *  colour. Consumed only by the geometry-renderer task; PBR scenes without
  *  geometry rendering never set this bit. */
 export const PBR2_GEOMETRY_OUTPUT = 1 << 21;
-/** Translucency color texture (RGB, sRGB) — multiplies the translucency color.
- *  KHR_materials_diffuse_transmission.diffuseTransmissionColorTexture. */
-export const PBR2_HAS_TRANSLUCENCY_COLOR_MAP = 1 << 22;
-/** Translucency intensity texture (A channel) — multiplies translucency intensity.
- *  KHR_materials_diffuse_transmission.diffuseTransmissionTexture. */
-export const PBR2_HAS_TRANSLUCENCY_INTENSITY_MAP = 1 << 23;
-/** Translucency color/intensity texture carries a KHR_texture_transform. Adds
- *  `translucencyUVm`/`translucencyUVt` UBO fields + transformed-UV sampling. */
-export const PBR2_HAS_TRANSLUCENCY_UV_TX = 1 << 24;
-/** A clearcoat texture (intensity/roughness/normal) carries a KHR_texture_transform.
- *  Adds per-texture cc UV-transform UBO fields + transformed-UV sampling. */
-export const PBR2_CC_UV_TX = 1 << 25;
+// ─── Extension-local features2 bits (1<<22 .. 1<<26) ────────────────
+// RESERVED here but DEFINED inside their lazy fragment modules so the constants
+// are never retained in the entry/shared chunk for scenes that don't load those
+// fragments (literally zero bundle movement). Do not reuse these bits.
+//   1<<22  PBR2_HAS_TRANSLUCENCY_COLOR_MAP      (subsurface-fragment.ts)
+//   1<<23  PBR2_HAS_TRANSLUCENCY_INTENSITY_MAP  (subsurface-fragment.ts)
+//   1<<24  PBR2_HAS_TRANSLUCENCY_UV_TX          (subsurface-fragment.ts)
+//   1<<25  PBR2_CC_UV_TX                        (clearcoat-fragment.ts)
+//   1<<26  PBR2_REFL_UV_TX                      (reflectance-fragment.ts)

@@ -28,8 +28,12 @@ import {
     PBR2_CC_ROUGH_MAP,
     PBR2_CC_NORMAL_MAP,
     PBR2_CC_F0_REMAP_OFF,
-    PBR2_CC_UV_TX,
 } from "../pbr-flag-bits.js";
+
+// Clearcoat-only features2 bit (reserved in pbr-flag-bits.ts). Defined here, not
+// in the shared flag module, for zero bundle movement on scenes that never load
+// this lazy fragment.
+const PBR2_CC_UV_TX = 1 << 25;
 
 const STAGE_FRAGMENT = 0x2;
 

@@ -82,6 +82,8 @@ function resolveExtTexture(mat: PointerMaterial, ext: string, field: string): Po
         iridescence?: { texture?: PointerUvTexture; thicknessTexture?: PointerUvTexture };
         sheen?: { texture?: PointerUvTexture };
         clearCoat?: { texture?: PointerUvTexture; roughnessTexture?: PointerUvTexture; bumpTexture?: PointerUvTexture };
+        reflectanceTexture?: PointerUvTexture;
+        metallicReflectanceTexture?: PointerUvTexture;
         subsurface?: { translucency?: { colorTexture?: PointerUvTexture; intensityTexture?: PointerUvTexture } };
     };
     switch (`${ext}/${field}`) {
@@ -98,6 +100,10 @@ function resolveExtTexture(mat: PointerMaterial, ext: string, field: string): Po
             return m.clearCoat?.roughnessTexture;
         case "KHR_materials_clearcoat/clearcoatNormalTexture":
             return m.clearCoat?.bumpTexture;
+        case "KHR_materials_specular/specularTexture":
+            return m.metallicReflectanceTexture;
+        case "KHR_materials_specular/specularColorTexture":
+            return m.reflectanceTexture;
         case "KHR_materials_diffuse_transmission/diffuseTransmissionColorTexture":
             return m.subsurface?.translucency?.colorTexture;
         case "KHR_materials_diffuse_transmission/diffuseTransmissionTexture":
