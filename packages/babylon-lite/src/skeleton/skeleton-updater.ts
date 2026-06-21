@@ -96,10 +96,22 @@ export function createAnimationController(
     nodeTargets?: readonly (AnimatedNodeTarget | undefined)[],
     excludedNodeIndices?: ReadonlySet<number>
 ): AnimationController;
-// Overload with the optional opt-in bone-control override map (+ animation-mask node
-// names). Kept as a separate overload so the original signature's API-report lines stay
-// byte-identical (the breaking-change diff treats an appended param on the multi-line
-// render as a changed last-param line — see report-api-changes.ts).
+// Overload with the optional opt-in bone-control override map. Kept as a separate
+// overload so the original signature's API-report lines stay byte-identical (the
+// breaking-change diff treats an appended param on the multi-line render as a
+// changed last-param line — see report-api-changes.ts).
+export function createAnimationController(
+    clip: AnimationClip,
+    nodes: readonly NodeRest[],
+    skeletons: readonly SkeletonBinding[],
+    morphBindings: readonly MorphBinding[],
+    nodeTargets: readonly (AnimatedNodeTarget | undefined)[] | undefined,
+    excludedNodeIndices: ReadonlySet<number> | undefined,
+    boneOverrides: ReadonlyMap<number, unknown> | undefined
+): AnimationController;
+// Further overload adding the optional animation-mask node names. A separate overload (not
+// an appended param on the bone-control overload above) so that overload's API-report lines
+// stay byte-identical — see report-api-changes.ts.
 export function createAnimationController(
     clip: AnimationClip,
     nodes: readonly NodeRest[],
