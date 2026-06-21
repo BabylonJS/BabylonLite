@@ -48,12 +48,22 @@ var ssIntensity = 0.0;`;
 function makeThicknessBlock(hasThicknessMap: boolean, useGltfChannel: boolean, hasColorMap: boolean, hasIntensityMap: boolean, hasUvTx: boolean): string {
     const chan = useGltfChannel ? "g" : "r";
     const texSample = hasThicknessMap ? `let thicknessSample = textureSample(thicknessTexture_, thicknessSampler_, input.uv).${chan};` : `let thicknessSample = 1.0;`;
-    // The translucency color/intensity textures share the color texture's
-    // KHR_texture_transform when present (driven live by animation pointers).
-    const uvDecl = hasUvTx ? `let ssUV = vec2<f32>(dot(material.translucencyUVm.xy, input.uv), dot(material.translucencyUVm.zw, input.uv)) + material.translucencyUVt.xy;\n` : ``;
-    const uv = hasUvTx ? "ssUV" : "input.uv";
-    const colorMul = hasColorMap ? ` * textureSample(translucencyColorTexture_, translucencyColorSampler_, ${uv}).rgb` : ``;
-    const intensityMul = hasIntensityMap ? ` * textureSample(translucencyIntensityTexture_, translucencyIntensitySampler_, ${uv}).a` : ``;
+    // The translucency color and intensity textures each carry their own
+    // KHR_texture_transform (driven live by animation pointers), so they are
+    // sampled with independent transformed UVs.
+    let uvDecl = "";
+    let colorUv = "input.uv";
+    let intensityUv = "input.uv";
+    if (hasUvTx && hasColorMap) {
+        uvDecl += `let ssColorUV = vec2<f32>(dot(material.translucencyColorUVm.xy, input.uv), dot(material.translucencyColorUVm.zw, input.uv)) + material.translucencyColorUVt.xy;\n`;
+        colorUv = "ssColorUV";
+    }
+    if (hasUvTx && hasIntensityMap) {
+        uvDecl += `let ssIntUV = vec2<f32>(dot(material.translucencyIntensityUVm.xy, input.uv), dot(material.translucencyIntensityUVm.zw, input.uv)) + material.translucencyIntensityUVt.xy;\n`;
+        intensityUv = "ssIntUV";
+    }
+    const colorMul = hasColorMap ? ` * textureSample(translucencyColorTexture_, translucencyColorSampler_, ${colorUv}).rgb` : ``;
+    const intensityMul = hasIntensityMap ? ` * textureSample(translucencyIntensityTexture_, translucencyIntensitySampler_, ${intensityUv}).a` : ``;
     return `${uvDecl}${texSample}
 let ssThickness = max(material.subsurfaceParams.y + thicknessSample * material.subsurfaceParams.z, 0.000001);
 let ssTranslucencyColor = material.subsurfaceParams3.rgb${colorMul};
@@ -138,8 +148,11 @@ export function createSubsurfaceFragment(
         { _name: "subsurfaceParams2", _type: "vec4<f32>" },
         { _name: "subsurfaceParams3", _type: "vec4<f32>" },
     ];
-    if (hasUvTx) {
-        uboFields.push({ _name: "translucencyUVm", _type: "vec4<f32>" }, { _name: "translucencyUVt", _type: "vec4<f32>" });
+    if (hasUvTx && hasColorMap) {
+        uboFields.push({ _name: "translucencyColorUVm", _type: "vec4<f32>" }, { _name: "translucencyColorUVt", _type: "vec4<f32>" });
+    }
+    if (hasUvTx && hasIntensityMap) {
+        uboFields.push({ _name: "translucencyIntensityUVm", _type: "vec4<f32>" }, { _name: "translucencyIntensityUVt", _type: "vec4<f32>" });
     }
 
     const slots: Partial<Record<string, string>> = {
@@ -192,34 +205,44 @@ export function writeSubsurfaceUBO(data: Float32Array, ss: SubSurfaceProps, offs
     data[off3 + 1] = tc[1]!;
     data[off3 + 2] = tc[2]!;
 
-    // Translucency UV transform (shared color-texture KHR_texture_transform,
-    // driven live by animation pointers). Same mat2+translate layout as the
-    // core/iridescence UV-transform writers.
-    const mOff = offsets.get("translucencyUVm");
-    const tOff = offsets.get("translucencyUVt");
-    if (mOff !== undefined && tOff !== undefined) {
-        const tex = trans.colorTexture ?? trans.intensityTexture;
-        const sx = tex?.uScale ?? 1;
-        const sy = tex?.vScale ?? 1;
-        const ang = tex?.uAng ?? 0;
-        const mi = mOff / 4;
-        if (ang === 0) {
-            data[mi] = sx;
-            data[mi + 1] = 0;
-            data[mi + 2] = 0;
-            data[mi + 3] = sy;
-        } else {
-            const c = Math.cos(ang);
-            const s = Math.sin(ang);
-            data[mi] = c * sx;
-            data[mi + 1] = -s * sy;
-            data[mi + 2] = s * sx;
-            data[mi + 3] = c * sy;
-        }
-        const ti = tOff / 4;
-        data[ti] = tex?.uOffset ?? 0;
-        data[ti + 1] = tex?.vOffset ?? 0;
+    // Per-texture UV transforms (each KHR_texture_transform driven live by
+    // animation pointers). Same mat2+translate layout as the iridescence writer.
+    writeSsUvTransform(data, offsets, "translucencyColorUV", trans.colorTexture);
+    writeSsUvTransform(data, offsets, "translucencyIntensityUV", trans.intensityTexture);
+}
+
+/** Write a 2x2 UV matrix (vec4) + translate (vec4) for a translucency texture. */
+function writeSsUvTransform(
+    data: Float32Array,
+    offsets: ReadonlyMap<string, number>,
+    name: string,
+    tex: { uScale?: number; vScale?: number; uAng?: number; uOffset?: number; vOffset?: number } | undefined
+): void {
+    const mOff = offsets.get(`${name}m`);
+    const tOff = offsets.get(`${name}t`);
+    if (mOff === undefined || tOff === undefined) {
+        return;
     }
+    const sx = tex?.uScale ?? 1;
+    const sy = tex?.vScale ?? 1;
+    const ang = tex?.uAng ?? 0;
+    const mi = mOff / 4;
+    if (ang === 0) {
+        data[mi] = sx;
+        data[mi + 1] = 0;
+        data[mi + 2] = 0;
+        data[mi + 3] = sy;
+    } else {
+        const c = Math.cos(ang);
+        const s = Math.sin(ang);
+        data[mi] = c * sx;
+        data[mi + 1] = -s * sy;
+        data[mi + 2] = s * sx;
+        data[mi + 3] = c * sy;
+    }
+    const ti = tOff / 4;
+    data[ti] = tex?.uOffset ?? 0;
+    data[ti + 1] = tex?.vOffset ?? 0;
 }
 
 export const pbrExt: PbrExt = {
