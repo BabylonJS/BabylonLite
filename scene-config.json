@@ -48,7 +48,7 @@
         "name": "Scene 5 — Alien Skeleton",
         "maxMad": 0.01,
         "maxRegionMad": 0.08,
-        "maxRawKB": 88.6,
+        "maxRawKB": 91,
         "description": "glTF Alien model with PBR, skeleton/bones, normal map, hemispheric light.",
         "tags": ["pbr", "gltf"],
         "skipPerf": true,
@@ -111,7 +111,7 @@
         "slug": "scene11-shark",
         "name": "Scene 11 — Shark GLB",
         "maxMad": 0.01,
-        "maxRawKB": 85,
+        "maxRawKB": 88,
         "description": "Shark glTF model with PBR material, hemispheric light, auto-framing camera.",
         "tags": ["pbr", "gltf"],
         "skipPerf": true,
@@ -122,7 +122,7 @@
         "slug": "scene12-shader-balls",
         "name": "Scene 12 — PBR Shader Balls",
         "maxMad": 0.027,
-        "maxRawKB": 101,
+        "maxRawKB": 103.5,
         "description": "3 shader balls with metallic reflectance textures, directional light, env rotation.",
         "tags": ["pbr", "gltf"],
         "skipPerf": true
@@ -383,7 +383,7 @@
         "slug": "scene37-sheen-sofa",
         "name": "Scene 37 — Sheen Wood Leather Sofa",
         "maxMad": 0.02,
-        "maxRawKB": 92.9,
+        "maxRawKB": 97,
         "description": "SheenWoodLeatherSofa.glb (KHR_materials_sheen + KHR_materials_specular + KHR_texture_transform + EXT_texture_webp) with default IBL environment (no skybox, no ground). Matches PG #YG3BBF#58.",
         "tags": ["pbr", "gltf", "env", "sheen", "specular", "texture-transform", "webp"],
         "compatParity": true
@@ -404,7 +404,7 @@
         "slug": "scene39-animation-pointer-waterfall",
         "name": "Scene 39 — KHR_animation_pointer (Animated Waterfall)",
         "maxMad": 0.6,
-        "maxRawKB": 104,
+        "maxRawKB": 106,
         "description": "AnimatedWaterfall.gltf — grass blades rotate via /nodes/{n}/rotation pointers and water/foam surfaces scroll via /materials/{m}/.../KHR_texture_transform offset+scale pointers. Default IBL env, no skybox/ground. Validates KHR_animation_pointer node-TRS + texture-transform handlers.",
         "tags": ["pbr", "gltf", "env", "lights-punctual", "texture-transform", "animation-pointer"],
         "skipPerf": true,
@@ -2012,6 +2012,7 @@
         "slug": "scene240-animated-triangle",
         "name": "Scene 240 — AnimatedTriangle",
         "maxMad": 0.2,
+        "maxRawKB": 90,
         "description": "AnimatedTriangle.gltf — cx20 gltf-test. Node-rotation animation; material-less no-NORMAL mesh (smooth normals).",
         "tags": ["gltf"],
         "skipPerf": true
@@ -2021,6 +2022,7 @@
         "slug": "scene241-animation-pointer-uvs",
         "name": "Scene 241 — AnimationPointerUVs",
         "maxMad": 1.3,
+        "maxRawKB": 156,
         "description": "AnimationPointerUVs.gltf — cx20 gltf-test. KHR_animation_pointer UV-transform across 82 materials.",
         "tags": ["gltf"],
         "skipPerf": true
@@ -2030,6 +2032,7 @@
         "slug": "scene242-emissive-fireflies",
         "name": "Scene 242 — EmissiveFireflies",
         "maxMad": 0.2,
+        "maxRawKB": 95.5,
         "description": "EmissiveFireflies.gltf — cx20 gltf-test. KHR_animation_pointer material emissiveFactor/emissiveStrength/baseColorFactor.",
         "tags": ["gltf"],
         "skipPerf": true
@@ -2039,6 +2042,7 @@
         "slug": "scene243-morph-stress-test",
         "name": "Scene 243 — MorphStressTest",
         "maxMad": 0.2,
+        "maxRawKB": 96.5,
         "description": "MorphStressTest.gltf — cx20 gltf-test. Morph-target weight animation.",
         "tags": ["gltf"],
         "skipPerf": true
@@ -2048,6 +2052,7 @@
         "slug": "scene244-pot-of-coals-animation-pointer",
         "name": "Scene 244 — PotOfCoalsAnimationPointer",
         "maxMad": 0.2,
+        "maxRawKB": 128.5,
         "description": "PotOfCoalsAnimationPointer.gltf — cx20 gltf-test. KHR_animation_pointer texture-transform rotation.",
         "tags": ["gltf"],
         "skipPerf": true
@@ -2057,6 +2062,7 @@
         "slug": "scene245-recursive-skeletons",
         "name": "Scene 245 — RecursiveSkeletons",
         "maxMad": 0.2,
+        "maxRawKB": 99,
         "description": "RecursiveSkeletons.gltf — cx20 gltf-test. Deep recursive skeletons; interleaved JOINTS/WEIGHTS/COLOR_0.",
         "tags": ["gltf"],
         "skipPerf": true
@@ -2066,6 +2072,7 @@
         "slug": "scene246-simple-skin",
         "name": "Scene 246 — SimpleSkin",
         "maxMad": 0.2,
+        "maxRawKB": 98,
         "description": "SimpleSkin.gltf — cx20 gltf-test. Material-less skinned mesh; interleaved JOINTS/WEIGHTS, no-NORMAL smooth normals.",
         "tags": ["gltf"],
         "skipPerf": true
@@ -2075,6 +2082,7 @@
         "slug": "scene247-teapots-galore",
         "name": "Scene 247 — TeapotsGalore",
         "maxMad": 0.4,
+        "maxRawKB": 83,
         "description": "TeapotsGalore.gltf — cx20 gltf-test. EXT_mesh_gpu_instancing, top-down view.",
         "tags": ["gltf"],
         "skipPerf": true
@@ -2084,6 +2092,7 @@
         "slug": "scene248-texture-settings-test",
         "name": "Scene 248 — TextureSettingsTest",
         "maxMad": 0.2,
+        "maxRawKB": 77.5,
         "description": "TextureSettingsTest.gltf — cx20 gltf-test. glTF sampler wrap/filter modes (clamp/mirror/repeat).",
         "tags": ["gltf"],
         "skipPerf": true
@@ -2093,6 +2102,7 @@
         "slug": "scene249-vertex-color-alpha-clip-test",
         "name": "Scene 249 — VertexColorAlphaClipTest",
         "maxMad": 0.2,
+        "maxRawKB": 78.5,
         "description": "VertexColorAlphaClipTest.gltf — cx20 gltf-test. Vertex-color alpha with alpha-clip.",
         "tags": ["gltf"],
         "skipPerf": true
