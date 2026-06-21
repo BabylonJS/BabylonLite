@@ -66,26 +66,26 @@ anisoT = normalize(anisoT * anisoDir.x + anisoB * anisoDir.y);
 anisoB = normalize(cross(N, anisoT));
 }`;
     }
-    // Cotangent frame from UV screen-space derivatives — matches BJS cotangent_frame()
-    // BJS negates dpdy via (-yFactor_) where yFactor_=1 in WebGPU
+    // Cotangent frame from UV screen-space derivatives. Must be built IDENTICALLY to the
+    // normal-map cotangent frame in pbr-template.ts (geometric normal, +dpdy, negated
+    // bitangent) so the anisotropy tangent agrees with BJS, which derives the anisotropy
+    // T/B from the same TBN used for normal mapping. The shading normal N is used only for
+    // the third column (matching BJS `mat3(normalize(TBN[0]),normalize(TBN[1]),normalize(N))`).
     return `${pre}var anisoT: vec3<f32>;
 var anisoB: vec3<f32>;
 {
+let aniso_Ngeom = normalize(input.worldNormal);
 let aniso_dp1 = dpdx(input.worldPos);
-let aniso_dp2 = -dpdy(input.worldPos);
+let aniso_dp2 = dpdy(input.worldPos);
 let aniso_duv1 = dpdx(input.uv);
-let aniso_duv2 = -dpdy(input.uv);
-let aniso_dp2perp = cross(aniso_dp2, N);
-let aniso_dp1perp = cross(N, aniso_dp1);
-var aniso_t = aniso_dp2perp * aniso_duv1.x + aniso_dp1perp * aniso_duv2.x;
-var aniso_b = aniso_dp2perp * aniso_duv1.y + aniso_dp1perp * aniso_duv2.y;
-let aniso_det = max(dot(aniso_t, aniso_t), dot(aniso_b, aniso_b));
+let aniso_duv2 = dpdy(input.uv);
+let aniso_dp2perp = cross(aniso_dp2, aniso_Ngeom);
+let aniso_dp1perp = cross(aniso_Ngeom, aniso_dp1);
+let aniso_tct = aniso_dp2perp * aniso_duv1.x + aniso_dp1perp * aniso_duv2.x;
+let aniso_bct = -(aniso_dp2perp * aniso_duv1.y + aniso_dp1perp * aniso_duv2.y);
+let aniso_det = max(dot(aniso_tct, aniso_tct), dot(aniso_bct, aniso_bct));
 let aniso_inv = select(inverseSqrt(aniso_det), 0.0, aniso_det == 0.0);
-aniso_t *= aniso_inv;
-aniso_b *= aniso_inv;
-let aniso_tn = normalize(aniso_t);
-let aniso_bn = normalize(aniso_b);
-let anisoTBN = mat3x3<f32>(aniso_tn, aniso_bn, N);
+let anisoTBN = mat3x3<f32>(normalize(aniso_tct * aniso_inv), normalize(aniso_bct * aniso_inv), N);
 let anisoDir = vec3<f32>(anisoDir2.x, anisoDir2.y, 0.0);
 anisoT = normalize(anisoTBN * anisoDir);
 anisoB = normalize(cross(anisoTBN[2], anisoT));
