@@ -11,9 +11,9 @@
  *      UNSIGNED_BYTE visibility accessor in CubeVisibility.glb).
  *
  *  Node-visibility and node-TRS pointers resolve here directly. Material
- *  texture-transform pointers are handled by animation-pointer-material.ts,
- *  which the feature registry loads only when KHR_texture_transform is also
- *  present — so node-only pointer scenes never bundle the material lookup. */
+ *  pointer targets (texture-transform offset/scale/rotation, factors, …) are
+ *  resolved by `resolveAnimationPointer` in animation-pointer.ts, invoked from
+ *  the pointer-channel parser installed below. */
 
 import { F32, U16, I16, U8, I8 } from "../engine/typed-arrays.js";
 import type { GltfFeature } from "./gltf-feature.js";

@@ -554,7 +554,7 @@ async function uploadMeshes(meshDatas: GltfMeshData[], features: GltfFeature[], 
             const extLayers = await runMatExts(mat, matExts, extCtx);
             if (_needsPbrExt) {
                 const extMod = await _ensurePbrExt();
-                const tex = extMod.buildDefaultPbrTexturesExt(engine, mat, sampler, _generateMipmaps!, getCachedTexture, wrapTex);
+                const tex = extMod.buildDefaultPbrTexturesExt(engine, mat, sampler, _generateMipmaps!, getCachedTexture, wrapTex, samplerFor);
                 return extMod.assemblePbrPropsExt(mat, tex, extLayers);
             }
             const tex = buildSampledPbrTextures

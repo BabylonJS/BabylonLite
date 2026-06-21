@@ -23,8 +23,9 @@ function gltfTexSamplerDesc(json: any, texInfo: any): GPUSamplerDescriptor {
         mipmapFilter: mipNearest ? "nearest" : "linear",
         addressModeU: wrap(s?.wrapS),
         addressModeV: wrap(s?.wrapT),
-        // WebGPU forbids anisotropy unless all filters are linear.
-        maxAnisotropy: magLinear && !minNearest ? 4 : 1,
+        // WebGPU forbids anisotropy unless mag/min/mip filters are ALL linear; gate on
+        // every filter (incl. mipNearest, e.g. glTF LINEAR_MIPMAP_NEAREST) or createSampler throws.
+        maxAnisotropy: magLinear && !minNearest && !mipNearest ? 4 : 1,
     };
 }
 

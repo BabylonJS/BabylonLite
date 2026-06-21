@@ -62,13 +62,43 @@ export function buildDefaultPbrTexturesExt(
     sampler: GPUSampler,
     generateMipmaps: GenerateMipmapsFn,
     getCachedTex: (bitmap: ImageBitmap, srgb: boolean) => Texture2D,
-    wrapTex: TextureWrapFn
+    wrapTex: TextureWrapFn,
+    samplerFor?: (texInfo: unknown) => GPUSampler
 ): PbrTexturesExt {
     const wrap: TextureWrapFn = (tex, ti) => wrapTexCoord(wrapTex(tex, ti), ti);
+    // When the asset declares non-default glTF samplers, upload each texture with its own
+    // sampler (wrap/filter), caching per (sampler, image, srgb) exactly like the fast-path
+    // buildSampledPbrTextures. Without samplerFor (common case) reuse the shared default-
+    // sampler cache. A GPUTexture is sampler-independent, so the same image with two
+    // samplers yields two Texture2D wrappers, matching the fast path.
+    const _localCache = samplerFor ? new Map<GPUSampler, Map<number, Texture2D>>() : null;
+    const _ids = samplerFor ? new Map<ImageBitmap, number>() : null;
+    let _nextId = 0;
+    const pickTex = (image: ImageBitmap, srgb: boolean, texInfo: unknown): Texture2D => {
+        if (!samplerFor) {
+            return getCachedTex(image, srgb);
+        }
+        const s = samplerFor(texInfo);
+        let bySampler = _localCache!.get(s);
+        if (!bySampler) {
+            _localCache!.set(s, (bySampler = new Map()));
+        }
+        let id = _ids!.get(image);
+        if (id === undefined) {
+            _ids!.set(image, (id = _nextId++));
+        }
+        const key = id * 2 + (srgb ? 1 : 0);
+        let tex = bySampler.get(key);
+        if (!tex) {
+            tex = uploadTex(engine, image, srgb, s, generateMipmaps);
+            bySampler.set(key, tex);
+        }
+        return tex;
+    };
     const raw = mat._rawMatDef ?? {};
     const pbr = raw.pbrMetallicRoughness ?? {};
     const baseColorTexture = mat._baseColorImage
-        ? wrap(getCachedTex(mat._baseColorImage, true), pbr.baseColorTexture)
+        ? wrap(pickTex(mat._baseColorImage, true, pbr.baseColorTexture), pbr.baseColorTexture)
         : (() => {
               const f = mat._baseColorFactor;
               return uploadTex(
@@ -80,8 +110,8 @@ export function buildDefaultPbrTexturesExt(
                   new U8([linearToSrgbByte(f[0]), linearToSrgbByte(f[1]), linearToSrgbByte(f[2]), Math.round(Math.max(0, Math.min(1, f[3])) * 255)])
               );
           })();
-    const normalTexture = mat._normalImage ? wrap(getCachedTex(mat._normalImage, false), raw.normalTexture) : undefined;
-    const emissiveTexture = mat._emissiveImage ? wrap(getCachedTex(mat._emissiveImage, true), raw.emissiveTexture) : undefined;
+    const normalTexture = mat._normalImage ? wrap(pickTex(mat._normalImage, false, raw.normalTexture), raw.normalTexture) : undefined;
+    const emissiveTexture = mat._emissiveImage ? wrap(pickTex(mat._emissiveImage, true, raw.emissiveTexture), raw.emissiveTexture) : undefined;
 
     const occlusionOnUv2 = mat._occlusionTexCoord !== 0 && mat._occlusionImage && !mat._metallicRoughnessImage;
     let occlusionTexture: Texture2D | undefined;
@@ -90,15 +120,15 @@ export function buildDefaultPbrTexturesExt(
     if (occlusionOnUv2) {
         const clamp = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255);
         ormTexture = uploadTex(engine, null, false, sampler, generateMipmaps, new U8([255, clamp(mat._roughnessFactor), clamp(mat._metallicFactor), 255]));
-        occlusionTexture = wrap(getCachedTex(mat._occlusionImage!, false), raw.occlusionTexture);
+        occlusionTexture = wrap(pickTex(mat._occlusionImage!, false, raw.occlusionTexture), raw.occlusionTexture);
     } else if (single && (!mat._metallicRoughnessImage || !mat._occlusionImage || mat._metallicRoughnessImage === mat._occlusionImage)) {
         const ormTi = mat._metallicRoughnessImage ? pbr.metallicRoughnessTexture : raw.occlusionTexture;
-        ormTexture = wrap(getCachedTex(single, false), ormTi);
+        ormTexture = wrap(pickTex(single, false, ormTi), ormTi);
     } else if (!single) {
         const clamp = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255);
         ormTexture = uploadTex(engine, null, false, sampler, generateMipmaps, new U8([255, clamp(mat._roughnessFactor), clamp(mat._metallicFactor), 255]));
     } else {
-        ormTexture = wrap(getCachedTex(mat._metallicRoughnessImage!, false), pbr.metallicRoughnessTexture);
+        ormTexture = wrap(pickTex(mat._metallicRoughnessImage!, false, pbr.metallicRoughnessTexture), pbr.metallicRoughnessTexture);
     }
     // Independent-occlusion UV transform (orm-unpack): occlusion and metallic-roughness
     // share the ORM texture (same image), but the glTF gives occlusion its OWN
@@ -109,7 +139,7 @@ export function buildDefaultPbrTexturesExt(
     // Requires the same underlying image as the ORM texture, since the shader re-samples
     // ormTexture at occlUV.
     if (!occlusionTexture && mat._occlusionImage && mat._occlusionImage === mat._metallicRoughnessImage && occlusionNeedsSplit(raw)) {
-        occlusionTexture = wrap(getCachedTex(mat._occlusionImage, false), raw.occlusionTexture);
+        occlusionTexture = wrap(pickTex(mat._occlusionImage, false, raw.occlusionTexture), raw.occlusionTexture);
     }
     return { baseColorTexture, ormTexture, normalTexture, emissiveTexture, occlusionTexture };
 }
