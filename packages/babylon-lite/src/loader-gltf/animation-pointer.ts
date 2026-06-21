@@ -72,7 +72,8 @@ type PointerFactory = (match: RegExpExecArray, ctx: PointerContext) => ResolvedP
 // `/extensions/KHR_texture_transform/` path segment (and adds a stray leading slash), so the
 // interpolation is never attached and BJS silently skips animating the MR texture transform
 // (offset/scale/rotation stay frozen at their static load-time values). We match BJS for parity
-// and likewise do NOT animate the MR texture transform.
+// (verified: animating MR regresses scene241 col1 MR rows by ~4.9 MAD vs the immutable golden,
+// which renders these spheres with static roughness/metallic). Do NOT animate the MR transform.
 const TX_SLOT: Record<string, keyof PointerMaterial> = {
     "pbrMetallicRoughness/baseColorTexture": "baseColorTexture",
     emissiveTexture: "emissiveTexture",
@@ -93,7 +94,7 @@ function resolveExtTexture(mat: PointerMaterial, ext: string, field: string): Po
         anisotropy?: Record<string, unknown>;
         reflectanceTexture?: PointerUvTexture;
         metallicReflectanceTexture?: PointerUvTexture;
-        subsurface?: { translucency?: Record<string, unknown> };
+        subsurface?: { translucency?: Record<string, unknown>; refraction?: Record<string, unknown>; thickness?: Record<string, unknown> };
     };
     switch (`${ext}/${field}`) {
         case "KHR_materials_iridescence/iridescenceTexture":
@@ -119,6 +120,10 @@ function resolveExtTexture(mat: PointerMaterial, ext: string, field: string): Po
             return privateTexture(m.subsurface?.translucency, "colorTexture");
         case "KHR_materials_diffuse_transmission/diffuseTransmissionTexture":
             return privateTexture(m.subsurface?.translucency, "intensityTexture");
+        case "KHR_materials_transmission/transmissionTexture":
+            return privateTexture(m.subsurface?.refraction, "texture");
+        case "KHR_materials_volume/thicknessTexture":
+            return privateTexture(m.subsurface?.thickness, "texture");
         default:
             return undefined;
     }
