@@ -20,7 +20,7 @@ type PublishPackageJson = {
 };
 
 const PACKAGE_NAME = "@babylonjs/lite";
-const DIST_PACKAGE_JSON = resolve(process.cwd(), "packages/babylon-lite/dist/package.json");
+const DIST_PACKAGE_JSON = resolve(process.cwd(), "packages/babylon-lite/build/package.json");
 const RELEASE_CONFIG_PATH = resolve(process.cwd(), process.env.RELEASE_CONFIG_PATH ?? "config/release.json");
 const RELEASE_TAG_PATTERN = "npm-lite-v*";
 

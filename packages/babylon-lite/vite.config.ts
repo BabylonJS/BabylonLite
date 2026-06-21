@@ -1,7 +1,8 @@
-import { defineConfig, type Plugin } from "vite";
-import { resolve } from "path";
-import { copyFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
+import { defineConfig, transformWithEsbuild, type Plugin } from "vite";
+import { basename, resolve } from "path";
+import { copyFileSync, existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "fs";
 import dts from "vite-plugin-dts";
+import remapping from "@ampproject/remapping";
 import { trimInternalDts } from "../../scripts/vite-trim-internal-dts";
 
 /**
@@ -12,10 +13,46 @@ import { trimInternalDts } from "../../scripts/vite-trim-internal-dts";
  */
 
 /**
- * Emit a publish-ready package.json into the build output directory and copy
- * the README and LICENSE alongside it so the published package is complete.
+ * The published package is built into `build/` (the npm tarball root) and ships TWO
+ * JavaScript trees plus shared metadata:
+ *
+ *   build/
+ *     package.json              exports "." -> ./lib/index.js  (what bundlers resolve)
+ *     index.d.ts                shared rolled-up types for both trees
+ *     README.md, LICENSE, THIRD_PARTY_NOTICES.txt
+ *     lib/                      module-granular ES output for BUNDLER consumers
+ *       index.js, <mirrors src/ tree>.js, _chunks/vendor/*.js
+ *     dist/                     prebundled, minified ES output for BROWSER / CDN use
+ *       index.js, <feature-area chunks>.js
+ *
+ * `lib/` (mode "lib") emits one file per source module — one Rollup entry per
+ * `src/**\/*.ts` — so a downstream bundler tree-shakes at full module granularity
+ * exactly as if it consumed the TypeScript source. Third-party runtimes are folded
+ * into named vendor chunks so they stay isolatable.
+ *
+ * `dist/` (mode "browser") is a single-entry, prebundled, minified build a browser
+ * can load directly from a CDN like jsDelivr. Its many lazy feature modules are
+ * consolidated by `manualChunks` into a small number of broad feature-area chunks
+ * (gltf, node-material, text, …) so a direct consumer fetches a sane number of files.
  */
-function emitPackageJson(outDir: string): Plugin {
+const PACKAGE_ROOT = resolve(__dirname, "build");
+/**
+ * Output directories as Vite `build.outDir` strings, relative to the package root
+ * (Vite's project root for this build). vite-plugin-dts mishandles an absolute or
+ * slash-nested entry name, so the browser pass emits into `build/dist` with natural
+ * file names and the rolled-up `index.d.ts` is relocated to the build root afterwards.
+ */
+const BROWSER_OUT_DIR = "build/dist";
+const LIB_OUT_DIR = "build/lib";
+
+/**
+ * Emit a publish-ready package.json into the build root and copy the README and
+ * LICENSE alongside it so the published package is complete. `exports`/`main`/
+ * `module` point at `lib/` because that is the module-granular tree bundlers should
+ * resolve; `jsdelivr`/`unpkg` point at the prebundled `dist/` tree so a bare CDN URL
+ * (`https://cdn.jsdelivr.net/npm/@babylonjs/lite`) serves the browser-ready build.
+ */
+function emitPackageJson(): Plugin {
     return {
         name: "emit-package-json",
         writeBundle() {
@@ -30,20 +67,26 @@ function emitPackageJson(outDir: string): Plugin {
                     url: "https://github.com/BabylonJS/Babylon-Lite.git",
                 },
                 type: "module",
-                main: "./index.js",
-                module: "./index.js",
+                main: "./lib/index.js",
+                module: "./lib/index.js",
                 types: "./index.d.ts",
                 exports: {
                     ".": {
-                        import: "./index.js",
                         types: "./index.d.ts",
+                        import: "./lib/index.js",
+                    },
+                    "./browser": {
+                        types: "./index.d.ts",
+                        import: "./dist/index.js",
                     },
                 },
+                jsdelivr: "./dist/index.js",
+                unpkg: "./dist/index.js",
                 sideEffects: false,
             };
-            writeFileSync(resolve(outDir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
-            copyFileSync(resolve(__dirname, "README.md"), resolve(outDir, "README.md"));
-            copyFileSync(resolve(__dirname, "../../LICENSE"), resolve(outDir, "LICENSE"));
+            writeFileSync(resolve(PACKAGE_ROOT, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
+            copyFileSync(resolve(__dirname, "README.md"), resolve(PACKAGE_ROOT, "README.md"));
+            copyFileSync(resolve(__dirname, "../../LICENSE"), resolve(PACKAGE_ROOT, "LICENSE"));
         },
     };
 }
@@ -79,7 +122,7 @@ function resolveDependencyDir(dep: string): string {
  * sync with the actual dependency versions on each release. Fails the build if
  * a license file cannot be located, so attribution is never silently dropped.
  */
-function emitThirdPartyNotices(outDir: string): Plugin {
+function emitThirdPartyNotices(): Plugin {
     return {
         name: "emit-third-party-notices",
         writeBundle() {
@@ -98,34 +141,251 @@ function emitThirdPartyNotices(outDir: string): Plugin {
                 const divider = "=".repeat(78);
                 sections.push(`${divider}\n${dep} ${version}\n${divider}\n\n${licenseText}`);
             }
-            writeFileSync(resolve(outDir, "THIRD_PARTY_NOTICES.txt"), sections.join("\n\n") + "\n");
+            writeFileSync(resolve(PACKAGE_ROOT, "THIRD_PARTY_NOTICES.txt"), sections.join("\n\n") + "\n");
         },
     };
 }
 
+const SRC_DIR = resolve(__dirname, "src");
+
+/**
+ * Fully minify each emitted chunk of the BROWSER build, including whitespace, while
+ * preserving working sourcemaps back to TypeScript source.
+ *
+ * Vite intentionally forces `minifyWhitespace: false` for ES *library* builds
+ * (`build.lib` + `formats: ["es"]`) even when `build.minify` is `"esbuild"`, so its
+ * ESM lib output stays readable — the right default for the `lib/` tree, but the
+ * `dist/` browser/CDN bundle should be as small as possible. Vite's built-in minify
+ * is therefore disabled for the browser pass (`build.minify: false`) and ALL
+ * minification is done here via `transformWithEsbuild` (esbuild directly, without the
+ * lib-mode whitespace carve-out).
+ *
+ * Runs in `generateBundle` (enforce "post"), NOT `renderChunk`: in a hashed ES lib
+ * build Rollup discards `renderChunk` return values (it re-renders chunks afterwards
+ * to substitute final hashed import paths). Mutating each chunk's `code`/`map` in
+ * `generateBundle` is the final word. Because esbuild's minify map only maps the
+ * minified output back to the pre-min chunk, it is composed with the chunk's own
+ * `chunk → source` map via `@ampproject/remapping` to yield a correct
+ * `minified → TypeScript source` map. Requires `build.sourcemap: true`.
+ */
+function minifyBrowserChunks(): Plugin {
+    return {
+        name: "minify-browser-chunks",
+        enforce: "post",
+        async generateBundle(_options, bundle) {
+            for (const file of Object.values(bundle)) {
+                if (file.type !== "chunk") {
+                    continue;
+                }
+                const chunkMap = file.map;
+                const result = await transformWithEsbuild(file.code, file.fileName, {
+                    minify: true,
+                    legalComments: "none",
+                    sourcemap: true,
+                });
+                // esbuild emits the map separately; strip any sourceMappingURL it leaves
+                // inline so we control the comment (re-added below when a map exists).
+                let code = result.code.replace(/\n?\/\/# sourceMappingURL=\S*\s*$/, "");
+
+                const mapName = `${file.fileName}.map`;
+                const mapAsset = bundle[mapName];
+                if (chunkMap && result.map && mapAsset && mapAsset.type === "asset") {
+                    // esbuild's minify map has exactly one source: the pre-min chunk.
+                    // Compose it with the chunk's own `chunk → source` map so the final
+                    // map points to TS source. The loader returns chunkMap for that one
+                    // source (the first call) and null for the leaf TS sources inside
+                    // chunkMap, otherwise remapping would recurse infinitely.
+                    let isChunkSource = true;
+                    const composed = remapping(result.map as unknown as Parameters<typeof remapping>[0], () => {
+                        if (isChunkSource) {
+                            isChunkSource = false;
+                            return chunkMap as unknown as ReturnType<Parameters<typeof remapping>[1]>;
+                        }
+                        return null;
+                    });
+                    // The `.map` is emitted as its own bundle asset, so overwrite that
+                    // asset's contents (mutating `chunk.map` alone is ignored at write).
+                    mapAsset.source = JSON.stringify(composed);
+                    file.map = composed as unknown as typeof file.map;
+                    code += `\n//# sourceMappingURL=${basename(mapName)}\n`;
+                }
+                file.code = code;
+            }
+        },
+    };
+}
+
+/**
+ * Relocate the rolled-up `build/dist/index.d.ts` (produced + trimmed during the
+ * browser pass) up to the build root, so the shared `index.d.ts` sits beside
+ * `package.json` and serves both the `lib/` and `dist/` trees. Runs after
+ * {@link trimInternalDts}'s `closeBundle`.
+ */
+function relocateDts(): Plugin {
+    return {
+        name: "relocate-dts",
+        enforce: "post",
+        closeBundle() {
+            const from = resolve(__dirname, BROWSER_OUT_DIR, "index.d.ts");
+            if (existsSync(from)) {
+                renameSync(from, resolve(PACKAGE_ROOT, "index.d.ts"));
+            }
+        },
+    };
+}
+
+/**
+ * Every first-party source module, keyed by its `src`-relative path without
+ * extension (forward-slashed). Used as the Rollup input map for the `lib` build so
+ * each module becomes its own entry chunk — reproducing `preserveModules`-style
+ * module-granular output, but with clean paths and while still allowing
+ * `manualChunks` (the two are mutually exclusive in Rollup). `*-worker.ts` Web
+ * Worker entry modules are excluded; Vite handles them via `?worker` imports.
+ */
+function enumerateLibEntries(): Record<string, string> {
+    const entries: Record<string, string> = {};
+    const walk = (dir: string): void => {
+        for (const name of readdirSync(dir)) {
+            const full = resolve(dir, name);
+            if (statSync(full).isDirectory()) {
+                walk(full);
+                continue;
+            }
+            if (!/\.ts$/.test(name) || /\.d\.ts$/.test(name) || /-worker\.ts$/.test(name)) {
+                continue;
+            }
+            const key = full
+                .slice(SRC_DIR.length + 1)
+                .replace(/\\/g, "/")
+                .replace(/\.ts$/, "");
+            entries[key] = full;
+        }
+    };
+    walk(SRC_DIR);
+    return entries;
+}
+
+/**
+ * Bundled vendor runtimes routed into their own named chunk in BOTH builds. Keeping
+ * each isolated (rather than merged into the always-loaded core) lets a consumer drop
+ * the whole chunk when the corresponding feature is unused — and keeps `text-shaper`,
+ * which has import-time initialisation and ships no `sideEffects: false`, from
+ * defeating module-granular elimination of the default-layout text path.
+ */
+const VENDOR_CHUNKS: ReadonlyArray<readonly [RegExp, string]> = [
+    [/[\\/]node_modules[\\/]text-shaper[\\/]/, "vendor/text-shaper"],
+    [/[\\/]node_modules[\\/]@?recast-navigation/, "vendor/recast-navigation"],
+    [/[\\/]node_modules[\\/]manifold-3d[\\/]/, "vendor/manifold"],
+];
+
+/**
+ * Broad feature-area groupings for the prebundled BROWSER build only. Many features
+ * live behind dynamic `import()`, which Rollup would otherwise split into dozens of
+ * tiny chunks; consolidating them by area keeps a direct/CDN consumer's fetch count
+ * small while preserving lazy loading of unused areas. Core infrastructure (engine,
+ * render, scene, math, shader, …) is intentionally left unmapped so it folds into the
+ * single always-loaded `index.js`.
+ */
+const FEATURE_CHUNKS: ReadonlyArray<readonly [RegExp, string]> = [
+    [/[\\/]src[\\/]loader-gltf[\\/]/, "gltf"],
+    [/[\\/]src[\\/]loader-splat[\\/]/, "splat"],
+    [/[\\/]src[\\/]loader-(?:env|hdr|skybox|babylon)[\\/]/, "loaders"],
+    [/[\\/]src[\\/]material[\\/]node[\\/]/, "node-material"],
+    [/[\\/]src[\\/]material[\\/]pbr[\\/]/, "pbr-material"],
+    [/[\\/]src[\\/]material[\\/]standard[\\/]/, "standard-material"],
+    [/[\\/]src[\\/]material[\\/]shader[\\/]/, "shader-material"],
+    [/[\\/]src[\\/]navigation[\\/]/, "navigation"],
+    [/[\\/]src[\\/]physics[\\/]/, "physics"],
+    [/[\\/]src[\\/]text[\\/]/, "text"],
+    [/[\\/]src[\\/]shadow[\\/]/, "shadow"],
+    [/[\\/]src[\\/]post-process[\\/]/, "post-process"],
+    [/[\\/]src[\\/]gizmo[\\/]/, "gizmo"],
+    [/[\\/]src[\\/]sprite[\\/]/, "sprite"],
+    [/[\\/]src[\\/]animation[\\/]/, "animation"],
+    [/[\\/]src[\\/](?:skeleton|morph|vat)[\\/]/, "skinning"],
+    [/[\\/]src[\\/]large-world[\\/]/, "large-world"],
+    [/[\\/]src[\\/]frame-graph[\\/]/, "frame-graph"],
+];
+
+function matchChunk(id: string, table: ReadonlyArray<readonly [RegExp, string]>): string | undefined {
+    for (const [pattern, name] of table) {
+        if (pattern.test(id)) {
+            return name;
+        }
+    }
+    return undefined;
+}
+
 export default defineConfig(({ mode }) => {
-    const outDir = mode === "prod" ? "dist/prod" : "dist";
+    const isBrowser = mode === "browser";
     const isWatch = process.argv.includes("--watch");
+
+    if (isBrowser) {
+        // Prebundled, minified, browser/CDN-ready single-entry build emitted into
+        // `build/dist/` with natural file names. This pass also produces the shared
+        // rolled-up `index.d.ts` (single entry => one .d.ts) and then relocates it up
+        // to the build root via `relocateDts` so both `lib/` and `dist/` share it.
+        return {
+            build: {
+                outDir: BROWSER_OUT_DIR,
+                emptyOutDir: true,
+                // Sourcemaps ON so Rollup composes `minifyBrowserChunks`'s esbuild
+                // minify map with each chunk's chunk→source map, emitting a `.js.map`
+                // that maps the minified browser bundle back to TypeScript source.
+                sourcemap: true,
+                // Minification is handled by `minifyBrowserChunks` (full esbuild minify
+                // incl. whitespace); Vite's built-in esbuild minify is disabled because
+                // in ES lib mode it forces `minifyWhitespace: false`.
+                minify: false as const,
+                lib: {
+                    entry: resolve(SRC_DIR, "index.ts"),
+                    formats: ["es" as const],
+                    fileName: "index",
+                },
+                rollupOptions: {
+                    output: {
+                        manualChunks(id: string) {
+                            return matchChunk(id, VENDOR_CHUNKS) ?? matchChunk(id, FEATURE_CHUNKS);
+                        },
+                    },
+                },
+            },
+            plugins: [
+                minifyBrowserChunks(),
+                dts({
+                    rollupTypes: !isWatch,
+                    tsconfigPath: resolve(__dirname, "tsconfig.json"),
+                    outDir: BROWSER_OUT_DIR,
+                }),
+                ...(isWatch ? [] : [trimInternalDts({ outDir: BROWSER_OUT_DIR, projectFolder: __dirname }), relocateDts()]),
+            ],
+        };
+    }
+
+    // Module-granular library build for bundler consumers: one entry per source
+    // module. Runs AFTER the browser pass and only empties `build/lib`, leaving the
+    // browser output and shared root files intact. Also emits the shared package
+    // metadata (package.json, README, LICENSE, THIRD_PARTY_NOTICES) into the build root.
     return {
         build: {
-            lib: {
-                entry: resolve(__dirname, "src/index.ts"),
-                formats: ["es"],
-                fileName: "index",
-            },
-            outDir,
+            outDir: LIB_OUT_DIR,
+            emptyOutDir: true,
             sourcemap: true,
-            minify: mode === "prod" ? "esbuild" : false,
+            minify: false as const,
+            lib: {
+                entry: enumerateLibEntries(),
+                formats: ["es" as const],
+            },
+            rollupOptions: {
+                output: {
+                    entryFileNames: "[name].js",
+                    chunkFileNames: "_chunks/[name]-[hash].js",
+                    manualChunks(id: string) {
+                        return matchChunk(id, VENDOR_CHUNKS);
+                    },
+                },
+            },
         },
-        plugins: [
-            dts({
-                rollupTypes: !isWatch,
-                tsconfigPath: resolve(__dirname, "tsconfig.json"),
-                outDir,
-            }),
-            ...(isWatch ? [] : [trimInternalDts({ outDir, projectFolder: __dirname })]),
-            emitPackageJson(outDir),
-            emitThirdPartyNotices(outDir),
-        ],
+        plugins: [emitPackageJson(), emitThirdPartyNotices()],
     };
 });
