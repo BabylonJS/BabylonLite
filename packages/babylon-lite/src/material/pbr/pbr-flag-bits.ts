@@ -86,4 +86,5 @@ export const PBR2_GEOMETRY_OUTPUT = 1 << 21;
 //   1<<24  PBR2_HAS_TRANSLUCENCY_UV_TX          (subsurface-fragment.ts)
 //   1<<25  PBR2_CC_UV_TX                        (clearcoat-fragment.ts)
 //   1<<26  PBR2_REFL_UV_TX                      (reflectance-fragment.ts)
+//   1<<27  PBR2_HAS_ANISO_TEX                    (anisotropy-fragment.ts)
 //   1<<28  PBR2_OCCL_UV_SPLIT                   (uv-transform-fragment.ts + pbr-template-ext.ts)

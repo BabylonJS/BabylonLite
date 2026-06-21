@@ -14,15 +14,19 @@ async function main(): Promise<void> {
     scene.clearColor = { r: 0.2, g: 0.2, b: 0.3, a: 1.0 };
     await loadEnvironment(scene, "https://assets.babylonjs.com/environments/environmentSpecular.env", { skipSkybox: true, skipGround: true, brdfUrl: "/brdf-lut.png" });
 
-    const cam = createArcRotateCamera(1.5707963, 1.5707963, 16, { x: -0.113, y: 0.537, z: -0.031 });
-    cam.fov = 0.8;
+    const params = new URLSearchParams(window.location.search);
+    const pf = (k: string, d: number): number => {
+        const v = parseFloat(params.get(k) || "");
+        return isNaN(v) ? d : v;
+    };
+    const cam = createArcRotateCamera(pf("camAlpha", 1.5707963), pf("camBeta", 1.5707963), pf("camRadius", 16), { x: pf("camTX", -0.113), y: pf("camTY", 0.537), z: pf("camTZ", -0.031) });
+    cam.fov = pf("camFov", 0.8);
     cam.nearPlane = 16 * 0.01;
     cam.farPlane = 16 * 1000;
     scene.camera = cam;
     attachControl(cam, canvas, scene);
 
     scene.fixedDeltaMs = 16.0;
-    const params = new URLSearchParams(window.location.search);
     const seekTimeParam = parseFloat(params.get("seekTime") || "");
     let frameCount = 0;
     let seekDone = false;

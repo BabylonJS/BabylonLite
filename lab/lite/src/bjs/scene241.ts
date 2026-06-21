@@ -30,14 +30,18 @@ import "@babylonjs/loaders/glTF";
     scene.imageProcessingConfiguration.contrast = 1.2;
     scene.imageProcessingConfiguration.toneMappingEnabled = true;
 
-    const camera = new ArcRotateCamera("camera", 1.5707963, 1.5707963, 16, new Vector3(-0.113, 0.537, -0.031), scene);
-    camera.fov = 0.8;
+    const params = new URLSearchParams(window.location.search);
+    const pf = (k: string, d: number): number => {
+        const v = parseFloat(params.get(k) || "");
+        return isNaN(v) ? d : v;
+    };
+    const camera = new ArcRotateCamera("camera", pf("camAlpha", 1.5707963), pf("camBeta", 1.5707963), pf("camRadius", 16), new Vector3(pf("camTX", -0.113), pf("camTY", 0.537), pf("camTZ", -0.031)), scene);
+    camera.fov = pf("camFov", 0.8);
     camera.minZ = 16 * 0.01;
     camera.maxZ = 16 * 1000;
     camera.attachControl(canvas, true);
     scene.activeCamera = camera;
 
-    const params = new URLSearchParams(window.location.search);
     const seekTimeParam = parseFloat(params.get("seekTime") || "");
     let frameCount = 0;
     let seekDone = false;

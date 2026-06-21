@@ -90,6 +90,7 @@ function resolveExtTexture(mat: PointerMaterial, ext: string, field: string): Po
         iridescence?: Record<string, unknown>;
         sheen?: Record<string, unknown>;
         clearCoat?: Record<string, unknown>;
+        anisotropy?: Record<string, unknown>;
         reflectanceTexture?: PointerUvTexture;
         metallicReflectanceTexture?: PointerUvTexture;
         subsurface?: { translucency?: Record<string, unknown> };
@@ -99,6 +100,8 @@ function resolveExtTexture(mat: PointerMaterial, ext: string, field: string): Po
             return privateTexture(m.iridescence, "texture");
         case "KHR_materials_iridescence/iridescenceThicknessTexture":
             return privateTexture(m.iridescence, "thicknessTexture");
+        case "KHR_materials_anisotropy/anisotropyTexture":
+            return privateTexture(m.anisotropy, "texture");
         case "KHR_materials_sheen/sheenColorTexture":
         case "KHR_materials_sheen/sheenRoughnessTexture":
             return privateTexture(m.sheen, "texture");

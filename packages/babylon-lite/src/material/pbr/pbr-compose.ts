@@ -180,7 +180,7 @@ export function createPbrComposer(deps: PbrComposerDeps): PbrComposeFn {
             _hasIbl,
             _hasAnisotropy,
             _anisoBrdfFunctions: _hasAnisotropy && _anisoExt ? _anisoExt.ANISO_BRDF_FUNCTIONS : "",
-            _anisoTBBlock: _hasAnisotropy && _anisoExt ? _anisoExt.makeAnisotropyTBBlock(hasNormal) : "",
+            _anisoTBBlock: _hasAnisotropy && _anisoExt ? _anisoExt.makeAnisotropyTBBlock(hasNormal, (features2 & _anisoExt.PBR2_HAS_ANISO_TEX) !== 0) : "",
             _ext,
             _noColorOutput: (features2 & PBR2_NO_COLOR_OUTPUT) !== 0,
             _esmShadowOutput: (features2 & PBR2_ESM_SHADOW_OUTPUT) !== 0,

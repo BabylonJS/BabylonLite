@@ -274,6 +274,10 @@ export interface AnisotropyProps {
     intensity?: number;
     /** Anisotropy direction in tangent space (u, v). Default [1, 0]. */
     direction?: [number, number];
+    /** KHR_materials_anisotropy anisotropyTexture (linear). RG = per-texel direction
+     *  (×2-1, rotated by `direction`), B = per-texel strength (multiplies `intensity`).
+     *  May carry a KHR_texture_transform that an animation pointer can drive. */
+    texture?: Texture2D;
 }
 
 /** Translucency sub-feature. Presence enables translucency (no isEnabled boolean). */
