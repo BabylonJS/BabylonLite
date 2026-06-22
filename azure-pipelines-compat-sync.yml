@@ -83,8 +83,9 @@ stages:
           - job: SyncAndOpenPr
             displayName: "Sync compat layer and open draft PR"
             # Generous wall-clock cap (matches the gh-aw timeout-minutes: 240). The
-            # skill clones/diffs upstream, implements wrappers, builds bundle scenes,
-            # and runs parity tests.
+            # skill clones/diffs upstream, implements compat wrappers, and adds
+            # GPU-free tests; deterministic validation (open-compat-sync-pr.ts) then
+            # runs the compat unit tests + typecheck before opening the draft PR.
             timeoutInMinutes: 240
             pool:
                 vmImage: "ubuntu-latest"
