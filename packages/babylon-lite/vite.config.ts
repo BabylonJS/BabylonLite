@@ -24,17 +24,16 @@ import { wgslMinifyPlugin } from "../../scripts/wgsl-minify-plugin";
  *     lib/                      module-granular ES output for BUNDLER consumers
  *       index.js, <mirrors src/ tree>.js, _chunks/vendor/*.js
  *     dist/                     prebundled, minified ES output for BROWSER / CDN use
- *       index.js, <feature-area chunks>.js
+ *       index.js
  *
  * `lib/` (mode "lib") emits one file per source module — one Rollup entry per
  * `src/**\/*.ts` — so a downstream bundler tree-shakes at full module granularity
  * exactly as if it consumed the TypeScript source. Third-party runtimes are folded
  * into named vendor chunks so they stay isolatable.
  *
- * `dist/` (mode "browser") is a single-entry, prebundled, minified build a browser
- * can load directly from a CDN like jsDelivr. Its many lazy feature modules are
- * consolidated by `manualChunks` into a small number of broad feature-area chunks
- * (gltf, node-material, text, …) so a direct consumer fetches a sane number of files.
+ * `dist/` (mode "dist") is a single-entry, prebundled, minified build a browser can
+ * load directly from a CDN like jsDelivr. `inlineDynamicImports` folds every dynamic
+ * import edge into `dist/index.js`, yielding one browser-ready file.
  */
 const PACKAGE_ROOT = resolve(__dirname, "build");
 /**
@@ -50,12 +49,10 @@ const LIB_OUT_DIR = "build/lib";
  * Emit a publish-ready package.json into the build root and copy the README and
  * LICENSE alongside it so the published package is complete. `exports`/`main`/
  * `module` point at `lib/` because that is the module-granular tree bundlers should
- * resolve. The `files` allowlist intentionally OMITS the prebundled `dist/` tree: a
- * direct (non-bundler) import of dist's barrel statically pulls every feature chunk,
- * so it does not deliver per-feature lazy loading and is excluded from the package
- * for now. dist is still built locally (it generates the shared `index.d.ts`), just
- * not shipped — re-add it (with a `./browser` export + `jsdelivr`/`unpkg`) once it
- * has real dynamic-import feature boundaries.
+ * resolve; `jsdelivr`/`unpkg` point at the prebundled `dist/` tree — a TRUE
+ * single-file `dist/index.js` containing all of Lite (including vendor runtimes) — so
+ * a bare CDN URL
+ * (`https://cdn.jsdelivr.net/npm/@babylonjs/lite`) serves a browser-ready build.
  */
 function emitPackageJson(): Plugin {
     return {
@@ -81,7 +78,8 @@ function emitPackageJson(): Plugin {
                         import: "./lib/index.js",
                     },
                 },
-                files: ["lib", "index.d.ts", "THIRD_PARTY_NOTICES.txt"],
+                jsdelivr: "./dist/index.js",
+                unpkg: "./dist/index.js",
                 sideEffects: false,
             };
             writeFileSync(resolve(PACKAGE_ROOT, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
@@ -257,7 +255,10 @@ function minifyInlinedWorker(): Plugin {
  * from-source harness build (`sourcemap: "hidden"`) emits none, so stripping it keeps
  * the inlined worker byte-aligned with a from-source build. Runs on the MAIN build,
  * where the blob string lives; `enforce: "post"` so it sees final chunk code (and, for
- * dist, runs after esbuild minification which leaves string contents untouched).
+ * dist, runs after esbuild minification which leaves string contents untouched). Vite
+ * may also emit an orphan worker `*.js.map` asset for the inlined worker even though
+ * no sibling worker `*.js` file is written; prune those orphan maps so dist contains
+ * only maps that correspond to emitted JS files.
  */
 function stripInlinedWorkerSourcemap(): Plugin {
     return {
@@ -269,6 +270,16 @@ function stripInlinedWorkerSourcemap(): Plugin {
                     // Match the escaped form inside the Blob string literal only (the
                     // chunk's own trailing real-newline sourcemap comment is left intact).
                     file.code = file.code.replace(/\\n\/\/# sourceMappingURL=[^\\"']*\.js\.map\\n/g, "");
+                }
+            }
+
+            for (const fileName of Object.keys(bundle)) {
+                if (!fileName.endsWith(".js.map")) {
+                    continue;
+                }
+                const jsFileName = fileName.slice(0, -4);
+                if (!Object.prototype.hasOwnProperty.call(bundle, jsFileName)) {
+                    delete bundle[fileName];
                 }
             }
         },
@@ -338,35 +349,6 @@ const VENDOR_CHUNKS: ReadonlyArray<readonly [RegExp, string]> = [
     [/[\\/]node_modules[\\/]manifold-3d[\\/]/, "vendor/manifold"],
 ];
 
-/**
- * Broad feature-area groupings for the prebundled BROWSER build only. Many features
- * live behind dynamic `import()`, which Rollup would otherwise split into dozens of
- * tiny chunks; consolidating them by area keeps a direct/CDN consumer's fetch count
- * small while preserving lazy loading of unused areas. Core infrastructure (engine,
- * render, scene, math, shader, …) is intentionally left unmapped so it folds into the
- * single always-loaded `index.js`.
- */
-const FEATURE_CHUNKS: ReadonlyArray<readonly [RegExp, string]> = [
-    [/[\\/]src[\\/]loader-gltf[\\/]/, "gltf"],
-    [/[\\/]src[\\/]loader-splat[\\/]/, "splat"],
-    [/[\\/]src[\\/]loader-(?:env|hdr|skybox|babylon)[\\/]/, "loaders"],
-    [/[\\/]src[\\/]material[\\/]node[\\/]/, "node-material"],
-    [/[\\/]src[\\/]material[\\/]pbr[\\/]/, "pbr-material"],
-    [/[\\/]src[\\/]material[\\/]standard[\\/]/, "standard-material"],
-    [/[\\/]src[\\/]material[\\/]shader[\\/]/, "shader-material"],
-    [/[\\/]src[\\/]navigation[\\/]/, "navigation"],
-    [/[\\/]src[\\/]physics[\\/]/, "physics"],
-    [/[\\/]src[\\/]text[\\/]/, "text"],
-    [/[\\/]src[\\/]shadow[\\/]/, "shadow"],
-    [/[\\/]src[\\/]post-process[\\/]/, "post-process"],
-    [/[\\/]src[\\/]gizmo[\\/]/, "gizmo"],
-    [/[\\/]src[\\/]sprite[\\/]/, "sprite"],
-    [/[\\/]src[\\/]animation[\\/]/, "animation"],
-    [/[\\/]src[\\/](?:skeleton|morph|vat)[\\/]/, "skinning"],
-    [/[\\/]src[\\/]large-world[\\/]/, "large-world"],
-    [/[\\/]src[\\/]frame-graph[\\/]/, "frame-graph"],
-];
-
 function matchChunk(id: string, table: ReadonlyArray<readonly [RegExp, string]>): string | undefined {
     for (const [pattern, name] of table) {
         if (pattern.test(id)) {
@@ -381,13 +363,17 @@ export default defineConfig(({ mode }) => {
     const isWatch = process.argv.includes("--watch");
 
     if (isDist) {
-        // Prebundled, minified, browser/CDN-ready single-entry build emitted into
-        // `build/dist/`. This pass ALSO produces the shared rolled-up `index.d.ts`
-        // (a single-entry rollup → one .d.ts) and relocates it to the build root via
-        // `relocateDts` so both `lib/` and `dist/` share it. Type generation lives here
-        // (not in the `lib` pass) because vite-plugin-dts can only roll up to one
-        // `index.d.ts` from a SINGLE entry; the `lib` pass is multi-entry (one per source
-        // module) and would instead emit ~560 per-module `.d.ts` files.
+        // Prebundled, minified, browser/CDN-ready build emitted into `build/dist/`: a
+        // TRUE single-file `dist/index.js` containing ALL of Lite, including vendor
+        // runtimes. `inlineDynamicImports` folds every dynamic import edge into the
+        // entry chunk.
+        //
+        // This pass ALSO produces the shared rolled-up `index.d.ts` (a single-entry rollup
+        // → one .d.ts) and relocates it to the build root via `relocateDts` so both `lib/`
+        // and `dist/` share it. Type generation lives here (not in the `lib` pass) because
+        // vite-plugin-dts can only roll up to one `index.d.ts` from a SINGLE entry; the
+        // `lib` pass is multi-entry (one per source module) and would instead emit ~560
+        // per-module `.d.ts` files.
         return {
             build: {
                 outDir: DIST_OUT_DIR,
@@ -412,9 +398,10 @@ export default defineConfig(({ mode }) => {
                 },
                 rollupOptions: {
                     output: {
-                        manualChunks(id: string) {
-                            return matchChunk(id, VENDOR_CHUNKS) ?? matchChunk(id, FEATURE_CHUNKS);
-                        },
+                        // Force a true single-file dist artifact. This inlines all
+                        // dynamic-imported feature paths and vendor runtimes into
+                        // `dist/index.js`.
+                        inlineDynamicImports: true,
                     },
                 },
             },
