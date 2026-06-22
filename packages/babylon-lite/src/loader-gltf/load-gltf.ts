@@ -207,38 +207,8 @@ async function fetchGltfAsset(source: string | ArrayBuffer | Blob): Promise<{ js
         return { ...glb.parseGlbContainer(buffer), baseUrl };
     }
 
-    // Otherwise treat the bytes as a JSON glTF document.
-    const json = JSON.parse(new TextDecoder().decode(buffer));
-    const buffers = json.buffers ?? [];
-    let binChunk: DataView;
-    if (buffers.length > 1) {
-        // Multi-buffer glTF (e.g. separate geometry/animation/skin .bin files): fetch all,
-        // concatenate, and rewrite bufferView offsets so the single-binChunk reader still works.
-        // Lazy-imported so single-buffer/GLB assets (the common case) pay zero bytes for it.
-        const multiBuffer = await import("./gltf-multi-buffer.js");
-        binChunk = await multiBuffer.loadMultiBuffer(json, baseUrl);
-    } else if (buffers[0]?.uri) {
-        binChunk = new DV(await fetch(resolveBufferUri(buffers[0].uri, baseUrl)).then((r) => r.arrayBuffer()));
-    } else {
-        binChunk = new DV(new ArrayBuffer(0));
-    }
-    return { json, binChunk, baseUrl };
-}
-
-/** Resolve a glTF buffer `uri` to a fetchable URL. With a base URL (the source was a URL string), relative
- *  `.bin` paths resolve against it. Without one (ArrayBuffer/Blob source), only self-contained `data:`/
- *  absolute URIs are resolvable — a bare relative path has no base and throws a clear error.
- *  @internal */
-export function resolveBufferUri(uri: string, baseUrl: string): string {
-    if (baseUrl) {
-        return new URL(uri, baseUrl + "x").href;
-    }
-    try {
-        // No base: succeeds for data:/absolute URIs, throws for a relative path (which `new URL` rejects).
-        return new URL(uri).href;
-    } catch {
-        throw new Error(`loadGltf: relative buffer URI "${uri}" needs a base URL — load from a URL, or use a self-contained GLB/data: URI glTF.`);
-    }
+    const jsonAsset = await import("./gltf-json-asset.js");
+    return jsonAsset.parseGltfJsonAsset(buffer, baseUrl);
 }
 
 /** Cheap superset gate: returns true iff the asset can possibly trigger at least
