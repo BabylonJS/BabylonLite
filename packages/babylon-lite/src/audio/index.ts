@@ -10,6 +10,19 @@ export type { AudioEngine, AudioEngineOptions, AudioEngineState } from "./audio-
 export { createSoundAsync, playSound, pauseSound, resumeSound, stopSound, disposeSound, setSoundVolume, SoundState } from "./static-sound.js";
 export type { StaticSound, StaticSoundOptions, StaticSoundPlayOptions, StaticSoundStopOptions } from "./static-sound.js";
 
+export {
+    createStreamingSoundAsync,
+    preloadStreamingInstanceAsync,
+    preloadStreamingInstancesAsync,
+    playStreamingSound,
+    pauseStreamingSound,
+    resumeStreamingSound,
+    stopStreamingSound,
+    disposeStreamingSound,
+    setStreamingSoundVolume,
+} from "./streaming-sound.js";
+export type { StreamingSound, StreamingSoundOptions, StreamingSoundPlayOptions, StreamingSoundSource } from "./streaming-sound.js";
+
 export { createAudioBusAsync, disposeAudioBus, setBusVolume } from "./audio-bus.js";
 export type { AudioBus, AudioBusOptions, PrimaryAudioBus } from "./audio-bus.js";
 export type { MainBus } from "./bus.js";

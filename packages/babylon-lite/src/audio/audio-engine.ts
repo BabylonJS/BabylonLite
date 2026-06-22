@@ -192,7 +192,7 @@ function _wireStateAndResume(engine: AudioEngine, options: AudioEngineOptions): 
 
 function _wireUserGesture(engine: AudioEngine, options: AudioEngineOptions): void {
     const resumeOnInteraction = options.resumeOnInteraction !== false;
-    if (engine._isOffline || typeof document === "undefined") {
+    if (engine._isOffline || typeof document === "undefined" || typeof document.addEventListener !== "function") {
         return;
     }
 

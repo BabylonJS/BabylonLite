@@ -177,12 +177,122 @@ export class MockOfflineAudioContext extends MockBaseAudioContext {
     }
 }
 
+export class MockSourceElement {
+    public src = "";
+}
+
+export class MockMediaElement {
+    public src: string;
+    public currentSrc: string;
+    public crossOrigin: string | null = null;
+    public controls = false;
+    public loop = false;
+    public preload = "";
+    public currentTime = 0;
+    public loaded = false;
+    public playing = false;
+    public paused = true;
+    public readonly children: MockSourceElement[] = [];
+    private _listeners: { [type: string]: Array<() => void> } = {};
+
+    public constructor(src?: string) {
+        this.src = src ?? "";
+        this.currentSrc = src ?? "";
+    }
+
+    public addEventListener(type: string, cb: () => void): void {
+        (this._listeners[type] ??= []).push(cb);
+    }
+
+    public removeEventListener(type: string, cb: () => void): void {
+        const list = this._listeners[type];
+        if (list) {
+            const i = list.indexOf(cb);
+            if (i !== -1) {
+                list.splice(i, 1);
+            }
+        }
+    }
+
+    public appendChild(node: MockSourceElement): MockSourceElement {
+        this.children.push(node);
+        return node;
+    }
+
+    public removeChild(node: MockSourceElement): void {
+        const i = this.children.indexOf(node);
+        if (i !== -1) {
+            this.children.splice(i, 1);
+        }
+    }
+
+    public load(): void {
+        this.loaded = true;
+        // Auto-signal readiness on the next microtask so awaited preloads resolve.
+        queueMicrotask(() => this.fire("canplaythrough"));
+    }
+
+    public async play(): Promise<void> {
+        this.playing = true;
+        this.paused = false;
+    }
+
+    public pause(): void {
+        this.playing = false;
+        this.paused = true;
+    }
+
+    public canPlayType(): string {
+        return "probably";
+    }
+
+    /** Test helper — dispatch a registered event. */
+    public fire(type: string): void {
+        for (const cb of (this._listeners[type] ?? []).slice()) {
+            cb();
+        }
+    }
+}
+
+export class MockMediaElementAudioSourceNode extends MockAudioNode {
+    public constructor(
+        public readonly context: MockBaseAudioContext,
+        public readonly options: { mediaElement: MockMediaElement }
+    ) {
+        super();
+    }
+}
+
 interface InstalledGlobals {
     [key: string]: unknown;
 }
 
 const SAVED: InstalledGlobals = {};
 const KEYS = ["AudioContext", "OfflineAudioContext", "GainNode", "AudioBufferSourceNode", "AudioBuffer", "Audio"];
+
+const STREAMING_SAVED: InstalledGlobals = {};
+const STREAMING_KEYS = ["Audio", "MediaElementAudioSourceNode", "document"];
+
+/** Installs media-element mocks for streaming-sound tests. Call after {@link installWebAudioMock}. */
+export function installStreamingMocks(): void {
+    const g = globalThis as unknown as InstalledGlobals;
+    for (const key of STREAMING_KEYS) {
+        STREAMING_SAVED[key] = g[key];
+    }
+    g.Audio = MockMediaElement;
+    g.MediaElementAudioSourceNode = MockMediaElementAudioSourceNode;
+    // Minimal document for the multi-source (<source>) path. No addEventListener,
+    // so the engine's user-gesture wiring stays disabled.
+    g.document = { createElement: (_tag: string) => new MockSourceElement() };
+}
+
+/** Restores the globals modified by {@link installStreamingMocks}. */
+export function uninstallStreamingMocks(): void {
+    const g = globalThis as unknown as InstalledGlobals;
+    for (const key of STREAMING_KEYS) {
+        g[key] = STREAMING_SAVED[key];
+    }
+}
 
 /** Installs the Web Audio mock onto `globalThis`. Call from `beforeEach`. */
 export function installWebAudioMock(): void {
