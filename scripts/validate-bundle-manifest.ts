@@ -77,16 +77,21 @@ function readBuiltManifest(absPath: string): Manifest {
 }
 
 function readCommittedManifest(rootDir: string): Manifest | null {
+    let text: string;
     try {
-        const text = execFileSync("git", ["show", `HEAD:${MANIFEST_REL_PATH}`], {
+        text = execFileSync("git", ["show", `HEAD:${MANIFEST_REL_PATH}`], {
             cwd: rootDir,
             encoding: "utf-8",
+            stdio: ["ignore", "pipe", "ignore"],
         });
-        return parseManifest(text, "committed manifest");
     } catch {
-        // Manifest does not exist at HEAD (e.g. brand-new file not yet committed).
+        // `git show` failed: the manifest does not exist at HEAD (e.g. a
+        // brand-new file not yet committed). Only this case maps to null.
         return null;
     }
+    // Parse OUTSIDE the catch so a corrupt committed manifest surfaces as a real
+    // error instead of being silently reported as "not committed at HEAD".
+    return parseManifest(text, "committed manifest");
 }
 
 function main(): void {
