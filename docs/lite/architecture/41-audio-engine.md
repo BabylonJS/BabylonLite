@@ -2,7 +2,7 @@
 
 > Package path: `packages/babylon-lite/src/audio/`
 
-> **Status: Specification (one-shot doc) — implementation pending.**
+> **Status: Implemented.**
 > This is a faithful _behavioral_ port of Babylon.js v2 AudioV2
 > (`packages/dev/core/src/AudioV2/`) re-architected to Babylon Lite idioms:
 > pure-state interfaces + standalone functions, zero module-level side effects,
@@ -10,6 +10,14 @@
 > modules. The **Web Audio API node graph, parameter-ramp math, and spatial
 > panner math are preserved 1:1** — only the code _shape_ changes, never the
 > audible behavior.
+>
+> The shipped module differs from the original one-shot design below in a few
+> places (most notably: feature sub-nodes are enabled by **explicit
+> `enable*`/`set*` functions** rather than presence of an option field, and the
+> file layout is **flat**, not nested). The **authoritative API is the exported
+> TSDoc** in `packages/babylon-lite/src/audio/` and the barrel
+> `audio/index.ts`; the "As-Built API & Divergences" section below records the
+> deltas from this design doc.
 
 ---
 
@@ -59,6 +67,11 @@ the class scaffolding is not.
 ---
 
 ## Public API Surface
+
+> **Original design sketch.** The block below is the pre-implementation API
+> design. It is kept for context; where it disagrees with the shipped code, the
+> shipped code wins. See **"As-Built API & Divergences"** immediately after for
+> the corrections.
 
 All public types are **pure state** (no methods). Behavior is in functions.
 
@@ -256,7 +269,77 @@ export const enum SoundState {
 
 ---
 
-## Internal Architecture
+## As-Built API & Divergences
+
+The shipped surface is the barrel `audio/index.ts`. It matches the design above
+in spirit; the concrete differences are:
+
+**Feature enablement is explicit, not option-presence.** There are no
+`spatial?`/`stereo?`/`analyzer?` fields on `StaticSoundOptions`,
+`StreamingSoundOptions`, or `AudioBusOptions`. Instead each feature is turned on
+by its own function on a host (`AudioGraphHost = StaticSound | StreamingSound |
+AudioBus | AudioInputSource`), which lazily builds/rebuilds the sub-graph:
+
+```typescript
+// Stereo
+export function enableStereo(host: AudioGraphHost, options?: StereoSoundOptions): void;
+export function setStereoPan(host: AudioGraphHost, pan: number, options?: RampOptions): void;
+
+// Spatial (3D)
+export function enableSpatial(host: AudioGraphHost, options?: SpatialSoundOptions): void;
+export function setSpatialPosition(host: AudioGraphHost, position: Vec3): void;
+export function setSpatialOrientation(host: AudioGraphHost, orientation: Vec3): void;
+export function attachSpatialTarget(target: AudioGraphHost | AudioEngine, worldTarget: SpatialTarget, type?: SpatialAttachmentType): void;
+export function detachSpatialTarget(target: AudioGraphHost | AudioEngine): void;
+export function setSpatialListener(engine: AudioEngine, options?: SpatialListenerOptions): void;
+export function setSpatialListenerPosition(engine: AudioEngine, position: Vec3): void;
+export function updateSpatialAudio(engine: AudioEngine): void;
+export function setSpatialAutoUpdate(engine: AudioEngine, enabled: boolean, minUpdateMs?: number): void;
+
+// Analyzer — frequency AND time-domain readback
+export function enableAnalyzer(host: AudioGraphHost, options?: AudioAnalyzerOptions): void;
+export function getByteFrequencyData(host: AudioGraphHost, out: Uint8Array): void;
+export function getFloatFrequencyData(host: AudioGraphHost, out: Float32Array): void;
+export function getByteTimeDomainData(host: AudioGraphHost, out: Uint8Array): void;
+export function getFloatTimeDomainData(host: AudioGraphHost, out: Float32Array): void;
+```
+
+Other deltas:
+
+- **Per-sound volume helper.** `setSoundVolume(sound, value, options?)` and
+  `setStreamingSoundVolume(...)` exist (the design only listed master/bus
+  volume).
+- **Buses.** `MainBus` is created and owned by the engine; there is **no public
+  `createMainBusAsync`**. `disposeAudioBus(bus)` is public. `PrimaryAudioBus` is
+  the public union (`AudioBus | MainBus`) used by `outBus`/spatial/stereo hosts.
+- **Sound sources & microphone.** Generic input sources are exposed via
+  `createSoundSourceAsync(engine, node, options?)`,
+  `createMicrophoneSoundSourceAsync(engine, options?)`,
+  `setSoundSourceVolume(...)`, and `disposeSoundSource(...)`, returning an
+  `AudioInputSource` handle (the design's `MicrophoneSound` was folded into
+  this).
+- **Unmute UI.** `createUnmuteUI(engine, { parentElement? })` plus
+  `setUnmuteUIEnabled(ui, enabled)` and `disposeUnmuteUI(ui)` (capitalized `UI`,
+  and a richer handle than `{ dispose() }`).
+- **Visualizer (Lite-only, no AudioV2 counterpart).** A small canvas-2D
+  waveform/bars helper for the demo and manual use:
+  `createAudioVisualizer(host, canvas, options?)`,
+  `renderAudioVisualizerFrame(viz)`, `startAudioVisualizer(viz)`,
+  `stopAudioVisualizer(viz)`, `disposeAudioVisualizer(viz)`. Documented as an
+  intentional adaptation (the runtime visualizer is presentation glue, not a
+  port of audible behavior).
+- **Spatial defaults match AudioV2 `_SpatialAudioDefaults`** — note the
+  `distanceModel` default is **`"linear"`** (the prose in the design sketch said
+  "inverse").
+- **Streaming** exposes both `preloadStreamingInstanceAsync` and
+  `preloadStreamingInstancesAsync`, and dedicated
+  `play/pause/resume/stop/disposeStreamingSound` functions (not shared with the
+  static functions).
+- **`createSoundBufferAsync(engine, source, options?)`** and the `SoundBuffer` /
+  `SoundSource` / `SoundBufferOptions` types are public.
+
+Everything else (engine lifecycle, ramps, `AudioSignal`, `SoundState`, pure-state
+interfaces, one-way spatial data ownership) is as designed.
 
 ### Sound sub-graph (signal flow)
 
@@ -403,20 +486,36 @@ is identical. Only ownership, side-effect timing, and call syntax change.
 ## Test Specification
 
 Audio produces **no pixels**, so the Playwright screenshot/MAD parity harness
-does **not** apply directly. Instead, audio is tested in **four tiers**, three of
-which are fully deterministic CI gates. The cornerstone is **`OfflineAudioContext`**:
-the entire Web Audio graph can be rendered faster-than-real-time, with **no user
-gesture and no speakers**, into a reproducible `AudioBuffer`. This lets us assert
-on the _actual rendered PCM_ — a stronger guarantee than any screenshot — and,
+does **not** apply directly. Instead, audio is tested in **four tiers**. Tier 1
+(mocked Web Audio) is the always-on deterministic CI gate; Tiers 2–3 render
+through a **real** `OfflineAudioContext` and are **opt-in** (see below); Tier 4
+is a manual showcase. The cornerstone is **`OfflineAudioContext`**: the entire
+Web Audio graph can be rendered faster-than-real-time, with **no user gesture
+and no speakers**, into a reproducible `AudioBuffer`. This lets us assert on the
+_actual rendered PCM_ — a stronger guarantee than any screenshot — and,
 optionally, draw that PCM to a canvas for a deterministic _visual_ gate.
 
-> The `createAudioEngineAsync` `audioContext` option already accepts a
+> **As-built (Tier 2–3 backend).** There is no in-browser run for these; they run
+> headless in vitest against the native **`node-web-audio-api`** package, a
+> **dev-only** dependency that supplies a real `OfflineAudioContext` and the Web
+> Audio node constructors. The harness installs those classes as globals for the
+> duration of a render and passes the offline context to
+> `createAudioEngineAsync({ audioContext })`. Because the native prebuilt binary
+> may be unavailable on some platforms, **every Tier-2/3 spec self-skips** via
+> `describe.skipIf(!realWebAudioAvailable)`, so install/CI never hard-fail. The
+> tiers live in their own opt-in vitest project `audio-offline`
+> (`pnpm test:audio-offline`), separate from the `unit` project.
+>
+> The `createAudioEngineAsync` `audioContext` option accepts a
 > `BaseAudioContext`, so passing an `OfflineAudioContext` is the supported entry
 > point for offline rendering. The engine detects offline contexts and skips
 > `close()`/gesture-unlock paths on them (mirrors AudioV2's
 > `_isUsingOfflineAudioContext`).
 
-### Tier 1 — Unit / behavioral (mocked Web Audio API), deterministic
+### Tier 1 — Unit / behavioral (mocked Web Audio API), deterministic — always-on CI gate
+
+**As-built:** `tests/lite/unit/audio/*.test.ts` (mocked Web Audio, runs in the
+`unit` vitest project; no native dependency).
 
 1. **Graph wiring** — assert the correct `connect()` topology for every feature
    combination (volume only; +stereo; +spatial; +spatial+stereo with root gain;
@@ -435,29 +534,40 @@ optionally, draw that PCM to a canvas for a deterministic _visual_ gate.
 6. **Disposal** — `disposeAudioEngine` removes the click listener, clears the
    resume interval/RAF, and closes only contexts it created.
 
-### Tier 2 — Output correctness (`OfflineAudioContext` → PCM), deterministic ★ primary gate
+### Tier 2 — Output correctness (`OfflineAudioContext` → PCM), opt-in (native) ★ primary correctness tier
 
 Render real sounds through a real (offline) Web Audio graph and assert on the
 returned samples. This validates audible behavior, not just node wiring.
+**As-built:** `tests/lite/audio/offline/*.test.ts` (15 tests).
 
-7. **Playback** — render a known buffer (e.g. a 440 Hz sine) and assert peak/RMS,
-   sample-at-time, and total duration. Looping renders the expected repeats;
+7. **Playback** — render a known buffer (a 440 Hz sine) and assert peak/RMS,
+   per-window silence, and total duration. Looping renders the expected repeats;
    `startOffset` shifts the first non-zero sample.
-8. **Volume / ramps** — render a master/bus/sound volume ramp and assert the PCM
-   envelope follows the linear/exp/log curve within tolerance.
-9. **Stereo** — assert left/right channel energy split matches the pan value.
-10. **Spatial** — render with the source panned hard left/right/behind the
-    listener and assert the inter-channel level/delay and distance attenuation
-    (per `distanceModel`/`rolloffFactor`) match expected values.
-11. **Bus routing** — sum/attenuation through a bus chain matches direct output.
+8. **Volume / ramps** — render a sound-volume ramp and assert the PCM envelope
+   follows the linear fade in/out (monotonic across windows).
+9. **Stereo** — assert left/right channel energy split matches the pan value
+   (measured after the default pan ramp settles).
+10. **Spatial** — render with the source panned left/right and assert the
+    inter-channel level split, plus linear-distance-model attenuation (a distant
+    source is measurably quieter than a near one).
+11. **Bus routing** — attenuation through a bus chain matches the expected ratio
+    of the direct output.
 
-### Tier 3 — Visual parity (offline PCM → waveform/spectrogram canvas), deterministic (optional)
+### Tier 3 — Visual parity (offline PCM → waveform canvas), opt-in (native)
 
-12. Draw the Tier-2 rendered PCM to a canvas (waveform or FFT spectrogram) and
-    pixel-diff against a committed golden image. Because offline rendering is
-    reproducible, the image is deterministic — this is the "show the waves" gate
-    and reuses the existing golden-comparison tooling. Goldens live under
-    `reference/lite/audio-<case>/` and are regenerated only on explicit request.
+12. Draw the Tier-2 rendered PCM to an image (a deterministic waveform raster)
+    and diff against a committed golden. Because offline rendering is
+    reproducible, the image is deterministic — this is the "show the waves" gate.
+    **As-built:** `tests/lite/audio/visual/waveform-golden.test.ts` renders via a
+    small dependency-light **pngjs** rasterizer (`_shared/waveform-png.ts`) —
+    used instead of a DOM canvas, which Node lacks without an extra native
+    dependency. The waveform band is drawn **thick** and the diff is
+    **position-tolerant** (a pixel matches if any golden pixel within a 2 px
+    radius is within tolerance), so cosmetic sub-pixel envelope shifts across
+    platforms do not flake the gate; a companion `golden-robustness.test.ts`
+    asserts a 2 px shift passes while a 12 px shift is still caught. Goldens live
+    under `reference/lite/audio/<case>.png` and are regenerated only on explicit
+    request (`UPDATE_AUDIO_GOLDENS=1`).
 
 ### Tier 4 — Live demo visualizer, NOT a gate
 
@@ -477,34 +587,41 @@ standing CI gate.
 
 ## File Manifest
 
+As-built layout is **flat** (no per-feature subdirectories):
+
 ```
 packages/babylon-lite/src/audio/
   index.ts                  # pure barrel
-  audio-engine.ts           # createAudioEngineAsync, dispose, unlock, master volume
+  audio-engine.ts           # createAudioEngineAsync, dispose, unlock, master volume, offline detect
   audio-signal.ts           # AudioSignal<T> (Observable replacement)
   audio-param.ts            # ramp shapes + curve math (lazy-init caches)
   audio-fetch.ts            # decode helpers over plain fetch()
-  sound-buffer.ts           # createSoundBufferAsync (decodeAudioData)
+  sound-buffer.ts           # createSoundBufferAsync (decodeAudioData) + SoundBuffer
   static-sound.ts           # StaticSound + instance lifecycle
+  streaming-sound.ts        # StreamingSound (HTMLAudioElement path)
   sound-sub-graph.ts        # SoundSubGraph build/rebuild (core chain)
-  bus.ts                    # AudioBus + MainBus
-  streaming/streaming-sound.ts
-  spatial/spatial-sub-node.ts        # PannerNode
-  spatial/spatial-listener.ts        # listener (+ legacy fallback)
-  spatial/spatial-attach.ts          # attach to Lite transform + RAF updater
-  analyzer/analyzer.ts               # AnalyserNode
-  microphone/microphone-source.ts    # getUserMedia
-  unmute-ui/unmute-ui.ts             # DOM button (parentElement injected)
-  viz/waveform.ts                    # PCM/AnalyserNode → canvas (demo + Tier-3 golden render)
-docs/lite/architecture/41-audio-engine.md   # this doc
-tests/lite/audio/*.spec.ts                   # Tier-1 vitest (mocked Web Audio)
-tests/lite/audio/offline/*.spec.ts           # Tier-2 vitest (OfflineAudioContext → PCM asserts)
-tests/lite/audio/visual/*.spec.ts            # Tier-3 (offline PCM → waveform canvas → golden diff)
-reference/lite/audio-<case>/                 # Tier-3 golden waveform/spectrogram images
-lab/lite/src/demos/audio-demo.ts             # Tier-4 interactive showcase (real-time visualizer)
-lab/lite/audio-demo.html                     # demo page (gesture-unlock required)
+  bus.ts                    # MainBus (engine-owned)
+  audio-bus.ts              # AudioBus (createAudioBusAsync / dispose)
+  spatial.ts                # PannerNode + listener (+ legacy fallback) + attach/RAF updater
+  stereo.ts                 # StereoPannerNode sub-node
+  analyzer.ts               # AnalyserNode (frequency + time-domain readback)
+  sound-source.ts           # createSoundSourceAsync / microphone (getUserMedia)
+  unmute-ui.ts              # DOM button (parentElement injected)
+  visualizer.ts             # runtime canvas waveform/bars (demo + manual; Lite-only)
+  host-types.ts             # AudioGraphHost union + shared sub-graph host plumbing
+docs/lite/architecture/41-audio-engine.md      # this doc
+tests/lite/unit/audio/*.test.ts                # Tier-1 vitest (mocked Web Audio; unit project)
+tests/lite/audio/offline/*.test.ts             # Tier-2 vitest (real OfflineAudioContext → PCM; audio-offline project)
+tests/lite/audio/visual/*.test.ts              # Tier-3 (offline PCM → pngjs waveform → golden diff)
+tests/lite/audio/_shared/real-web-audio.ts     # node-web-audio-api harness (globals + renderOffline)
+tests/lite/audio/_shared/waveform-png.ts       # pngjs rasterizer + position-tolerant golden compare
+reference/lite/audio/<case>.png                # Tier-3 golden waveform images (flat)
+lab/lite/...                                    # Tier-4 interactive showcase (real-time visualizer)
 ```
 
-Tier-2 offline tests run headless in vitest via a JS `OfflineAudioContext`
-polyfill (or the real one under a browser test runner); Tier-3/Tier-4 use a
-canvas (offscreen for Tier-3, on-screen for the demo).
+> The Tier-3 rasterizer (`tests/lite/audio/_shared/waveform-png.ts`) is a
+> **test-only** pngjs stand-in for the runtime canvas `visualizer.ts`; it exists
+> because Node has no DOM canvas. Tier-2/3 run headless in vitest against the
+> native **`node-web-audio-api`** dev dependency (real `OfflineAudioContext`) and
+> **self-skip** when its prebuilt binary is unavailable; Tier-4 uses the on-screen
+> runtime visualizer.
