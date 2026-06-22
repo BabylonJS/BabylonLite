@@ -15,7 +15,7 @@ import type { RenderTaskGpuTimings } from "./gpu-task-timing.js";
 // so the `typeof` guard falls back to the literal dev version below.
 declare const __BL_VERSION__: string;
 /** Babylon Lite version string. */
-export const VERSION: string = typeof __BL_VERSION__ !== "undefined" ? __BL_VERSION__ : "0.1.0";
+export const VERSION: string = /* @__PURE__ */ (() => (typeof __BL_VERSION__ !== "undefined" ? __BL_VERSION__ : "0.1.0"))();
 
 // Module-scoped visibility epoch. setSubtreeVisible (scene/visibility.ts,
 // loaded only by KHR_node_visibility / KHR_animation_pointer features) bumps

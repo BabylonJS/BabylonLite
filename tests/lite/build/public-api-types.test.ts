@@ -17,11 +17,11 @@ const VITE_JS = resolve(PACKAGE_DIR, "node_modules/vite/bin/vite.js");
 const TSC_JS = resolve(ROOT, "node_modules/typescript/bin/tsc");
 
 // Build babylon-lite once for all build/* assertions in this file. The package
-// build is two Vite passes: `--mode browser` emits the prebundled CDN tree and the
+// build is two Vite passes: `--mode dist` emits the prebundled CDN tree and the
 // shared rolled-up `index.d.ts`; `--mode lib` emits the module-granular tree and the
 // publish-ready `package.json`. Both are required for the assertions below.
 beforeAll(() => {
-    for (const mode of ["browser", "lib"]) {
+    for (const mode of ["dist", "lib"]) {
         const build = spawnSync(NODE, [VITE_JS, "build", "--mode", mode], {
             cwd: PACKAGE_DIR,
             encoding: "utf-8",

@@ -26,9 +26,10 @@ function replaceWgslIdentifiers(code: string, replacements: readonly (readonly [
 }
 
 function mangleGaussianSplattingWgsl(code: string): string {
-    // KEEP IN SYNC with `packages/babylon-lite/src/mesh/GaussianSplatting/gaussian-splatting-pipeline.ts:GS_FIELD_MANGLE`.
-    // The runtime version normalises any spliced fragment-plugin code to use these mangled
-    // names so the WebGPU compiler sees a single consistent identifier set.
+    // KEEP IN SYNC with the runtime mangling table in
+    // `packages/babylon-lite/src/mesh/GaussianSplatting/gaussian-splatting-pipeline.ts:applyGsFragments`.
+    // The runtime version normalises any spliced fragment-plugin code to use these
+    // mangled names so the WebGPU compiler sees a single consistent identifier set.
     return replaceWgslIdentifiers(code, [
         ["world", "w"],
         ["view", "v"],
