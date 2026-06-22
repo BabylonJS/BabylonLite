@@ -8,6 +8,8 @@ import type { MeshGroupBuilder } from "../../render/renderable.js";
 import type { SceneContext } from "../../scene/scene.js";
 import type { Material, StencilState } from "../material.js";
 import type { MaterialPlugin } from "../plugin/material-plugin.js";
+import { createSolidTexture2D } from "../../texture/solid-texture.js";
+import { _installPbrFallbackResolver } from "./pbr-pipeline.js";
 import {
     _getPbrExts,
     PBR2_HAS_BASE_COLOR_FACTOR,
@@ -246,6 +248,10 @@ export interface SheenProps {
     intensity?: number;
     /** Optional sheen tint texture (modulates sheen color). Loaded via loadTexture2D(). */
     texture?: Texture2D;
+    /** Optional separate sheen roughness texture (KHR_materials_sheen sheenRoughnessTexture).
+     *  When present, sheen roughness is read from this texture's A channel at its own UV
+     *  (with its own KHR_texture_transform, animatable) instead of the color texture's A. */
+    roughnessTexture?: Texture2D;
     /** When true (recommended for glTF), applies proper sheen albedo scaling
      *  on the base layer and treats the sheen texture as already-linear (no pow).
      *  When false (default, legacy), applies pow(rgb, 2.2) to the sheen texture
@@ -280,6 +286,10 @@ export interface AnisotropyProps {
     intensity?: number;
     /** Anisotropy direction in tangent space (u, v). Default [1, 0]. */
     direction?: [number, number];
+    /** KHR_materials_anisotropy anisotropyTexture (linear). RG = per-texel direction
+     *  (×2-1, rotated by `direction`), B = per-texel strength (multiplies `intensity`).
+     *  May carry a KHR_texture_transform that an animation pointer can drive. */
+    texture?: Texture2D;
 }
 
 /** Translucency sub-feature. Presence enables translucency (no isEnabled boolean). */
@@ -288,6 +298,12 @@ export interface TranslucencyProps {
     intensity?: number;
     /** Translucency color (linear RGB). Tints the transmitted light. Default [1,1,1]. */
     color?: [number, number, number];
+    /** Translucency color texture (sampled sRGB). RGB multiplies `color`.
+     *  KHR_materials_diffuse_transmission.diffuseTransmissionColorTexture. */
+    colorTexture?: Texture2D;
+    /** Translucency intensity texture. Alpha channel multiplies `intensity`.
+     *  KHR_materials_diffuse_transmission.diffuseTransmissionTexture. */
+    intensityTexture?: Texture2D;
     /** Diffusion distance for the Burley transmittance BRDF. Controls how far
      *  light travels through the material per RGB channel. Default [1,1,1]. */
     diffusionDistance?: [number, number, number];
@@ -363,6 +379,12 @@ export interface SubSurfaceProps {
 
 /** Create a PbrMaterialProps with optional overrides. */
 export function createPbrMaterial(props?: Partial<PbrMaterialProps>): PbrMaterialProps {
+    // A material may be created without baseColor / ORM textures (only factors). Both
+    // slots are always sampled, so install the resolver that lazily provides a shared
+    // 1×1 white default (white ORM → metallic = metallicFactor, roughness =
+    // roughnessFactor — the glTF defaults). Reachable only via createPbrMaterial, so
+    // loader-only PBR scenes (e.g. BoomBox) tree-shake it entirely.
+    _installPbrFallbackResolver((engine) => (engine._pbrFallbackTex ??= createSolidTexture2D(engine, 1, 1, 1)));
     const mat = {
         ...props,
         _buildGroup: getPbrGroupBuilder(),

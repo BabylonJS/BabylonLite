@@ -35,6 +35,41 @@ import { wgslMinifyPlugin } from "../../scripts/wgsl-minify-plugin";
  * load directly from a CDN like jsDelivr. `inlineDynamicImports` folds every dynamic
  * import edge into `dist/index.js`, yielding one browser-ready file.
  */
+
+/**
+ * Resolve the version this build should report. The release pipeline resolves the
+ * next published version *before* `pnpm build` and exposes it as `PACKAGE_VERSION`
+ * (see scripts/prepare-npm-release.ts), so both the runtime `VERSION` constant
+ * (baked in via the `define` below) and the emitted `package.json` report the
+ * version the package actually ships as. Outside the release pipeline (local
+ * builds) it falls back to this package's source `version`.
+ */
+function resolveReleaseVersion(): string {
+    const fromEnv = process.env.PACKAGE_VERSION?.trim();
+    if (fromEnv) {
+        return fromEnv;
+    }
+    const { version } = JSON.parse(readFileSync(resolve(__dirname, "package.json"), "utf8")) as { version?: string };
+    return version ?? "0.1.0";
+}
+
+/**
+ * Release provenance recorded into the published `package.json` so the publish
+ * script can dedupe re-runs of the same Azure build (see `getPublishedBuildId`
+ * in scripts/prepare-npm-release.ts). Populated only inside the pipeline, where
+ * `BUILD_BUILDID` / `BUILD_SOURCEVERSION` are set.
+ */
+function resolveReleaseProvenance(): { azureBuildId?: string; sourceVersion?: string } | undefined {
+    const azureBuildId = process.env.BUILD_BUILDID;
+    const sourceVersion = process.env.BUILD_SOURCEVERSION;
+    if (!azureBuildId && !sourceVersion) {
+        return undefined;
+    }
+    return {
+        ...(azureBuildId ? { azureBuildId } : {}),
+        ...(sourceVersion ? { sourceVersion } : {}),
+    };
+}
 const PACKAGE_ROOT = resolve(__dirname, "build");
 /**
  * Output directories as Vite `build.outDir` strings, relative to the package root
@@ -58,9 +93,10 @@ function emitPackageJson(): Plugin {
     return {
         name: "emit-package-json",
         writeBundle() {
+            const provenance = resolveReleaseProvenance();
             const pkg = {
                 name: "@babylonjs/lite",
-                version: "0.1.0",
+                version: resolveReleaseVersion(),
                 description: "A lightweight, tree-shakable, WebGPU-first rendering library derived from Babylon.js.",
                 license: "Apache-2.0",
                 homepage: "https://doc.babylonjs.com/lite/",
@@ -81,6 +117,7 @@ function emitPackageJson(): Plugin {
                 jsdelivr: "./dist/index.js",
                 unpkg: "./dist/index.js",
                 sideEffects: false,
+                ...(provenance ? { babylonLiteRelease: provenance } : {}),
             };
             writeFileSync(resolve(PACKAGE_ROOT, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
             copyFileSync(resolve(__dirname, "README.md"), resolve(PACKAGE_ROOT, "README.md"));
@@ -437,6 +474,12 @@ export default defineConfig(({ mode }) => {
     // `dist` pass above). `build:lib` and `build:dist` write to disjoint subdirs +
     // non-conflicting root files, so they can run in either order after a clean.
     return {
+        // Bake the resolved version into the `VERSION` export (engine.ts reads
+        // `__BL_VERSION__`). esbuild constant-folds the `typeof` guard so the
+        // published bundle reports the npm version it ships as.
+        define: {
+            __BL_VERSION__: JSON.stringify(resolveReleaseVersion()),
+        },
         build: {
             outDir: LIB_OUT_DIR,
             emptyOutDir: true,

@@ -7,8 +7,15 @@ import type { GpuFrameTimer } from "./gpu-timer.js";
 import type { GpuTaskTimer } from "./gpu-task-timer.js";
 import type { RenderTaskGpuTimings } from "./gpu-task-timing.js";
 
+// `__BL_VERSION__` is replaced at build time with the resolved package version
+// by the lite Vite build (see `define` in packages/babylon-lite/vite.config.ts).
+// The release pipeline resolves the published npm version *before* `pnpm build`,
+// so the published bundle reports the version it actually ships as. When the
+// source is consumed directly (lab dev server, unit tests) the define is absent,
+// so the `typeof` guard falls back to the literal dev version below.
+declare const __BL_VERSION__: string;
 /** Babylon Lite version string. */
-export const VERSION = "0.1.0";
+export const VERSION: string = typeof __BL_VERSION__ !== "undefined" ? __BL_VERSION__ : "0.1.0";
 
 // Module-scoped visibility epoch. setSubtreeVisible (scene/visibility.ts,
 // loaded only by KHR_node_visibility / KHR_animation_pointer features) bumps
@@ -108,6 +115,14 @@ export interface EngineContext extends SurfaceContext {
 
     /** @internal */
     _device: GPUDevice;
+    /** @internal Shared 1×1 white texture used as the default baseColor / ORM for
+     *  factor-only PBR materials (created via `createPbrMaterial` without textures).
+     *  A white ORM yields `metallic = metallicFactor`, `roughness = roughnessFactor`,
+     *  matching the glTF/Babylon.js defaults. Lazily created on first use by the
+     *  fallback resolver that `createPbrMaterial` installs into the PBR pipeline, so
+     *  loader-only PBR scenes pay zero bundle bytes. Device-lost recovery rebuilds it
+     *  in place via the solid-texture recovery path. */
+    _pbrFallbackTex?: Texture2D;
     /** @internal */
     _dlr?: DeviceLostRecoveryCapture;
     /** @internal */

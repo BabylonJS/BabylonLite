@@ -224,6 +224,11 @@ export type { AssetContainer } from "./asset-container.js";
 export { getContainerMeshes } from "./asset-container.js";
 export { selectVariant, getVariantNames, resetVariant } from "./loader-gltf/material-variants.js";
 export type { MaterialVariantData } from "./loader-gltf/material-variants.js";
+// Decoder base-URL config for KHR_draco_mesh_compression / EXT_meshopt_compression.
+// The heavy decoder glue stays dynamic-imported (zero bytes for assets that don't
+// use it); only these tiny setters are statically reachable from the entry point.
+export { setDracoBaseUrl } from "./loader-gltf/draco-decode.js";
+export { setMeshoptBaseUrl } from "./loader-gltf/meshopt-decode.js";
 // ─── Hierarchy ───────────────────────────────────────────────────────
 export type { IWorldMatrixProvider, IParentable } from "./scene/parentable.js";
 export { setParent } from "./scene/set-parent.js";
@@ -260,7 +265,12 @@ export { setShadowTaskCasterMeshes } from "./frame-graph/shadow-inputs.js";
 
 // ─── Animation ───────────────────────────────────────────────────────
 export { createAnimationController } from "./skeleton/skeleton-updater.js";
+// Opt-in bone control for skinned models (near-zero bundle cost unless enableBoneControl is called).
+export { enableBoneControl, getBoneByName, setBonePosition, setBoneRotationQuaternion, setBoneScaling, setBoneVisible, clearBoneOverride } from "./skeleton/bone-control.js";
+export type { Skeleton, Bone } from "./skeleton/bone-control.js";
 export { createAnimationGroups, playAnimation, pauseAnimation, stopAnimation, goToFrame } from "./animation/animation-group.js";
+export { AnimationGroupMaskMode, createAnimationGroupMask, animationGroupMaskRetainsTarget } from "./animation/animation-group-mask.js";
+export type { AnimationGroupMask } from "./animation/animation-group-mask.js";
 export { setAnimationWeight } from "./animation/animation-weight.js";
 export { crossFadeAnimationGroups, enablePropertyAnimationBlending, fadeAnimationWeight } from "./animation/weighted-pointer-mixer.js";
 export { enableAnimationBlending, setAnimationAdditive } from "./animation/weighted-gltf-mixer.js";
@@ -298,6 +308,22 @@ export { crossVec3 } from "./math/cross-vec3.js";
 export { lengthVec3 } from "./math/length-vec3.js";
 export { negateVec3 } from "./math/negate-vec3.js";
 export { lerpVec3 } from "./math/lerp-vec3.js";
+export {
+    addVec3InPlace,
+    addVec3ToRef,
+    crossVec3InPlace,
+    crossVec3ToRef,
+    lerpVec3InPlace,
+    lerpVec3ToRef,
+    negateVec3InPlace,
+    negateVec3ToRef,
+    normalizeVec3InPlace,
+    normalizeVec3ToRef,
+    scaleVec3InPlace,
+    scaleVec3ToRef,
+    subVec3InPlace,
+    subVec3ToRef,
+} from "./math/vec3-ref.js";
 export { writeVec3 } from "./math/write-vec3.js";
 export { mat4Translation } from "./math/mat4-translation.js";
 export { mat4Identity } from "./math/mat4-identity.js";
@@ -308,9 +334,14 @@ export { mat4Multiply } from "./math/mat4-multiply.js";
 export { mat4LookAtLH } from "./math/mat4-look-at-lh.js";
 export { mat4PerspectiveLH } from "./math/mat4-perspective-lh.js";
 export { mat4FromQuat } from "./math/mat4-from-quat.js";
+export { quatFromRotationMatrix } from "./math/quat-from-rotation-matrix.js";
+export { quatFromLookDirectionRH } from "./math/quat-from-look-direction-rh.js";
+export { mat4Decompose } from "./math/mat4-decompose.js";
+export type { DecomposedTransform } from "./math/mat4-decompose.js";
 export type { Vec3, Vec3Tuple, Vec4, Color3, Color4, Mat4, Quat } from "./math/types.js";
 export type { Aabb } from "./math/aabb.js";
 export { computeAabb } from "./math/aabb.js";
+export type { GltfMetadata, LiteMetadata } from "./metadata.js";
 
 // ─── Color ───────────────────────────────────────────────────────────
 export { linearToSrgbByte, srgbByteToLinear, packedSrgbToLinearRgba } from "./math/color.js";
@@ -347,6 +378,7 @@ export { resolveCameraViewport } from "./camera/viewport.js";
 export type { PixelViewport } from "./camera/viewport.js";
 export type { FreeCamera } from "./camera/free-camera.js";
 export type { Mesh, MeshGPU } from "./mesh/mesh.js";
+export { disposeMeshGpu } from "./mesh/mesh-dispose.js";
 export { ObservableVec3 } from "./math/observable-vec3.js";
 export { ObservableQuat } from "./math/observable-quat.js";
 export type { StandardMaterialProps, FogConfig } from "./material/standard/standard-material.js";
@@ -388,7 +420,7 @@ export type { PcfSpotlightShadowGeneratorConfig } from "./shadow/pcf-spotlight-s
 export type { PcfDirectionalShadowGeneratorConfig } from "./shadow/pcf-directional-shadow-generator.js";
 export type { CsmDirectionalShadowGeneratorConfig } from "./shadow/csm-directional-shadow-generator.js";
 export type { AnimationController } from "./skeleton/skeleton-updater.js";
-export type { AnimationGroup } from "./animation/animation-group.js";
+export type { AnimationGroup, TargetedAnimation } from "./animation/animation-group.js";
 export type { AnimationManager, AnimationManagerOptions } from "./animation/animation-manager.js";
 export type {
     AnimationKeyframe,

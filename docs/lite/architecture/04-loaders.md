@@ -5,6 +5,7 @@
 > - `packages/babylon-lite/src/loader-gltf/gltf-feature-meshopt.ts` + `meshopt-decode.ts` — `EXT_meshopt_compression` feature module + decoder
 > - `packages/babylon-lite/src/loader-gltf/gltf-ext-quantization.ts` — `KHR_mesh_quantization` feature module
 > - `packages/babylon-lite/src/loader-gltf/gltf-feature-xmp.ts` — `KHR_xmp_json_ld` metadata feature module
+> - `packages/babylon-lite/src/loader-gltf/gltf-feature-extras.ts` — `ExtrasAsMetadata` feature module
 > - `packages/babylon-lite/src/loader-gltf/gltf-interleave.ts` — dynamic native interleaved-vertex-buffer support (de-strided CPU copies built lazily on demand)
 > - `packages/babylon-lite/src/loader-env/load-env.ts` — Babylon .env environment loader
 > - `packages/babylon-lite/src/loader-env/load-dds-env.ts` — DDS cubemap environment loader
@@ -61,8 +62,26 @@ export interface AssetContainer {
 
   /** KHR_materials_variants data. Use selectVariant() / getVariantNames() to interact. */
   materialVariants?: MaterialVariantData;
+
+  /** Bone-control handles (one per glTF skin). Populated only after enableBoneControl();
+   *  drive bones via getBoneByName() + setBone*(). See module 13 (Skeleton). */
+  skeletons?: Skeleton[];
 }
 ```
+
+### Compressed-geometry decoder base URLs (`draco-decode.ts`, `meshopt-decode.ts`)
+
+```typescript
+/** Override where draco_decoder.js / draco_decoder.wasm are fetched (default: site root "/"). */
+export function setDracoBaseUrl(url: string): void;
+/** Override where meshopt_decoder.js is fetched (default: site root "/"). */
+export function setMeshoptBaseUrl(url: string): void;
+```
+
+Both decoders lazy-load their glue/WASM via `<script>` injection on first use, so non-Draco /
+non-meshopt scenes pay zero bytes. Call the setter before loading an asset that triggers the
+codec to self-host the decoder (e.g. avoid a cross-origin CDN). Equivalent to KTX2's
+`setKtx2DecoderUrl`.
 
 ### `load-gltf.ts`
 
@@ -97,7 +116,7 @@ export interface GltfMaterialData {
 export async function loadGltf(engine: EngineContext, source: string | ArrayBuffer | Blob): Promise<AssetContainer>;
 ```
 
-> **Note**: `loadGltf` takes an `Engine` (not `SceneContext`) and returns an `AssetContainer`. The result's `entities` array contains root scene entities; glTF meshes usually hang off a root `TransformNode` hierarchy. Pass the result to `addToScene(scene, result)` — it will traverse the hierarchy, register animation ticks, and integrate everything into the scene. Meshes are the standard `Mesh` type with GPU data in the `_gpu` field and bounding box on `Mesh.boundMin`/`Mesh.boundMax`.
+> **Note**: `loadGltf` takes an `Engine` (not `SceneContext`) and returns an `AssetContainer`. The result's `entities` array contains root scene entities; glTF meshes usually hang off a root `TransformNode` hierarchy. Pass the result to `addToScene(scene, result)` — it will traverse the hierarchy, register animation ticks, and integrate everything into the scene. Meshes are the standard `Mesh` type with GPU data in the `_gpu` field and bounding box on `Mesh.boundMin`/`Mesh.boundMax`. Renderable mesh names preserve source glTF `mesh.name` when present; parent transform names still preserve glTF `node.name`.
 >
 > **Local data**: `source` may be a URL `string`, or an `ArrayBuffer`/`Blob` of an already-loaded asset (drag-and-drop, OPFS, a `fetch` body, etc.). GLB-vs-glTF is detected from the data's magic bytes, **not** the URL extension, so object URLs (`blob:…`) and extensionless sources load correctly. `ArrayBuffer`/`Blob` inputs have no base URL, so they must be self-contained (a GLB, or a glTF whose buffers/images use `data:` URIs); a glTF referencing external `.bin`/image files by relative path must be loaded from a URL.
 
@@ -148,7 +167,7 @@ parseGlbContainer(buffer)
   ↓
 loadFeatureModules(json)              // dynamic imports, e.g. KHR_texture_basisu
   ├── preMesh hooks                   // Draco, KTX2 strided FLOAT accessor decode, etc.
-  └── material hooks                  // feature-owned texture/material overrides
+  └── material hooks                  // feature-owned texture/material/metadata overrides
   ↓
 extractAllMeshes(json, binChunk)       // for each node with mesh
   ├── resolveAccessor() × N            // positions, normals, tangents, UVs, indices
@@ -175,7 +194,9 @@ AssetContainer { entities: [root], animationGroups }
 
 **Texture caching**: Textures are cached per bitmap identity + sRGB flag to avoid duplicate GPU uploads. The hot-path cache uses a numeric key (`bitmapId * 2 + +srgb`) so plain-image glTF assets do not pay string-key overhead. Feature modules can maintain their own caches for extension-owned image sources.
 
-**Animation support**: `loadGltf` extracts glTF animations, creates `AnimationGroup[]` via `createAnimationGroups()`, and returns them in `AssetContainer.animationGroups`. `addToScene()` registers playback with the scene-owned animation manager.
+**Animation support**: `loadGltf` extracts glTF animations, creates `AnimationGroup[]` via `createAnimationGroups()`, and returns them in `AssetContainer.animationGroups`. `addToScene()` registers playback with the scene-owned animation manager. Each group exposes `currentTime` (seconds), `goToFrame()` for frame-based seeking, and lightweight `targetedAnimations` metadata for inspecting affected node/path pairs.
+
+**glTF metadata**: `ExtrasAsMetadata` promotes source node, mesh, primitive, and material `extras` payloads to `metadata.gltf.extras` on supported runtime objects. It is implemented as a glTF feature module so scenes without metadata do not pay for the metadata-copying code.
 
 **PBR materials**: Each `PbrMaterialProps` created during upload includes `_buildGroup: pbrGroupBuilder`, imported from `pbr-material.ts`.
 
@@ -316,6 +337,25 @@ Design constraints:
   only loaded when a genuinely-strided, non-decoded primitive is encountered. Decoded
   paths (Draco, `KHR_texture_basisu` de-stride) bypass it.
 - Validated by Scene 210 (`XmpMetadataRoundedCube`, genuinely interleaved).
+
+Per-attribute correctness (each was a real parity bug — Scenes 246/247):
+
+- **`COLOR_0`** cannot be GPU-strided directly: glTF permits VEC3/VEC4 and/or normalized
+  `UNSIGNED_BYTE`/`SHORT`, but the pipeline binds a single `float32x4` layout. Binding a
+  ubyte/VEC3 source as `float32x4` reads adjacent bytes as floats (rainbow garbage).
+  `resolveColorVec4` always de-strides + normalizes COLOR_0 to a tight `float32x4` (rgb
+  modulates base color, **a modulates fragment alpha** — vertex-color alpha-clip/blend; a
+  VEC3 source gets `a = 1`).
+- **Absent `NORMAL`** must be synthesized, never zero-filled — a zero normal yields
+  `normalize(0)` = NaN → pure-black lit fragments. `buildInterleavedPartial` calls the
+  caller-supplied `computeSmoothNormals` (lazily imported only when NORMAL is missing).
+  The mesh is also tagged `_flatNormal` so the PBR shader flat-shades it via screen-space
+  `worldPos` derivatives (glTF spec: no-`NORMAL` → flat), matching BJS — see
+  `material/pbr/fragments/flat-normal-wgsl.ts` (lazily loaded; zero bytes otherwise).
+- **`JOINTS_0`/`WEIGHTS_0`** are read by `gltf-feature-skeleton.ts`, not this module,
+  via `resolveAccessor` — which assumes tight packing. Skinned rigs that interleave
+  them with a `byteStride` are de-strided there (`resolveAttr`), or half the joint
+  indices/weights come from padding → exploded / mis-posed mesh.
 
 ### `EXT_meshopt_compression` + `KHR_mesh_quantization` (`gltf-feature-meshopt.ts`, `gltf-ext-quantization.ts`)
 

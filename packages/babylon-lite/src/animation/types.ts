@@ -124,6 +124,16 @@ export interface GltfAnimationData {
      *  matrices bake an `invMeshWorld` captured at load, so moving them at runtime
      *  would double-transform the skinned vertices). */
     readonly excludedNodeIndices: ReadonlySet<number>;
+    /** glTF node names indexed by node index (undefined for unnamed nodes). Used by
+     *  {@link AnimationGroupMask} to resolve include/exclude target names to the node
+     *  indices its channels animate. */
+    readonly nodeNames: readonly (string | undefined)[];
+    /** Shared node-index → bone override map, present only when `enableBoneControl()`
+     *  installed bone control. Handed to every AnimationController so a playing clip
+     *  honours user bone overrides (animation wins per-component). `undefined` on the
+     *  default path. Typed as `unknown` value to keep the internal `BoneOverride`
+     *  shape out of the public API surface. */
+    readonly boneOverrides?: ReadonlyMap<number, unknown>;
 }
 
 // ─── GPU-side data objects attached to Mesh ─────────────────────────────────

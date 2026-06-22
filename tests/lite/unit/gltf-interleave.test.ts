@@ -52,7 +52,9 @@ describe("gltf-interleave", () => {
         expect(Array.from(m._uvs!)).toEqual([0.1, 0.2, 0.3, 0.4].map((v) => Math.fround(v)));
         expect(m._vertexCount).toBe(2);
 
-        // GPU interleave layout: shared stride 24, position at 0, normal at 12.
+        // GPU interleave layout: shared stride 24, position at byte offset 0, normal at 12.
+        // The byte offset is baked into the pipeline vertex layout (attributes[].offset);
+        // the draw binds the shared buffer at offset 0 (matches Babylon.js WebGPU).
         expect(m._vb!._p).toMatchObject({ _stride: 24, _offset: 0, _bufferView: 0 });
         expect(m._vb!._n).toMatchObject({ _stride: 24, _offset: 12, _bufferView: 0 });
         // The tight UV attribute has no interleave entry.

@@ -19,13 +19,16 @@ import { eulerToQuat, createEulerProxy } from "../scene/scene-node.js";
 
 /** Per-attribute interleave override. When present, the attribute's GPU buffer
  *  is a shared interleaved slice: the pipeline uses `_stride` as the vertex
- *  buffer arrayStride and the draw binds the buffer at byte offset `_offset`.
+ *  buffer arrayStride and `_offset` as the layout `attributes[].offset`, while the
+ *  draw binds the buffer at offset 0 (mirrors Babylon.js WebGPU; a non-zero
+ *  setVertexBuffer bind offset corrupts vertex fetch on some AMD/Dawn paths).
  *  Absent attributes use the canonical tight layout (own buffer, default stride,
  *  offset 0) — byte-identical to non-interleaved meshes. */
 export interface MeshVbAttr {
     /** @internal Vertex buffer arrayStride for this attribute's pipeline layout entry. */
     readonly _stride: number;
-    /** @internal Byte offset passed to setVertexBuffer (bind offset into the shared buffer). */
+    /** @internal Byte offset within the shared buffer, encoded in the pipeline vertex
+     *  layout `attributes[].offset` (the buffer is bound at offset 0). */
     readonly _offset: number;
 }
 

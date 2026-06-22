@@ -38,6 +38,7 @@ const _features: [Trigger, Loader][] = [
     [M + "emissive_strength", () => import("./gltf-ext-emissive-strength.js")],
     [M + "sheen", () => import("./gltf-ext-sheen.js")],
     [M + "anisotropy", () => import("./gltf-ext-anisotropy.js")],
+    [M + "diffuse_transmission", () => import("./gltf-ext-diffuse-transmission.js")],
     [M + "unlit", () => import("./gltf-ext-unlit.js")],
     [M + "pbrSpecularGlossiness", () => import("./gltf-ext-spec-gloss.js")],
     // Dielectric cluster (ior/specular/transmission/volume/dispersion) — any of the five triggers the
@@ -50,6 +51,7 @@ const _features: [Trigger, Loader][] = [
     [(j) => !!j.skins?.length && anyPrimitive(j, (p) => p.attributes?.JOINTS_0 !== undefined), () => import("./gltf-feature-skeleton.js")],
     [(j) => anyPrimitive(j, (p) => !!p.targets?.length), () => import("./gltf-feature-morph.js")],
     // Per-asset features
+    [hasGltfExtras, () => import("./gltf-feature-extras.js")],
     ["KHR_lights_punctual", () => import("./gltf-feature-lights-punctual.js")],
     [(j) => !!j.animations?.length, () => import("./gltf-feature-animations.js")],
     [M + "variants", () => import("./gltf-feature-variants.js")],
@@ -64,4 +66,16 @@ export async function loadGltfFeatures(json: any): Promise<GltfFeature[]> {
     const used: string[] = json.extensionsUsed ?? [];
     const mods = await Promise.all(_features.flatMap(([t, load]) => ((typeof t === "string" ? used.includes(t) : t(json)) ? [load()] : [])));
     return mods.map((m) => m.default);
+}
+
+function hasGltfExtras(json: any): boolean {
+    const hasExtras = (item: any): boolean => item?.extras !== undefined;
+    return (
+        hasExtras(json.asset) ||
+        !!json.nodes?.some(hasExtras) ||
+        !!json.materials?.some(hasExtras) ||
+        !!json.animations?.some(hasExtras) ||
+        !!json.meshes?.some(hasExtras) ||
+        anyPrimitive(json, hasExtras)
+    );
 }
