@@ -61,10 +61,7 @@ function ensureGltfMetadata(target: MetadataTarget): NonNullable<LiteMetadata["g
 }
 
 function hasExtras(extras: unknown): boolean {
-    if (extras == null) {
-        return false;
-    }
-    return typeof extras !== "object" || Object.keys(extras).length > 0;
+    return extras !== undefined;
 }
 
 export default feature;

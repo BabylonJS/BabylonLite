@@ -69,5 +69,13 @@ export async function loadGltfFeatures(json: any): Promise<GltfFeature[]> {
 }
 
 function hasGltfExtras(json: any): boolean {
-    return JSON.stringify(json).includes("extras");
+    const hasExtras = (item: any): boolean => item?.extras !== undefined;
+    return (
+        hasExtras(json.asset) ||
+        !!json.nodes?.some(hasExtras) ||
+        !!json.materials?.some(hasExtras) ||
+        !!json.animations?.some(hasExtras) ||
+        !!json.meshes?.some(hasExtras) ||
+        anyPrimitive(json, hasExtras)
+    );
 }
