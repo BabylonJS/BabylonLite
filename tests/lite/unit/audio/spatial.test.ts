@@ -113,6 +113,28 @@ describe("spatial", () => {
         disposeAudioEngine(engine);
     });
 
+    it("refreshes attenuation for a rotation-attached, panning-disabled source as the listener moves", async () => {
+        // Parity with AudioV2 `_SpatialAudioAttacherComponent.update`: a source
+        // attached by rotation only (position not driven) must still track a
+        // moving listener for distance attenuation while panning is disabled.
+        const engine = await makeEngine();
+        const sound = await makeSound(engine);
+        enableSpatial(sound, { panningEnabled: false, distanceModel: "linear", minDistance: 1, maxDistance: 100, position: { x: 100, y: 0, z: 0 } });
+
+        const spatial = spat(sound);
+        // Listener at origin → source 100 units away → ~0 gain on the linear model.
+        expect(asGain(spatial._attenuationNode).gain.value).toBeCloseTo(0, 5);
+
+        // Attach by rotation only, so the attacher never drives the position.
+        attachSpatialTarget(sound, { worldMatrix: mat4Translation(0, 0, 0) }, "rotation");
+        // Move the listener next to the source (distance 1 = minDistance → gain 1).
+        setSpatialListenerPosition(engine, { x: 99, y: 0, z: 0 });
+        updateSpatialAudio(engine);
+
+        expect(asGain(spatial._attenuationNode).gain.value).toBeCloseTo(1, 5);
+        disposeAudioEngine(engine);
+    });
+
     it("creates and positions the listener", async () => {
         const engine = await makeEngine();
         setSpatialListenerPosition(engine, { x: 1, y: 2, z: 3 });

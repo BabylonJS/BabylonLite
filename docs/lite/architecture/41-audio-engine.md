@@ -3,7 +3,7 @@
 > Package path: `packages/babylon-lite/src/audio/`
 
 > **Status: Implemented.**
-> This is a faithful _behavioral_ port of Babylon.js v2 AudioV2
+> This is a faithful _behavioral_ port of the Babylon.js AudioV2 engine
 > (`packages/dev/core/src/AudioV2/`) re-architected to Babylon Lite idioms:
 > pure-state interfaces + standalone functions, zero module-level side effects,
 > single Web Audio backend (no abstract/concrete split), and opt-in feature

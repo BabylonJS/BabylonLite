@@ -388,13 +388,20 @@ function updateAttachedSubNode(node: SpatialSubNode): void {
         return;
     }
     const { translation, rotation } = mat4Decompose(target.worldMatrix);
-    if (node._attachmentType & ATTACH_POSITION) {
+    const updatesPosition = (node._attachmentType & ATTACH_POSITION) !== 0;
+    if (updatesPosition) {
         node._position = translation;
         updateSubNodePosition(node);
     }
     if (node._attachmentType & ATTACH_ROTATION) {
         node._rotationQuaternion = rotation;
         updateSubNodeRotation(node);
+    }
+    // Parity with AudioV2 `_SpatialAudioAttacherComponent.update`: when the
+    // source position is not being updated but panning is disabled, refresh the
+    // distance attenuation so it tracks a moving listener.
+    if (!updatesPosition && !node._panningEnabled) {
+        updateSubNodePosition(node);
     }
 }
 
