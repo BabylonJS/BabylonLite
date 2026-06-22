@@ -703,6 +703,18 @@ export type { StreamingSound, StreamingSoundOptions, StreamingSoundPlayOptions, 
 export { createAudioBusAsync, disposeAudioBus, setBusVolume } from "./audio/audio-bus.js";
 export type { AudioBus, AudioBusOptions, PrimaryAudioBus } from "./audio/audio-bus.js";
 export type { MainBus } from "./audio/bus.js";
+export {
+    enableSpatial,
+    setSpatialPosition,
+    setSpatialOrientation,
+    attachSpatialTarget,
+    detachSpatialTarget,
+    setSpatialListener,
+    setSpatialListenerPosition,
+    updateSpatialAudio,
+    setSpatialAutoUpdate,
+} from "./audio/spatial.js";
+export type { SpatialSoundOptions, SpatialListenerOptions, SpatialTarget, SpatialAttachmentType, SpatialHost } from "./audio/spatial.js";
 export { createSoundBufferAsync } from "./audio/sound-buffer.js";
 export type { SoundBuffer, SoundSource, SoundBufferOptions } from "./audio/sound-buffer.js";
 export type { AudioSignal } from "./audio/audio-signal.js";

@@ -10,10 +10,23 @@
 
 import { type RampClock, type RampOptions, type RampParam, createRampParam, setRampTarget } from "./audio-param.js";
 
+/**
+ * Minimal structural view of a spatial sub-node, kept local so this module does
+ * NOT import the spatial feature module (Pillar 4: tree-shaking) and so the
+ * `.d.ts` rollup has no `SoundSubGraph` \<-\> `SpatialSubNode` import cycle. The
+ * full node (assigned by the spatial feature functions) is structurally
+ * compatible. Only disposal is needed here. @internal
+ */
+export interface SpatialGraphSlot {
+    /** @internal */ _dispose(): void;
+}
+
 /** Sound sub-graph state. @internal */
 export interface SoundSubGraph {
+    /** @internal */ _ctx: BaseAudioContext;
     /** @internal */ _volume: GainNode;
     /** @internal */ _volumeRamp: RampParam;
+    /** Optional spatial (3D panner) sub-node, inserted before {@link _volume}. @internal */ _spatial: SpatialGraphSlot | null;
     /** Head node — where playing instances connect. @internal */ _in: AudioNode;
     /** Tail node — connects to the output bus. @internal */ _out: AudioNode;
 }
@@ -23,8 +36,10 @@ export function createSoundSubGraph(ctx: BaseAudioContext, clock: RampClock, vol
     const gain = new GainNode(ctx);
     gain.gain.value = volume;
     return {
+        _ctx: ctx,
         _volume: gain,
         _volumeRamp: createRampParam(gain.gain, clock),
+        _spatial: null,
         _in: gain,
         _out: gain,
     };
@@ -47,5 +62,7 @@ export function disconnectSoundSubGraph(graph: SoundSubGraph, downstream: AudioN
 
 /** @internal */
 export function disposeSoundSubGraph(graph: SoundSubGraph): void {
+    graph._spatial?._dispose();
+    graph._spatial = null;
     graph._volume.disconnect();
 }

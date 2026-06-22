@@ -16,6 +16,19 @@
 import { type AudioSignal, type AudioSignalImpl, createAudioSignal } from "./audio-signal.js";
 import { type RampOptions } from "./audio-param.js";
 import { type MainBus, type MainOut, createMainBus, createMainOut, disposeMainBus, disposeMainOut, setMainOutVolume } from "./bus.js";
+import type { Vec3 } from "../math/types.js";
+
+/**
+ * Minimal structural view of the spatial listener, kept local so this module
+ * does NOT import the spatial feature module (Pillar 4: tree-shaking) and so the
+ * `.d.ts` rollup has no `AudioEngine` \<-\> `SpatialListener` import cycle. The
+ * full listener (assigned by the spatial feature functions) is structurally
+ * compatible. @internal
+ */
+export interface SpatialListenerSlot {
+    /** Listener world position, read by source distance attenuation. @internal */ _position: Vec3;
+    /** @internal */ _dispose(): void;
+}
 
 /** Audio context state, mirroring the Web Audio `AudioContextState` plus `"interrupted"`. */
 export type AudioEngineState = "running" | "suspended" | "closed" | "interrupted";
@@ -65,6 +78,9 @@ export interface AudioEngine {
     /** @internal */ readonly _invalidFormats: Set<string>;
     /** @internal */ readonly _sounds: Set<{ _dispose(): void }>;
     /** @internal */ readonly _buses: Set<{ _dispose(): void }>;
+    /** Lazily-built spatial listener (only when spatial audio is used). @internal */ _listener: SpatialListenerSlot | null;
+    /** Per-frame spatial update closures, registered while attached. @internal */ readonly _spatialUpdaters: Set<() => void>;
+    /** Stops the spatial auto-update loop, if running. @internal */ _spatialAutoStop: (() => void) | null;
     /** @internal */ readonly _disposers: Array<() => void>;
     /** @internal */ readonly _onStateChanged: AudioSignalImpl<AudioEngineState>;
     /** @internal */ readonly _onUserGesture: AudioSignalImpl<void>;
@@ -131,6 +147,9 @@ export async function createAudioEngineAsync(options: AudioEngineOptions = {}): 
         _invalidFormats: new Set<string>(),
         _sounds: new Set<{ _dispose(): void }>(),
         _buses: new Set<{ _dispose(): void }>(),
+        _listener: null,
+        _spatialUpdaters: new Set<() => void>(),
+        _spatialAutoStop: null,
         _disposers: [],
         _onStateChanged: onStateChanged,
         _onUserGesture: onUserGesture,
@@ -276,6 +295,11 @@ export function isAudioFormatValid(engine: AudioEngine, format: string): boolean
  * @param engine - The audio engine to dispose.
  */
 export function disposeAudioEngine(engine: AudioEngine): void {
+    engine._spatialAutoStop?.();
+    engine._spatialAutoStop = null;
+    engine._spatialUpdaters.clear();
+    engine._listener?._dispose();
+
     for (const sound of Array.from(engine._sounds)) {
         sound._dispose();
     }

@@ -58,6 +58,38 @@ export class MockGainNode extends MockAudioNode {
     }
 }
 
+export class MockPannerNode extends MockAudioNode {
+    public readonly positionX = new MockAudioParam(0);
+    public readonly positionY = new MockAudioParam(0);
+    public readonly positionZ = new MockAudioParam(0);
+    public readonly orientationX = new MockAudioParam(1);
+    public readonly orientationY = new MockAudioParam(0);
+    public readonly orientationZ = new MockAudioParam(0);
+    public coneInnerAngle = 360;
+    public coneOuterAngle = 360;
+    public coneOuterGain = 0;
+    public distanceModel: "linear" | "inverse" | "exponential" = "inverse";
+    public panningModel: "equalpower" | "HRTF" = "equalpower";
+    public maxDistance = 10000;
+    public refDistance = 1;
+    public rolloffFactor = 1;
+    public constructor(public readonly context: MockBaseAudioContext) {
+        super();
+    }
+}
+
+export class MockAudioListener {
+    public readonly positionX = new MockAudioParam(0);
+    public readonly positionY = new MockAudioParam(0);
+    public readonly positionZ = new MockAudioParam(0);
+    public readonly forwardX = new MockAudioParam(0);
+    public readonly forwardY = new MockAudioParam(0);
+    public readonly forwardZ = new MockAudioParam(-1);
+    public readonly upX = new MockAudioParam(0);
+    public readonly upY = new MockAudioParam(1);
+    public readonly upZ = new MockAudioParam(0);
+}
+
 export class MockAudioBuffer {
     public constructor(
         public readonly duration = 1,
@@ -121,6 +153,7 @@ export class MockAudioBufferSourceNode extends MockAudioNode {
 export class MockBaseAudioContext {
     public currentTime = 0;
     public readonly destination = new MockAudioNode();
+    public readonly listener = new MockAudioListener();
     public readonly stateListeners: Array<() => void> = [];
 
     public decodeAudioData(_data: ArrayBuffer): Promise<MockAudioBuffer> {
@@ -268,7 +301,7 @@ interface InstalledGlobals {
 }
 
 const SAVED: InstalledGlobals = {};
-const KEYS = ["AudioContext", "OfflineAudioContext", "GainNode", "AudioBufferSourceNode", "AudioBuffer", "Audio"];
+const KEYS = ["AudioContext", "OfflineAudioContext", "GainNode", "AudioBufferSourceNode", "AudioBuffer", "Audio", "PannerNode"];
 
 const STREAMING_SAVED: InstalledGlobals = {};
 const STREAMING_KEYS = ["Audio", "MediaElementAudioSourceNode", "document"];
@@ -305,6 +338,7 @@ export function installWebAudioMock(): void {
     g.GainNode = MockGainNode;
     g.AudioBufferSourceNode = MockAudioBufferSourceNode;
     g.AudioBuffer = MockAudioBuffer;
+    g.PannerNode = MockPannerNode;
     // Leave `Audio` undefined so `isAudioFormatValid` treats formats as valid in tests.
     g.Audio = undefined;
 }
