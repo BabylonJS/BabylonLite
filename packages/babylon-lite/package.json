@@ -36,7 +36,9 @@
         "dist"
     ],
     "scripts": {
-        "build": "node -e \"require('fs').rmSync('build',{recursive:true,force:true})\" && vite build --mode browser && vite build --mode lib",
+        "build": "node -e \"require('fs').rmSync('build',{recursive:true,force:true})\" && pnpm build:lib && pnpm build:dist",
+        "build:lib": "vite build --mode lib",
+        "build:dist": "vite build --mode dist",
         "dev": "vite build --mode lib --watch"
     },
     "sideEffects": false,

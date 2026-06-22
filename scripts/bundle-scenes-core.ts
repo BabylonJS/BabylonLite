@@ -115,6 +115,21 @@ export const liteLabDir = resolve(labDir, "lite");
 export const outDir = resolve(labDir, "public/bundle");
 export const bundleInfoDir = resolve(outDir, "bundle-info");
 export const srcDir = resolve(ROOT, "packages/babylon-lite/src");
+// The bundle harness measures the bundle size a REAL consumer of the published
+// `@babylonjs/lite` package gets, so scenes are bundled against the built `build/lib`
+// tree (module-granular output that bundlers resolve) rather than the TS source. The
+// package build must run first; `assertLibBuilt()` enforces that with a clear error.
+// (The lab dev app and master-comparison build still resolve to `srcDir` — see notes
+// at their call sites.)
+export const libDir = resolve(ROOT, "packages/babylon-lite/build/lib");
+
+/** Fail fast with an actionable message if the package's `build/lib` output (which the
+ *  scene bundles are measured against) hasn't been built yet. */
+function assertLibBuilt(): void {
+    if (!existsSync(resolve(libDir, "index.js"))) {
+        throw new Error(`Missing ${resolve(libDir, "index.js")}.\n` + "Build the package first: `pnpm --filter babylon-lite build:lib` (or `pnpm build`).");
+    }
+}
 const MANIFEST_GIT_PATH = "lab/public/bundle/manifest.json";
 const MANIFEST_FILE = "manifest.json";
 const MASTER_MANIFEST_FILE = "master-manifest.json";
@@ -462,7 +477,13 @@ function writeBundleInfoToDir(scene: string, result: unknown, infoDir: string, s
         const modules: BundleInfoModule[] = [];
         for (const [rawId, m] of Object.entries(it.modules ?? {})) {
             const normalizedId = normalizeModuleId(rawId, sourceRoot);
-            const bytes = minifiedBytes[normalizedId] ?? 0;
+            // Prefer source-map-attributed minified bytes. Large pure-data modules (e.g.
+            // checked-in `*-nme.ts` NME payloads) are emitted as object/string literals for
+            // which esbuild produces NO per-token source-map segments, so attribution yields
+            // 0 even though the module contributes real bytes. Fall back to Rollup's
+            // `renderedLength` (the module's rendered size in the chunk) so such modules are
+            // still recorded — otherwise the ignored-module accounting can't subtract them.
+            const bytes = minifiedBytes[normalizedId] || m.renderedLength || 0;
             if (bytes <= 0) continue;
             const rawNames = Array.isArray(m.renderedExports) ? [...m.renderedExports].sort() : [];
             // Resolve kinds from the source file on disk (strip any ?query suffix).
@@ -666,10 +687,12 @@ export function isLiteBundleExternal(id: string): boolean {
 /** Force certain modules into their own chunks so bundle-size accounting can isolate
  *  them cleanly. Currently used to separate `text-shaper` (a 670 KB vendor shaping
  *  library) so the gzip-bytes accounting can exclude it as a self-contained chunk
- *  matching the ignored-module pattern in `bundle-size-accounting.ts`. */
+ *  matching the ignored-module pattern in `bundle-size-accounting.ts`. Matches both the
+ *  source form (`node_modules/text-shaper/…`) and the built-package form, where the lib
+ *  build has already pre-bundled it into `build/lib/_chunks/vendor/text-shaper-<hash>.js`. */
 function liteManualChunks(id: string): string | undefined {
     const clean = id.replace(/\\/g, "/").split("?")[0]!;
-    if (/(?:^|\/)text-shaper\//.test(clean)) {
+    if (/(?:^|\/)text-shaper[-/]/.test(clean)) {
         return "text-shaper";
     }
     return undefined;
@@ -733,6 +756,12 @@ export async function buildLiteSceneBundleInfo(scene: string, sourceRoot: string
         logLevel: "warn",
         plugins: [wgslMinifyPlugin({ mangle: false }), terserPropertyManglePlugin(), minimalVitePreloadPlugin()],
         resolve: {
+            // Master-comparison bundle-info resolves `babylon-lite` to the TS SOURCE of an
+            // arbitrary master worktree (`sourceRoot`), NOT its `build/lib`: that worktree
+            // generally has no built package, and this data only drives the lab's advisory
+            // "vs master" size delta (the per-scene ceilings remain the real blocker, and
+            // they ARE measured against `build/lib`). Sizes here may therefore differ
+            // slightly from a real consumer's, which is acceptable for an advisory baseline.
             alias: {
                 "babylon-lite": sourceSrcDir,
             },
@@ -772,6 +801,9 @@ export function measurementBrowserArgs(): string[] {
 
 export async function buildBundleScenes(): Promise<void> {
     const t0 = performance.now();
+    // Scenes are bundled against the built `build/lib` tree (see `libDir`), so it must
+    // exist before we start. Fail fast with an actionable message if it doesn't.
+    assertLibBuilt();
     // Do NOT wipe outDir — keep existing data live in the lab tab during the build.
     // Each scene is updated atomically (new files written, stale old chunks removed).
     mkdirSync(outDir, { recursive: true });
@@ -833,12 +865,13 @@ export async function buildBundleScenes(): Promise<void> {
             logLevel: "warn",
             plugins: isBjs ? [bjsSideEffectsFalsePlugin()] : [wgslMinifyPlugin({ mangle: false }), terserPropertyManglePlugin(), minimalVitePreloadPlugin()],
             resolve: {
-                // Point babylon-lite directly at TS source directory so the bundle always
-                // picks up the current code (no stale node_modules build).
-                // Using the directory (not index.ts) so sub-path imports like
-                // 'babylon-lite/loader-env/load-dds-env' resolve correctly.
+                // Resolve `babylon-lite` to the built `build/lib` tree (NOT the TS source)
+                // so the measured bundle reflects exactly what a consumer of the published
+                // package gets. Using the directory (not index.js) so sub-path imports like
+                // 'babylon-lite/loader-env/load-dds-env' resolve correctly. `build:lib` must
+                // run first (enforced by assertLibBuilt() in buildBundleScenes).
                 alias: {
-                    "babylon-lite": srcDir,
+                    "babylon-lite": libDir,
                 },
                 dedupe: ["@babylonjs/core"],
             },
@@ -987,15 +1020,6 @@ async function measureLiveSizes(): Promise<BundleManifest> {
     const { chromium } = await import("@playwright/test");
     const { server, port } = await startStaticServer(labDir);
     const manifestPath = resolve(outDir, MANIFEST_FILE);
-    const masterManifestPath = resolve(outDir, MASTER_MANIFEST_FILE);
-    let masterManifest: BundleManifest = {};
-    if (existsSync(masterManifestPath)) {
-        try {
-            masterManifest = JSON.parse(readFileSync(masterManifestPath, "utf-8"));
-        } catch {
-            /* no master baseline */
-        }
-    }
 
     // Load existing manifest so we can update incrementally (UI can refresh mid-build)
     let manifest: BundleManifest = {};
@@ -1041,8 +1065,7 @@ async function measureLiveSizes(): Promise<BundleManifest> {
         // Measure Lite scenes (write after each)
         for (const scene of SCENES) {
             const tPage = performance.now();
-            const masterIgnoredRawKB = masterManifest[scene]?.ignoredRawKB;
-            const { rawKB, gzipKB, ignoredRawKB, chunks } = await measurePage(browser, port, scene, `lite/bundle-${scene}.html`, "/bundle/", masterIgnoredRawKB);
+            const { rawKB, gzipKB, ignoredRawKB, chunks } = await measurePage(browser, port, scene, `lite/bundle-${scene}.html`, "/bundle/");
             manifest[scene] = { ...manifest[scene], rawKB, gzipKB, ignoredRawKB, runtimeChunks: chunks };
             flush();
             const ignored = ignoredRawKB > 0 ? `, ignored ${ignoredRawKB} KB raw ${IGNORED_BUNDLE_MODULE_PATTERN}` : "";
@@ -1096,8 +1119,7 @@ export async function measurePage(
     port: number,
     scene: string,
     htmlFile: string,
-    bundlePath: string,
-    ignoredRawKBOverride?: number
+    bundlePath: string
 ): Promise<{ rawKB: number; gzipKB: number; ignoredRawKB: number; chunks: string[] }> {
     const page = await browser.newPage();
     const jsPayloads: RuntimeJsPayload[] = [];
@@ -1133,8 +1155,8 @@ export async function measurePage(
         throw responseReadErrors[0];
     }
     const summary = summarizeRuntimeBundle(jsPayloads, bundleInfoDir, scene);
-    const ignoredRawKB = ignoredRawKBOverride ?? bytesToRoundedKB(summary.ignoredRawBytes);
-    const rawBytes = ignoredRawKBOverride == null ? summary.rawBytes : Math.max(0, summary.fetchedRawBytes - ignoredRawKBOverride * 1024);
+    const ignoredRawKB = bytesToRoundedKB(summary.ignoredRawBytes);
+    const rawBytes = summary.rawBytes;
 
     await page.close();
     return {

@@ -101,8 +101,13 @@ for (const scene of SCENES) {
         const summary = summarizeRuntimeBundle(jsPayloads, BUNDLE_INFO_DIR, `scene${scene.id}`);
         const sceneKey = `scene${scene.id}`;
         const masterEntry = MASTER_MANIFEST?.[sceneKey];
-        const ignoredRawKB = masterEntry?.ignoredRawKB ?? summary.ignoredRawBytes / 1024;
-        const rawKB = masterEntry?.ignoredRawKB != null ? Math.max(0, summary.fetchedRawBytes / 1024 - masterEntry.ignoredRawKB) : summary.rawBytes / 1024;
+        // The ceiling check uses THIS build's own accounting (fetched runtime bytes minus
+        // its own ignored modules — NME data + bundled vendor WASM/shaping runtimes). The
+        // master manifest is used only for the advisory "increased vs master" delta below,
+        // never to compute the gated rawKB (pinning ignored bytes to a source-built master
+        // would mis-count a build/lib measurement's bundled vendor chunks).
+        const ignoredRawKB = summary.ignoredRawBytes / 1024;
+        const rawKB = summary.rawBytes / 1024;
         const gzipKB = summary.gzipBytes / 1024;
 
         console.log(`  ${scene.name}: ${rawKB.toFixed(1)} KB raw (limit: ${scene.maxRawKB} KB), ${gzipKB.toFixed(1)} KB gzip (informational)`);
@@ -139,7 +144,7 @@ for (const scene of SCENES) {
             const chunkOffenders = jsPayloads.map((p) => p.url.split("/").pop()!).filter((f) => forbiddenChunks.test(f));
             expect(chunkOffenders, `pure-2D ${scene.slug} must not load scene/* chunks; found: ${chunkOffenders.join(", ")}`).toEqual([]);
             const forbiddenModules =
-                /\/(scene\/scene-core|scene\/scene-camera|scene\/scene-node|asset-container|render\/scene-helpers|sprite\/sprite-renderable|sprite\/sprite-2d-handle|sprite\/billboard-(sprite|scene|renderable|pipeline|sprite-handle))\.ts$/;
+                /\/(scene\/scene-core|scene\/scene-camera|scene\/scene-node|asset-container|render\/scene-helpers|sprite\/sprite-renderable|sprite\/sprite-2d-handle|sprite\/billboard-(sprite|scene|renderable|pipeline|sprite-handle))\.[jt]s$/;
             const moduleOffenders = runtimeModules.filter((id) => forbiddenModules.test(id));
             expect(moduleOffenders, `pure-2D ${scene.slug} must not load scene/* modules; found: ${moduleOffenders.join(", ")}`).toEqual([]);
         }
@@ -149,7 +154,7 @@ for (const scene of SCENES) {
         // pulled in. If it is, scene52 accidentally used the depth-hosted
         // addToScene path instead of the HUD SpriteRenderer path.
         if (scene.slug === "scene52-hud-on-3d") {
-            const offenders = runtimeModules.filter((id) => /\/sprite\/(sprite-renderable|billboard-(sprite|scene|renderable|pipeline))\.ts$/.test(id));
+            const offenders = runtimeModules.filter((id) => /\/sprite\/(sprite-renderable|billboard-(sprite|scene|renderable|pipeline))\.[jt]s$/.test(id));
             expect(offenders, `scene52 HUD must not load depth-hosted sprite modules; found: ${offenders.join(", ")}`).toEqual([]);
         }
 
@@ -158,8 +163,8 @@ for (const scene of SCENES) {
         // scene-core (it is a real 3D scene, not pure-2D).
         if (scene.slug === "scene53-depth-hosted-sprites") {
             expect(
-                runtimeModules.some((id) => /\/sprite\/sprite-renderable\.ts$/.test(id)),
-                `scene53 depth-hosted MUST include sprite-renderable.ts; loaded modules: ${runtimeModules.join(", ")}`
+                runtimeModules.some((id) => /\/sprite\/sprite-renderable\.[jt]s$/.test(id)),
+                `scene53 depth-hosted MUST include sprite-renderable; loaded modules: ${runtimeModules.join(", ")}`
             ).toBe(true);
         }
 
@@ -171,8 +176,8 @@ for (const scene of SCENES) {
             scene.slug === "scene59-billboard-animation"
         ) {
             expect(
-                runtimeModules.some((id) => /\/sprite\/billboard-renderable\.ts$/.test(id)),
-                `${scene.slug} MUST include billboard-renderable.ts; loaded modules: ${runtimeModules.join(", ")}`
+                runtimeModules.some((id) => /\/sprite\/billboard-renderable\.[jt]s$/.test(id)),
+                `${scene.slug} MUST include billboard-renderable; loaded modules: ${runtimeModules.join(", ")}`
             ).toBe(true);
         }
 
@@ -181,7 +186,7 @@ for (const scene of SCENES) {
         // NME demos with no sprites; 1-40 are core 3D.
         const SPRITE_USING_IDS = new Set([50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 92, 93, 94, 95, 96, 97, 98, 205, 206]);
         if (!SPRITE_USING_IDS.has(scene.id)) {
-            const offenders = runtimeModules.filter((id) => /\/sprite\/.*\.ts$/.test(id));
+            const offenders = runtimeModules.filter((id) => /\/sprite\/.*\.[jt]s$/.test(id));
             expect(offenders, `non-sprite ${scene.slug} must not load sprite modules; found: ${offenders.join(", ")}`).toEqual([]);
         }
     });

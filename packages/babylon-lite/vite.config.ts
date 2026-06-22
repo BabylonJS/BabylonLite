@@ -40,10 +40,10 @@ const PACKAGE_ROOT = resolve(__dirname, "build");
 /**
  * Output directories as Vite `build.outDir` strings, relative to the package root
  * (Vite's project root for this build). vite-plugin-dts mishandles an absolute or
- * slash-nested entry name, so the browser pass emits into `build/dist` with natural
+ * slash-nested entry name, so the dist pass emits into `build/dist` with natural
  * file names and the rolled-up `index.d.ts` is relocated to the build root afterwards.
  */
-const BROWSER_OUT_DIR = "build/dist";
+const DIST_OUT_DIR = "build/dist";
 const LIB_OUT_DIR = "build/lib";
 
 /**
@@ -217,6 +217,66 @@ function minifyBrowserChunks(): Plugin {
 }
 
 /**
+ * Minify inlined Web Worker bundles (`?worker&inline`) in BOTH the lib and dist
+ * builds. A `?worker&inline` import is compiled to a self-contained JS string embedded
+ * as a Blob/base64 in the importing module. That string is OPAQUE to a downstream
+ * bundler — like a `?raw` WGSL string, a consumer's minifier cannot shrink code that
+ * lives inside a string literal. So the worker must be minified here, at package build
+ * time, regardless of the (intentionally unminified) `lib` output: otherwise every
+ * consumer ships the full-fat worker source. esbuild minify (incl. whitespace) is run
+ * in the worker sub-build's `renderChunk` — the worker is a normal Rollup bundle (not
+ * lib mode), so its `renderChunk` return value is honoured.
+ */
+function minifyInlinedWorker(): Plugin {
+    return {
+        name: "minify-inlined-worker",
+        enforce: "post",
+        async renderChunk(code, chunk) {
+            const result = await transformWithEsbuild(code, chunk.fileName, {
+                minify: true,
+                // Bundle as an IIFE so the worker's (otherwise top-level) ES-module
+                // bindings become function-scoped and esbuild's identifier minifier can
+                // rename them. With the default `format: "es"`, top-level names are treated
+                // as potential exports and left unmangled, bloating the inlined blob — the
+                // scene/demo harness builds the same worker as an IIFE, so this keeps the
+                // package's inlined worker byte-aligned with a from-source build.
+                format: "iife",
+                legalComments: "none",
+                sourcemap: false,
+            });
+            return { code: result.code, map: null };
+        },
+    };
+}
+
+/**
+ * Strip the dead `//# sourceMappingURL=…` comment that Vite's worker-inline step bakes
+ * into the embedded worker Blob string. Because the package build runs with
+ * `build.sourcemap: true`, Vite appends the worker's sourcemap reference to the inlined
+ * worker source before embedding it as a string literal (escaped `\n//# …\n`). A blob
+ * URL can't resolve that sibling `.map`, so the comment is pure dead weight — and the
+ * from-source harness build (`sourcemap: "hidden"`) emits none, so stripping it keeps
+ * the inlined worker byte-aligned with a from-source build. Runs on the MAIN build,
+ * where the blob string lives; `enforce: "post"` so it sees final chunk code (and, for
+ * dist, runs after esbuild minification which leaves string contents untouched).
+ */
+function stripInlinedWorkerSourcemap(): Plugin {
+    return {
+        name: "strip-inlined-worker-sourcemap",
+        enforce: "post",
+        generateBundle(_options, bundle) {
+            for (const file of Object.values(bundle)) {
+                if (file.type === "chunk" && file.code.includes("//# sourceMappingURL=")) {
+                    // Match the escaped form inside the Blob string literal only (the
+                    // chunk's own trailing real-newline sourcemap comment is left intact).
+                    file.code = file.code.replace(/\\n\/\/# sourceMappingURL=[^\\"']*\.js\.map\\n/g, "");
+                }
+            }
+        },
+    };
+}
+
+/**
  * Relocate the rolled-up `build/dist/index.d.ts` (produced + trimmed during the
  * browser pass) up to the build root, so the shared `index.d.ts` sits beside
  * `package.json` and serves both the `lib/` and `dist/` trees. Runs after
@@ -227,7 +287,7 @@ function relocateDts(): Plugin {
         name: "relocate-dts",
         enforce: "post",
         closeBundle() {
-            const from = resolve(__dirname, BROWSER_OUT_DIR, "index.d.ts");
+            const from = resolve(__dirname, DIST_OUT_DIR, "index.d.ts");
             if (existsSync(from)) {
                 renameSync(from, resolve(PACKAGE_ROOT, "index.d.ts"));
             }
@@ -318,17 +378,20 @@ function matchChunk(id: string, table: ReadonlyArray<readonly [RegExp, string]>)
 }
 
 export default defineConfig(({ mode }) => {
-    const isBrowser = mode === "browser";
+    const isDist = mode === "dist";
     const isWatch = process.argv.includes("--watch");
 
-    if (isBrowser) {
+    if (isDist) {
         // Prebundled, minified, browser/CDN-ready single-entry build emitted into
-        // `build/dist/` with natural file names. This pass also produces the shared
-        // rolled-up `index.d.ts` (single entry => one .d.ts) and then relocates it up
-        // to the build root via `relocateDts` so both `lib/` and `dist/` share it.
+        // `build/dist/`. This pass ALSO produces the shared rolled-up `index.d.ts`
+        // (a single-entry rollup → one .d.ts) and relocates it to the build root via
+        // `relocateDts` so both `lib/` and `dist/` share it. Type generation lives here
+        // (not in the `lib` pass) because vite-plugin-dts can only roll up to one
+        // `index.d.ts` from a SINGLE entry; the `lib` pass is multi-entry (one per source
+        // module) and would instead emit ~560 per-module `.d.ts` files.
         return {
             build: {
-                outDir: BROWSER_OUT_DIR,
+                outDir: DIST_OUT_DIR,
                 emptyOutDir: true,
                 // Match the scene/demo bundle harness (LITE_BUNDLE_TARGET) so the package
                 // output is transformed identically to a source build. Crucially, "esnext"
@@ -356,6 +419,11 @@ export default defineConfig(({ mode }) => {
                     },
                 },
             },
+            // Minify inlined `?worker&inline` blobs (opaque to downstream bundlers).
+            worker: {
+                format: "es" as const,
+                plugins: () => [minifyInlinedWorker()],
+            },
             plugins: [
                 // `mangle: false` — strip WGSL whitespace/comments but do NOT short-rename
                 // identifiers (the per-chunk mangler is unsafe across the package's many
@@ -365,20 +433,23 @@ export default defineConfig(({ mode }) => {
                 // already minifies inline templates once when it bundles this output.
                 wgslMinifyPlugin({ mangle: false, templates: false }),
                 minifyBrowserChunks(),
+                stripInlinedWorkerSourcemap(),
                 dts({
                     rollupTypes: !isWatch,
                     tsconfigPath: resolve(__dirname, "tsconfig.json"),
-                    outDir: BROWSER_OUT_DIR,
+                    outDir: DIST_OUT_DIR,
                 }),
-                ...(isWatch ? [] : [trimInternalDts({ outDir: BROWSER_OUT_DIR, projectFolder: __dirname }), relocateDts()]),
+                ...(isWatch ? [] : [trimInternalDts({ outDir: DIST_OUT_DIR, projectFolder: __dirname }), relocateDts()]),
             ],
         };
     }
 
     // Module-granular library build for bundler consumers: one entry per source
-    // module. Runs AFTER the browser pass and only empties `build/lib`, leaving the
-    // browser output and shared root files intact. Also emits the shared package
-    // metadata (package.json, README, LICENSE, THIRD_PARTY_NOTICES) into the build root.
+    // module — this is the tree a real bundler resolves, and what the bundle-size
+    // harness measures. Emits the shared package metadata (package.json, README,
+    // LICENSE, THIRD_PARTY_NOTICES) into the build root. Does NOT emit types (see the
+    // `dist` pass above). `build:lib` and `build:dist` write to disjoint subdirs +
+    // non-conflicting root files, so they can run in either order after a clean.
     return {
         build: {
             outDir: LIB_OUT_DIR,
@@ -403,6 +474,14 @@ export default defineConfig(({ mode }) => {
                 },
             },
         },
-        plugins: [wgslMinifyPlugin({ mangle: false, templates: false }), emitPackageJson(), emitThirdPartyNotices()],
+        // Minify inlined `?worker&inline` blobs (opaque to downstream bundlers); see
+        // {@link minifyInlinedWorker}. Applied even though `lib` output is otherwise
+        // unminified, because a consumer's bundler cannot minify worker code embedded
+        // in a string literal.
+        worker: {
+            format: "es" as const,
+            plugins: () => [minifyInlinedWorker()],
+        },
+        plugins: [wgslMinifyPlugin({ mangle: false, templates: false }), stripInlinedWorkerSourcemap(), emitPackageJson(), emitThirdPartyNotices()],
     };
 });
