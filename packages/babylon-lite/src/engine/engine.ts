@@ -7,8 +7,15 @@ import type { GpuFrameTimer } from "./gpu-timer.js";
 import type { GpuTaskTimer } from "./gpu-task-timer.js";
 import type { RenderTaskGpuTimings } from "./gpu-task-timing.js";
 
+// `__BL_VERSION__` is replaced at build time with the resolved package version
+// by the lite Vite build (see `define` in packages/babylon-lite/vite.config.ts).
+// The release pipeline resolves the published npm version *before* `pnpm build`,
+// so the published bundle reports the version it actually ships as. When the
+// source is consumed directly (lab dev server, unit tests) the define is absent,
+// so the `typeof` guard falls back to the literal dev version below.
+declare const __BL_VERSION__: string;
 /** Babylon Lite version string. */
-export const VERSION = "0.1.0";
+export const VERSION: string = typeof __BL_VERSION__ !== "undefined" ? __BL_VERSION__ : "0.1.0";
 
 // Module-scoped visibility epoch. setSubtreeVisible (scene/visibility.ts,
 // loaded only by KHR_node_visibility / KHR_animation_pointer features) bumps

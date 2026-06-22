@@ -12,6 +12,41 @@ import { trimInternalDts } from "../../scripts/vite-trim-internal-dts";
  */
 
 /**
+ * Resolve the version this build should report. The release pipeline resolves the
+ * next published version *before* `pnpm build` and exposes it as `PACKAGE_VERSION`
+ * (see scripts/prepare-npm-release.ts), so both the runtime `VERSION` constant
+ * (baked in via the `define` below) and the emitted `package.json` report the
+ * version the package actually ships as. Outside the release pipeline (local
+ * builds) it falls back to this package's source `version`.
+ */
+function resolveReleaseVersion(): string {
+    const fromEnv = process.env.PACKAGE_VERSION?.trim();
+    if (fromEnv) {
+        return fromEnv;
+    }
+    const { version } = JSON.parse(readFileSync(resolve(__dirname, "package.json"), "utf8")) as { version?: string };
+    return version ?? "0.1.0";
+}
+
+/**
+ * Release provenance recorded into the published `package.json` so the publish
+ * script can dedupe re-runs of the same Azure build (see `getPublishedBuildId`
+ * in scripts/prepare-npm-release.ts). Populated only inside the pipeline, where
+ * `BUILD_BUILDID` / `BUILD_SOURCEVERSION` are set.
+ */
+function resolveReleaseProvenance(): { azureBuildId?: string; sourceVersion?: string } | undefined {
+    const azureBuildId = process.env.BUILD_BUILDID;
+    const sourceVersion = process.env.BUILD_SOURCEVERSION;
+    if (!azureBuildId && !sourceVersion) {
+        return undefined;
+    }
+    return {
+        ...(azureBuildId ? { azureBuildId } : {}),
+        ...(sourceVersion ? { sourceVersion } : {}),
+    };
+}
+
+/**
  * Emit a publish-ready package.json into the build output directory and copy
  * the README and LICENSE alongside it so the published package is complete.
  */
@@ -19,9 +54,10 @@ function emitPackageJson(outDir: string): Plugin {
     return {
         name: "emit-package-json",
         writeBundle() {
+            const provenance = resolveReleaseProvenance();
             const pkg = {
                 name: "@babylonjs/lite",
-                version: "0.1.0",
+                version: resolveReleaseVersion(),
                 description: "A lightweight, tree-shakable, WebGPU-first rendering library derived from Babylon.js.",
                 license: "Apache-2.0",
                 homepage: "https://doc.babylonjs.com/lite/",
@@ -40,6 +76,7 @@ function emitPackageJson(outDir: string): Plugin {
                     },
                 },
                 sideEffects: false,
+                ...(provenance ? { babylonLiteRelease: provenance } : {}),
             };
             writeFileSync(resolve(outDir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
             copyFileSync(resolve(__dirname, "README.md"), resolve(outDir, "README.md"));
@@ -107,6 +144,12 @@ export default defineConfig(({ mode }) => {
     const outDir = mode === "prod" ? "dist/prod" : "dist";
     const isWatch = process.argv.includes("--watch");
     return {
+        // Bake the resolved version into the `VERSION` export (engine.ts reads
+        // `__BL_VERSION__`). esbuild constant-folds the `typeof` guard so the
+        // published bundle reports the npm version it ships as.
+        define: {
+            __BL_VERSION__: JSON.stringify(resolveReleaseVersion()),
+        },
         build: {
             lib: {
                 entry: resolve(__dirname, "src/index.ts"),

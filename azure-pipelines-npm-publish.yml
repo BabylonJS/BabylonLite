@@ -101,14 +101,21 @@ stages:
                   env:
                       CI: "true"
 
-                - script: pnpm build
-                  displayName: "Build package"
-
+                # Resolve the next published version BEFORE building, so the build can
+                # bake it into the bundle's `VERSION` constant and the emitted dist
+                # `package.json`. The script reads the source manifest (dist does not
+                # exist yet) and sets the `PACKAGE_VERSION` pipeline variable, which the
+                # build step below consumes via `process.env.PACKAGE_VERSION`.
                 - script: npx tsx scripts/prepare-npm-release.ts
                   displayName: "Resolve npm package version"
                   env:
                       RELEASE_TYPE: ${{ parameters.releaseType }}
                       RELEASE_CONFIG_PATH: config/release.json
+
+                - script: pnpm build
+                  displayName: "Build package"
+                  env:
+                      PACKAGE_VERSION: $(PACKAGE_VERSION)
 
                 - script: npm pack --dry-run ./packages/babylon-lite/dist
                   displayName: "Validate npm package contents"
