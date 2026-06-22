@@ -183,8 +183,14 @@ export function createAnimationController(
         }
         arr.push(mb);
     }
-    // Only write first 16 bytes (weights vec4) — count/texWidth/rowsPerBand are immutable
-    const morphUploadF32 = new F32(4);
+    // Morph weight scratch — sized to the largest target count across this clip's bindings.
+    let maxMorphCount = 1;
+    for (let i = 0; i < morphBindings.length; i++) {
+        if (morphBindings[i]!.targetCount > maxMorphCount) {
+            maxMorphCount = morphBindings[i]!.targetCount;
+        }
+    }
+    const morphUploadF32 = new F32(maxMorphCount);
     // Pointer-channel scratch (sized to largest registered pointer arity).
     // Current registered writers need at most 4 (quaternion/color4). Keep 16 for headroom.
     const pointerScratch = new F32(16);
@@ -318,9 +324,9 @@ export function createAnimationController(
                                       evaluateSampler(sampler, t, tc, false, morphUploadF32, 0);
                                       for (let bindingIndex = 0; bindingIndex < bindings.length; bindingIndex++) {
                                           const mb = bindings[bindingIndex]!;
-                                          mb.weights.set(morphUploadF32);
-                                          // Write only the weights vec4 (first 16 bytes); count/texWidth/rowsPerBand are immutable
-                                          device!.queue.writeBuffer(mb.runtimeMorphTargets?.weightsBuffer ?? mb.weightsBuffer, 0, morphUploadF32.buffer, 0, 16);
+                                          mb.weights.set(morphUploadF32.subarray(0, tc));
+                                          // Write the weights array (tc floats) after the 16-byte header; the header (count/vertexCount) is immutable.
+                                          device!.queue.writeBuffer(mb.runtimeMorphTargets?.weightsBuffer ?? mb.weightsBuffer, 16, morphUploadF32.buffer, 0, tc * 4);
                                       }
                                   }
                                   break;

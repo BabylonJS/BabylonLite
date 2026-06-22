@@ -36,7 +36,7 @@ import {
     ESM_SHADOW_OUTPUT,
     _getStdExtsSorted,
 } from "./standard-flags.js";
-import { MSH_RECEIVE_SHADOWS } from "../mesh-features.js";
+import { MSH_HAS_MORPH_TARGETS, MSH_RECEIVE_SHADOWS } from "../mesh-features.js";
 
 /** Stencil resolver, installed only by `enableMaterialStencil`. Module-local with a single exported setter:
  *  when `enableMaterialStencil` is absent from the bundle the setter tree-shakes, the bundler proves this is
@@ -65,10 +65,17 @@ export function composeStandardShader(features: number, _meshFeatures = 0, fragm
             _disableLighting: has(DISABLE_LIGHTING),
             _noColorOutput: has(NO_COLOR_OUTPUT),
             _esmShadowOutput: has(ESM_SHADOW_OUTPUT),
+            _hasMorph: (_meshFeatures & MSH_HAS_MORPH_TARGETS) !== 0,
         },
         esmShadowDepthCode
     );
-    return composeShader(template, fragments);
+    let composed = composeShader(template, fragments);
+    for (const f of fragments) {
+        if (f._postCompose) {
+            composed = f._postCompose(composed);
+        }
+    }
+    return composed;
 }
 
 // ─── Shader Bindings (sig-independent) ──────────────────────────────
@@ -252,20 +259,28 @@ export function createStandardMeshBindGroup(
     bindings: StandardShaderBindings,
     meshUBO: GPUBuffer,
     materialUBO: GPUBuffer,
-    material: StandardMaterialProps
+    material: StandardMaterialProps,
+    morphTargets: { deltasBuffer: GPUBuffer; weightsBuffer: GPUBuffer } | null = null
 ): GPUBindGroup {
     const device = engine._device;
     const features = bindings._features;
     const needsUV = (features & NEEDS_UV) !== 0;
     const hasDiffuseTex = (features & HAS_DIFFUSE_TEXTURE) !== 0;
     const esmShadowOutput = (features & ESM_SHADOW_OUTPUT) !== 0;
+    const hasMorph = (bindings._meshFeatures & MSH_HAS_MORPH_TARGETS) !== 0;
 
-    // Sequential numbering matches composer output.
+    // Sequential numbering matches composer output:
+    // meshUBO(0) → morph vertex bindings → material UBO → diffuse → uv → esm → exts.
     let nextBinding = 0;
-    const entries: GPUBindGroupEntry[] = [
-        { binding: nextBinding++, resource: { buffer: meshUBO } },
-        { binding: nextBinding++, resource: { buffer: materialUBO } },
-    ];
+    const entries: GPUBindGroupEntry[] = [{ binding: nextBinding++, resource: { buffer: meshUBO } }];
+
+    // Morph bindings are fragment vertex bindings, so the composer places them
+    // immediately after the mesh UBO and before the material UBO.
+    if (hasMorph && morphTargets) {
+        entries.push({ binding: nextBinding++, resource: { buffer: morphTargets.deltasBuffer } }, { binding: nextBinding++, resource: { buffer: morphTargets.weightsBuffer } });
+    }
+
+    entries.push({ binding: nextBinding++, resource: { buffer: materialUBO } });
 
     if (hasDiffuseTex) {
         const tex = material.diffuseTexture!;

@@ -216,7 +216,12 @@ export function createPbrComposer(deps: PbrComposerDeps): PbrComposeFn {
             frags.push(_createThinInstanceFragment(hasMesh(MSH_HAS_INSTANCE_COLOR)));
         }
 
-        const composed = composeShader(template, frags);
+        let composed = composeShader(template, frags);
+        for (const f of frags) {
+            if (f._postCompose) {
+                composed = f._postCompose(composed);
+            }
+        }
         cache.set(ckey, composed);
         return composed;
     };
