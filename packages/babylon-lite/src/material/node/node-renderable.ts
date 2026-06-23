@@ -25,10 +25,12 @@ import { packMat4IntoF32 } from "../../math/pack-mat4-into-f32.js";
 // Per-engine cached no-op morph target: an empty deltas storage buffer + a
 // weights buffer whose header has count=0. Meshes without their own morph
 // targets reuse this so materials that contain a MorphTargetsBlock still work
-// (the WGSL loops over `count` and passes through when zero).
-const emptyMorphByEngine = new WeakMap<EngineContext, { deltasBuffer: GPUBuffer; weightsBuffer: GPUBuffer }>();
+// (the WGSL loops over `count` and passes through when zero). Lazily initialized
+// to avoid a module-level allocation that defeats tree-shaking (see GUIDANCE §4).
+let emptyMorphByEngine: WeakMap<EngineContext, { deltasBuffer: GPUBuffer; weightsBuffer: GPUBuffer }> | null = null;
 function getEmptyMorph(engine: EngineContext): { deltasBuffer: GPUBuffer; weightsBuffer: GPUBuffer } {
-    const cached = emptyMorphByEngine.get(engine);
+    const cache = (emptyMorphByEngine ??= new WeakMap());
+    const cached = cache.get(engine);
     if (cached) {
         return cached;
     }
@@ -42,7 +44,7 @@ function getEmptyMorph(engine: EngineContext): { deltasBuffer: GPUBuffer; weight
     const weightsBuffer = engine._device.createBuffer({ label: "node-morph-empty-weights", size: header.byteLength, usage: BU.STORAGE | BU.COPY_DST });
     engine._device.queue.writeBuffer(weightsBuffer, 0, new U8(header));
     const entry = { deltasBuffer, weightsBuffer };
-    emptyMorphByEngine.set(engine, entry);
+    cache.set(engine, entry);
     return entry;
 }
 

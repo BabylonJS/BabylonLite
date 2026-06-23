@@ -32,15 +32,25 @@ for (var i = 0u; i < morph.count; i = i + 1u) {
 
 /** Rewrite the morph/morphDeltas `var<uniform>` placeholders to read-only `var<storage, read>`,
  *  and flip their mesh-BGL entries from `uniform` to `read-only-storage`. Invoked by the PBR and
- *  Standard pipelines after composition (never by the generic composer). */
+ *  Standard pipelines after composition (never by the generic composer).
+ *
+ *  The two morph bindings are declared as `uniform-buffer` placeholders so the shared
+ *  `shader-composer.ts` needs no storage-buffer support (keeping non-morph scenes byte-identical).
+ *  The rewrite is anchored on the unique binding names (`morphDeltas`, `morph`) and asserts both were
+ *  found, so any future change to the composer's decl format fails loudly here rather than silently
+ *  shipping a wrong address space. */
 function patchMorphStorage(composed: ComposedShader): ComposedShader {
     const morphBindings = new Set<number>();
+    let rewrites = 0;
     const vertexWGSL = composed._vertexWGSL.replace(/@group\(1\)@binding\((\d+)\) var<uniform> (morphDeltas|morph):/g, (_match, num: string, name: string) => {
         morphBindings.add(Number(num));
+        rewrites++;
         return `@group(1)@binding(${num}) var<storage, read> ${name}:`;
     });
-    if (morphBindings.size === 0) {
-        return composed;
+    // The morph fragment always contributes exactly two vertex bindings (deltas + weights).
+    // Anything else means the composer's decl format drifted from what this rewrite expects.
+    if (rewrites !== 2) {
+        throw new Error(`morph _postCompose: expected to rewrite 2 binding declarations, rewrote ${rewrites}`);
     }
     const entries = (composed._meshBGLDescriptor.entries as GPUBindGroupLayoutEntry[]).map((e) =>
         morphBindings.has(e.binding) ? { ...e, buffer: { type: "read-only-storage" as const } } : e

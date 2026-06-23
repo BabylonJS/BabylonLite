@@ -184,6 +184,9 @@ export function createAnimationController(
         arr.push(mb);
     }
     // Morph weight scratch — sized to the largest target count across this clip's bindings.
+    // Byte size of the immutable weights-buffer header (count u32, vertexCount u32, 2× pad)
+    // that precedes the weights array — mirrors MORPH_WEIGHTS_HEADER_BYTES in create-morph-targets.ts.
+    const morphWeightsHeaderBytes = 16;
     let maxMorphCount = 1;
     for (let i = 0; i < morphBindings.length; i++) {
         if (morphBindings[i]!.targetCount > maxMorphCount) {
@@ -325,8 +328,14 @@ export function createAnimationController(
                                       for (let bindingIndex = 0; bindingIndex < bindings.length; bindingIndex++) {
                                           const mb = bindings[bindingIndex]!;
                                           mb.weights.set(morphUploadF32.subarray(0, tc));
-                                          // Write the weights array (tc floats) after the 16-byte header; the header (count/vertexCount) is immutable.
-                                          device!.queue.writeBuffer(mb.runtimeMorphTargets?.weightsBuffer ?? mb.weightsBuffer, 16, morphUploadF32.buffer, 0, tc * 4);
+                                          // Write the weights array (tc floats) after the header; the header (count/vertexCount) is immutable.
+                                          device!.queue.writeBuffer(
+                                              mb.runtimeMorphTargets?.weightsBuffer ?? mb.weightsBuffer,
+                                              morphWeightsHeaderBytes,
+                                              morphUploadF32.buffer,
+                                              0,
+                                              tc * 4
+                                          );
                                       }
                                   }
                                   break;
