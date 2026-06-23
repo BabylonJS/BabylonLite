@@ -130,13 +130,22 @@ export const srcDir = resolve(ROOT, "packages/babylon-lite/src");
 // (The lab dev app and master-comparison build still resolve to `srcDir` — see notes
 // at their call sites.)
 export const libDir = resolve(ROOT, "packages/babylon-lite/build/lib");
+const LIB_FALLBACK_ENV = "LITE_BUNDLE_ALLOW_SRC_FALLBACK";
 
 /** Fail fast with an actionable message if the package's `build/lib` output (which the
  *  scene bundles are measured against) hasn't been built yet. */
-function assertLibBuilt(): void {
-    if (!existsSync(resolve(libDir, "index.js"))) {
-        throw new Error(`Missing ${resolve(libDir, "index.js")}.\n` + "Build the package first: `pnpm --filter babylon-lite build:lib` (or `pnpm build`).");
+function resolveLiteAliasDir(): string {
+    const libIndex = resolve(libDir, "index.js");
+    if (existsSync(libIndex)) {
+        return libDir;
     }
+
+    if (process.env[LIB_FALLBACK_ENV] === "true") {
+        console.warn(`Missing ${libIndex}. Falling back to source alias (${srcDir}) because ${LIB_FALLBACK_ENV}=true.`);
+        return srcDir;
+    }
+
+    throw new Error(`Missing ${libIndex}.\n` + "Build the package first: `pnpm --filter babylon-lite build:lib` (or `pnpm build`).");
 }
 const MANIFEST_GIT_PATH = "lab/public/bundle/manifest.json";
 const MANIFEST_FILE = "manifest.json";
@@ -809,9 +818,9 @@ export function measurementBrowserArgs(): string[] {
 
 export async function buildBundleScenes(): Promise<void> {
     const t0 = performance.now();
-    // Scenes are bundled against the built `build/lib` tree (see `libDir`), so it must
-    // exist before we start. Fail fast with an actionable message if it doesn't.
-    assertLibBuilt();
+    // Scenes are bundled against the built `build/lib` tree by default; old baseline
+    // worktrees can opt into TS-source fallback via LITE_BUNDLE_ALLOW_SRC_FALLBACK=true.
+    const liteAliasDir = resolveLiteAliasDir();
     // Do NOT wipe outDir — keep existing data live in the lab tab during the build.
     // Each scene is updated atomically (new files written, stale old chunks removed).
     mkdirSync(outDir, { recursive: true });
@@ -877,9 +886,9 @@ export async function buildBundleScenes(): Promise<void> {
                 // so the measured bundle reflects exactly what a consumer of the published
                 // package gets. Using the directory (not index.js) so sub-path imports like
                 // 'babylon-lite/loader-env/load-dds-env' resolve correctly. `build:lib` must
-                // run first (enforced by assertLibBuilt() in buildBundleScenes).
+                // run first unless explicit source fallback is enabled for legacy baselines.
                 alias: {
-                    "babylon-lite": libDir,
+                    "babylon-lite": liteAliasDir,
                 },
                 dedupe: ["@babylonjs/core"],
             },

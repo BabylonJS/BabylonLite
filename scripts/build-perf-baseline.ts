@@ -118,16 +118,29 @@ try {
 
 // Use the current bundle builder for baseline generation. This keeps perf
 // comparisons focused on runtime source changes, not historical bundler bugs.
-// Keep local helper imports in sync too, so baseline refs that predate a helper
-// file (e.g. wgsl-minify-plugin.ts) still build with the current builder.
-for (const scriptName of ["bundle-scenes-core.ts", "wgsl-minify-plugin.ts"]) {
+// Keep helper imports in sync too, so baseline refs that predate helper files
+// (or helper exports) still build with the current bundle builder.
+for (const scriptName of ["bundle-scenes-core.ts", "bundle-size-accounting.ts", "wgsl-minify-plugin.ts"]) {
     cpSync(resolve(ROOT, "scripts", scriptName), resolve(WORKTREE_DIR, "scripts", scriptName));
+}
+
+console.log("\nBuilding baseline package outputs required by bundle harness...");
+try {
+    // Newer layouts expose build/lib directly.
+    run("pnpm --filter babylon-lite build:lib", { cwd: WORKTREE_DIR });
+} catch {
+    // Older refs may not have build:lib; fall back to the package's default build.
+    run("pnpm build", { cwd: WORKTREE_DIR });
 }
 
 console.log("\nBuilding bundle scenes from baseline (Lite only, skip measurement)...");
 run("pnpm build:bundle-scenes", {
     cwd: WORKTREE_DIR,
-    env: { SKIP_BJS: "true", SKIP_MEASURE: "true" },
+    env: {
+        SKIP_BJS: "true",
+        SKIP_MEASURE: "true",
+        LITE_BUNDLE_ALLOW_SRC_FALLBACK: "true",
+    },
 });
 
 // ── 4. Copy baseline bundles to lab/public/bundle-baseline/ ────────
