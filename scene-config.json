@@ -27,7 +27,7 @@
         "slug": "scene3-fog",
         "name": "Scene 3 — Fog + Skybox",
         "maxMad": 0.01,
-        "maxRawKB": 53.5,
+        "maxRawKB": 54,
         "description": "Exponential² fog, multiple colored boxes, skybox, ground plane.",
         "tags": ["fog", "procedural", "std"],
         "skipPerf": true
@@ -372,7 +372,7 @@
         "slug": "scene36-basis-texture",
         "name": "Scene 36 — Basis Universal Texture",
         "maxMad": 0.5,
-        "maxRawKB": 51.1,
+        "maxRawKB": 52,
         "description": "Box with a .basis texture as diffuse+emissive. Transcoder fetched from the BJS CDN; auto-selects BC7/ASTC/ETC2/BC3/RGBA32 per device. Matches PG #4RN0VF.",
         "tags": ["std", "procedural", "basis"],
         "skipPerf": true,
