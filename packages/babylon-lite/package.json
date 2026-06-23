@@ -43,7 +43,7 @@
     },
     "sideEffects": false,
     "publishConfig": {
-        "types": "./build/index.d.ts"
+        "types": "./build/dist/index.d.ts"
     },
     "devDependencies": {
         "@ampproject/remapping": "^2.3.0",

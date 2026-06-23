@@ -56,7 +56,7 @@ function packageDir(projectRoot: string): string {
 
 function generateApiReport(projectRoot: string, outputDir: string): string {
     const currentPackageDir = packageDir(projectRoot);
-    const entryPoint = resolve(currentPackageDir, "dist/index.d.ts");
+    const entryPoint = resolve(currentPackageDir, "build/index.d.ts");
     const reportFolder = resolve(outputDir, "approved");
     const reportTempFolder = resolve(outputDir, "temp");
 
