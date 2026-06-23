@@ -204,7 +204,7 @@ function buildPackage(projectRoot: string, options: { installDependencies: boole
     if (options.installDependencies) {
         run("pnpm", ["install", "--frozen-lockfile"], projectRoot, { inheritStdio: true });
     }
-    run("pnpm", ["--filter", "babylon-lite", "exec", "vite", "build", "--mode", "dist", "--logLevel", "warn"], projectRoot, { inheritStdio: true });
+    run("pnpm", ["--filter", "babylon-lite", "run", "build"], projectRoot, { inheritStdio: true });
 }
 
 function diffReports(rootDir: string, targetReport: string, currentReport: string): string {
