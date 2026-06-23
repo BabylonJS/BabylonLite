@@ -118,7 +118,11 @@ try {
 
 // Use the current bundle builder for baseline generation. This keeps perf
 // comparisons focused on runtime source changes, not historical bundler bugs.
-cpSync(resolve(ROOT, "scripts/bundle-scenes-core.ts"), resolve(WORKTREE_DIR, "scripts/bundle-scenes-core.ts"));
+// Keep local helper imports in sync too, so baseline refs that predate a helper
+// file (e.g. wgsl-minify-plugin.ts) still build with the current builder.
+for (const scriptName of ["bundle-scenes-core.ts", "wgsl-minify-plugin.ts"]) {
+    cpSync(resolve(ROOT, "scripts", scriptName), resolve(WORKTREE_DIR, "scripts", scriptName));
+}
 
 console.log("\nBuilding bundle scenes from baseline (Lite only, skip measurement)...");
 run("pnpm build:bundle-scenes", {
