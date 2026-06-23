@@ -199,7 +199,7 @@
       "scene12-pbr-renderable-CsQMIo3R.js",
       "scene12-reflectance-fragment-x2p8iAju.js",
       "scene12-rgbd-decode-BLiTLohS.js",
-      "scene12-scene-material-swap-B9pKXnqR.js",
+      "scene12-scene-material-swap-DI9RsM49.js",
       "scene12-scene-uniforms-FTYH6Ct0.js",
       "scene12-singlelight-directional-wgsl-DhnkgLEx.js",
       "scene12-skeleton-fragment-HQ02KgI1.js",
@@ -299,7 +299,7 @@
   },
   "scene19": {
     "rawKB": 69.6,
-    "gzipKB": 28.4,
+    "gzipKB": 28.5,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene19-clearcoat-fragment-Cbq-w7I6.js",
@@ -340,7 +340,7 @@
       "scene21-ibl-fragment-CeRrvT96.js",
       "scene21-pbr-renderable-BfSmGIRs.js",
       "scene21-rgbd-decode-9DTol7mq.js",
-      "scene21-scene-material-swap-B9pKXnqR.js",
+      "scene21-scene-material-swap-DI9RsM49.js",
       "scene21-scene-uniforms-FTYH6Ct0.js",
       "scene21-sheen-fragment-D8QZ_dKb.js",
       "scene21.js"
@@ -425,7 +425,7 @@
       "scene26-pbr-aces-wgsl-XxSkrbTG.js",
       "scene26-pbr-renderable-MGEvh-sj.js",
       "scene26-rgbd-decode-Y-O5hyxs.js",
-      "scene26-scene-material-swap-B9pKXnqR.js",
+      "scene26-scene-material-swap-DI9RsM49.js",
       "scene26-singlelight-point-wgsl-BFpv7Wxi.js",
       "scene26-subsurface-fragment-ChLQN3KU.js",
       "scene26.js"
@@ -745,7 +745,7 @@
   },
   "scene43": {
     "rawKB": 57.7,
-    "gzipKB": 23,
+    "gzipKB": 23.1,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene43-standard-renderable-DnHg7dWZ.js",
@@ -1645,7 +1645,7 @@
   },
   "scene94": {
     "rawKB": 64.6,
-    "gzipKB": 25.2,
+    "gzipKB": 25.3,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene94-billboard-renderable-BgBdc7uu.js",
@@ -2366,7 +2366,7 @@
     ]
   },
   "scene161": {
-    "rawKB": 37,
+    "rawKB": 37.1,
     "gzipKB": 14.6,
     "ignoredRawKB": 0,
     "runtimeChunks": [
@@ -2703,7 +2703,7 @@
   },
   "scene209": {
     "rawKB": 53.9,
-    "gzipKB": 22.1,
+    "gzipKB": 22,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene209-_mat4-storage-f64-3NavC9Rv.js",
@@ -2991,7 +2991,7 @@
     ]
   },
   "scene241": {
-    "rawKB": 154.3,
+    "rawKB": 154.4,
     "gzipKB": 63.4,
     "ignoredRawKB": 0,
     "runtimeChunks": [
@@ -3113,7 +3113,7 @@
   },
   "scene245": {
     "rawKB": 98.2,
-    "gzipKB": 41.7,
+    "gzipKB": 41.6,
     "ignoredRawKB": 0,
     "runtimeChunks": [
       "scene245-create-skeleton-nuOFOS6J.js",

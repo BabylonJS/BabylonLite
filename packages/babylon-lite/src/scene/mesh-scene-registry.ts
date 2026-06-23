@@ -19,17 +19,15 @@ let _meshScenes: WeakMap<Mesh, Set<SceneContext>> | null = null;
 /** @internal Queue a mesh for renderable (re)build on the next frame's material-swap drain.
  *  Shared by the material setter (runtime material change) and addToScene (runtime mesh add).
  *  Dedup is per-(scene, mesh) via swap-queue membership — a single shared mesh may be queued
- *  in several scenes at once. Lazily loads the swap processor so scenes that never mutate at
- *  runtime don't pull it into their bundle. */
+ *  in several scenes at once. The processor stays lazy so non-mutating scenes load zero
+ *  material-swap bytes; the import drains this queue immediately when it resolves. */
 export function enqueueMaterialSwap(scene: SceneContext, mesh: Mesh): void {
-    if (scene._materialSwapQueue.indexOf(mesh) >= 0) {
+    if (scene._materialSwapQueue.includes(mesh)) {
         return;
     }
     scene._materialSwapQueue.push(mesh);
     if (!scene._processSwaps) {
-        void import("./scene-material-swap.js").then((m) => {
-            scene._processSwaps = m.processMaterialSwaps;
-        });
+        void import("./scene-material-swap.js").then((m) => (scene._processSwaps = m.processMaterialSwaps)(scene));
     }
 }
 
