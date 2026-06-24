@@ -31,6 +31,24 @@ export function getBlockDef(type: string): (() => Promise<FgBlockDef>) | null {
             return async () => (await import("./blocks/control-flow/branch.js")).branchDef;
         case FgBlockType.Sequence:
             return async () => (await import("./blocks/control-flow/sequence.js")).sequenceDef;
+        case FgBlockType.Switch:
+            return async () => (await import("./blocks/control-flow/switch.js")).switchDef;
+        case FgBlockType.ForLoop:
+            return async () => (await import("./blocks/control-flow/for-loop.js")).forLoopDef;
+        case FgBlockType.WhileLoop:
+            return async () => (await import("./blocks/control-flow/while-loop.js")).whileLoopDef;
+        case FgBlockType.DoN:
+            return async () => (await import("./blocks/control-flow/do-n.js")).doNDef;
+        case FgBlockType.MultiGate:
+            return async () => (await import("./blocks/control-flow/multi-gate.js")).multiGateDef;
+        case FgBlockType.WaitAll:
+            return async () => (await import("./blocks/control-flow/wait-all.js")).waitAllDef;
+        case FgBlockType.Throttle:
+            return async () => (await import("./blocks/control-flow/throttle.js")).throttleDef;
+        case FgBlockType.SetDelay:
+            return async () => (await import("./blocks/control-flow/set-delay.js")).setDelayDef;
+        case FgBlockType.CancelDelay:
+            return async () => (await import("./blocks/control-flow/cancel-delay.js")).cancelDelayDef;
 
         // ─── Math ─────────────────────────────────────────────────
         case FgBlockType.Add:
@@ -245,6 +263,8 @@ export function getBlockDef(type: string): (() => Promise<FgBlockDef>) | null {
             return async () => (await import("./blocks/data/get-variable.js")).getVariableDef;
         case FgBlockType.SetVariable:
             return async () => (await import("./blocks/data/set-variable.js")).setVariableDef;
+        case FgBlockType.Constant:
+            return async () => (await import("./blocks/data/constant.js")).constantDef;
 
         // ─── Animation ────────────────────────────────────────────
         case FgBlockType.PlayAnimation:

@@ -164,10 +164,15 @@ function resolvePointerTemplate(template: string, node: GltfNode): string | null
 }
 
 /** Compute a node's per-flow-key → Lite signal-output-name map (handles the
- *  dynamic sequence renaming). */
+ *  dynamic sequence renaming and switch-style integer-key prefixing). */
 function flowOutputName(mapping: FgOpMapping, flowKeys: string[], key: string): string {
     if (mapping.dynamicSequence) {
         return `out_${flowKeys.indexOf(key)}`;
+    }
+    // Switch-style: glTF flow keys are raw case integers; prefix with "out_"
+    // except for "default" which passes through unchanged.
+    if (mapping.switchOutputs && key !== "default") {
+        return `out_${key}`;
     }
     return mapping.flowOutputs?.[key] ?? key;
 }
@@ -220,6 +225,23 @@ export async function parseInteractivityGraph(json: GltfInteractivityGraph): Pro
         }
         if (mapping.nodeConfigKey) {
             config[mapping.nodeConfigKey] = node.configuration?.[mapping.nodeConfigKey]?.value?.[0] as number;
+        }
+        // ⚠️ SPEC-VOLATILE: configKeys/configArrayKeys — re-sync against BJS PR #18455.
+        if (mapping.configKeys) {
+            for (const [gltfKey, liteName] of Object.entries(mapping.configKeys)) {
+                const raw = node.configuration?.[gltfKey]?.value;
+                if (raw !== undefined) {
+                    config[liteName] = raw[0]; // scalar: first element only
+                }
+            }
+        }
+        if (mapping.configArrayKeys) {
+            for (const [gltfKey, liteName] of Object.entries(mapping.configArrayKeys)) {
+                const raw = node.configuration?.[gltfKey]?.value;
+                if (raw !== undefined) {
+                    config[liteName] = raw; // array: full value array
+                }
+            }
         }
         if (mapping.pointer) {
             const template = node.configuration?.pointer?.value?.[0] as string | undefined;

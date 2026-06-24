@@ -47,6 +47,26 @@ export interface FgOpMapping {
     /** Event op: copy a numeric glTF `configuration` value into `config[key]`
      *  (e.g. `nodeIndex` for `event/onSelect`). */
     readonly nodeConfigKey?: string;
+    /**
+     * glTF `configuration` keys to copy as SCALAR values into block config.
+     * Parser copies `node.configuration[gltfKey].value[0]` → `config[liteName]`.
+     * Use for booleans, numbers, counts, and other single-element values.
+     * ⚠️ SPEC-VOLATILE: quarantined here; re-sync against BJS PR #18455.
+     */
+    readonly configKeys?: Readonly<Record<string, string>>;
+    /**
+     * glTF `configuration` keys to copy as ARRAY values into block config.
+     * Parser copies `node.configuration[gltfKey].value` (full array) →
+     * `config[liteName]`. Use for `cases` arrays and other multi-element lists.
+     * ⚠️ SPEC-VOLATILE: quarantined here; re-sync against BJS PR #18455.
+     */
+    readonly configArrayKeys?: Readonly<Record<string, string>>;
+    /**
+     * Switch-style dynamic output renaming: glTF flow key `"N"` → Lite signal
+     * output `"out_N"` (except `"default"` which passes through unchanged).
+     * Mirrors BJS FlowGraphSwitchBlock's `extraProcessor` renaming logic.
+     */
+    readonly switchOutputs?: boolean;
 }
 
 const FPS = (arr: number[]): number[] => [(arr[0] ?? 0) * ANIMATION_FPS];
@@ -58,6 +78,25 @@ const NATIVE_OPS: Readonly<Record<string, FgOpMapping>> = {
 
     "flow/branch": { block: FgBlockType.Branch, valueInputs: { condition: "condition" }, flowOutputs: { true: "onTrue", false: "onFalse" } },
     "flow/sequence": { block: FgBlockType.Sequence, dynamicSequence: true },
+
+    // ─── Phase 3h control-flow ops ────────────────────────────────────────────
+    // flow/switch: glTF input `selection` → Lite `case`; flow keys are the raw
+    // case integers ("0","1",...) — `switchOutputs` prefixes them to `out_N`.
+    "flow/switch": { block: FgBlockType.Switch, valueInputs: { selection: "case" }, configArrayKeys: { cases: "cases" }, switchOutputs: true },
+    // flow/for: `loopBody` → `executionFlow` (glTF name differs from BJS internal).
+    "flow/for": { block: FgBlockType.ForLoop, configKeys: { initialIndex: "initialIndex" }, flowOutputs: { loopBody: "executionFlow" } },
+    // flow/while: same loopBody rename.
+    "flow/while": { block: FgBlockType.WhileLoop, flowOutputs: { loopBody: "executionFlow" } },
+    // flow/doN: glTF `n` → `maxExecutions`; `currentCount` → `executionCount`.
+    "flow/doN": { block: FgBlockType.DoN, valueInputs: { n: "maxExecutions" }, outputValues: { currentCount: "executionCount" } },
+    // flow/multiGate: output count from flow count (dynamicSequence); booleans from configKeys.
+    "flow/multiGate": { block: FgBlockType.MultiGate, dynamicSequence: true, configKeys: { isRandom: "isRandom", isLoop: "isLoop" } },
+    // flow/waitAll: input count from glTF config key `inputFlows`.
+    "flow/waitAll": { block: FgBlockType.WaitAll, configKeys: { inputFlows: "inputSignalCount" } },
+    // flow/throttle, flow/setDelay: `err` glTF output → `error` Lite signal.
+    "flow/throttle": { block: FgBlockType.Throttle, flowOutputs: { err: "error" } },
+    "flow/setDelay": { block: FgBlockType.SetDelay, flowOutputs: { err: "error" } },
+    "flow/cancelDelay": { block: FgBlockType.CancelDelay },
 
     "math/add": { block: FgBlockType.Add, valueInputs: { a: "a", b: "b" } },
     "math/sub": { block: FgBlockType.Subtract, valueInputs: { a: "a", b: "b" } },
@@ -141,6 +180,8 @@ const NATIVE_OPS: Readonly<Record<string, FgOpMapping>> = {
     "math/extract4": { block: FgBlockType.ExtractVector4, outputValues: { "0": "x", "1": "y", "2": "z", "3": "w" } },
     "math/rotate2D": { block: FgBlockType.Rotate2D, valueInputs: { a: "a", angle: "b" } },
     "math/select": { block: FgBlockType.Conditional, valueInputs: { condition: "condition", a: "onTrue", b: "onFalse" } },
+    // math/switch: data switch; cases array from glTF configuration.
+    "math/switch": { block: FgBlockType.DataSwitch, configArrayKeys: { cases: "cases" } },
 
     // ─── Phase 3f (matrix + quaternion) ──────────────────────────────────────
     "math/transform": { block: FgBlockType.TransformVector },

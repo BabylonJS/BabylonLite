@@ -986,3 +986,587 @@ describe("flow-graph blocks — matrix/quaternion", () => {
         expect(r.w).toBeCloseTo(Math.cos(Math.PI / 4), 5);
     });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 3h — control-flow blocks
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("flow-graph blocks — control flow Phase 3h", () => {
+    // ── Switch ────────────────────────────────────────────────────────────────
+
+    it("Switch routes to matching out_<case> when case is known", async () => {
+        for (const [sel, expected] of [
+            [0, "zero"],
+            [1, "one"],
+            [99, "default"],
+        ] as const) {
+            const log: { label: string; value: FgValue }[] = [];
+            const rt = await makeRuntime(
+                [
+                    { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "sw", socket: "in" }] } },
+                    {
+                        id: "sw",
+                        type: "Switch",
+                        config: { cases: [0, 1] },
+                        dataDefaults: { case: sel },
+                        signalTargets: {
+                            out_0: [{ blockId: "r0", socket: "in" }],
+                            out_1: [{ blockId: "r1", socket: "in" }],
+                            default: [{ blockId: "rd", socket: "in" }],
+                        },
+                    },
+                    { id: "r0", type: RECORD, config: { label: "zero" } },
+                    { id: "r1", type: RECORD, config: { label: "one" } },
+                    { id: "rd", type: RECORD, config: { label: "default" } },
+                ],
+                { defs: { [RECORD]: recorderDef(log) } }
+            );
+            startFlowGraph(rt);
+            expect(log.map((e) => e.label)).toEqual([expected]);
+        }
+    });
+
+    it("Switch routes to default when no case matches", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "sw", socket: "in" }] } },
+                {
+                    id: "sw",
+                    type: "Switch",
+                    config: { cases: [5, 10] },
+                    dataDefaults: { case: 42 },
+                    signalTargets: { default: [{ blockId: "rec", socket: "in" }] },
+                },
+                { id: "rec", type: RECORD, config: { label: "hit" } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        expect(log.map((e) => e.label)).toEqual(["hit"]);
+    });
+
+    // ── ForLoop ───────────────────────────────────────────────────────────────
+
+    it("ForLoop fires executionFlow for indices [start, end) exclusively", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "fl", socket: "in" }] } },
+                {
+                    id: "fl",
+                    type: "ForLoop",
+                    dataDefaults: { startIndex: 2, endIndex: 5, step: 1 },
+                    signalTargets: {
+                        executionFlow: [{ blockId: "rec", socket: "in" }],
+                        completed: [{ blockId: "done", socket: "in" }],
+                    },
+                },
+                { id: "rec", type: RECORD, config: { label: "body" }, dataSources: { value: { blockId: "fl", socket: "index" } } },
+                { id: "done", type: RECORD, config: { label: "done" } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        // Indices 2, 3, 4 — end is EXCLUSIVE (BJS: i < endIndex); then "done" fires.
+        expect(log.filter((e) => e.label === "body").map((e) => e.value)).toEqual([fgInt(2), fgInt(3), fgInt(4)]);
+        expect(log.filter((e) => e.label === "done")).toHaveLength(1);
+    });
+
+    it("ForLoop fires completed immediately when startIndex >= endIndex", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "fl", socket: "in" }] } },
+                {
+                    id: "fl",
+                    type: "ForLoop",
+                    dataDefaults: { startIndex: 3, endIndex: 3 },
+                    signalTargets: {
+                        executionFlow: [{ blockId: "body", socket: "in" }],
+                        completed: [{ blockId: "done", socket: "in" }],
+                    },
+                },
+                { id: "body", type: RECORD, config: { label: "body" } },
+                { id: "done", type: RECORD, config: { label: "done" } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        expect(log.map((e) => e.label)).toEqual(["done"]);
+    });
+
+    // ── WhileLoop ─────────────────────────────────────────────────────────────
+
+    it("WhileLoop fires body N times then completed when condition goes false", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        let condVal = true;
+        let callCount = 0;
+
+        // Stateful recorder that flips the condition after 3 calls.
+        const flipDef: FgBlockDef = {
+            type: "test/flip",
+            build: () => ({ signalIn: [{ name: "in", targets: [] }], dataIn: [{ name: "value", type: FgType.Any }] }),
+            execute: (_block, _ctx, _env) => {
+                callCount++;
+                log.push({ label: "body", value: callCount as unknown as FgValue });
+                if (callCount >= 3) condVal = false;
+            },
+        };
+        const condDef: FgBlockDef = {
+            type: "test/cond",
+            build: () => ({ dataOut: [{ name: "value", type: FgType.Boolean }] }),
+            updateOutputs: (_block, ctx, _env) => {
+                ctx.connectionValues["cond:value"] = condVal;
+            },
+        };
+
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "wl", socket: "in" }] } },
+                {
+                    id: "wl",
+                    type: "WhileLoop",
+                    dataSources: { condition: { blockId: "cond", socket: "value" } },
+                    signalTargets: {
+                        executionFlow: [{ blockId: "flip", socket: "in" }],
+                        completed: [{ blockId: "done", socket: "in" }],
+                    },
+                },
+                { id: "cond", type: "test/cond" },
+                { id: "flip", type: "test/flip" },
+                { id: "done", type: RECORD, config: { label: "done" } },
+            ],
+            { defs: { [RECORD]: recorderDef(log), "test/flip": flipDef, "test/cond": condDef } }
+        );
+        startFlowGraph(rt);
+        expect(log.filter((e) => e.label === "body")).toHaveLength(3);
+        expect(log[log.length - 1]!.label).toBe("done");
+    });
+
+    // ── DoN ───────────────────────────────────────────────────────────────────
+
+    it("DoN fires out only for the first N activations", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                {
+                    id: "start",
+                    type: "SceneReadyEvent",
+                    signalTargets: {
+                        out: [
+                            { blockId: "don", socket: "in" },
+                            { blockId: "don", socket: "in" },
+                            { blockId: "don", socket: "in" },
+                            { blockId: "don", socket: "in" },
+                        ],
+                    },
+                },
+                {
+                    id: "don",
+                    type: "DoN",
+                    dataDefaults: { maxExecutions: fgInt(3) },
+                    signalTargets: { out: [{ blockId: "rec", socket: "in" }] },
+                },
+                { id: "rec", type: RECORD, config: { label: "fired" } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        // 4 activations but max is 3 → only 3 should fire.
+        expect(log.filter((e) => e.label === "fired")).toHaveLength(3);
+    });
+
+    it("DoN reset re-arms the block", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                {
+                    id: "start",
+                    type: "SceneReadyEvent",
+                    signalTargets: {
+                        out: [
+                            { blockId: "don", socket: "in" },
+                            { blockId: "don", socket: "in" },
+                            { blockId: "don", socket: "in" }, // exhausts N=2
+                            { blockId: "don", socket: "reset" }, // resets
+                            { blockId: "don", socket: "in" }, // fires again
+                        ],
+                    },
+                },
+                {
+                    id: "don",
+                    type: "DoN",
+                    dataDefaults: { maxExecutions: fgInt(2) },
+                    signalTargets: { out: [{ blockId: "rec", socket: "in" }] },
+                },
+                { id: "rec", type: RECORD, config: { label: "fired" } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        // 3 activate before exhaustion (N=2 → 2 pass), then reset, then 1 more.
+        expect(log.filter((e) => e.label === "fired")).toHaveLength(3);
+    });
+
+    // ── MultiGate ─────────────────────────────────────────────────────────────
+
+    it("MultiGate cycles through outputs sequentially", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                {
+                    id: "start",
+                    type: "SceneReadyEvent",
+                    signalTargets: {
+                        out: [
+                            { blockId: "mg", socket: "in" },
+                            { blockId: "mg", socket: "in" },
+                            { blockId: "mg", socket: "in" },
+                        ],
+                    },
+                },
+                {
+                    id: "mg",
+                    type: "MultiGate",
+                    config: { outputSignalCount: 3, isRandom: false, isLoop: false },
+                    signalTargets: {
+                        out_0: [{ blockId: "r0", socket: "in" }],
+                        out_1: [{ blockId: "r1", socket: "in" }],
+                        out_2: [{ blockId: "r2", socket: "in" }],
+                    },
+                },
+                { id: "r0", type: RECORD, config: { label: "0" } },
+                { id: "r1", type: RECORD, config: { label: "1" } },
+                { id: "r2", type: RECORD, config: { label: "2" } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        expect(log.map((e) => e.label)).toEqual(["0", "1", "2"]);
+    });
+
+    it("MultiGate with isLoop wraps around", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                {
+                    id: "start",
+                    type: "SceneReadyEvent",
+                    signalTargets: {
+                        out: [
+                            { blockId: "mg", socket: "in" },
+                            { blockId: "mg", socket: "in" },
+                            { blockId: "mg", socket: "in" },
+                            { blockId: "mg", socket: "in" }, // wraps
+                        ],
+                    },
+                },
+                {
+                    id: "mg",
+                    type: "MultiGate",
+                    config: { outputSignalCount: 2, isRandom: false, isLoop: true },
+                    signalTargets: {
+                        out_0: [{ blockId: "r0", socket: "in" }],
+                        out_1: [{ blockId: "r1", socket: "in" }],
+                    },
+                },
+                { id: "r0", type: RECORD, config: { label: "A" } },
+                { id: "r1", type: RECORD, config: { label: "B" } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        expect(log.map((e) => e.label)).toEqual(["A", "B", "A", "B"]);
+    });
+
+    it("MultiGate reset clears state", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                {
+                    id: "start",
+                    type: "SceneReadyEvent",
+                    signalTargets: {
+                        out: [
+                            { blockId: "mg", socket: "in" },
+                            { blockId: "mg", socket: "in" }, // exhausts 2
+                            { blockId: "mg", socket: "reset" },
+                            { blockId: "mg", socket: "in" }, // starts over
+                        ],
+                    },
+                },
+                {
+                    id: "mg",
+                    type: "MultiGate",
+                    config: { outputSignalCount: 2, isRandom: false, isLoop: false },
+                    signalTargets: {
+                        out_0: [{ blockId: "r0", socket: "in" }],
+                        out_1: [{ blockId: "r1", socket: "in" }],
+                    },
+                },
+                { id: "r0", type: RECORD, config: { label: "A" } },
+                { id: "r1", type: RECORD, config: { label: "B" } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        // First 2 activations → A, B (exhausted). After reset → A again.
+        expect(log.map((e) => e.label)).toEqual(["A", "B", "A"]);
+    });
+
+    // ── WaitAll ───────────────────────────────────────────────────────────────
+
+    it("WaitAll fires completed only after all inputs received", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                {
+                    id: "start",
+                    type: "SceneReadyEvent",
+                    signalTargets: {
+                        out: [
+                            { blockId: "wa", socket: "in_0" },
+                            { blockId: "wa", socket: "in_1" }, // completes
+                        ],
+                    },
+                },
+                {
+                    id: "wa",
+                    type: "WaitAll",
+                    config: { inputSignalCount: 2 },
+                    signalTargets: {
+                        out: [{ blockId: "partial", socket: "in" }],
+                        completed: [{ blockId: "done", socket: "in" }],
+                    },
+                },
+                { id: "partial", type: RECORD, config: { label: "partial" } },
+                { id: "done", type: RECORD, config: { label: "done" } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        // in_0 → "partial"; in_1 completes → "done"
+        expect(log.map((e) => e.label)).toEqual(["partial", "done"]);
+    });
+
+    it("WaitAll reset clears received flags", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                {
+                    id: "start",
+                    type: "SceneReadyEvent",
+                    signalTargets: {
+                        out: [
+                            { blockId: "wa", socket: "in_0" }, // partial
+                            { blockId: "wa", socket: "reset" }, // resets
+                            { blockId: "wa", socket: "in_0" }, // partial again
+                            { blockId: "wa", socket: "in_1" }, // now completes
+                        ],
+                    },
+                },
+                {
+                    id: "wa",
+                    type: "WaitAll",
+                    config: { inputSignalCount: 2 },
+                    signalTargets: {
+                        out: [{ blockId: "partial", socket: "in" }],
+                        completed: [{ blockId: "done", socket: "in" }],
+                    },
+                },
+                { id: "partial", type: RECORD, config: { label: "partial" } },
+                { id: "done", type: RECORD, config: { label: "done" } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        // in_0 → partial; reset; in_0 → partial; in_1 → done
+        expect(log.map((e) => e.label)).toEqual(["partial", "partial", "done"]);
+    });
+
+    // ── Throttle ──────────────────────────────────────────────────────────────
+
+    it("Throttle passes first activation then suppresses until duration elapses", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "th", socket: "in" }] } },
+                {
+                    id: "th",
+                    type: "Throttle",
+                    dataDefaults: { duration: 1 }, // 1 second
+                    signalTargets: { out: [{ blockId: "rec", socket: "in" }] },
+                },
+                { id: "rec", type: RECORD, config: { label: "pass" } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        // First activation should pass through.
+        expect(log).toHaveLength(1);
+        expect(log[0]!.label).toBe("pass");
+    });
+
+    it("Throttle suppresses re-activations during cooldown", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "th", socket: "in" }] } },
+                {
+                    id: "th",
+                    type: "Throttle",
+                    dataDefaults: { duration: 1 }, // 1 second
+                    signalTargets: { out: [{ blockId: "rec", socket: "in" }] },
+                },
+                { id: "rec", type: RECORD, config: { label: "pass" } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        // First activation passes.
+        expect(log).toHaveLength(1);
+
+        // Re-fire during cooldown (500 ms elapsed, need 1000 ms).
+        const thBlock = rt.env.graph.blocks.find((b) => b.type === "Throttle")!;
+        rt.env.defs[thBlock.type]!.execute!(thBlock, rt.context, rt.env, "in");
+        expect(log).toHaveLength(1); // still suppressed
+
+        // Tick past the duration.
+        tickFlowGraph(rt, 600);
+        tickFlowGraph(rt, 600); // total 1200 ms > 1000 ms → cooldown done
+
+        // Activate again — should pass.
+        rt.env.defs[thBlock.type]!.execute!(thBlock, rt.context, rt.env, "in");
+        expect(log).toHaveLength(2);
+    });
+
+    // ── SetDelay / CancelDelay ────────────────────────────────────────────────
+
+    it("SetDelay fires done after duration via tickFlowGraph", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "sd", socket: "in" }] } },
+                {
+                    id: "sd",
+                    type: "SetDelay",
+                    dataDefaults: { duration: 1 }, // 1 second
+                    signalTargets: {
+                        out: [{ blockId: "out", socket: "in" }],
+                        done: [{ blockId: "done", socket: "in" }],
+                    },
+                },
+                { id: "out", type: RECORD, config: { label: "out" } },
+                { id: "done", type: RECORD, config: { label: "done" } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        expect(log.map((e) => e.label)).toEqual(["out"]); // immediate
+
+        tickFlowGraph(rt, 500); // 500 ms — not done yet
+        expect(log.map((e) => e.label)).toEqual(["out"]);
+
+        tickFlowGraph(rt, 600); // total 1100 ms > 1000 ms → done fires
+        expect(log.map((e) => e.label)).toEqual(["out", "done"]);
+    });
+
+    it("CancelDelay prevents done from firing", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                {
+                    id: "start",
+                    type: "SceneReadyEvent",
+                    signalTargets: {
+                        out: [
+                            { blockId: "sd", socket: "in" }, // schedule delay
+                            { blockId: "cd", socket: "in" }, // immediately cancel it
+                        ],
+                    },
+                },
+                {
+                    id: "sd",
+                    type: "SetDelay",
+                    dataDefaults: { duration: 1 },
+                    signalTargets: { done: [{ blockId: "done", socket: "in" }] },
+                },
+                {
+                    id: "cd",
+                    type: "CancelDelay",
+                    // Wire the lastDelayIndex output of sd into delayIndex input of cd.
+                    dataSources: { delayIndex: { blockId: "sd", socket: "lastDelayIndex" } },
+                    signalTargets: { out: [{ blockId: "cancelled", socket: "in" }] },
+                },
+                { id: "done", type: RECORD, config: { label: "done" } },
+                { id: "cancelled", type: RECORD, config: { label: "cancelled" } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        tickFlowGraph(rt, 2000); // well past duration
+        // done must NOT fire; cancelled must fire once.
+        expect(log.filter((e) => e.label === "done")).toHaveLength(0);
+        expect(log.filter((e) => e.label === "cancelled")).toHaveLength(1);
+    });
+
+    // ── Constant ──────────────────────────────────────────────────────────────
+
+    it("Constant emits its configured value", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "rec", socket: "in" }] } },
+                { id: "const", type: "Constant", config: { value: 42 } },
+                { id: "rec", type: RECORD, dataSources: { value: { blockId: "const", socket: "value" } } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        expect(log[0]!.value).toBe(42);
+    });
+
+    it("Constant emits a vector value", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const v = { x: 1, y: 2, z: 3 };
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "rec", socket: "in" }] } },
+                { id: "const", type: "Constant", config: { value: v } },
+                { id: "rec", type: RECORD, dataSources: { value: { blockId: "const", socket: "value" } } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        expect(log[0]!.value).toEqual(v);
+    });
+
+    // ── DataSwitch (math/switch cases config) ────────────────────────────────
+
+    it("DataSwitch selects in_<case> by selector value", async () => {
+        for (const [sel, expected] of [
+            [0, 100],
+            [1, 200],
+            [2, 999], // default
+        ] as const) {
+            const log: { label: string; value: FgValue }[] = [];
+            const rt = await makeRuntime(
+                [
+                    { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "rec", socket: "in" }] } },
+                    {
+                        id: "ds",
+                        type: "DataSwitch",
+                        config: { cases: [0, 1] },
+                        dataDefaults: { case: sel, default: 999, in_0: 100, in_1: 200 },
+                    },
+                    { id: "rec", type: RECORD, dataSources: { value: { blockId: "ds", socket: "value" } } },
+                ],
+                { defs: { [RECORD]: recorderDef(log) } }
+            );
+            startFlowGraph(rt);
+            expect(log[0]!.value).toBe(expected);
+        }
+    });
+});
