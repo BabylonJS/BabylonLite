@@ -5,9 +5,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 const ROOT = resolve(__dirname, "../../..");
 const PACKAGE_DIR = resolve(ROOT, "packages/babylon-lite");
-const DIST_DIR = resolve(PACKAGE_DIR, "dist");
-const DTS_PATH = resolve(DIST_DIR, "index.d.ts");
-const PACKAGE_JSON_PATH = resolve(DIST_DIR, "package.json");
+const BUILD_DIR = resolve(PACKAGE_DIR, "build");
+const DTS_PATH = resolve(BUILD_DIR, "index.d.ts");
+const PACKAGE_JSON_PATH = resolve(BUILD_DIR, "package.json");
 
 // Invoke binaries directly via their JS entry points and the current node
 // executable, so the test does not depend on PATH (which may not contain
@@ -16,18 +16,23 @@ const NODE = process.execPath;
 const VITE_JS = resolve(PACKAGE_DIR, "node_modules/vite/bin/vite.js");
 const TSC_JS = resolve(ROOT, "node_modules/typescript/bin/tsc");
 
-// Build babylon-lite once for all dist/* assertions in this file.
+// Build babylon-lite once for all build/* assertions in this file. The package
+// build is two Vite passes: `--mode dist` emits the prebundled CDN tree and the
+// shared rolled-up `index.d.ts`; `--mode lib` emits the module-granular tree and the
+// publish-ready `package.json`. Both are required for the assertions below.
 beforeAll(() => {
-    const build = spawnSync(NODE, [VITE_JS, "build"], {
-        cwd: PACKAGE_DIR,
-        encoding: "utf-8",
-    });
-    if (build.status !== 0) {
-        throw new Error(`babylon-lite build failed:\n${build.stdout ?? ""}${build.stderr ?? ""}`);
+    for (const mode of ["dist", "lib"]) {
+        const build = spawnSync(NODE, [VITE_JS, "build", "--mode", mode], {
+            cwd: PACKAGE_DIR,
+            encoding: "utf-8",
+        });
+        if (build.status !== 0) {
+            throw new Error(`babylon-lite build (--mode ${mode}) failed:\n${build.stdout ?? ""}${build.stderr ?? ""}`);
+        }
     }
 }, 300_000);
 
-describe("dist/index.d.ts", () => {
+describe("build/index.d.ts", () => {
     it("type-checks cleanly with no references to internal-only types", () => {
         expect(existsSync(DTS_PATH)).toBe(true);
 
@@ -63,11 +68,11 @@ describe("dist/index.d.ts", () => {
             // Rewrite tsc's relative paths (e.g. "dist/index.d.ts(619,52):")
             // into absolute paths so they're clickable in the VS Code terminal
             // / test output panel.
-            const clickable = output.replace(/(^|\s)(dist[\\/][^\s(]+)\((\d+),(\d+)\)/g, (_m, lead: string, rel: string, line: string, col: string) => {
+            const clickable = output.replace(/(^|\s)(build[\\/][^\s(]+)\((\d+),(\d+)\)/g, (_m, lead: string, rel: string, line: string, col: string) => {
                 const abs = resolve(PACKAGE_DIR, rel).replace(/\\/g, "/");
                 return `${lead}${abs}:${line}:${col}`;
             });
-            throw new Error(`dist/index.d.ts has TypeScript errors (likely internal-only types leaking into the public API):\n${clickable}`);
+            throw new Error(`build/index.d.ts has TypeScript errors (likely internal-only types leaking into the public API):\n${clickable}`);
         }
         expect(result.status).toBe(0);
     }, 300_000);
@@ -97,11 +102,11 @@ describe("dist/index.d.ts", () => {
         // the rolled-up d.ts is supposed to be fully self-contained so that
         // consumers never need to install any of our build-time dependencies.
         const external = [...specifiers].filter((s) => !s.startsWith("./") && !s.startsWith("../"));
-        expect(external, `dist/index.d.ts leaks types from external modules: ${external.join(", ")}`).toEqual([]);
+        expect(external, `build/index.d.ts leaks types from external modules: ${external.join(", ")}`).toEqual([]);
     });
 });
 
-describe("dist/package.json", () => {
+describe("build/package.json", () => {
     it("declares no runtime dependencies", () => {
         expect(existsSync(PACKAGE_JSON_PATH)).toBe(true);
 

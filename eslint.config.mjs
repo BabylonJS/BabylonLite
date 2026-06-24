@@ -15,6 +15,7 @@ export default tseslint.config(
         ignores: [
             "dist/**",
             "**/dist/**",
+            "packages/babylon-lite/build/**",
             "pages-dist/**",
             "node_modules/**",
             "**/node_modules/**",

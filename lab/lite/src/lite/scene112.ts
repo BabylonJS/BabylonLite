@@ -14,7 +14,7 @@ import {
     startEngine,
     type RenderTask,
 } from "babylon-lite";
-import { addDdsEnvironmentBackground } from "../../../../packages/babylon-lite/src/material/pbr/background-dds-environment.js";
+import { addDdsEnvironmentBackground } from "babylon-lite/material/pbr/background-dds-environment.js";
 
 const MODEL_URL = "https://raw.githubusercontent.com/BabylonJS/Assets/master/meshes/FlightHelmetKTX/FlightHelmet.gltf";
 

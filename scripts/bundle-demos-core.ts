@@ -26,7 +26,6 @@ import {
     labDir,
     srcDir,
     outDir,
-    wgslMinifyPlugin,
     terserPropertyManglePlugin,
     isLiteBundleExternal,
     writeBundleInfo,
@@ -36,6 +35,7 @@ import {
     LITE_BUNDLE_TARGET,
     NAME_POLYFILL,
 } from "./bundle-scenes-core";
+import { wgslMinifyPlugin } from "./wgsl-minify-plugin";
 import { fetchDemoAssets } from "./demo-fetchers";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -271,6 +271,11 @@ export async function buildDemo(slug: string): Promise<void> {
         logLevel: "warn",
         plugins: [wgslMinifyPlugin({ mangle: false }), terserPropertyManglePlugin(), minimalVitePreloadPlugin()],
         resolve: {
+            // Demos resolve `babylon-lite` to the TS SOURCE (not `build/lib`) on purpose:
+            // demos have no bundle-size ceilings, and using source keeps the dev iteration
+            // loop fast (no package rebuild required to see demo changes). Demo sizes could
+            // therefore differ slightly from a real consumer's, but the scene bundle-size
+            // tests (which DO build against `build/lib`) are what guard against size drift.
             alias: { "babylon-lite": srcDir },
             dedupe: ["@babylonjs/core"],
         },
