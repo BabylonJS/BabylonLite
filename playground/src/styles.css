@@ -127,11 +127,102 @@ body {
 
 .pane-editor {
     border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+}
+
+.file-tabs {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: stretch;
+    gap: 1px;
+    overflow-x: auto;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    height: 2.1rem;
+}
+
+.file-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0 0.5rem;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    background: transparent;
+    border-right: 1px solid var(--border);
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.file-tab.is-active {
+    color: var(--text);
+    background: var(--bg);
+}
+
+.file-tab-dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    padding: 0;
+    border: 1px solid var(--text-dim);
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+.file-tab.is-entry .file-tab-dot {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.file-tab-label {
+    cursor: pointer;
+}
+
+.file-tab-rename {
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    padding: 0 0.2rem;
+    width: 8rem;
+}
+
+.file-tab-close {
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 0.95rem;
+    line-height: 1;
+    padding: 0 0.15rem;
+}
+
+.file-tab-close:hover {
+    color: #ff6b6b;
+}
+
+.file-tab-add {
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 0 0.6rem;
+    flex: 0 0 auto;
+}
+
+.file-tab-add:hover {
+    color: var(--text);
 }
 
 #editor {
-    position: absolute;
-    inset: 0;
+    flex: 1 1 auto;
+    min-height: 0;
+    position: relative;
 }
 
 .pane-preview {

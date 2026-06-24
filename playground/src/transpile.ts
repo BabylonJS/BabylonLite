@@ -14,25 +14,96 @@ function ensureInitialized(): Promise<void> {
     return initPromise;
 }
 
+const LITE_SPECIFIER = "@babylonjs/lite";
+
+function loaderFor(name: string): esbuild.Loader {
+    if (name.endsWith(".js") || name.endsWith(".jsx")) {
+        return "jsx";
+    }
+    if (name.endsWith(".json")) {
+        return "json";
+    }
+    return "ts";
+}
+
+/** Resolve a relative import against its importer within the flat virtual file set. */
+function resolveRelative(importer: string, request: string, files: Record<string, string>): string | undefined {
+    const baseDir = importer.includes("/") ? importer.slice(0, importer.lastIndexOf("/")) : "";
+    const parts = baseDir ? baseDir.split("/") : [];
+    for (const segment of request.split("/")) {
+        if (segment === "" || segment === ".") {
+            continue;
+        }
+        if (segment === "..") {
+            parts.pop();
+        } else {
+            parts.push(segment);
+        }
+    }
+    const path = parts.join("/");
+    const candidates = [path, `${path}.ts`, `${path}.tsx`, `${path}.js`, `${path}.jsx`, `${path}.json`, `${path}/index.ts`, `${path}/index.js`];
+    return candidates.find((candidate) => files[candidate] !== undefined);
+}
+
 /**
- * Transpile the user's TypeScript snippet to runnable ESM.
- *
- * Phase 1 is single-file: bare imports (e.g. `@babylonjs/lite`) are preserved
- * verbatim and resolved by the runner iframe's import map at execution time. A
- * future multi-file phase will switch this to a bundling build with virtual-FS
- * resolution and `@babylonjs/lite*` marked external.
+ * esbuild plugin that resolves the project's own files from an in-memory map and
+ * keeps `@babylonjs/lite` (and any other bare specifier) external, so the runner
+ * iframe's import map resolves the engine at run time.
  */
-export async function transpile(source: string): Promise<string> {
+function virtualFilesPlugin(files: Record<string, string>): esbuild.Plugin {
+    return {
+        name: "playground-virtual-files",
+        setup(build) {
+            build.onResolve({ filter: /.*/ }, (args) => {
+                if (args.path === LITE_SPECIFIER || args.path.startsWith(`${LITE_SPECIFIER}/`)) {
+                    return { path: args.path, external: true };
+                }
+                if (args.kind === "entry-point") {
+                    return { path: args.path, namespace: "virtual" };
+                }
+                if (args.path.startsWith(".")) {
+                    const resolved = resolveRelative(args.importer, args.path, files);
+                    if (!resolved) {
+                        return { errors: [{ text: `Cannot resolve '${args.path}' from '${args.importer}'` }] };
+                    }
+                    return { path: resolved, namespace: "virtual" };
+                }
+                // Any other bare specifier is left external for the import map / CDN.
+                return { path: args.path, external: true };
+            });
+
+            build.onLoad({ filter: /.*/, namespace: "virtual" }, (args) => {
+                const contents = files[args.path];
+                if (contents === undefined) {
+                    return { errors: [{ text: `Missing file '${args.path}'` }] };
+                }
+                return { contents, loader: loaderFor(args.path) };
+            });
+        },
+    };
+}
+
+/**
+ * Bundle the user's multi-file TypeScript project to a single runnable ES module.
+ *
+ * Files import each other with relative specifiers (e.g. `import { make } from
+ * "./scene"`); those are resolved from the in-memory `files` map and bundled.
+ * `@babylonjs/lite` stays external and is resolved by the runner iframe's import
+ * map at execution time. An inline source map keeps frames mapped to their
+ * original file, and `//# sourceURL` keeps uncaught errors readable.
+ */
+export async function transpile(files: Record<string, string>, entry: string): Promise<string> {
     await ensureInitialized();
-    const result = await esbuild.transform(source, {
-        loader: "ts",
+    const result = await esbuild.build({
+        entryPoints: [entry],
+        bundle: true,
+        write: false,
         format: "esm",
         target: "esnext",
         sourcemap: "inline",
-        sourcefile: "playground.ts",
+        plugins: [virtualFilesPlugin(files)],
+        logLevel: "silent",
     });
-    // Name the module so runtime error stacks read `playground.ts:<line>` rather
-    // than an opaque `blob:` URL. esbuild's `transform` preserves line numbers,
-    // so the reported line matches the user's snippet line.
-    return `${result.code}\n//# sourceURL=playground.ts\n`;
+    const output = result.outputFiles?.[0]?.text ?? "";
+    return `${output}\n//# sourceURL=playground.js\n`;
 }

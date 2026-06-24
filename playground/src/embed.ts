@@ -141,10 +141,13 @@ export function decodeCodeHash(hash: string): string | null {
 
 /**
  * Build a deep link that opens the full standalone playground (no embed) with the
- * given content — preferring a saved snippet id, falling back to inline `#code=`.
+ * given content — preferring a saved snippet id, falling back to an inline
+ * `#code=` fragment. The fragment carries the whole project as JSON so multi-file
+ * snippets survive the handoff; {@link decodeCodeHash} returns that JSON string
+ * (or plain source for legacy single-file links) for the caller to interpret.
  */
-export function openInPlaygroundUrl(code: string, snippetId: string | null): string {
+export function openInPlaygroundUrl(payload: string, snippetId: string | null): string {
     const base = `${location.origin}${location.pathname}`;
-    const fragment = snippetId ? snippetId : `${CODE_HASH_PREFIX}${encodeCodeHash(code)}`;
+    const fragment = snippetId ? snippetId : `${CODE_HASH_PREFIX}${encodeCodeHash(payload)}`;
     return `${base}#${fragment}`;
 }

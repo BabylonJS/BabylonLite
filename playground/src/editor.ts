@@ -64,20 +64,44 @@ export async function registerEngineTypes(): Promise<void> {
 }
 
 export interface PlaygroundEditor {
-    getValue(): string;
-    setValue(value: string): void;
+    /** Replace the entire project: dispose existing models, create one per file. */
+    setFiles(files: Record<string, string>, entry: string): void;
+    /** Snapshot of every file's current content, keyed by filename. */
+    getFiles(): Record<string, string>;
+    /** Filenames in tab order. */
+    getFileNames(): string[];
+    /** The entry file that the runner bundles from. */
+    getEntry(): string;
+    setEntry(name: string): void;
+    /** The file currently shown in the editor. */
+    getActive(): string;
+    setActive(name: string): void;
+    addFile(name: string, content?: string): void;
+    renameFile(oldName: string, newName: string): void;
+    removeFile(name: string): void;
     format(): void;
+    /** Subscribe to file-set / active-file changes (for the tab bar). */
+    onChange(listener: () => void): void;
+}
+
+function languageForFile(name: string): string {
+    return name.endsWith(".js") || name.endsWith(".jsx") ? "javascript" : "typescript";
 }
 
 /**
- * Create the Monaco editor backed by a `file:///main.ts` model (so module
- * resolution against the registered `@babylonjs/lite` types works), with a
- * Ctrl/Cmd+Enter run shortcut.
+ * Create the multi-file Monaco editor. Each file is backed by its own model under
+ * a `file:///<name>` URI so TypeScript resolves both the ambient `@babylonjs/lite`
+ * module and relative imports between the project's own files. A single editor view
+ * swaps between models as the active file changes, with a Ctrl/Cmd+Enter run shortcut.
  */
-export function createEditor(container: HTMLElement, value: string, onRun: () => void): PlaygroundEditor {
-    const model = monaco.editor.createModel(value, "typescript", monaco.Uri.parse("file:///main.ts"));
+export function createEditor(container: HTMLElement, files: Record<string, string>, entry: string, onRun: () => void): PlaygroundEditor {
+    const models = new Map<string, monaco.editor.ITextModel>();
+    const order: string[] = [];
+    let activeName = entry;
+    let entryName = entry;
+    const listeners: Array<() => void> = [];
+
     const editor = monaco.editor.create(container, {
-        model,
         theme: "vs-dark",
         automaticLayout: true,
         fontSize: 13,
@@ -85,29 +109,157 @@ export function createEditor(container: HTMLElement, value: string, onRun: () =>
         scrollBeyondLastLine: false,
         tabSize: 4,
     });
-
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, onRun);
 
+    const emit = (): void => listeners.forEach((listener) => listener());
+
+    function modelUri(name: string): monaco.Uri {
+        return monaco.Uri.parse(`file:///${name}`);
+    }
+
+    function createModel(name: string, content: string): monaco.editor.ITextModel {
+        // Reuse a stale model at the same URI if Monaco hasn't disposed it yet.
+        const existing = monaco.editor.getModel(modelUri(name));
+        existing?.dispose();
+        const model = monaco.editor.createModel(content, languageForFile(name), modelUri(name));
+        models.set(name, model);
+        return model;
+    }
+
+    function disposeAll(): void {
+        for (const model of models.values()) {
+            model.dispose();
+        }
+        models.clear();
+        order.length = 0;
+    }
+
+    function setActive(name: string): void {
+        const model = models.get(name);
+        if (!model) {
+            return;
+        }
+        activeName = name;
+        editor.setModel(model);
+        emit();
+    }
+
+    function setFiles(next: Record<string, string>, nextEntry: string): void {
+        disposeAll();
+        const names = Object.keys(next);
+        for (const name of names) {
+            createModel(name, next[name] ?? "");
+            order.push(name);
+        }
+        entryName = next[nextEntry] !== undefined ? nextEntry : (names[0] ?? "index.ts");
+        if (!models.has(entryName)) {
+            // Guarantee at least one file exists.
+            createModel(entryName, "");
+            order.push(entryName);
+        }
+        setActive(entryName);
+    }
+
+    function uniqueName(name: string): string {
+        if (!models.has(name)) {
+            return name;
+        }
+        const dot = name.lastIndexOf(".");
+        const stem = dot > 0 ? name.slice(0, dot) : name;
+        const ext = dot > 0 ? name.slice(dot) : "";
+        let index = 2;
+        while (models.has(`${stem}${index}${ext}`)) {
+            index++;
+        }
+        return `${stem}${index}${ext}`;
+    }
+
+    function addFile(name: string, content = ""): void {
+        const finalName = uniqueName(name);
+        createModel(finalName, content);
+        order.push(finalName);
+        setActive(finalName);
+    }
+
+    function renameFile(oldName: string, rawNew: string): void {
+        const newName = rawNew.trim();
+        const model = models.get(oldName);
+        if (!model || !newName || newName === oldName || models.has(newName)) {
+            return;
+        }
+        // Models are immutable in their URI, so re-create under the new name.
+        const content = model.getValue();
+        model.dispose();
+        models.delete(oldName);
+        createModel(newName, content);
+        order[order.indexOf(oldName)] = newName;
+        if (entryName === oldName) {
+            entryName = newName;
+        }
+        if (activeName === oldName) {
+            setActive(newName);
+        } else {
+            emit();
+        }
+    }
+
+    function removeFile(name: string): void {
+        if (models.size <= 1 || !models.has(name)) {
+            return;
+        }
+        models.get(name)?.dispose();
+        models.delete(name);
+        order.splice(order.indexOf(name), 1);
+        if (entryName === name) {
+            entryName = order[0]!;
+        }
+        if (activeName === name) {
+            setActive(order[0]!);
+        } else {
+            emit();
+        }
+    }
+
+    setFiles(files, entry);
+
     if (import.meta.env.DEV) {
-        exposeDevDiagnostics(model);
+        exposeDevDiagnostics(() => models.get(entryName));
     }
 
     return {
-        getValue: () => editor.getValue(),
-        setValue: (value: string) => editor.setValue(value),
+        setFiles,
+        getFiles: () => Object.fromEntries(order.map((name) => [name, models.get(name)!.getValue()])),
+        getFileNames: () => [...order],
+        getEntry: () => entryName,
+        setEntry: (name: string) => {
+            if (models.has(name)) {
+                entryName = name;
+                emit();
+            }
+        },
+        getActive: () => activeName,
+        setActive,
+        addFile,
+        renameFile,
+        removeFile,
         format: () => void editor.getAction("editor.action.formatDocument")?.run(),
+        onChange: (listener: () => void) => listeners.push(listener),
     };
 }
 
 /**
  * Dev-only IntelliSense health probe. Exposes `window.__pgDiag()` returning the
- * TypeScript worker's semantic diagnostics for the user model and for the engine
+ * TypeScript worker's semantic diagnostics for the entry model and for the engine
  * declaration itself (so unresolved types inside the d.ts — e.g. WebGPU types —
  * are observable, since those never surface as editor squiggles). Stripped from
  * production builds via the `import.meta.env.DEV` guard.
  */
-function exposeDevDiagnostics(model: monaco.editor.ITextModel): void {
+function exposeDevDiagnostics(getModel: () => monaco.editor.ITextModel | undefined): void {
     const probe = async (): Promise<unknown> => {
+        const model = getModel();
+        if (!model) {
+            return { error: "no entry model" };
+        }
         const worker = await monaco.languages.typescript.getTypeScriptWorker();
         const client = await worker(model.uri);
         const engineDtsUri = "file:///node_modules/@babylonjs/lite/index.d.ts";

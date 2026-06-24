@@ -20,6 +20,12 @@ const MANIFEST_VERSION = 2;
 const LITE_KIND = "babylon-lite";
 const ENTRY_FILE = "index.ts";
 
+/** A multi-file playground project: a flat map of files plus the bundle entry. */
+export interface Project {
+    files: Record<string, string>;
+    entry: string;
+}
+
 export interface SnippetMeta {
     name?: string;
     description?: string;
@@ -36,7 +42,8 @@ export interface SavedSnippet {
 }
 
 export interface LoadedSnippet {
-    code: string;
+    files: Record<string, string>;
+    entry: string;
     name: string;
     description: string;
     tags: string;
@@ -99,16 +106,18 @@ function baseSnippetId(snippetId: string): string {
 }
 
 /**
- * Save a snippet to the snippet server. Pass `existingId` to create a new
+ * Save a project to the snippet server. Pass `existingId` to create a new
  * revision of an already-saved snippet; omit it to create a brand-new snippet.
+ * All files are persisted in the V2 manifest's `files` map.
  */
-export async function saveSnippet(code: string, meta: SnippetMeta = {}, existingId?: string): Promise<SavedSnippet> {
+export async function saveSnippet(project: Project, meta: SnippetMeta = {}, existingId?: string): Promise<SavedSnippet> {
+    const entry = project.files[project.entry] !== undefined ? project.entry : (Object.keys(project.files)[0] ?? ENTRY_FILE);
     const manifest: V2Manifest = {
         v: MANIFEST_VERSION,
         language: "TS",
-        entry: ENTRY_FILE,
+        entry,
         imports: {},
-        files: { [ENTRY_FILE]: code },
+        files: { ...project.files },
         kind: LITE_KIND,
     };
     const manifestJson = JSON.stringify(manifest);
@@ -167,25 +176,27 @@ export async function loadSnippet(snippetId: string): Promise<LoadedSnippet> {
     // `code` holds the manifest JSON; `unicode` is a UTF-8-safe Base64 fallback.
     const manifestJson = payload.unicode ? decodeUnicode(payload.unicode) : (payload.code ?? "");
 
-    let code = manifestJson;
+    let files: Record<string, string> = { [ENTRY_FILE]: manifestJson };
+    let entry = ENTRY_FILE;
     try {
         const manifest = JSON.parse(manifestJson) as V2Manifest;
         if (manifest && manifest.files && typeof manifest.files === "object") {
             if (manifest.kind && manifest.kind !== LITE_KIND) {
                 throw new Error("This snippet was not created with the Babylon Lite playground.");
             }
-            const entry = manifest.entry || ENTRY_FILE;
-            code = manifest.files[entry] ?? Object.values(manifest.files)[0] ?? "";
+            files = manifest.files;
+            entry = manifest.files[manifest.entry] !== undefined ? manifest.entry : (Object.keys(manifest.files)[0] ?? ENTRY_FILE);
         }
     } catch (err) {
         if (err instanceof Error && err.message.includes("Babylon Lite")) {
             throw err;
         }
-        // Otherwise `manifestJson` was raw (legacy) code — use it verbatim.
+        // Otherwise `manifestJson` was raw (legacy) code — use it verbatim as the entry file.
     }
 
     return {
-        code,
+        files,
+        entry,
         name: envelope.name ?? "",
         description: envelope.description ?? "",
         tags: envelope.tags ?? "",

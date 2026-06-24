@@ -1,13 +1,15 @@
 import "./styles.css";
 import { createEditor, registerEngineTypes } from "./editor";
+import { mountFileTabs } from "./file-tabs";
 import { transpile } from "./transpile";
 import { Runner, type RunnerMessage } from "./runner";
-import { EXAMPLES, DEFAULT_SNIPPET } from "./examples";
-import { saveSnippet, loadSnippet, permalinkFor, snippetIdFromHash, type SnippetMeta } from "./snippets";
+import { EXAMPLES, DEFAULT_PROJECT, projectFor } from "./examples";
+import { saveSnippet, loadSnippet, permalinkFor, snippetIdFromHash, type SnippetMeta, type Project } from "./snippets";
 import { getEmbedMode, decodeCodeHash, openInPlaygroundUrl, EmbedHost } from "./embed";
 import { NIGHTLY, engineUrlForVersion, fetchPublishedVersions } from "./versions";
 
 const editorContainer = document.getElementById("editor") as HTMLElement;
+const fileTabsContainer = document.getElementById("fileTabs") as HTMLElement;
 const previewHost = document.getElementById("previewHost") as HTMLElement;
 const consoleEl = document.getElementById("console") as HTMLElement;
 const runBtn = document.getElementById("runBtn") as HTMLButtonElement;
@@ -102,7 +104,7 @@ async function run(): Promise<void> {
     clearConsole();
     appendConsole("system", "Compiling…");
     try {
-        const code = await transpile(editor.getValue());
+        const code = await transpile(editor.getFiles(), editor.getEntry());
         appendConsole("system", "Running…");
         await runner.run(code, engineUrlForVersion(currentVersion));
     } catch (err) {
@@ -117,7 +119,13 @@ async function run(): Promise<void> {
     }
 }
 
-const editor = createEditor(editorContainer, DEFAULT_SNIPPET, () => void run());
+const editor = createEditor(editorContainer, DEFAULT_PROJECT.files, DEFAULT_PROJECT.entry, () => void run());
+mountFileTabs(fileTabsContainer, editor);
+
+/** Current editor content as a saveable project. */
+function currentProject(): Project {
+    return { files: editor.getFiles(), entry: editor.getEntry() };
+}
 
 // Populate the examples picker.
 for (const example of EXAMPLES) {
@@ -136,7 +144,7 @@ examplesEl.addEventListener("change", () => {
         if (location.hash) {
             history.replaceState(null, "", location.pathname + location.search);
         }
-        editor.setValue(example.code);
+        editor.setFiles(projectFor(example).files, projectFor(example).entry);
         void run();
     }
 });
@@ -173,7 +181,7 @@ async function save(meta: SnippetMeta): Promise<void> {
     saveDetailsBtn.disabled = true;
     showToast("Saving…");
     try {
-        const result = await saveSnippet(editor.getValue(), meta, currentSnippetId ?? undefined);
+        const result = await saveSnippet(currentProject(), meta, currentSnippetId ?? undefined);
         currentSnippetId = result.snippetId;
         currentMeta = meta;
         history.replaceState(null, "", `#${result.snippetId}`);
@@ -212,12 +220,14 @@ saveDialog.addEventListener("submit", () => {
 });
 
 async function loadFromHash(): Promise<boolean> {
-    // Inline code handed off from an embed via `#code=<base64url>`.
-    const inlineCode = decodeCodeHash(location.hash);
-    if (inlineCode !== null) {
+    // Inline content handed off from an embed via `#code=<base64url>`. The fragment
+    // carries either a project JSON (`{files,entry}`) or, for legacy links, raw source.
+    const inline = decodeCodeHash(location.hash);
+    if (inline !== null) {
         currentSnippetId = null;
         currentMeta = {};
-        editor.setValue(inlineCode);
+        const project = parseProject(inline);
+        editor.setFiles(project.files, project.entry);
         history.replaceState(null, "", location.pathname + location.search);
         return true;
     }
@@ -230,7 +240,7 @@ async function loadFromHash(): Promise<boolean> {
         const snippet = await loadSnippet(snippetId);
         currentSnippetId = snippetId;
         currentMeta = { name: snippet.name, description: snippet.description, tags: snippet.tags };
-        editor.setValue(snippet.code);
+        editor.setFiles(snippet.files, snippet.entry);
         toastEl.hidden = true;
         return true;
     } catch (err) {
@@ -239,11 +249,24 @@ async function loadFromHash(): Promise<boolean> {
     }
 }
 
+/** Interpret a `#code=` payload as a project, falling back to a single entry file. */
+function parseProject(payload: string): Project {
+    try {
+        const parsed = JSON.parse(payload) as Partial<Project>;
+        if (parsed && parsed.files && typeof parsed.files === "object" && parsed.entry) {
+            return { files: parsed.files, entry: parsed.entry };
+        }
+    } catch {
+        // Not JSON — treat as plain single-file source.
+    }
+    return { files: { "index.ts": payload }, entry: "index.ts" };
+}
+
 // "Open in Lite Playground" hands the current content off to the full standalone
 // playground (preferring a saved snippet id, falling back to inline `#code=`).
 openFullBtn.addEventListener("click", (event) => {
     event.preventDefault();
-    window.open(openInPlaygroundUrl(editor.getValue(), currentSnippetId), "_blank", "noopener");
+    window.open(openInPlaygroundUrl(JSON.stringify(currentProject()), currentSnippetId), "_blank", "noopener");
 });
 
 // In embed mode, expose the postMessage API so a host page can drive the
@@ -253,7 +276,10 @@ if (embedMode) {
         loadCode: (code, runAfter) => {
             currentSnippetId = null;
             currentMeta = {};
-            editor.setValue(code);
+            // The embed API is single-file: replace just the entry file's content.
+            const files = editor.getFiles();
+            files[editor.getEntry()] = code;
+            editor.setFiles(files, editor.getEntry());
             if (runAfter) {
                 void run();
             }
@@ -263,7 +289,7 @@ if (embedMode) {
             runner.dispose();
             clearConsole();
         },
-        getCode: () => editor.getValue(),
+        getCode: () => editor.getFiles()[editor.getEntry()] ?? "",
     });
 }
 

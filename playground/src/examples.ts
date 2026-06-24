@@ -2,6 +2,9 @@ export interface Example {
     id: string;
     label: string;
     code: string;
+    /** Optional multi-file project. When present, `code` is the entry file's content. */
+    files?: Record<string, string>;
+    entry?: string;
 }
 
 const BOOMBOX = `import {
@@ -91,9 +94,83 @@ async function main(): Promise<void> {
 main().catch((err) => console.error(err));
 `;
 
+// Multi-file example: the entry wires up the engine and delegates scene building to
+// a sibling module imported with a relative path. esbuild bundles them at run time.
+const MULTIFILE_INDEX = `import { createEngine, createSceneContext, attachControl, registerScene, startEngine } from "@babylonjs/lite";
+import { buildScene } from "./scene";
+
+async function main(): Promise<void> {
+    const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
+
+    const engine = await createEngine(canvas);
+    const scene = createSceneContext(engine);
+
+    const camera = buildScene(engine, scene);
+    attachControl(camera, canvas, scene);
+
+    await registerScene(scene);
+    await startEngine(engine);
+}
+
+main().catch((err) => console.error(err));
+`;
+
+const MULTIFILE_SCENE = `import {
+    addToScene,
+    createArcRotateCamera,
+    createBox,
+    createGround,
+    createHemisphericLight,
+    createStandardMaterial,
+    type EngineContext,
+    type SceneContext,
+} from "@babylonjs/lite";
+
+export function buildScene(engine: EngineContext, scene: SceneContext) {
+    scene.clearColor = { r: 0.05, g: 0.06, b: 0.09, a: 1 };
+
+    const camera = createArcRotateCamera(-Math.PI / 2, 1.1, 6, { x: 0, y: 0.5, z: 0 });
+    scene.camera = camera;
+
+    addToScene(scene, createHemisphericLight([0, 1, 0], 1.0));
+
+    const box = createBox(engine, 1);
+    box.position.set(0, 0.5, 0);
+    const boxMat = createStandardMaterial();
+    boxMat.diffuseColor = [0.85, 0.34, 0.2];
+    box.material = boxMat;
+    addToScene(scene, box);
+
+    const ground = createGround(engine, { width: 8, height: 8 });
+    const groundMat = createStandardMaterial();
+    groundMat.diffuseColor = [0.2, 0.23, 0.27];
+    ground.material = groundMat;
+    addToScene(scene, ground);
+
+    return camera;
+}
+`;
+
 export const EXAMPLES: Example[] = [
     { id: "boombox", label: "glTF — BoomBox (PBR + environment)", code: BOOMBOX },
     { id: "primitives", label: "Primitives — box + ground", code: PRIMITIVES },
+    {
+        id: "multifile",
+        label: "Multi-file — index + scene module",
+        code: MULTIFILE_INDEX,
+        files: { "index.ts": MULTIFILE_INDEX, "scene.ts": MULTIFILE_SCENE },
+        entry: "index.ts",
+    },
 ];
 
 export const DEFAULT_SNIPPET = EXAMPLES[0]!.code;
+
+/** Resolve an example to a multi-file project (single-file examples get one `index.ts`). */
+export function projectFor(example: Example): { files: Record<string, string>; entry: string } {
+    if (example.files && example.entry) {
+        return { files: { ...example.files }, entry: example.entry };
+    }
+    return { files: { "index.ts": example.code }, entry: "index.ts" };
+}
+
+export const DEFAULT_PROJECT = projectFor(EXAMPLES[0]!);

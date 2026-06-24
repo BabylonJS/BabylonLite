@@ -32,7 +32,7 @@ each run starts from a clean slate and can't break the surrounding UI.
 
 ```mermaid
 flowchart LR
-    editor["Monaco editor<br/>(TypeScript)"] -->|getValue| transpile["esbuild-wasm<br/>transpile → ESM"]
+    editor["Monaco editor<br/>(one model per file)"] -->|getFiles + entry| transpile["esbuild-wasm<br/>bundle → ESM"]
     transpile -->|module code| runner["Runner (main.ts)"]
     runner -->|new iframe + code| frame["runner.html<br/>sandboxed iframe"]
     frame -->|import map| engine["@babylonjs/lite<br/>(nightly or esm.sh)"]
@@ -42,10 +42,17 @@ flowchart LR
     main --> editor
 ```
 
-- **Editor** (`src/editor.ts`) — Monaco editing TypeScript, with the engine's
-  rolled-up `.d.ts` wired in as the ambient `@babylonjs/lite` module for IntelliSense.
-- **Transpile** (`src/transpile.ts`) — `esbuild-wasm` turns the snippet into an ES
-  module in-browser, with an inline source map so runtime stacks read `playground.ts:<line>`.
+- **Editor** (`src/editor.ts`) — Monaco editing TypeScript across multiple files
+  (one model per file under a `file:///<name>` URI, so both `@babylonjs/lite` and
+  relative imports between files resolve), with the engine's rolled-up `.d.ts` wired
+  in as the ambient `@babylonjs/lite` module for IntelliSense.
+- **File tabs** (`src/file-tabs.ts`) — the horizontal tab bar above the editor:
+  add (`+`), rename (double-click), delete (`×`), and pick the bundle entry file
+  (the dot on each tab).
+- **Transpile** (`src/transpile.ts`) — `esbuild-wasm` bundles the project's files
+  in-browser, starting from the entry file and resolving relative imports from an
+  in-memory file map while keeping `@babylonjs/lite` external. An inline source map
+  keeps runtime stacks mapped to the original files.
 - **Runner** (`src/runner.ts` + `public/runner.html`) — a sandboxed iframe hosts the
   WebGPU canvas and an import map resolving `@babylonjs/lite` to the chosen engine
   bundle. Each run recreates the iframe (clean teardown); it relays `console` /
@@ -71,8 +78,9 @@ playground/
 │  └─ engine/dev/            # Generated nightly engine bundle (git-ignored)
 └─ src/
    ├─ main.ts                # App glue: toolbar, run loop, snippets, embed, versions
-   ├─ editor.ts              # Monaco setup + engine-typed IntelliSense
-   ├─ transpile.ts           # esbuild-wasm TS → ESM
+   ├─ editor.ts              # Monaco multi-model setup + engine-typed IntelliSense
+   ├─ file-tabs.ts           # Horizontal file-tab bar (add/rename/delete/entry)
+   ├─ transpile.ts           # esbuild-wasm multi-file bundle → ESM
    ├─ runner.ts              # Owns/recreates the runner iframe
    ├─ examples.ts            # Built-in example snippets
    ├─ snippets.ts            # Save/load against the Babylon snippet server
@@ -104,6 +112,31 @@ The toolbar's version selector chooses which engine the runner loads:
   and applied via the runner's import map. The list is read from the npm registry.
 
 `public/engine/dev/` and `dist/` are generated and git-ignored.
+
+## Multiple files
+
+Projects can span several files, like the classic playground's multi-file snippets.
+The file-tab bar above the editor manages them:
+
+- **Add** — the `+` button creates a new `.ts` file.
+- **Rename** — double-click a tab's name, edit, then press Enter.
+- **Delete** — the `×` on a tab (disabled when only one file remains).
+- **Entry** — the dot on each tab marks the bundle entry point; click another
+  tab's dot to make it the entry. The runner bundles starting from the entry file.
+
+Files import each other with relative specifiers, e.g. from `index.ts`:
+
+```ts
+import { buildScene } from "./scene";
+```
+
+At run time `esbuild-wasm` bundles the entry file and everything it imports into a
+single ES module, resolving relative imports from the in-memory file set while
+keeping `@babylonjs/lite` external (resolved by the runner's import map). The
+**Multi-file** example seeds a two-file project (`index.ts` + `scene.ts`).
+
+All files are persisted in the snippet manifest's `files` map, so saving and
+loading round-trips the whole project.
 
 ## Snippets
 
@@ -145,10 +178,14 @@ Every message carries `channel: "babylon-lite-playground"`. The host sends:
 
 | `type`     | fields            | effect                                        |
 | ---------- | ----------------- | --------------------------------------------- |
-| `loadCode` | `code`, `run?`    | replace the editor content; run if `run` true |
+| `loadCode` | `code`, `run?`    | replace the entry file's content; run if `run` true |
 | `run`      | —                 | run the current code                          |
 | `dispose`  | —                 | tear down the running scene                   |
-| `getCode`  | —                 | request the current code (replies with `code`)|
+| `getCode`  | —                 | request the entry file's content (replies with `code`)|
+
+The `loadCode`/`getCode` API is single-file and targets the entry file. To move a
+full multi-file project between the embed and the standalone app, use the **Open in
+Lite Playground** handoff (which carries every file).
 
 The embed emits back to the host:
 
@@ -175,8 +212,9 @@ window.addEventListener("message", (e) => {
 ### Deep links
 
 - `#<id>` / `#<id>#<rev>` — load a saved snippet (see Snippets).
-- `#code=<base64url>` — load inline source. The embed's **Open in Lite Playground**
-  button uses this (or a snippet id when saved) to hand the current code off to the
+- `#code=<base64url>` — load an inline project (base64url of the project JSON, or
+  plain source for legacy links). The embed's **Open in Lite Playground** button
+  uses this (or a snippet id when saved) to hand the current project off to the
   full standalone playground in a new tab.
 
 ## Deployment
