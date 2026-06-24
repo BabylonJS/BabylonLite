@@ -6,6 +6,7 @@ import type { LightBase } from "../light/types.js";
 import type { Mesh } from "../mesh/mesh.js";
 import { disposeMeshGpu } from "../mesh/mesh-dispose.js";
 import { registerMeshScene, unregisterMeshScene, enqueueMaterialSwap } from "./mesh-scene-registry.js";
+import { processMaterialSwaps } from "./scene-material-swap.js";
 import type { AnimationGroup } from "../animation/animation-group.js";
 import type { ShadowGenerator } from "../shadow/shadow-generator.js";
 import type { FogConfig } from "../material/standard/standard-material.js";
@@ -104,8 +105,12 @@ export interface SceneContext extends RenderingContext {
     _materialSwapQueue: Mesh[];
     /** @internal Monotonic counter bumped when the renderable list changes (add/remove/rebuild). */
     _renderableVersion: number;
-    /** @internal Lazily-loaded processor; populated on first material reassignment. */
-    _processSwaps?: (scene: SceneContext) => void;
+    /** @internal Monotonic counter bumped ONLY when a material's renderables are rebuilt/swapped (material
+     *  swap drain or `rebuildMaterial`) — NOT on a geometry resize (which bumps `_renderableVersion` alone).
+     *  Lets consumers that cache material-view-derived GPU state (e.g. the CSM shadow tasks' no-color material
+     *  views) cheaply re-record on a geometry-only edit and only fully rebuild when a caster's material UBOs
+     *  were actually destroyed/recreated (which would otherwise leave their cached views dangling). */
+    _materialEpoch: number;
     /** True once the initial deferred build (buildScene) has run. Meshes added after
      *  this point are materialized via the per-frame swap drain rather than the
      *  boot-only deferred-builder path. */
@@ -168,6 +173,7 @@ export function createSceneContext(surface: SurfaceContext, options?: SceneConte
         _meshDisposables: new Map(),
         _materialSwapQueue: [],
         _renderableVersion: 0,
+        _materialEpoch: 0,
         _built: false,
         _drawCallsPre: 0,
 
@@ -190,7 +196,7 @@ export function createSceneContext(surface: SurfaceContext, options?: SceneConte
                 cb(d);
             }
             if (ctx._materialSwapQueue.length > 0) {
-                ctx._processSwaps?.(ctx);
+                processMaterialSwaps(ctx);
             }
             for (const pp of ctx._prePasses) {
                 draws += pp.execute(encoder, eng);

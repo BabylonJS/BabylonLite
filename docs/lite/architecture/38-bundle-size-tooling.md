@@ -22,7 +22,9 @@ Generated local and master breakdown data is ignored except for the tracked curr
 
 `local-manifest.json` is not part of the architecture and must not be used.
 
-When local runtime measurement subtracts ignored bytes, `measurePage()` prefers `master-manifest.json[scene].ignoredRawKB` when present. This keeps local and master bundle deltas comparable even if source-map attribution moves an ignored module between a source row and chunk overhead. The ignored set covers (a) local `*-nme.ts` NME data payloads and (b) the `text-shaper` third-party shaping library used only by the default-layout text path (`createDefaultTextData`); both are excluded so engine-size ceilings track our own runtime code.
+Scene bundles are built against the package's compiled **`build/lib`** output (the module-granular tree a real consumer of `@babylonjs/lite` resolves), not the TypeScript source — so the measured size is exactly what a downstream bundler produces. `pnpm build:bundle-scenes` runs `build:lib` first; it fails fast if `build/lib` is missing. (The lab dev app and the master-comparison bundle-info still resolve `babylon-lite` to source for a fast dev-iteration loop; their sizes may differ slightly, but these scene bundle-size tests are the authoritative guard against size drift.)
+
+Each scene's runtime measurement subtracts its own **ignored bytes**, computed from that build's own `bundle-info`. The ignored set covers (a) local `*-nme.ts` NME data payloads and (b) bundled third-party WASM/shaping runtimes — `text-shaper` (default-layout text), `manifold-3d` (CSG2), and `@recast-navigation` (navmesh) — each loaded only by the feature that needs it, so engine-size ceilings track our own runtime code. The ceiling check always uses the current build's own accounting; `master-manifest.json` is consulted only for the advisory "increased vs master" delta, never to compute the gated `rawKB`.
 
 ## File/Module Breakdown Semantics
 

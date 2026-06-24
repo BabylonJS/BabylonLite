@@ -54,15 +54,27 @@ function packageDir(projectRoot: string): string {
     return resolve(projectRoot, "packages/babylon-lite");
 }
 
+function findBuiltEntryPoint(packageDir: string): string {
+    // Try well-known output locations in preference order so this works for
+    // both the current branch (build/index.d.ts after relocateDts) and older
+    // checkouts where the output was in dist/ (e.g. the master baseline).
+    for (const candidate of ["build/index.d.ts", "dist/index.d.ts"]) {
+        const full = resolve(packageDir, candidate);
+        if (existsSync(full)) {
+            return full;
+        }
+    }
+    throw new Error(
+        `Cannot generate API report: no built index.d.ts found under ${packageDir} ` +
+            `(checked build/index.d.ts and dist/index.d.ts).`
+    );
+}
+
 function generateApiReport(projectRoot: string, outputDir: string): string {
     const currentPackageDir = packageDir(projectRoot);
-    const entryPoint = resolve(currentPackageDir, "dist/index.d.ts");
+    const entryPoint = findBuiltEntryPoint(currentPackageDir);
     const reportFolder = resolve(outputDir, "approved");
     const reportTempFolder = resolve(outputDir, "temp");
-
-    if (!existsSync(entryPoint)) {
-        throw new Error(`Cannot generate API report because ${entryPoint} does not exist.`);
-    }
 
     mkdirSync(reportFolder, { recursive: true });
     mkdirSync(reportTempFolder, { recursive: true });
@@ -204,7 +216,7 @@ function buildPackage(projectRoot: string, options: { installDependencies: boole
     if (options.installDependencies) {
         run("pnpm", ["install", "--frozen-lockfile"], projectRoot, { inheritStdio: true });
     }
-    run("pnpm", ["--filter", "babylon-lite", "exec", "vite", "build", "--logLevel", "warn"], projectRoot, { inheritStdio: true });
+    run("pnpm", ["--filter", "babylon-lite", "run", "build"], projectRoot, { inheritStdio: true });
 }
 
 function diffReports(rootDir: string, targetReport: string, currentReport: string): string {
@@ -410,13 +422,69 @@ function isNonBreakingConstLiteralWidening(removedLine: string, addedLine: strin
     return widenLiteralType(removed[2]!) === added[2]!.trim();
 }
 
+/**
+ * The TypedArray / buffer-view types that TypeScript 5.7 made generic over their
+ * backing buffer (`Float32Array` → `Float32Array<TArrayBuffer extends ArrayBufferLike>`).
+ * Older TypeScript libs render these without a type argument, so when the API-report
+ * baseline is built from a merge base that predates the TS bump, every typed-array
+ * member shows up as a removed/changed line (`Float32Array` ↔ `Float32Array<ArrayBuffer>`).
+ * That is a pure rendering change, not a public API break.
+ */
+const GENERIC_TYPED_ARRAY_NAMES = [
+    "Int8Array",
+    "Uint8Array",
+    "Uint8ClampedArray",
+    "Int16Array",
+    "Uint16Array",
+    "Int32Array",
+    "Uint32Array",
+    "Float16Array",
+    "Float32Array",
+    "Float64Array",
+    "BigInt64Array",
+    "BigUint64Array",
+];
+
+const GENERIC_TYPED_ARRAY_PATTERN = new RegExp(`\\b(${GENERIC_TYPED_ARRAY_NAMES.join("|")})<\\s*(?:ArrayBuffer|ArrayBufferLike)\\s*>`, "g");
+
+/**
+ * Drop the *implicit/default* buffer type argument from TypedArray types so two reports
+ * compare equal regardless of which TypeScript lib emitted them (e.g.
+ * `Float32Array<ArrayBuffer>` → `Float32Array`). Only `ArrayBuffer` / `ArrayBufferLike`
+ * — the argument inferred for an ordinary, non-shared typed array — is stripped. An
+ * explicit non-default backing buffer such as `SharedArrayBuffer` is left intact so a
+ * deliberate `Float32Array<ArrayBuffer>` → `Float32Array<SharedArrayBuffer>` change still
+ * reads as a real (breaking) API change.
+ */
+function normalizeTypedArrayGenerics(line: string): string {
+    return line.replace(GENERIC_TYPED_ARRAY_PATTERN, "$1");
+}
+
+/**
+ * Treat a member whose only change is a TypedArray gaining or losing its TS 5.7 *default*
+ * buffer type argument (e.g. `Float32Array` ↔ `Float32Array<ArrayBuffer>`) as non-breaking.
+ * The runtime type is unchanged; only the lib's textual rendering differs. A change to a
+ * non-default backing buffer (e.g. `SharedArrayBuffer`) is not normalized and stays breaking.
+ */
+function isNonBreakingTypedArrayGenericWidening(removedLine: string, addedLine: string): boolean {
+    if (removedLine === addedLine) {
+        return false;
+    }
+    return normalizeTypedArrayGenerics(removedLine) === normalizeTypedArrayGenerics(addedLine);
+}
+
 export function breakingApiLines(diff: string): string[] {
     const removedLines = collectChangedApiLines(diff, "-");
     const addedLines = collectChangedApiLines(diff, "+");
 
     return removedLines.filter(
         (removedLine) =>
-            !addedLines.some((addedLine) => isNonBreakingOptionalParameterExpansion(removedLine, addedLine) || isNonBreakingConstLiteralWidening(removedLine, addedLine))
+            !addedLines.some(
+                (addedLine) =>
+                    isNonBreakingOptionalParameterExpansion(removedLine, addedLine) ||
+                    isNonBreakingConstLiteralWidening(removedLine, addedLine) ||
+                    isNonBreakingTypedArrayGenericWidening(removedLine, addedLine)
+            )
     );
 }
 
