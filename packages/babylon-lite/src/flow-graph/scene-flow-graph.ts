@@ -6,7 +6,10 @@
 
 import { onBeforeRender, onSceneDispose, type SceneContext } from "../scene/scene-core.js";
 import type { FgRuntime } from "./runtime.js";
-import { disposeFlowGraph, startFlowGraph, tickFlowGraph } from "./runtime.js";
+import { createFgRuntime, disposeFlowGraph, startFlowGraph, tickFlowGraph } from "./runtime.js";
+import type { AnimationGroup } from "../animation/animation-group.js";
+import { playAnimation as agPlay, stopAnimation as agStop } from "../animation/animation-group.js";
+import type { FgCapabilities, LoadedFlowGraph } from "./context.js";
 
 /** Attach a flow-graph runtime to a scene. The runtime starts on the first
  *  frame (after which event listeners are live) and ticks every frame. The
@@ -43,4 +46,33 @@ export function detachFlowGraph(scene: SceneContext, rt: FgRuntime): void {
         }
     }
     disposeFlowGraph(rt);
+}
+
+/** Scene-owned animation capabilities backing the Play/Stop animation blocks.
+ *  Pure delegation to the animation-group functions so blocks never import the
+ *  scene. `from`/`to` frame-range playback is a Phase 3 refinement. */
+function sceneAnimationCaps(): FgCapabilities {
+    return {
+        playAnimation: (group: AnimationGroup, opts) => {
+            group.speedRatio = opts?.speed ?? 1;
+            group.loopAnimation = opts?.loop ?? false;
+            agPlay(group);
+        },
+        stopAnimation: (group: AnimationGroup) => agStop(group),
+    };
+}
+
+/** Build + attach a runtime for every flow graph loaded onto a container. Binds
+ *  the graph's pre-resolved accessors, the container's animation groups (indexed
+ *  by glTF order), and scene-owned animation capabilities, then drives each
+ *  runtime through the scene's frame loop. Returns the attached runtimes. */
+export async function runFlowGraphs(scene: SceneContext, loaded: readonly LoadedFlowGraph[], animations: readonly AnimationGroup[] = []): Promise<FgRuntime[]> {
+    const caps = sceneAnimationCaps();
+    const runtimes: FgRuntime[] = [];
+    for (const lg of loaded) {
+        const rt = await createFgRuntime(lg.graph, { accessors: lg.accessors, animations, caps }, { rightHanded: true });
+        attachFlowGraph(scene, rt);
+        runtimes.push(rt);
+    }
+    return runtimes;
 }

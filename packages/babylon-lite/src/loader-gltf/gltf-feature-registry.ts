@@ -59,6 +59,7 @@ const _features: [Trigger, Loader][] = [
     ["KHR_animation_pointer", () => import("./gltf-feature-animation-pointer.js")],
     ["EXT_mesh_gpu_instancing", () => import("./gltf-feature-gpu-instancing.js")],
     ["KHR_xmp_json_ld", () => import("./gltf-feature-xmp.js")],
+    ["KHR_interactivity", () => import("./gltf-feature-interactivity.js")],
 ];
 
 /** Dynamic-import every feature the asset triggers. */

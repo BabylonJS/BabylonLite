@@ -88,3 +88,13 @@ export interface FgWiring {
      *  tests (hand-built defs) and to override/extend the registry. */
     defs?: Record<string, FgBlockDef>;
 }
+
+/** A flow graph loaded from a file (e.g. glTF KHR_interactivity), carried on the
+ *  `AssetContainer` until `addToScene` wires it to the scene. Spec-agnostic: the
+ *  graph + its JSON-pointer accessors are fully resolved at load time; animations
+ *  and capabilities are bound at attach time from the scene/container. */
+export interface LoadedFlowGraph {
+    readonly graph: FgGraph;
+    /** JSON-pointer-string → resolved scene-object accessor. */
+    readonly accessors: Record<string, FgAccessor>;
+}

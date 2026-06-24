@@ -61,6 +61,23 @@ export function setDataValue(ctx: FgContext, block: FgBlock, socket: string, val
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Per-block execution variables (mutable runtime state, keyed by block id)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Read a block-local execution variable, falling back to `def` when unset.
+ *  Replaces BJS `context._getExecutionVariable(this, key, def)`. */
+export function getExecVar<T>(ctx: FgContext, block: FgBlock, key: string, def: T): T {
+    const slot = `${block.id}:${key}`;
+    return slot in ctx.executionVariables ? (ctx.executionVariables[slot] as T) : def;
+}
+
+/** Write a block-local execution variable.
+ *  Replaces BJS `context._setExecutionVariable(this, key, value)`. */
+export function setExecVar(ctx: FgContext, block: FgBlock, key: string, value: unknown): void {
+    ctx.executionVariables[`${block.id}:${key}`] = value;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Signal edges (PUSH)
 // ─────────────────────────────────────────────────────────────────────────────
 

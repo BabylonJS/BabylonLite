@@ -10,7 +10,7 @@ export type { FgBlockDef, FgBlockShape } from "./block-def.js";
 export { FgBlockType } from "./block-type.js";
 
 // Execution context & environment
-export type { FgAccessor, FgCapabilities, FgContext, FgEnv, FgPendingTask, FgWiring } from "./context.js";
+export type { FgAccessor, FgCapabilities, FgContext, FgEnv, FgPendingTask, FgWiring, LoadedFlowGraph } from "./context.js";
 
 // Event bus
 export type { FgEventBus, FgEventHandler, FgEventPayload } from "./event-bus.js";
@@ -29,7 +29,7 @@ export { fgMatrix2D, fgMatrix3D, isFgMatrix2D, isFgMatrix3D } from "./custom-typ
 export { getBlockDef } from "./block-registry.js";
 
 // Scene attachment
-export { attachFlowGraph, detachFlowGraph } from "./scene-flow-graph.js";
+export { attachFlowGraph, detachFlowGraph, runFlowGraphs } from "./scene-flow-graph.js";
 
 // Runtime functions + FgRuntime
 export type { FgRuntime } from "./runtime.js";
@@ -43,7 +43,9 @@ export {
     createFgRuntime,
     disposeFlowGraph,
     getDataValue,
+    getExecVar,
     setDataValue,
+    setExecVar,
     startFlowGraph,
     stillPending,
     tickFlowGraph,

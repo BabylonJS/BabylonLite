@@ -30,6 +30,9 @@ export interface AssetContainer {
      *  `enableBoneControl()` was called before loading; otherwise `undefined`.
      *  Drive bones via `getBoneByName()` + the `setBone*` functions. */
     skeletons?: Skeleton[];
+    /** Flow graphs parsed from the file (glTF KHR_interactivity). addToScene()
+     *  binds and runs them via the scene's frame loop. */
+    flowGraphs?: import("./flow-graph/context.js").LoadedFlowGraph[];
 }
 
 /**

@@ -134,7 +134,7 @@ export const branchDef: FgBlockDef = {
 import type { FgBlockDef } from "../../block-def.js";
 import { FgBlockType } from "../../block-type.js";
 import { FgType } from "../../types.js";
-import { getDataValue, activateSignal, addPending, cancelTasksFor } from "../../runtime.js";
+import { getDataValue, activateSignal, addPending, cancelPendingForBlock } from "../../runtime.js";
 import { sockIn, sigIn, sigOut } from "../../sockets.js";
 
 export const setDelayDef: FgBlockDef = {
@@ -146,7 +146,7 @@ export const setDelayDef: FgBlockDef = {
     }),
     execute(block, ctx, env, incomingSignal) {
         if (incomingSignal === "cancel") {
-            cancelTasksFor(ctx, block); // marks this block's tasks canceled
+            cancelPendingForBlock(ctx, block); // marks this block's tasks canceled
             return;
         }
         const seconds = getDataValue(ctx, env, block, "duration") as number;
