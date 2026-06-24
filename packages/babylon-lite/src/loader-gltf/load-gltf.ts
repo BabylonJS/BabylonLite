@@ -228,6 +228,9 @@ function assetUsesGltfFeatures(json: any) {
         JSON.stringify(json).includes("extras") ||
         (json.skins?.length && anyPrimitive(json, (p) => p.attributes?.JOINTS_0 !== undefined)) ||
         anyPrimitive(json, (p) => !!p.targets?.length) ||
+        // A negative-scale node, or any node using a raw `matrix`, may need the negative-winding
+        // feature (precise per-node determinant test happens in the registry predicate).
+        (json.nodes as any[] | undefined)?.some((n: any) => (n.scale && n.scale[0] * n.scale[1] * n.scale[2] < 0) || n.matrix !== undefined) ||
         needsOrmComposite(json)
     );
 }

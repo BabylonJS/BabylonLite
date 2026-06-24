@@ -2149,5 +2149,16 @@
         "description": "glTF Animation_SkinType_01: a skinned plane whose vertex WEIGHTS are a normalized UNSIGNED_BYTE accessor (componentType 5121). Validates denormalization of non-float skin weights (glTF-Asset-Generator Category B); Lite previously read them raw and exploded the skin. Frozen at seekTime=1.0.",
         "tags": ["gltf", "skeleton", "animation"],
         "skipPerf": true
+    },
+    {
+        "id": 257,
+        "slug": "scene257-negative-node-scale",
+        "name": "Scene 257 — Negative Node Scale",
+        "maxMad": 0.1,
+        "maxRegionMad": 0.5,
+        "maxRawKB": 79.5,
+        "description": "glTF Node_NegativeScale_01: two textured shapes, one mirrored via a negative-determinant matrix. Validates triangle-winding reversal for negative-determinant world transforms (glTF-Asset-Generator Category D); Lite previously culled the wrong faces on the mirrored copy.",
+        "tags": ["gltf", "transform"],
+        "skipPerf": true
     }
 ]

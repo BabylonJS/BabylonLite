@@ -50,6 +50,7 @@ const _features: [Trigger, Loader][] = [
     // Per-mesh features (predicates inlined to avoid eager imports)
     [(j) => !!j.skins?.length && anyPrimitive(j, (p) => p.attributes?.JOINTS_0 !== undefined), () => import("./gltf-feature-skeleton.js")],
     [(j) => anyPrimitive(j, (p) => !!p.targets?.length), () => import("./gltf-feature-morph.js")],
+    [hasNegDetNode, () => import("./gltf-feature-negative-winding.js")],
     // Per-asset features
     [hasGltfExtras, () => import("./gltf-feature-extras.js")],
     ["KHR_lights_punctual", () => import("./gltf-feature-lights-punctual.js")],
@@ -78,4 +79,24 @@ function hasGltfExtras(json: any): boolean {
         !!json.meshes?.some(hasExtras) ||
         anyPrimitive(json, hasExtras)
     );
+}
+
+/** True if any node introduces a negative-determinant local transform — a
+ *  negative scale (odd number of negative components) or a `matrix` with a
+ *  negative 3x3 determinant. Such a node (or a child of one) can flip a mesh's
+ *  net world determinant positive, reversing its triangle winding. Gates the
+ *  lazy negative-winding feature so positive-scale / pure-TRS assets never load
+ *  it. A positive-determinant `matrix` node over-triggers harmlessly (the
+ *  feature then finds a non-positive determinant per mesh and flags nothing). */
+function hasNegDetNode(json: any): boolean {
+    return !!(json.nodes as any[] | undefined)?.some((n) => {
+        if (n.scale) {
+            return n.scale[0] * n.scale[1] * n.scale[2] < 0;
+        }
+        if (n.matrix) {
+            const m = n.matrix;
+            return m[0] * (m[5] * m[10] - m[6] * m[9]) + m[1] * (m[6] * m[8] - m[4] * m[10]) + m[2] * (m[4] * m[9] - m[5] * m[8]) < 0;
+        }
+        return false;
+    });
 }

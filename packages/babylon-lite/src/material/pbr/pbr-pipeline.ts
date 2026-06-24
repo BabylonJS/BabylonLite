@@ -19,7 +19,7 @@ import type { Texture2D } from "../../texture/texture-2d.js";
 import type { _PbrBindCtx, PbrExt } from "./pbr-flags.js";
 import { _getPbrExtsSorted, PBR2_ESM_SHADOW_OUTPUT, PBR2_NO_COLOR_OUTPUT, PBR2_HAS_UV2 } from "./pbr-flags.js";
 import { PBR_HAS_NORMAL_MAP, PBR_HAS_EMISSIVE, PBR_HAS_SPEC_GLOSS, PBR_HAS_DOUBLE_SIDED, PBR_HAS_ALPHA_BLEND } from "./pbr-flags.js";
-import { MSH_HAS_TANGENTS, MSH_HAS_UV2 } from "../mesh-features.js";
+import { MSH_HAS_TANGENTS, MSH_HAS_UV2, MSH_REVERSE_WINDING } from "../mesh-features.js";
 import { REVERSE_DEPTH_COMPARE, targetSignatureKey } from "../../engine/render-target.js";
 import { getSceneBindGroupLayout } from "../../render/scene-helpers.js";
 
@@ -135,10 +135,14 @@ export function getOrCreatePbrPipeline(engine: EngineContext, sig: RenderTargetS
     }
 
     const device = engine._device;
-    const { _features: features, _features2: features2, _composed: composed } = bindings;
+    const { _features: features, _features2: features2, _composed: composed, _meshFeatures: meshFeatures } = bindings;
     const esmShadowOutput = (features2 & PBR2_ESM_SHADOW_OUTPUT) !== 0;
     const hasAlpha = !esmShadowOutput && (features & PBR_HAS_ALPHA_BLEND) !== 0;
     const hasDoubleSided = (features & PBR_HAS_DOUBLE_SIDED) !== 0;
+    // A mirrored mesh (positive world determinant, e.g. KHR negative node scale) has reversed
+    // triangle winding, so back-face culling must cull the FRONT face instead. Matches BJS, which
+    // flips sideOrientation when the world matrix determinant is negative.
+    const reverseWinding = (meshFeatures & MSH_REVERSE_WINDING) !== 0;
 
     const sceneBGL = getSceneBindGroupLayout(engine);
     const bgls: GPUBindGroupLayout[] = bindings._shadowBGL ? [sceneBGL, bindings._meshBGL, bindings._shadowBGL] : [sceneBGL, bindings._meshBGL];
@@ -174,7 +178,7 @@ export function getOrCreatePbrPipeline(engine: EngineContext, sig: RenderTargetS
               }
             : {}),
         multisample: { count: sig._sampleCount },
-        primitive: { topology: "triangle-list", cullMode: hasDoubleSided ? ("none" as GPUCullMode) : "back", frontFace: "ccw" },
+        primitive: { topology: "triangle-list", cullMode: hasDoubleSided ? ("none" as GPUCullMode) : reverseWinding ? "front" : "back", frontFace: "ccw" },
     });
     bindings._pipelines.set(key, pipeline);
     return pipeline;

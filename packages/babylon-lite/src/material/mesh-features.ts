@@ -12,6 +12,9 @@ export const MSH_RECEIVE_SHADOWS = 1 << 8;
 export const MSH_VAT = 1 << 9;
 /** Mesh has no NORMAL attribute → must be flat-shaded (glTF spec). */
 export const MSH_FLAT_NORMAL = 1 << 10;
+/** Mesh world transform has a positive determinant (mirrored vs the RH→LH root):
+ *  its triangle winding is reversed, so back-face culling must flip (cull "front"). */
+export const MSH_REVERSE_WINDING = 1 << 11;
 
 /** @internal Compute mesh/pass feature bits shared by material renderers. */
 export function _computeMeshFeatures(mesh: Mesh, receiveShadows = false): number {
@@ -50,6 +53,9 @@ export function _computeMeshFeatures(mesh: Mesh, receiveShadows = false): number
     }
     if ((mesh as { _flatNormal?: boolean })._flatNormal) {
         features |= MSH_FLAT_NORMAL;
+    }
+    if ((mesh as { _reverseWinding?: boolean })._reverseWinding) {
+        features |= MSH_REVERSE_WINDING;
     }
     if (receiveShadows) {
         features |= MSH_RECEIVE_SHADOWS;
