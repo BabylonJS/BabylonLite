@@ -8,13 +8,24 @@
 // Phase 3 as the math block library broadens.
 
 import { fgInt, isFgInt } from "./custom-types/fg-integer.js";
+import { isFgMatrix2D, isFgMatrix3D, fgMatrix2D, fgMatrix3D } from "./custom-types/fg-matrix.js";
+import type { FgMatrix2D, FgMatrix3D } from "./custom-types/fg-matrix.js";
 import type { FgValue, Vec2 } from "./types.js";
-import type { Quat, Vec3, Vec4 } from "../math/types.js";
+import type { Mat4, Quat, Vec3, Vec4 } from "../math/types.js";
 import { crossVec3 } from "../math/cross-vec3.js";
 import { dotVec3 } from "../math/dot-vec3.js";
+import { mat4Multiply } from "../math/mat4-multiply.js";
+import { mat4Invert } from "../math/mat4-invert.js";
+import { mat4Compose } from "../math/mat4-compose.js";
+import { mat4Decompose } from "../math/mat4-decompose.js";
+import { mat4Identity } from "../math/mat4-identity.js";
 
 function isVec2(v: unknown): v is Vec2 {
     return typeof v === "object" && v !== null && "x" in v && "y" in v && !("z" in v);
+}
+/** Runtime guard for `Mat4` (column-major Float32Array of length 16). */
+function isMat4(v: unknown): v is Mat4 {
+    return (v instanceof Float32Array || v instanceof Float64Array) && v.length === 16;
 }
 function isVec3(v: unknown): v is Vec3 {
     return typeof v === "object" && v !== null && "x" in v && "y" in v && "z" in v && !("w" in v);
@@ -574,4 +585,365 @@ export function fgConjugate(a: FgValue): FgValue {
         return { x: -a.x, y: -a.y, z: -a.z, w: a.w } as Quat;
     }
     return a;
+}
+
+// ─── Matrix ops (Phase 3f) ────────────────────────────────────────────────────
+
+/**
+ * Transform a vector by a matrix (`M · v`, column-major).
+ *
+ * Dispatch:
+ * - `Vec2 × FgMatrix2D` — 2×2 column-major multiply
+ * - `Vec3 × FgMatrix3D` — 3×3 column-major multiply
+ * - `Vec4 × Mat4`       — 4×4 column-major multiply (glTF `math/transform`)
+ *
+ * Equivalent to BJS `v × M` (row-vector) because Lite stores column-major while
+ * BJS stores row-major: the mathematical result is identical.
+ */
+export function fgTransformVector(v: FgValue, m: FgValue): FgValue {
+    if (isVec2(v) && isFgMatrix2D(m)) {
+        const mm = m.m;
+        return { x: mm[0]! * v.x + mm[2]! * v.y, y: mm[1]! * v.x + mm[3]! * v.y };
+    }
+    if (isVec3(v) && isFgMatrix3D(m)) {
+        const mm = m.m;
+        return {
+            x: mm[0]! * v.x + mm[3]! * v.y + mm[6]! * v.z,
+            y: mm[1]! * v.x + mm[4]! * v.y + mm[7]! * v.z,
+            z: mm[2]! * v.x + mm[5]! * v.y + mm[8]! * v.z,
+        };
+    }
+    if (isVec4(v) && isMat4(m)) {
+        return {
+            x: m[0]! * v.x + m[4]! * v.y + m[8]! * v.z + m[12]! * v.w,
+            y: m[1]! * v.x + m[5]! * v.y + m[9]! * v.z + m[13]! * v.w,
+            z: m[2]! * v.x + m[6]! * v.y + m[10]! * v.z + m[14]! * v.w,
+            w: m[3]! * v.x + m[7]! * v.y + m[11]! * v.z + m[15]! * v.w,
+        };
+    }
+    return v;
+}
+
+/**
+ * Build an `FgMatrix2D` from 4 column-major scalar inputs (glTF `math/combine2x2`).
+ * Inputs map directly to storage: `input_i = m[i]`.
+ */
+export function fgCombineMatrix2D(inputs: readonly number[]): FgMatrix2D {
+    return fgMatrix2D(inputs);
+}
+
+/**
+ * Build an `FgMatrix3D` from 9 column-major scalar inputs (glTF `math/combine3x3`).
+ * Inputs map directly to storage: `input_i = m[i]`.
+ */
+export function fgCombineMatrix3D(inputs: readonly number[]): FgMatrix3D {
+    return fgMatrix3D(inputs);
+}
+
+/**
+ * Build a `Mat4` from 16 column-major scalar inputs (glTF `math/combine4x4`).
+ * Inputs map directly to storage: `input_i = m[i]`.
+ */
+export function fgCombineMatrix(inputs: readonly number[]): Mat4 {
+    const out = new Float32Array(16);
+    for (let i = 0; i < 16; i++) {
+        out[i] = inputs[i] ?? 0;
+    }
+    return out as unknown as Mat4;
+}
+
+/**
+ * Extract `FgMatrix2D` elements in column-major order (glTF `math/extract2x2`).
+ * Output `output_i = m.m[i]` — Lite's column-major storage order.
+ */
+export function fgExtractMatrix2D(m: FgValue): [number, number, number, number] {
+    if (isFgMatrix2D(m)) {
+        return [m.m[0]!, m.m[1]!, m.m[2]!, m.m[3]!];
+    }
+    return [0, 0, 0, 0];
+}
+
+/**
+ * Extract `FgMatrix3D` elements in column-major order (glTF `math/extract3x3`).
+ * Output `output_i = m.m[i]` — Lite's column-major storage order.
+ */
+export function fgExtractMatrix3D(m: FgValue): [number, number, number, number, number, number, number, number, number] {
+    if (isFgMatrix3D(m)) {
+        return [m.m[0]!, m.m[1]!, m.m[2]!, m.m[3]!, m.m[4]!, m.m[5]!, m.m[6]!, m.m[7]!, m.m[8]!];
+    }
+    return [0, 0, 0, 0, 0, 0, 0, 0, 0];
+}
+
+/**
+ * Extract `Mat4` elements in column-major order (glTF `math/extract4x4`).
+ * Output `output_i = m[i]` — Lite's column-major storage order.
+ */
+export function fgExtractMatrix(m: FgValue): number[] {
+    if (isMat4(m)) {
+        return Array.from({ length: 16 }, (_, i) => m[i]!);
+    }
+    return Array.from({ length: 16 }, () => 0);
+}
+
+/**
+ * Transpose a matrix (glTF `math/transpose`). Column-major in, column-major out.
+ * Supports `FgMatrix2D`, `FgMatrix3D`, and `Mat4`.
+ */
+export function fgTranspose(m: FgValue): FgValue {
+    if (isFgMatrix2D(m)) {
+        const mm = m.m;
+        // swap off-diagonal: [m0,m1,m2,m3] → [m0,m2,m1,m3]
+        return fgMatrix2D([mm[0]!, mm[2]!, mm[1]!, mm[3]!]);
+    }
+    if (isFgMatrix3D(m)) {
+        const mm = m.m;
+        return fgMatrix3D([mm[0]!, mm[3]!, mm[6]!, mm[1]!, mm[4]!, mm[7]!, mm[2]!, mm[5]!, mm[8]!]);
+    }
+    if (isMat4(m)) {
+        const out = new Float32Array(16);
+        for (let i = 0; i < 4; i++) {
+            for (let j = 0; j < 4; j++) {
+                out[j * 4 + i] = m[i * 4 + j]!;
+            }
+        }
+        return out as unknown as Mat4;
+    }
+    return m;
+}
+
+/**
+ * Compute the scalar determinant of a matrix (glTF `math/determinant`).
+ * Determinant is layout-independent (`det(M) = det(M^T)`), so the column-major
+ * formula yields the same scalar as BJS's row-major formula.
+ */
+export function fgDeterminant(m: FgValue): number {
+    if (isFgMatrix2D(m)) {
+        const mm = m.m;
+        return mm[0]! * mm[3]! - mm[1]! * mm[2]!;
+    }
+    if (isFgMatrix3D(m)) {
+        const mm = m.m;
+        return mm[0]! * (mm[4]! * mm[8]! - mm[7]! * mm[5]!) - mm[3]! * (mm[1]! * mm[8]! - mm[7]! * mm[2]!) + mm[6]! * (mm[1]! * mm[5]! - mm[4]! * mm[2]!);
+    }
+    if (isMat4(m)) {
+        const a00 = m[0]!,
+            a01 = m[1]!,
+            a02 = m[2]!,
+            a03 = m[3]!;
+        const a10 = m[4]!,
+            a11 = m[5]!,
+            a12 = m[6]!,
+            a13 = m[7]!;
+        const a20 = m[8]!,
+            a21 = m[9]!,
+            a22 = m[10]!,
+            a23 = m[11]!;
+        const a30 = m[12]!,
+            a31 = m[13]!,
+            a32 = m[14]!,
+            a33 = m[15]!;
+        const b00 = a00 * a11 - a01 * a10,
+            b01 = a00 * a12 - a02 * a10;
+        const b02 = a00 * a13 - a03 * a10,
+            b03 = a01 * a12 - a02 * a11;
+        const b04 = a01 * a13 - a03 * a11,
+            b05 = a02 * a13 - a03 * a12;
+        const b06 = a20 * a31 - a21 * a30,
+            b07 = a20 * a32 - a22 * a30;
+        const b08 = a20 * a33 - a23 * a30,
+            b09 = a21 * a32 - a22 * a31;
+        const b10 = a21 * a33 - a23 * a31,
+            b11 = a22 * a33 - a23 * a32;
+        return b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+    }
+    return 0;
+}
+
+/**
+ * Invert a matrix (glTF `math/inverse`). Returns the identity when singular.
+ * Supports `FgMatrix2D`, `FgMatrix3D`, and `Mat4` (via core `mat4Invert`).
+ */
+export function fgInvertMatrix(m: FgValue): FgValue {
+    if (isFgMatrix2D(m)) {
+        const mm = m.m;
+        const det = mm[0]! * mm[3]! - mm[1]! * mm[2]!;
+        if (Math.abs(det) < 1e-10) {
+            return fgMatrix2D();
+        }
+        const d = 1 / det;
+        return fgMatrix2D([mm[3]! * d, -mm[1]! * d, -mm[2]! * d, mm[0]! * d]);
+    }
+    if (isFgMatrix3D(m)) {
+        const mm = m.m;
+        const det = mm[0]! * (mm[4]! * mm[8]! - mm[7]! * mm[5]!) - mm[3]! * (mm[1]! * mm[8]! - mm[7]! * mm[2]!) + mm[6]! * (mm[1]! * mm[5]! - mm[4]! * mm[2]!);
+        if (Math.abs(det) < 1e-10) {
+            return fgMatrix3D();
+        }
+        const d = 1 / det;
+        return fgMatrix3D([
+            (mm[4]! * mm[8]! - mm[7]! * mm[5]!) * d,
+            -(mm[1]! * mm[8]! - mm[7]! * mm[2]!) * d,
+            (mm[1]! * mm[5]! - mm[4]! * mm[2]!) * d,
+            -(mm[3]! * mm[8]! - mm[6]! * mm[5]!) * d,
+            (mm[0]! * mm[8]! - mm[6]! * mm[2]!) * d,
+            -(mm[0]! * mm[5]! - mm[3]! * mm[2]!) * d,
+            (mm[3]! * mm[7]! - mm[6]! * mm[4]!) * d,
+            -(mm[0]! * mm[7]! - mm[6]! * mm[1]!) * d,
+            (mm[0]! * mm[4]! - mm[3]! * mm[1]!) * d,
+        ]);
+    }
+    if (isMat4(m)) {
+        return mat4Invert(m) ?? mat4Identity();
+    }
+    return m;
+}
+
+/**
+ * Multiply two same-size matrices: `out = A × B` (standard matrix product).
+ * Supports `FgMatrix2D × FgMatrix2D`, `FgMatrix3D × FgMatrix3D`, and
+ * `Mat4 × Mat4` (via core `mat4Multiply`). (glTF `math/matMul`)
+ */
+export function fgMatrixMultiplication(a: FgValue, b: FgValue): FgValue {
+    if (isFgMatrix2D(a) && isFgMatrix2D(b)) {
+        const am = a.m,
+            bm = b.m;
+        return fgMatrix2D([am[0]! * bm[0]! + am[2]! * bm[1]!, am[1]! * bm[0]! + am[3]! * bm[1]!, am[0]! * bm[2]! + am[2]! * bm[3]!, am[1]! * bm[2]! + am[3]! * bm[3]!]);
+    }
+    if (isFgMatrix3D(a) && isFgMatrix3D(b)) {
+        const am = a.m,
+            bm = b.m;
+        return fgMatrix3D([
+            am[0]! * bm[0]! + am[3]! * bm[1]! + am[6]! * bm[2]!,
+            am[1]! * bm[0]! + am[4]! * bm[1]! + am[7]! * bm[2]!,
+            am[2]! * bm[0]! + am[5]! * bm[1]! + am[8]! * bm[2]!,
+            am[0]! * bm[3]! + am[3]! * bm[4]! + am[6]! * bm[5]!,
+            am[1]! * bm[3]! + am[4]! * bm[4]! + am[7]! * bm[5]!,
+            am[2]! * bm[3]! + am[5]! * bm[4]! + am[8]! * bm[5]!,
+            am[0]! * bm[6]! + am[3]! * bm[7]! + am[6]! * bm[8]!,
+            am[1]! * bm[6]! + am[4]! * bm[7]! + am[7]! * bm[8]!,
+            am[2]! * bm[6]! + am[5]! * bm[7]! + am[8]! * bm[8]!,
+        ]);
+    }
+    if (isMat4(a) && isMat4(b)) {
+        return mat4Multiply(a, b);
+    }
+    return a;
+}
+
+/**
+ * Compose a TRS `Mat4` from translation, rotation quaternion, and scale
+ * (glTF `math/matCompose`). Uses core `mat4Compose` (column-major).
+ */
+export function fgMatrixCompose(pos: FgValue, quat: FgValue, scale: FgValue): Mat4 {
+    const p = isVec3(pos) ? pos : { x: 0, y: 0, z: 0 };
+    const q = isVec4(quat) ? quat : { x: 0, y: 0, z: 0, w: 1 };
+    const s = isVec3(scale) ? scale : { x: 1, y: 1, z: 1 };
+    return mat4Compose(p.x, p.y, p.z, q.x, q.y, q.z, q.w, s.x, s.y, s.z);
+}
+
+/** Result of `fgMatrixDecompose`. */
+export interface FgDecomposeResult {
+    position: Vec3;
+    rotationQuaternion: Quat;
+    scaling: Vec3;
+    isValid: boolean;
+}
+
+/**
+ * Decompose a `Mat4` into translation, rotation (unit quaternion), and scale
+ * (glTF `math/matDecompose`). Uses core `mat4Decompose`.
+ *
+ * Validity pre-check: the bottom row of the column-major matrix (`m[3]`, `m[7]`,
+ * `m[11]`, `m[15]`) must round to `[0, 0, 0, 1]` at 4 decimal places;
+ * otherwise `isValid = false` and zero/identity defaults are returned.
+ */
+export function fgMatrixDecompose(m: FgValue): FgDecomposeResult {
+    const zero: Vec3 = { x: 0, y: 0, z: 0 };
+    const identQ: Quat = { x: 0, y: 0, z: 0, w: 1 };
+    const oneS: Vec3 = { x: 1, y: 1, z: 1 };
+    if (!isMat4(m)) {
+        return { position: zero, rotationQuaternion: identQ, scaling: oneS, isValid: false };
+    }
+    // Bottom row in column-major 4×4: indices m[3], m[7], m[11], m[15].
+    const r0 = Math.round(m[3]! * 1e4) / 1e4;
+    const r1 = Math.round(m[7]! * 1e4) / 1e4;
+    const r2 = Math.round(m[11]! * 1e4) / 1e4;
+    const r3 = Math.round(m[15]! * 1e4) / 1e4;
+    if (r0 !== 0 || r1 !== 0 || r2 !== 0 || r3 !== 1) {
+        return { position: zero, rotationQuaternion: identQ, scaling: oneS, isValid: false };
+    }
+    const { translation, rotation, scale } = mat4Decompose(m);
+    return { position: translation, rotationQuaternion: rotation, scaling: scale, isValid: true };
+}
+
+// ─── Quaternion ops (Phase 3f) ────────────────────────────────────────────────
+
+/**
+ * Angle between two unit quaternions: `2 · acos(clamp(dot(a, b), −1, 1))`
+ * (glTF `math/quatAngleBetween`). Returns 0 for non-quaternion inputs.
+ */
+export function fgAngleBetween(a: FgValue, b: FgValue): number {
+    if (isVec4(a) && isVec4(b)) {
+        const d = Math.min(1, Math.max(-1, a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w));
+        return 2 * Math.acos(d);
+    }
+    return 0;
+}
+
+/**
+ * Quaternion from axis and angle (glTF `math/quatFromAxisAngle`).
+ * Does NOT pre-normalize the axis (replicates BJS `Quaternion.RotationAxis`).
+ * Result: `[sin(θ/2)·axis, cos(θ/2)]`.
+ */
+export function fgQuaternionFromAxisAngle(axis: FgValue, angle: FgValue): Quat {
+    const n = num(angle);
+    if (!isVec3(axis) || Number.isNaN(n)) {
+        return { x: 0, y: 0, z: 0, w: 1 };
+    }
+    const half = n / 2;
+    const s = Math.sin(half);
+    return { x: axis.x * s, y: axis.y * s, z: axis.z * s, w: Math.cos(half) };
+}
+
+/** Result of `fgAxisAngleFromQuaternion`. */
+export interface FgAxisAngleResult {
+    axis: Vec3;
+    angle: number;
+    isValid: boolean;
+}
+
+/**
+ * Extract axis and angle from a unit quaternion (glTF `math/quatToAxisAngle`).
+ * `angle = 2·acos(w)`. If `sin(angle/2)` is near zero the axis defaults to
+ * `(1, 0, 0)`. Always sets `isValid = true` for a valid quaternion input.
+ */
+export function fgAxisAngleFromQuaternion(q: FgValue): FgAxisAngleResult {
+    if (!isVec4(q)) {
+        return { axis: { x: 1, y: 0, z: 0 }, angle: 0, isValid: false };
+    }
+    const w = Math.min(1, Math.max(-1, q.w));
+    const angle = 2 * Math.acos(w);
+    const s = Math.sqrt(Math.max(0, 1 - w * w));
+    if (s < 1e-7) {
+        return { axis: { x: 1, y: 0, z: 0 }, angle, isValid: true };
+    }
+    return { axis: { x: q.x / s, y: q.y / s, z: q.z / s }, angle, isValid: true };
+}
+
+/**
+ * Quaternion that rotates direction `a` to direction `b` (glTF `math/quatFromDirections`).
+ * Assumes inputs are already unit vectors — does NOT pre-normalize.
+ * Computes `axis = cross(a, b)`, `angle = acos(clamp(dot(a,b), −1, 1))`,
+ * then `quatFromAxisAngle(axis, angle)`.
+ */
+export function fgQuaternionFromDirections(a: FgValue, b: FgValue): Quat {
+    if (!isVec3(a) || !isVec3(b)) {
+        return { x: 0, y: 0, z: 0, w: 1 };
+    }
+    const axis = crossVec3(a, b);
+    const dot = Math.min(1, Math.max(-1, dotVec3(a, b)));
+    const angle = Math.acos(dot);
+    const half = angle / 2;
+    const s = Math.sin(half);
+    return { x: axis.x * s, y: axis.y * s, z: axis.z * s, w: Math.cos(half) };
 }

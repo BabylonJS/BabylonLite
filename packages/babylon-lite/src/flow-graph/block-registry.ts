@@ -185,6 +185,44 @@ export function getBlockDef(type: string): (() => Promise<FgBlockDef>) | null {
             return async () => (await import("./blocks/math/conditional.js")).conditionalDef;
         case FgBlockType.DataSwitch:
             return async () => (await import("./blocks/math/data-switch.js")).dataSwitchDef;
+
+        // ─── Math: Phase 3f (matrix + quaternion) ────────────────────────────
+        case FgBlockType.TransformVector:
+            return async () => (await import("./blocks/math/transform-vector.js")).transformVectorDef;
+        case FgBlockType.CombineMatrix2D:
+            return async () => (await import("./blocks/math/combine-matrix2d.js")).combineMatrix2DDef;
+        case FgBlockType.CombineMatrix3D:
+            return async () => (await import("./blocks/math/combine-matrix3d.js")).combineMatrix3DDef;
+        case FgBlockType.CombineMatrix:
+            return async () => (await import("./blocks/math/combine-matrix.js")).combineMatrixDef;
+        case FgBlockType.ExtractMatrix2D:
+            return async () => (await import("./blocks/math/extract-matrix2d.js")).extractMatrix2DDef;
+        case FgBlockType.ExtractMatrix3D:
+            return async () => (await import("./blocks/math/extract-matrix3d.js")).extractMatrix3DDef;
+        case FgBlockType.ExtractMatrix:
+            return async () => (await import("./blocks/math/extract-matrix.js")).extractMatrixDef;
+        case FgBlockType.Transpose:
+            return async () => (await import("./blocks/math/transpose.js")).transposeDef;
+        case FgBlockType.Determinant:
+            return async () => (await import("./blocks/math/determinant.js")).determinantDef;
+        case FgBlockType.InvertMatrix:
+            return async () => (await import("./blocks/math/invert-matrix.js")).invertMatrixDef;
+        case FgBlockType.MatrixMultiplication:
+            return async () => (await import("./blocks/math/matrix-multiplication.js")).matrixMultiplicationDef;
+        case FgBlockType.MatrixCompose:
+            return async () => (await import("./blocks/math/matrix-compose.js")).matrixComposeDef;
+        case FgBlockType.MatrixDecompose:
+            return async () => (await import("./blocks/math/matrix-decompose.js")).matrixDecomposeDef;
+        case FgBlockType.Conjugate:
+            return async () => (await import("./blocks/math/quat-conjugate.js")).quatConjugateDef;
+        case FgBlockType.AngleBetween:
+            return async () => (await import("./blocks/math/angle-between.js")).angleBetweenDef;
+        case FgBlockType.QuaternionFromAxisAngle:
+            return async () => (await import("./blocks/math/quaternion-from-axis-angle.js")).quaternionFromAxisAngleDef;
+        case FgBlockType.AxisAngleFromQuaternion:
+            return async () => (await import("./blocks/math/axis-angle-from-quaternion.js")).axisAngleFromQuaternionDef;
+        case FgBlockType.QuaternionFromDirections:
+            return async () => (await import("./blocks/math/quaternion-from-directions.js")).quaternionFromDirectionsDef;
         case FgBlockType.BooleanToFloat:
             return async () => (await import("./blocks/conversion/boolean-to-float.js")).booleanToFloatDef;
         case FgBlockType.BooleanToInt:

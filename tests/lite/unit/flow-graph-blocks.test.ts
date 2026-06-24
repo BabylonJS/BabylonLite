@@ -2,7 +2,21 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AnimationGroup } from "../../../packages/babylon-lite/src/animation/animation-group";
 import type { FgAccessor, FgBlock, FgBlockDef, FgGraph, FgValue, FgWiring } from "../../../packages/babylon-lite/src/flow-graph/index";
-import { createFgRuntime, fgInt, FgEventType, FgType, getBlockDef, getDataValue, pumpFgEvent, startFlowGraph, tickFlowGraph } from "../../../packages/babylon-lite/src/flow-graph/index";
+import {
+    createFgRuntime,
+    fgInt,
+    fgMatrix2D,
+    fgMatrix3D,
+    isFgMatrix2D,
+    isFgMatrix3D,
+    FgEventType,
+    FgType,
+    getBlockDef,
+    getDataValue,
+    pumpFgEvent,
+    startFlowGraph,
+    tickFlowGraph,
+} from "../../../packages/babylon-lite/src/flow-graph/index";
 
 // ─── graph + runtime builder driven by the REAL registry ────────────────────
 
@@ -363,11 +377,7 @@ describe("flow-graph blocks — math/data", () => {
 
 describe("flow-graph blocks — math Phase 3", () => {
     /** Build start→op→recorder, fire start, return the value pulled off `outSocket`. */
-    async function evalOp(
-        type: string,
-        dataDefaults: Record<string, FgValue>,
-        opts: { config?: Record<string, unknown>; outSocket?: string } = {}
-    ): Promise<FgValue> {
+    async function evalOp(type: string, dataDefaults: Record<string, FgValue>, opts: { config?: Record<string, unknown>; outSocket?: string } = {}): Promise<FgValue> {
         const log: { label: string; value: FgValue }[] = [];
         const rt = await makeRuntime(
             [
@@ -481,10 +491,7 @@ describe("flow-graph blocks — math Phase 3", () => {
         expect((r as { value: number }).value).toBe(2);
     });
 
-    it.each([
-        ["Length", { x: 3, y: 4, z: 0 }, 5],
-        ["Dot", undefined, 32],
-    ] as const)("vector scalar op %s", async (type) => {
+    it.each(["Length", "Dot"] as const)("vector scalar op %s", async (type) => {
         if (type === "Length") {
             expect(await evalOp("Length", { a: { x: 3, y: 4, z: 0 } })).toBeCloseTo(5, 10);
         } else {
@@ -568,7 +575,13 @@ describe("flow-graph blocks — math Phase 3", () => {
 
 /** True when a value is a FlowGraphInteger box (re-wrapped by bitwise/int ops). */
 function isFgIntResult(v: FgValue): boolean {
-    return typeof v === "object" && v !== null && "value" in (v as Record<string, unknown>) && typeof (v as { value: unknown }).value === "number" && !("x" in (v as Record<string, unknown>));
+    return (
+        typeof v === "object" &&
+        v !== null &&
+        "value" in (v as unknown as Record<string, unknown>) &&
+        typeof (v as { value: unknown }).value === "number" &&
+        !("x" in (v as unknown as Record<string, unknown>))
+    );
 }
 
 describe("flow-graph blocks — property accessors", () => {
@@ -714,5 +727,262 @@ describe("flow-graph blocks — animation", () => {
         );
         startFlowGraph(rt);
         expect(stop).toHaveBeenCalledWith(group);
+    });
+});
+
+describe("flow-graph blocks — matrix/quaternion", () => {
+    /** Reuse the evalOp helper from Phase-3 tests. Same graph shape:
+     *  start → op → recorder; returns the value at `outSocket`. */
+    async function evalOp(type: string, dataDefaults: Record<string, FgValue>, opts: { config?: Record<string, unknown>; outSocket?: string } = {}): Promise<FgValue> {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "rec", socket: "in" }] } },
+                { id: "op", type, config: opts.config, dataDefaults },
+                { id: "rec", type: RECORD, dataSources: { value: { blockId: "op", socket: opts.outSocket ?? "value" } } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        return log[0]!.value;
+    }
+
+    // ─── TransformVector ──────────────────────────────────────────────────────
+
+    it("TransformVector: Vec2 × Matrix2D (M·v)", async () => {
+        // M (col-major) = [1,2,3,4] → [[1,3],[2,4]]
+        // v = (5,6); M·v = (1*5+3*6, 2*5+4*6) = (23, 34)
+        const m = fgMatrix2D([1, 2, 3, 4]);
+        const r = (await evalOp("TransformVector", { a: { x: 5, y: 6 }, b: m })) as { x: number; y: number };
+        expect(r.x).toBeCloseTo(23, 8);
+        expect(r.y).toBeCloseTo(34, 8);
+    });
+
+    it("TransformVector: Vec3 × Matrix3D (M·v)", async () => {
+        // Identity 3x3 → result = input
+        const m = fgMatrix3D();
+        const r = (await evalOp("TransformVector", { a: { x: 1, y: 2, z: 3 }, b: m })) as { x: number; y: number; z: number };
+        expect(r.x).toBeCloseTo(1, 8);
+        expect(r.y).toBeCloseTo(2, 8);
+        expect(r.z).toBeCloseTo(3, 8);
+    });
+
+    // ─── MatrixMultiplication ─────────────────────────────────────────────────
+
+    it("MatrixMultiplication: 2x2 col-major A×B", async () => {
+        // A=[1,2,3,4] = [[1,3],[2,4]], B=[5,6,7,8] = [[5,7],[6,8]]
+        // A×B[0][0] = 1*5+3*6=23, [1][0]=2*5+4*6=34, [0][1]=1*7+3*8=31, [1][1]=2*7+4*8=46
+        const a = fgMatrix2D([1, 2, 3, 4]);
+        const b = fgMatrix2D([5, 6, 7, 8]);
+        const r = await evalOp("MatrixMultiplication", { a, b });
+        expect(isFgMatrix2D(r)).toBe(true);
+        if (isFgMatrix2D(r)) {
+            expect(r.m[0]).toBeCloseTo(23, 8); // col0, row0
+            expect(r.m[1]).toBeCloseTo(34, 8); // col0, row1
+            expect(r.m[2]).toBeCloseTo(31, 8); // col1, row0
+            expect(r.m[3]).toBeCloseTo(46, 8); // col1, row1
+        }
+    });
+
+    it("MatrixMultiplication: identity × M = M (3x3)", async () => {
+        const identity = fgMatrix3D();
+        const m = fgMatrix3D([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        const r = await evalOp("MatrixMultiplication", { a: identity, b: m });
+        expect(isFgMatrix3D(r)).toBe(true);
+        if (isFgMatrix3D(r)) {
+            for (let i = 0; i < 9; i++) expect(r.m[i]).toBeCloseTo(m.m[i]!, 6);
+        }
+    });
+
+    // ─── Determinant ──────────────────────────────────────────────────────────
+
+    it("Determinant: 2x2 [1,2,3,4] = 1*4 - 2*3 = -2", async () => {
+        const m = fgMatrix2D([1, 2, 3, 4]);
+        expect(await evalOp("Determinant", { a: m })).toBeCloseTo(-2, 8);
+    });
+
+    it("Determinant: 3x3 identity = 1", async () => {
+        expect(await evalOp("Determinant", { a: fgMatrix3D() })).toBeCloseTo(1, 8);
+    });
+
+    // ─── InvertMatrix ─────────────────────────────────────────────────────────
+
+    it("InvertMatrix: M × inv(M) ≈ identity (2x2)", async () => {
+        const m = fgMatrix2D([1, 2, 3, 4]);
+        const inv = await evalOp("InvertMatrix", { a: m });
+        expect(isFgMatrix2D(inv)).toBe(true);
+        if (isFgMatrix2D(inv)) {
+            // product M × inv should be identity
+            const am = m.m,
+                bm = inv.m;
+            const c00 = am[0]! * bm[0]! + am[2]! * bm[1]!;
+            const c11 = am[1]! * bm[2]! + am[3]! * bm[3]!;
+            expect(c00).toBeCloseTo(1, 6);
+            expect(c11).toBeCloseTo(1, 6);
+        }
+    });
+
+    it("InvertMatrix: identity inverse is identity (3x3)", async () => {
+        const inv = await evalOp("InvertMatrix", { a: fgMatrix3D() });
+        expect(isFgMatrix3D(inv)).toBe(true);
+        if (isFgMatrix3D(inv)) {
+            expect(inv.m[0]).toBeCloseTo(1, 6);
+            expect(inv.m[4]).toBeCloseTo(1, 6);
+            expect(inv.m[8]).toBeCloseTo(1, 6);
+        }
+    });
+
+    // ─── Transpose ───────────────────────────────────────────────────────────
+
+    it("Transpose: 2x2 swaps off-diagonal", async () => {
+        const m = fgMatrix2D([1, 2, 3, 4]); // col-major: [[1,3],[2,4]]
+        const t = await evalOp("Transpose", { a: m });
+        expect(isFgMatrix2D(t)).toBe(true);
+        if (isFgMatrix2D(t)) {
+            // transposed col-major = [1,3,2,4]
+            expect(t.m[0]).toBeCloseTo(1, 8);
+            expect(t.m[1]).toBeCloseTo(3, 8);
+            expect(t.m[2]).toBeCloseTo(2, 8);
+            expect(t.m[3]).toBeCloseTo(4, 8);
+        }
+    });
+
+    // ─── CombineMatrix / ExtractMatrix round-trips ────────────────────────────
+
+    it("CombineMatrix2D → ExtractMatrix2D round-trips 4 inputs", async () => {
+        const inputs = [1, 2, 3, 4];
+        const dataDefaults: Record<string, FgValue> = {};
+        inputs.forEach((v, i) => (dataDefaults[`input_${i}`] = v));
+        const combined = await evalOp("CombineMatrix2D", dataDefaults);
+        expect(isFgMatrix2D(combined)).toBe(true);
+        if (isFgMatrix2D(combined)) {
+            for (let i = 0; i < 4; i++) {
+                const e = await evalOp("ExtractMatrix2D", { input: combined }, { outSocket: `output_${i}` });
+                expect(e).toBeCloseTo(inputs[i]!, 8);
+            }
+        }
+    });
+
+    it("CombineMatrix3D → ExtractMatrix3D round-trips 9 inputs", async () => {
+        const inputs = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+        const dataDefaults: Record<string, FgValue> = {};
+        inputs.forEach((v, i) => (dataDefaults[`input_${i}`] = v));
+        const combined = await evalOp("CombineMatrix3D", dataDefaults);
+        expect(isFgMatrix3D(combined)).toBe(true);
+        if (isFgMatrix3D(combined)) {
+            for (let i = 0; i < 9; i++) {
+                const e = await evalOp("ExtractMatrix3D", { input: combined }, { outSocket: `output_${i}` });
+                expect(e).toBeCloseTo(inputs[i]!, 8);
+            }
+        }
+    });
+
+    it("CombineMatrix (4x4) → ExtractMatrix round-trips 16 inputs", async () => {
+        const inputs = Array.from({ length: 16 }, (_, i) => i + 1);
+        const dataDefaults: Record<string, FgValue> = {};
+        inputs.forEach((v, i) => (dataDefaults[`input_${i}`] = v));
+        const combined = await evalOp("CombineMatrix", dataDefaults);
+        expect(combined instanceof Float32Array).toBe(true);
+        for (let i = 0; i < 16; i++) {
+            const e = await evalOp("ExtractMatrix", { input: combined }, { outSocket: `output_${i}` });
+            expect(e).toBeCloseTo(inputs[i]!, 8);
+        }
+    });
+
+    // ─── MatrixCompose / MatrixDecompose ──────────────────────────────────────
+
+    it("MatrixCompose then MatrixDecompose round-trips TRS", async () => {
+        const pos = { x: 1, y: 2, z: 3 };
+        const rot = { x: 0, y: 0, z: 0, w: 1 }; // identity quat
+        const scl = { x: 2, y: 3, z: 4 };
+        const mat = await evalOp("MatrixCompose", {
+            position: pos,
+            rotationQuaternion: rot,
+            scaling: scl,
+        });
+
+        const posOut = (await evalOp("MatrixDecompose", { input: mat }, { outSocket: "position" })) as { x: number; y: number; z: number };
+        const sclOut = (await evalOp("MatrixDecompose", { input: mat }, { outSocket: "scaling" })) as { x: number; y: number; z: number };
+        const validOut = await evalOp("MatrixDecompose", { input: mat }, { outSocket: "isValid" });
+
+        expect(posOut.x).toBeCloseTo(1, 5);
+        expect(posOut.y).toBeCloseTo(2, 5);
+        expect(posOut.z).toBeCloseTo(3, 5);
+        expect(sclOut.x).toBeCloseTo(2, 5);
+        expect(sclOut.y).toBeCloseTo(3, 5);
+        expect(sclOut.z).toBeCloseTo(4, 5);
+        expect(validOut).toBe(true);
+    });
+
+    it("MatrixDecompose returns isValid=false for non-TRS matrix", async () => {
+        // A matrix with a bad bottom row ([1,0,0,1] instead of [0,0,0,1]).
+        // In column-major 4x4, bottom row is at indices 3,7,11,15.
+        const bad = new Float32Array(16);
+        bad[0] = 1;
+        bad[5] = 1;
+        bad[10] = 1;
+        bad[15] = 1; // identity base
+        bad[3] = 1; // break bottom row: m[3] should be 0
+        const validOut = await evalOp("MatrixDecompose", { input: bad as unknown as FgValue }, { outSocket: "isValid" });
+        expect(validOut).toBe(false);
+    });
+
+    // ─── Quaternion ops ───────────────────────────────────────────────────────
+
+    it("Conjugate: (-x,-y,-z,w)", async () => {
+        const r = (await evalOp("Conjugate", { a: { x: 1, y: 2, z: 3, w: 4 } })) as { x: number; y: number; z: number; w: number };
+        expect(r.x).toBeCloseTo(-1, 8);
+        expect(r.y).toBeCloseTo(-2, 8);
+        expect(r.z).toBeCloseTo(-3, 8);
+        expect(r.w).toBeCloseTo(4, 8);
+    });
+
+    it("QuaternionFromAxisAngle: Y-axis 90° → known components", async () => {
+        // axis=(0,1,0), angle=PI/2 → quat=(0, sin(PI/4), 0, cos(PI/4))
+        const r = (await evalOp("QuaternionFromAxisAngle", {
+            a: { x: 0, y: 1, z: 0 },
+            b: Math.PI / 2,
+        })) as { x: number; y: number; z: number; w: number };
+        expect(r.x).toBeCloseTo(0, 8);
+        expect(r.y).toBeCloseTo(Math.sin(Math.PI / 4), 8);
+        expect(r.z).toBeCloseTo(0, 8);
+        expect(r.w).toBeCloseTo(Math.cos(Math.PI / 4), 8);
+    });
+
+    it("AxisAngleFromQuaternion round-trips a known quaternion", async () => {
+        // quat from Y-axis 90°
+        const q = { x: 0, y: Math.sin(Math.PI / 4), z: 0, w: Math.cos(Math.PI / 4) };
+        const axis = (await evalOp("AxisAngleFromQuaternion", { a: q }, { outSocket: "axis" })) as { x: number; y: number; z: number };
+        const angle = (await evalOp("AxisAngleFromQuaternion", { a: q }, { outSocket: "angle" })) as number;
+        const valid = await evalOp("AxisAngleFromQuaternion", { a: q }, { outSocket: "isValid" });
+        expect(axis.x).toBeCloseTo(0, 5);
+        expect(axis.y).toBeCloseTo(1, 5);
+        expect(axis.z).toBeCloseTo(0, 5);
+        expect(angle).toBeCloseTo(Math.PI / 2, 5);
+        expect(valid).toBe(true);
+    });
+
+    it("AngleBetween: same quaternion → 0", async () => {
+        const q = { x: 0, y: 0, z: 0, w: 1 };
+        expect(await evalOp("AngleBetween", { a: q, b: q })).toBeCloseTo(0, 8);
+    });
+
+    it("AngleBetween: identity vs 180° rotation → PI", async () => {
+        // 180° rotation around any axis: quat = (0,1,0,0) (Y-axis 180°)
+        const q0 = { x: 0, y: 0, z: 0, w: 1 };
+        const q180 = { x: 0, y: 1, z: 0, w: 0 };
+        const result = await evalOp("AngleBetween", { a: q0, b: q180 });
+        expect(result as number).toBeCloseTo(Math.PI, 5);
+    });
+
+    it("QuaternionFromDirections: (1,0,0) → (0,1,0) rotates 90° around Z", async () => {
+        const a = { x: 1, y: 0, z: 0 };
+        const b = { x: 0, y: 1, z: 0 };
+        const r = (await evalOp("QuaternionFromDirections", { a, b })) as { x: number; y: number; z: number; w: number };
+        // cross(a,b) = (0,0,1); angle = PI/2 → quat = (0,0,sin(PI/4),cos(PI/4))
+        expect(r.x).toBeCloseTo(0, 5);
+        expect(r.y).toBeCloseTo(0, 5);
+        expect(r.z).toBeCloseTo(Math.sin(Math.PI / 4), 5);
+        expect(r.w).toBeCloseTo(Math.cos(Math.PI / 4), 5);
     });
 });

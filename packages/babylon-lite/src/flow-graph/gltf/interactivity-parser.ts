@@ -14,6 +14,8 @@
 // KHR_interactivity asset can't silently render a broken interaction.
 
 import { fgInt } from "../custom-types/fg-integer.js";
+import { fgMatrix2D, fgMatrix3D } from "../custom-types/fg-matrix.js";
+import type { Mat4 } from "../../math/types.js";
 import { getBlockDef } from "../block-registry.js";
 import type { FgBlock, FgDataSocket, FgGraph, FgSignalSocket, FgValue } from "../types.js";
 import { FgType } from "../types.js";
@@ -84,6 +86,18 @@ function arrayToFgValue(arr: number[] | undefined, type: FgType): FgValue {
         case FgType.Vector4:
         case FgType.Quaternion:
             return { x: a[0] ?? 0, y: a[1] ?? 0, z: a[2] ?? 0, w: a[3] ?? 0 };
+        case FgType.Matrix2D:
+            // glTF matrix literals are column-major — stored directly (no transpose).
+            return fgMatrix2D(a);
+        case FgType.Matrix3D:
+            return fgMatrix3D(a);
+        case FgType.Matrix: {
+            const m = new Float32Array(16);
+            for (let i = 0; i < 16; i++) {
+                m[i] = a[i] ?? 0;
+            }
+            return m as unknown as Mat4;
+        }
         default:
             return a[0] ?? 0;
     }
