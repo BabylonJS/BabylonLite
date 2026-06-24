@@ -7,6 +7,13 @@ export interface Example {
     entry?: string;
 }
 
+// Larger examples (some with inline WGSL) live as real source files under
+// `playground/examples/` and are imported verbatim via Vite's `?raw`, which keeps
+// their backtick template literals intact and the files editor-friendly.
+import TORUS_STATES from "../examples/torus-states.ts?raw";
+import NEON_RIBBONS from "../examples/neon-ribbons.ts?raw";
+import MOSQUITO_AMBER from "../examples/mosquito-amber.ts?raw";
+
 const BOOMBOX = `import {
     addToScene,
     startEngine,
@@ -161,6 +168,9 @@ export const EXAMPLES: Example[] = [
         files: { "index.ts": MULTIFILE_INDEX, "scene.ts": MULTIFILE_SCENE },
         entry: "index.ts",
     },
+    { id: "mosquito-amber", label: "glTF — Mosquito in Amber (transmission)", code: MOSQUITO_AMBER },
+    { id: "torus-states", label: "Shader — Torus States (raymarch + bloom)", code: TORUS_STATES },
+    { id: "neon-ribbons", label: "Shader — Neon Ribbons (fullscreen effect)", code: NEON_RIBBONS },
 ];
 
 export const DEFAULT_SNIPPET = EXAMPLES[0]!.code;

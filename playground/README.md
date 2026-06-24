@@ -74,6 +74,10 @@ playground/
 ├─ index.html                # App shell + toolbar + save dialog
 ├─ vite.config.ts            # App dev server (port 5175) + /snippet dev proxy
 ├─ vite.engine.config.ts     # Builds the self-hosted "nightly" engine bundle
+├─ examples/                 # Larger example sources, imported via ?raw
+│  ├─ torus-states.ts        #   (see "Adding examples" below)
+│  ├─ neon-ribbons.ts
+│  └─ mosquito-amber.ts
 ├─ scripts/
 │  └─ build-engine-types.ts  # Rolls up the engine .d.ts for Monaco IntelliSense
 ├─ public/
@@ -85,7 +89,7 @@ playground/
    ├─ file-tabs.ts           # Horizontal file-tab bar (add/rename/delete/entry)
    ├─ transpile.ts           # esbuild-wasm multi-file bundle → ESM
    ├─ runner.ts              # Owns/recreates the runner iframe
-   ├─ examples.ts            # Built-in example snippets
+   ├─ examples.ts            # Example registry (inline snippets + ?raw imports)
    ├─ snippets.ts            # Save/load against the Babylon snippet server
    ├─ embed.ts               # ?embed modes + postMessage host bridge + deep links
    ├─ versions.ts            # Engine version list + esm.sh URL resolution
@@ -140,6 +144,74 @@ keeping `@babylonjs/lite` external (resolved by the runner's import map). The
 
 All files are persisted in the snippet manifest's `files` map, so saving and
 loading round-trips the whole project.
+
+## Adding examples
+
+Examples populate the toolbar's **Examples** picker. They're registered in
+`src/examples.ts`, which exports an `Example` array:
+
+```ts
+export interface Example {
+    id: string; // stable, unique id (also used by the picker)
+    label: string; // shown in the dropdown
+    code: string; // entry-file source
+    files?: Record<string, string>; // optional: multi-file project
+    entry?: string; // optional: entry filename (defaults to index.ts)
+}
+```
+
+There are two ways to add one:
+
+**1. Small snippet — inline string.** Define a `const` and add an entry:
+
+```ts
+const MY_DEMO = `import { createEngine, startEngine } from "@babylonjs/lite";
+// …
+`;
+
+export const EXAMPLES: Example[] = [
+    // …
+    { id: "my-demo", label: "My demo", code: MY_DEMO },
+];
+```
+
+**2. Larger demo (or anything with inline WGSL) — a real file imported with `?raw`.**
+Put the source under `playground/examples/<name>.ts` and import it verbatim:
+
+```ts
+import MY_DEMO from "../examples/my-demo.ts?raw";
+// …
+{ id: "my-demo", label: "My demo", code: MY_DEMO },
+```
+
+Use this path whenever the code contains backticks (e.g. WGSL `` /* wgsl */ `…` ``
+template literals), since those can't be nested inside an inline backtick string.
+Files in `examples/` are plain source imported as text — they live outside the
+`tsconfig` `include`, so they aren't type-checked against the engine (which isn't
+installed as a node module here).
+
+**Multi-file** examples set `files` + `entry` (see the **Multi-file** example):
+
+```ts
+{ id: "x", label: "…", code: ENTRY, files: { "index.ts": ENTRY, "scene.ts": SCENE }, entry: "index.ts" },
+```
+
+### Rules an example must follow to run
+
+Examples execute inside the sandboxed runner iframe, so they must:
+
+1. **Get the canvas** via `document.getElementById("renderCanvas")`.
+2. **Import only from the bare `@babylonjs/lite` specifier.** Subpath imports
+   (e.g. `@babylonjs/lite/loader-gltf/draco-decode.js`) won't resolve — the runner
+   import map maps only `@babylonjs/lite`.
+3. **Reference assets by absolute CDN URL** (e.g. `https://assets.babylonjs.com/…`)
+   or from `public/` (e.g. `"/brdf-lut.png"`). No app-relative/local asset paths.
+4. **Be self-contained** — no page-specific DOM (loading overlays, toggles,
+   `canvas.dataset.*`); end with `main().catch((err) => console.error(err))`.
+
+The first three are conventions (not lint-enforced); the `Example` shape itself is
+type-checked. After adding an example, run it from the picker to confirm it boots
+(the engine logs `Babylon Lite v… - WebGPU engine`) and renders.
 
 ## Snippets
 
