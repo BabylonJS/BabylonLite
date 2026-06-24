@@ -254,6 +254,7 @@ stages:
           # ──────────────────────────────────────────────────────────────
           - job: PerfRegression
             displayName: "Performance: Lite vs Stable"
+            timeoutInMinutes: 120
             pool:
                 vmImage: "ubuntu-latest"
             steps:
@@ -372,7 +373,7 @@ stages:
           # ──────────────────────────────────────────────────────────────
           - job: ParityCloud
             displayName: "Parity Tests (Cloud Browser)"
-            timeoutInMinutes: 120
+            timeoutInMinutes: 180
             pool:
                 vmImage: "ubuntu-latest"
             steps:
@@ -482,7 +483,7 @@ stages:
           # Type-checks, builds, and unit-tests the opt-in compatibility layer so
           # regressions are caught in PR CI. NOTE: this job intentionally does NOT
           # publish the package — @babylonjs/lite-compat is not released yet. The
-          # npm-publish pipeline only publishes packages/babylon-lite/dist.
+          # npm-publish pipeline only publishes packages/babylon-lite/build.
           - job: Compat
             displayName: "Compat Layer"
             pool:

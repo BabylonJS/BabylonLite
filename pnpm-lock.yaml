@@ -160,6 +160,9 @@ importers:
         specifier: ^0.1.18
         version: 0.1.22(typescript@5.9.3)
     devDependencies:
+      '@ampproject/remapping':
+        specifier: ^2.3.0
+        version: 2.3.0
       '@webgpu/types':
         specifier: ^0.1.52
         version: 0.1.69
@@ -202,6 +205,10 @@ importers:
         version: 4.5.4(@types/node@25.9.1)(rollup@4.62.0)(typescript@5.9.3)(vite@6.4.3(@types/node@25.9.1)(terser@5.46.1)(tsx@4.22.4)(yaml@2.9.0))
 
 packages:
+
+  '@ampproject/remapping@2.3.0':
+    resolution: {integrity: sha512-30iZtAPgz+LTIYoeivqYo853f02jBYSd5uGnGpkFV0M3xOt9aN73erkgYAmZU43x4VfqcnLxW9Kpg3R5LC4YYw==}
+    engines: {node: '>=6.0.0'}
 
   '@aws-crypto/crc32@5.2.0':
     resolution: {integrity: sha512-nLbCWqQNgUiwwtFsen1AdzAtvuLRsQS8rYgMuxCrdKf9kOssamGLuPwyTY9wyYblNr9+1XM8v6zoDTPPSIeANg==}
@@ -3727,6 +3734,11 @@ packages:
     engines: {node: '>= 14'}
 
 snapshots:
+
+  '@ampproject/remapping@2.3.0':
+    dependencies:
+      '@jridgewell/gen-mapping': 0.3.13
+      '@jridgewell/trace-mapping': 0.3.31
 
   '@aws-crypto/crc32@5.2.0':
     dependencies:
