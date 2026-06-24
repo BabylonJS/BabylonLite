@@ -1,4 +1,9 @@
-export type RunnerMessage = { type: "ready" } | { type: "ran" } | { type: "console"; level: "log" | "info" | "warn" | "error"; text: string } | { type: "error"; text: string };
+export type RunnerMessage =
+    | { type: "ready" }
+    | { type: "ran" }
+    | { type: "console"; level: "log" | "info" | "warn" | "error"; text: string }
+    | { type: "error"; text: string }
+    | { type: "stats"; fps: number };
 
 /**
  * Owns the sandboxed runner iframe. Each run recreates the iframe so the previous
@@ -41,6 +46,14 @@ export class Runner {
 
         await ready;
         frame.contentWindow?.postMessage({ type: "run", code }, "*");
+    }
+
+    /** Tear down the current runner iframe, stopping its engine and render loop. */
+    dispose(): void {
+        if (this.frame) {
+            this.frame.remove();
+            this.frame = null;
+        }
     }
 
     private waitForReady(frame: HTMLIFrameElement): Promise<void> {

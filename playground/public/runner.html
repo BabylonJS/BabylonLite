@@ -88,6 +88,20 @@
                 }
             });
 
+            // Engine-agnostic FPS: sample animation frames and report once a second.
+            let frames = 0;
+            let lastSample = performance.now();
+            function sampleFps(now) {
+                frames++;
+                if (now - lastSample >= 1000) {
+                    post({ type: "stats", fps: Math.round((frames * 1000) / (now - lastSample)) });
+                    frames = 0;
+                    lastSample = now;
+                }
+                requestAnimationFrame(sampleFps);
+            }
+            requestAnimationFrame(sampleFps);
+
             // Signal readiness so the parent knows it can post code to a fresh frame.
             post({ type: "ready" });
         </script>

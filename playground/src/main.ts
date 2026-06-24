@@ -4,6 +4,7 @@ import { transpile } from "./transpile";
 import { Runner, type RunnerMessage } from "./runner";
 import { EXAMPLES, DEFAULT_SNIPPET } from "./examples";
 import { saveSnippet, loadSnippet, permalinkFor, snippetIdFromHash, type SnippetMeta } from "./snippets";
+import { getEmbedMode, decodeCodeHash, openInPlaygroundUrl, EmbedHost } from "./embed";
 
 const editorContainer = document.getElementById("editor") as HTMLElement;
 const previewHost = document.getElementById("previewHost") as HTMLElement;
@@ -19,11 +20,22 @@ const snippetNameInput = document.getElementById("snippetName") as HTMLInputElem
 const snippetDescriptionInput = document.getElementById("snippetDescription") as HTMLTextAreaElement;
 const snippetTagsInput = document.getElementById("snippetTags") as HTMLInputElement;
 const toastEl = document.getElementById("toast") as HTMLElement;
+const openFullBtn = document.getElementById("openFullBtn") as HTMLAnchorElement;
+
+// Embed mode (`?embed=runner|split`) hosts the playground inside another page and
+// exposes a postMessage API. `null` when running as the standalone app.
+const embedMode = getEmbedMode(location.search);
+if (embedMode) {
+    document.body.classList.add("embed", `embed-${embedMode}`);
+}
 
 // The id of the snippet currently loaded/saved, so re-saving creates a new
 // revision of the same snippet rather than a brand-new one.
 let currentSnippetId: string | null = null;
 let currentMeta: SnippetMeta = {};
+
+// Host bridge, only created in embed mode (see below).
+let embedHost: EmbedHost | null = null;
 
 function appendConsole(level: string, text: string): void {
     const line = document.createElement("div");
@@ -52,9 +64,17 @@ const runner = new Runner(previewHost, (message: RunnerMessage) => {
     switch (message.type) {
         case "console":
             appendConsole(message.level, message.text);
+            embedHost?.emit({ channel: "babylon-lite-playground", type: "console", level: message.level, text: message.text });
             break;
         case "error":
             appendConsole("error", message.text);
+            embedHost?.emit({ channel: "babylon-lite-playground", type: "error", text: message.text });
+            break;
+        case "stats":
+            embedHost?.emit({ channel: "babylon-lite-playground", type: "stats", fps: message.fps });
+            break;
+        case "ran":
+            embedHost?.emit({ channel: "babylon-lite-playground", type: "ran" });
             break;
         default:
             break;
@@ -62,9 +82,13 @@ const runner = new Runner(previewHost, (message: RunnerMessage) => {
 });
 
 let running = false;
+let rerunPending = false;
 
 async function run(): Promise<void> {
+    // Coalesce concurrent requests: remember that another run was asked for and
+    // replay it once with the latest editor content when the current one settles.
     if (running) {
+        rerunPending = true;
         return;
     }
     running = true;
@@ -80,6 +104,10 @@ async function run(): Promise<void> {
     } finally {
         running = false;
         runBtn.disabled = false;
+        if (rerunPending) {
+            rerunPending = false;
+            void run();
+        }
     }
 }
 
@@ -154,6 +182,15 @@ saveDialog.addEventListener("submit", () => {
 });
 
 async function loadFromHash(): Promise<boolean> {
+    // Inline code handed off from an embed via `#code=<base64url>`.
+    const inlineCode = decodeCodeHash(location.hash);
+    if (inlineCode !== null) {
+        currentSnippetId = null;
+        currentMeta = {};
+        editor.setValue(inlineCode);
+        history.replaceState(null, "", location.pathname + location.search);
+        return true;
+    }
     const snippetId = snippetIdFromHash(location.hash);
     if (!snippetId) {
         return false;
@@ -172,6 +209,34 @@ async function loadFromHash(): Promise<boolean> {
     }
 }
 
+// "Open in Lite Playground" hands the current content off to the full standalone
+// playground (preferring a saved snippet id, falling back to inline `#code=`).
+openFullBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    window.open(openInPlaygroundUrl(editor.getValue(), currentSnippetId), "_blank", "noopener");
+});
+
+// In embed mode, expose the postMessage API so a host page can drive the
+// playground and observe its output.
+if (embedMode) {
+    embedHost = new EmbedHost(embedMode, {
+        loadCode: (code, runAfter) => {
+            currentSnippetId = null;
+            currentMeta = {};
+            editor.setValue(code);
+            if (runAfter) {
+                void run();
+            }
+        },
+        run: () => void run(),
+        dispose: () => {
+            runner.dispose();
+            clearConsole();
+        },
+        getCode: () => editor.getValue(),
+    });
+}
+
 // Load engine IntelliSense in the background; editing works regardless.
 void registerEngineTypes();
 
@@ -179,4 +244,5 @@ void registerEngineTypes();
 void (async () => {
     await loadFromHash();
     void run();
+    embedHost?.ready();
 })();

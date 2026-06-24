@@ -290,3 +290,34 @@ body {
     border-color: var(--error);
     color: var(--error);
 }
+
+/* Open-in-playground link: only shown in embed mode. */
+#openFullBtn {
+    display: none;
+    text-decoration: none;
+    align-items: center;
+}
+
+/* Embed mode: compact chrome, host drives via postMessage. */
+body.embed #examples,
+body.embed #formatBtn,
+body.embed .save-group {
+    display: none;
+}
+
+body.embed #openFullBtn {
+    display: inline-flex;
+}
+
+body.embed .toolbar {
+    padding: 0.4rem 0.75rem;
+}
+
+/* Runner-only embed: hide the editor, give the canvas the full width. */
+body.embed-runner .pane-editor {
+    display: none;
+}
+
+body.embed-runner .split {
+    grid-template-columns: 1fr;
+}
