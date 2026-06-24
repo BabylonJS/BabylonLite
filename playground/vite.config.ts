@@ -8,6 +8,11 @@ import { defineConfig } from "vite";
  */
 export default defineConfig({
     server: {
+        // Bind both IPv4 and IPv6 loopback. Vite's default `localhost` can bind
+        // only one stack (we saw it land on IPv6 ::1 only), so a browser that
+        // resolves localhost -> 127.0.0.1 gets a refused connection and a blank
+        // page. `host: true` listens on all interfaces, covering both stacks.
+        host: true,
         port: 5175,
         // Fail loudly if 5175 is taken instead of silently drifting to another
         // port (which makes the printed URL not match what you opened).
