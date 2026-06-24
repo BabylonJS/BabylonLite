@@ -401,6 +401,11 @@ deployment server, then purges the CDN. The pipeline checks out full history
 nightly version stamping. Re-running on each master push keeps nightly current;
 chaining it after the npm-publish pipeline keeps it tracking the latest release.
 
+The deploy targets the tools storage account (`TOOLS_STORAGE_ACCOUNT`, from the
+`BabylonJS-CI-Infrastructure` variable group) under the `litePlayground` path. The
+upload needs only the storage account + path; the CDN endpoint (`lite-playground`)
+and profile (`CDN_PROFILE_TOOLS`) are used solely for the post-deploy purge.
+
 Because the site is served from the domain root (a subdomain, not a subpath), all
 runtime URLs resolve cleanly and no `base` rewriting is needed.
 

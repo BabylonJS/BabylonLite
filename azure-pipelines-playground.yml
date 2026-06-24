@@ -10,11 +10,11 @@
 # tags available. Re-running on each master push (and ideally chained after the
 # npm-publish pipeline) keeps nightly tracking the latest release.
 #
-# NOTE FOR DEVOPS: the deployment-server parameters below (deploymentPath /
-# storageAccount / cdnEndpoint / cdnProfile) must be set to the values that back
-# the liteplayground.babylonjs.com subdomain. The placeholders mirror the demos
-# pipeline shape; confirm the actual storage account, container path, and CDN
-# endpoint/profile for the subdomain before enabling this pipeline.
+# Deployment targets the tools storage account (TOOLS_STORAGE_ACCOUNT, from the
+# BabylonJS-CI-Infrastructure variable group) under the `litePlayground` path. The
+# upload step needs only the storage account + path; the CDN endpoint
+# (`lite-playground`) and profile (CDN_PROFILE_TOOLS) are used solely for the
+# post-deploy purge.
 
 trigger:
     branches:
@@ -25,21 +25,26 @@ pr: none
 
 variables:
     - group: BabylonJS-Deployment
+    # Provides TOOLS_STORAGE_ACCOUNT (tools storage account) and CDN_PROFILE_TOOLS
+    # (CDN profile backing the tools subdomain), used for upload + purge below.
+    - group: BabylonJS-CI-Infrastructure
     - name: NODE_VERSION
       value: "22.x"
     - name: PNPM_VERSION
       value: "9.15.4"
     - name: CI
       value: "true"
-    # TODO(devops): set these to the subdomain's storage/CDN backing values.
+    # Container path within the tools storage account.
     - name: deploymentPath
-      value: cdn/liteplayground
+      value: litePlayground
+    # Tools storage account (from the BabylonJS-CI-Infrastructure variable group).
     - name: storageAccount
-      value: babylonsnapshots
+      value: $(TOOLS_STORAGE_ACCOUNT)
+    # CDN endpoint + profile — used only for the post-deploy purge.
     - name: cdnEndpoint
-      value: liteplayground
+      value: lite-playground
     - name: cdnProfile
-      value: babylonjscdn
+      value: $(CDN_PROFILE_TOOLS)
 
 stages:
     - stage: DeployPlayground
@@ -90,8 +95,6 @@ stages:
                         -H "Authorization: Bearer $(DEPLOY_TOKEN)" \
                         -F "path=$(deploymentPath)" \
                         -F "storageAccount=$(storageAccount)" \
-                        -F "cdnEndpoint=$(cdnEndpoint)" \
-                        -F "cdnProfile=$(cdnProfile)" \
                         -F "zip=@$ZIP_PATH"
 
                       curl "$(DEPLOYMENT_SERVER)/$(DEPLOY_ENDPOINT_PURGE)?endpoint=$(cdnEndpoint)&profileName=$(cdnProfile)" --fail-with-body -i -X POST \
