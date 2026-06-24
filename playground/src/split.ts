@@ -34,24 +34,28 @@ export function mountSplitter(splitEl: HTMLElement, splitter: HTMLElement): void
         apply((event.clientX - rect.left) / rect.width);
     };
 
-    const onPointerUp = (): void => {
+    const onPointerUp = (event: PointerEvent): void => {
         if (!dragging) {
             return;
         }
         dragging = false;
         splitter.classList.remove("is-dragging");
-        window.removeEventListener("pointermove", onPointerMove);
-        window.removeEventListener("pointerup", onPointerUp);
+        splitEl.classList.remove("is-resizing");
+        splitter.releasePointerCapture?.(event.pointerId);
         persist(currentFrac());
     };
 
     splitter.addEventListener("pointerdown", (event) => {
         dragging = true;
         splitter.classList.add("is-dragging");
-        window.addEventListener("pointermove", onPointerMove);
-        window.addEventListener("pointerup", onPointerUp);
+        splitEl.classList.add("is-resizing");
+        splitter.setPointerCapture?.(event.pointerId);
         event.preventDefault();
     });
+
+    splitter.addEventListener("pointermove", onPointerMove);
+    splitter.addEventListener("pointerup", onPointerUp);
+    splitter.addEventListener("lostpointercapture", onPointerUp);
 
     splitter.addEventListener("keydown", (event) => {
         const delta = event.key === "ArrowLeft" ? -STEP : event.key === "ArrowRight" ? STEP : 0;

@@ -168,6 +168,18 @@ body {
     background: var(--accent);
 }
 
+/* While dragging, stop the iframe/editor from swallowing pointer events so the
+   divider keeps tracking the cursor when it moves over the preview. */
+.split.is-resizing iframe,
+.split.is-resizing .pane-editor {
+    pointer-events: none;
+}
+
+.split.is-resizing {
+    cursor: col-resize;
+    user-select: none;
+}
+
 .pane {
     min-width: 0;
     min-height: 0;

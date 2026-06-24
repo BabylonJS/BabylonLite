@@ -85,7 +85,8 @@ playground/
 ├─ examples/                 # Larger example sources, imported via ?raw
 │  ├─ torus-states.ts        #   (see "Adding examples" below)
 │  ├─ neon-ribbons.ts
-│  └─ mosquito-amber.ts
+│  ├─ mosquito-amber.ts
+│  └─ havok-physics.ts       #   (Havok wrecking-ball physics demo)
 ├─ scripts/
 │  └─ build-engine-types.ts  # Rolls up the engine .d.ts for Monaco IntelliSense
 ├─ public/
@@ -167,6 +168,11 @@ import seedrandom from "seedrandom"; // → https://esm.sh/seedrandom at run tim
 
 `@babylonjs/lite` is special-cased: it stays on the selected engine (self-hosted
 nightly or the pinned esm.sh release). Absolute `https://` imports are left as-is.
+
+The built-in **Physics — Havok wrecking ball** example shows this end to end: it
+imports `@babylonjs/havok` (rewritten to esm.sh) and loads the Havok WebAssembly
+binary from the same CDN via `locateFile`, with no local copy of the package or
+`.wasm`.
 
 ## Adding examples
 

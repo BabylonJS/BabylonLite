@@ -13,6 +13,7 @@ export interface Example {
 import TORUS_STATES from "../examples/torus-states.ts?raw";
 import NEON_RIBBONS from "../examples/neon-ribbons.ts?raw";
 import MOSQUITO_AMBER from "../examples/mosquito-amber.ts?raw";
+import HAVOK_PHYSICS from "../examples/havok-physics.ts?raw";
 
 const BOOMBOX = `import {
     addToScene,
@@ -169,6 +170,7 @@ export const EXAMPLES: Example[] = [
         entry: "index.ts",
     },
     { id: "mosquito-amber", label: "glTF — Mosquito in Amber (transmission)", code: MOSQUITO_AMBER },
+    { id: "havok-physics", label: "Physics — Havok wrecking ball", code: HAVOK_PHYSICS },
     { id: "torus-states", label: "Shader — Torus States (raymarch + bloom)", code: TORUS_STATES },
     { id: "neon-ribbons", label: "Shader — Neon Ribbons (fullscreen effect)", code: NEON_RIBBONS },
 ];
