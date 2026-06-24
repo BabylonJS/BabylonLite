@@ -27,7 +27,7 @@ const worldPointerExtension = {
 describe("path-converter resolvePointerAccessor", () => {
     it("reads + writes a node's translation through the TRS accessor", () => {
         const node = createTransformNode("n0");
-        const accessor = resolvePointerAccessor("/nodes/0/translation", [node]);
+        const accessor = resolvePointerAccessor("/nodes/0/translation", { nodeMap: [node] });
         expect(accessor).not.toBeNull();
         expect(accessor!.get()).toEqual({ x: 0, y: 0, z: 0 });
         accessor!.set!({ x: 4, y: 5, z: 6 });
@@ -38,14 +38,54 @@ describe("path-converter resolvePointerAccessor", () => {
 
     it("reads + writes a node's scale", () => {
         const node = createTransformNode("n0");
-        const accessor = resolvePointerAccessor("/nodes/0/scale", [node])!;
+        const accessor = resolvePointerAccessor("/nodes/0/scale", { nodeMap: [node] })!;
         accessor.set!({ x: 2, y: 2, z: 2 });
         expect(node.scaling.x).toBe(2);
     });
 
     it("returns null for unsupported paths and unreachable nodes", () => {
-        expect(resolvePointerAccessor("/materials/0/baseColor", [createTransformNode("n0")])).toBeNull();
-        expect(resolvePointerAccessor("/nodes/3/translation", [createTransformNode("n0")])).toBeNull();
+        expect(resolvePointerAccessor("/materials/0/baseColor", { nodeMap: [createTransformNode("n0")] })).toBeNull();
+        expect(resolvePointerAccessor("/nodes/3/translation", { nodeMap: [createTransformNode("n0")] })).toBeNull();
+    });
+
+    it("reads a material's baseColorTexture UV scale (pointer/get)", () => {
+        const mat = { _uboVersion: 0, baseColorTexture: { uScale: 0.1, vScale: 1, uOffset: 0.8, vOffset: 0 } };
+        const ptr = "/materials/4/pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/scale";
+        const accessor = resolvePointerAccessor(ptr, { nodeMap: [], materials: [undefined, undefined, undefined, undefined, mat] })!;
+        expect(accessor.get()).toEqual({ x: 0.1, y: 1 });
+    });
+
+    it("writes a material's UV offset and isolates the shared texture (pointer/set)", () => {
+        const shared = { uScale: 0.1, vScale: 1, uOffset: 0.8, vOffset: 0 };
+        const matA = { _uboVersion: 0, baseColorTexture: shared };
+        const matB = { _uboVersion: 0, baseColorTexture: shared };
+        const ptr = "/materials/0/pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/offset";
+        const accessor = resolvePointerAccessor(ptr, { nodeMap: [], materials: [matA, matB] })!;
+        accessor.set!({ x: 0, y: 0 });
+        expect(matA.baseColorTexture.uOffset).toBe(0);
+        expect(matA._uboVersion).toBe(1);
+        // matB still references the original shared wrapper — untouched (per-texture isolation).
+        expect(matB.baseColorTexture).toBe(shared);
+        expect(shared.uOffset).toBe(0.8);
+    });
+
+    it("toggles node visibility through the KHR_node_visibility accessor", () => {
+        const node = createTransformNode("n0");
+        const accessor = resolvePointerAccessor("/nodes/0/extensions/KHR_node_visibility/visible", { nodeMap: [node] })!;
+        expect(accessor.get()).toBe(true);
+        accessor.set!(false);
+        expect(node.visible).toBe(false);
+        accessor.set!(true);
+        expect(node.visible).toBe(true);
+    });
+
+    it("treats node selectability as a no-op value round-trip", () => {
+        const node = createTransformNode("n0");
+        const accessor = resolvePointerAccessor("/nodes/0/extensions/KHR_node_selectability/selectable", { nodeMap: [node] })!;
+        expect(accessor.get()).toBe(true);
+        accessor.set!(false);
+        expect(accessor.get()).toBe(false);
+        expect(node.visible).toBeUndefined(); // selectability never touches visibility
     });
 });
 

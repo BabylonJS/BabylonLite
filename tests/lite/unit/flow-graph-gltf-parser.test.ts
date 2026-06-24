@@ -122,5 +122,75 @@ describe("KHR_interactivity parser", () => {
     });
 });
 
+describe("KHR_interactivity parser — pointer templating & new ops", () => {
+    it("extracts the trailing index from a `ref` placeholder value (/materials/4/ → 4)", async () => {
+        const g: GltfInteractivityGraph = {
+            declarations: [{ op: "pointer/get" }],
+            nodes: [
+                {
+                    declaration: 0,
+                    configuration: { pointer: { value: ["/materials/{materialRef}/pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/scale"] } },
+                    values: { materialRef: { type: 5, value: ["/materials/4/"] } },
+                },
+            ],
+            types: [{ signature: "bool" }, { signature: "int" }, { signature: "float" }, { signature: "float2" }, { signature: "float3" }, { signature: "ref" }],
+        };
+        const { graph, pointers } = await parseInteractivityGraph(g);
+        expect(pointers).toEqual(["/materials/4/pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/scale"]);
+        expect(graph.blocks[0]!.config?.accessor).toBe("/materials/4/pbrMetallicRoughness/baseColorTexture/extensions/KHR_texture_transform/scale");
+    });
+
+    it("anchors a relative pointer on an unused `nodeRef` ref value", async () => {
+        const g: GltfInteractivityGraph = {
+            declarations: [{ op: "pointer/set" }],
+            nodes: [
+                {
+                    declaration: 0,
+                    configuration: { pointer: { value: ["extensions/KHR_node_visibility/visible"] } },
+                    values: { value: { value: [1], type: 0 }, nodeRef: { type: 5, value: ["/nodes/22/"] } },
+                },
+            ],
+            types: [{ signature: "bool" }, { signature: "int" }, { signature: "float" }, { signature: "float2" }, { signature: "float3" }, { signature: "ref" }],
+        };
+        const { pointers } = await parseInteractivityGraph(g);
+        expect(pointers).toEqual(["/nodes/22/extensions/KHR_node_visibility/visible"]);
+    });
+
+    it("maps the new math ops and renames extract2 outputs to x/y", async () => {
+        const g: GltfInteractivityGraph = {
+            declarations: [
+                { op: "math/extract2" }, // 0
+                { op: "math/combine2" }, // 1
+                { op: "math/clamp" }, // 2
+                { op: "math/sub" }, // 3
+                { op: "flow/log", extension: "BABYLON" }, // 4
+            ],
+            nodes: [
+                { declaration: 0, values: { a: { value: [3, 4], type: 3 } } },
+                { declaration: 1, values: { a: { value: [1], type: 2 }, b: { value: [2], type: 2 } } },
+                { declaration: 2, values: { a: { value: [5], type: 2 }, b: { value: [0], type: 2 }, c: { value: [9], type: 2 } } },
+                { declaration: 3, values: { a: { value: [7], type: 2 }, b: { value: [2], type: 2 } } },
+                // ConsoleLog pulls extract2's "1" output → must resolve to the Lite `y` socket
+                { declaration: 4, values: { message: { node: 0, socket: "1" } } },
+            ],
+            types: [{ signature: "bool" }, { signature: "int" }, { signature: "float" }, { signature: "float2" }],
+        };
+        const { graph } = await parseInteractivityGraph(g);
+        expect(graph.blocks.map((b) => b.type)).toEqual(["ExtractVector2", "CombineVector2", "Clamp", "Subtract", "ConsoleLog"]);
+        expect(graph.blocks[4]!.dataIn.find((d) => d.name === "message")!.source).toEqual({ blockId: "node_0", socket: "y" });
+    });
+
+    it("maps event/onSelect (KHR_node_selectability) and copies nodeIndex into config", async () => {
+        const g: GltfInteractivityGraph = {
+            declarations: [{ op: "event/onSelect", extension: "KHR_node_selectability" }],
+            nodes: [{ declaration: 0, configuration: { nodeIndex: { value: [14] } } }],
+            types: [],
+        };
+        const { graph } = await parseInteractivityGraph(g);
+        expect(graph.blocks[0]!.type).toBe("OnSelect");
+        expect(graph.blocks[0]!.config?.nodeIndex).toBe(14);
+    });
+});
+
 // Silence the ConsoleLog block's console.log in the end-to-end run.
 vi.spyOn(console, "log").mockImplementation(() => {});

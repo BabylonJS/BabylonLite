@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AnimationGroup } from "../../../packages/babylon-lite/src/animation/animation-group";
 import type { FgAccessor, FgBlock, FgBlockDef, FgGraph, FgValue, FgWiring } from "../../../packages/babylon-lite/src/flow-graph/index";
-import { createFgRuntime, FgType, getBlockDef, getDataValue, startFlowGraph, tickFlowGraph } from "../../../packages/babylon-lite/src/flow-graph/index";
+import { createFgRuntime, FgEventType, FgType, getBlockDef, getDataValue, pumpFgEvent, startFlowGraph, tickFlowGraph } from "../../../packages/babylon-lite/src/flow-graph/index";
 
 // ─── graph + runtime builder driven by the REAL registry ────────────────────
 
@@ -101,6 +101,23 @@ describe("flow-graph blocks — events", () => {
         tickFlowGraph(rt, 500); // +0.5s
         expect(log.map((e) => e.value)).toEqual([1, 1.5]);
     });
+
+    it("OnSelect fires only when its configured node is picked", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                { id: "sel", type: "OnSelect", config: { nodeIndex: 14 }, signalTargets: { out: [{ blockId: "rec", socket: "in" }] } },
+                { id: "rec", type: RECORD, dataSources: { value: { blockId: "sel", socket: "selectedNodeIndex" } } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        pumpFgEvent(rt.env.events, FgEventType.Pointer, { nodeIndex: 99 });
+        expect(log).toHaveLength(0); // wrong node — inert
+        pumpFgEvent(rt.env.events, FgEventType.Pointer, { nodeIndex: 14 });
+        expect(log).toHaveLength(1);
+        expect(log[0]!.value).toEqual({ value: 14, __fgInt: true });
+    });
 });
 
 describe("flow-graph blocks — control flow", () => {
@@ -182,6 +199,143 @@ describe("flow-graph blocks — math/data", () => {
         );
         startFlowGraph(rt);
         expect(log[0]!.value).toEqual({ x: 5, y: 7, z: 9 });
+    });
+
+    it.each([
+        ["Subtract", 7, 4, 3],
+        ["Multiply", 6, 7, 42],
+        ["Divide", 20, 5, 4],
+        ["Modulo", 17, 5, 2],
+    ])("%s computes a∘b on numbers", async (type, a, b, expected) => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "rec", socket: "in" }] } },
+                { id: "op", type, dataDefaults: { a, b } },
+                { id: "rec", type: RECORD, dataSources: { value: { blockId: "op", socket: "value" } } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        expect(log[0]!.value).toBe(expected);
+    });
+
+    it("Subtract/Multiply are component-wise for vectors", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                {
+                    id: "start",
+                    type: "SceneReadyEvent",
+                    signalTargets: {
+                        out: [
+                            { blockId: "rs", socket: "in" },
+                            { blockId: "rm", socket: "in" },
+                        ],
+                    },
+                },
+                { id: "sub", type: "Subtract", dataDefaults: { a: { x: 5, y: 7 }, b: { x: 1, y: 2 } } },
+                { id: "mul", type: "Multiply", dataDefaults: { a: { x: 2, y: 3 }, b: { x: 4, y: 5 } } },
+                { id: "rs", type: RECORD, config: { label: "sub" }, dataSources: { value: { blockId: "sub", socket: "value" } } },
+                { id: "rm", type: RECORD, config: { label: "mul" }, dataSources: { value: { blockId: "mul", socket: "value" } } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        expect(log.find((l) => l.label === "sub")!.value).toEqual({ x: 4, y: 5 });
+        expect(log.find((l) => l.label === "mul")!.value).toEqual({ x: 8, y: 15 });
+    });
+
+    it.each([
+        ["Abs", -3.5, 3.5],
+        ["Floor", 3.9, 3],
+    ])("%s is unary", async (type, a, expected) => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "rec", socket: "in" }] } },
+                { id: "op", type, dataDefaults: { a } },
+                { id: "rec", type: RECORD, dataSources: { value: { blockId: "op", socket: "value" } } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        expect(log[0]!.value).toBe(expected);
+    });
+
+    it.each([
+        [1, 2, true],
+        [2, 2, false],
+        [3, 2, false],
+    ])("LessThan(%d, %d) → %s", async (a, b, expected) => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "rec", socket: "in" }] } },
+                { id: "op", type: "LessThan", dataDefaults: { a, b } },
+                { id: "rec", type: RECORD, dataSources: { value: { blockId: "op", socket: "value" } } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        expect(log[0]!.value).toBe(expected);
+    });
+
+    it.each([
+        [-5, -3, 7, -3],
+        [10, -3, 7, 7],
+        [4, -3, 7, 4],
+    ])("Clamp(%d, %d, %d) → %d", async (a, b, c, expected) => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "rec", socket: "in" }] } },
+                { id: "op", type: "Clamp", dataDefaults: { a, b, c } },
+                { id: "rec", type: RECORD, dataSources: { value: { blockId: "op", socket: "value" } } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        expect(log[0]!.value).toBe(expected);
+    });
+
+    it("CombineVector2 builds a Vec2 from two scalars", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "rec", socket: "in" }] } },
+                { id: "op", type: "CombineVector2", dataDefaults: { a: 0.8, b: 0.1 } },
+                { id: "rec", type: RECORD, dataSources: { value: { blockId: "op", socket: "value" } } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        expect(log[0]!.value).toEqual({ x: 0.8, y: 0.1 });
+    });
+
+    it("ExtractVector2 splits a Vec2 into x/y outputs", async () => {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                {
+                    id: "start",
+                    type: "SceneReadyEvent",
+                    signalTargets: {
+                        out: [
+                            { blockId: "rx", socket: "in" },
+                            { blockId: "ry", socket: "in" },
+                        ],
+                    },
+                },
+                { id: "op", type: "ExtractVector2", dataDefaults: { a: { x: 3, y: 4 } } },
+                { id: "rx", type: RECORD, config: { label: "x" }, dataSources: { value: { blockId: "op", socket: "x" } } },
+                { id: "ry", type: RECORD, config: { label: "y" }, dataSources: { value: { blockId: "op", socket: "y" } } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        expect(log.find((l) => l.label === "x")!.value).toBe(3);
+        expect(log.find((l) => l.label === "y")!.value).toBe(4);
     });
 
     it("Get/SetVariable round-trips a live graph variable", async () => {

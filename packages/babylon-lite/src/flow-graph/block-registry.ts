@@ -23,6 +23,8 @@ export function getBlockDef(type: string): (() => Promise<FgBlockDef>) | null {
             return async () => (await import("./blocks/events/scene-start.js")).sceneStartDef;
         case FgBlockType.SceneTick:
             return async () => (await import("./blocks/events/scene-tick.js")).sceneTickDef;
+        case FgBlockType.OnSelect:
+            return async () => (await import("./blocks/events/on-select.js")).onSelectDef;
 
         // ─── Control flow ─────────────────────────────────────────
         case FgBlockType.Branch:
@@ -33,6 +35,26 @@ export function getBlockDef(type: string): (() => Promise<FgBlockDef>) | null {
         // ─── Math ─────────────────────────────────────────────────
         case FgBlockType.Add:
             return async () => (await import("./blocks/math/add.js")).addDef;
+        case FgBlockType.Subtract:
+            return async () => (await import("./blocks/math/subtract.js")).subtractDef;
+        case FgBlockType.Multiply:
+            return async () => (await import("./blocks/math/multiply.js")).multiplyDef;
+        case FgBlockType.Divide:
+            return async () => (await import("./blocks/math/divide.js")).divideDef;
+        case FgBlockType.Modulo:
+            return async () => (await import("./blocks/math/modulo.js")).moduloDef;
+        case FgBlockType.Abs:
+            return async () => (await import("./blocks/math/abs.js")).absDef;
+        case FgBlockType.Floor:
+            return async () => (await import("./blocks/math/floor.js")).floorDef;
+        case FgBlockType.LessThan:
+            return async () => (await import("./blocks/math/less-than.js")).lessThanDef;
+        case FgBlockType.Clamp:
+            return async () => (await import("./blocks/math/clamp.js")).clampDef;
+        case FgBlockType.CombineVector2:
+            return async () => (await import("./blocks/math/combine2.js")).combine2Def;
+        case FgBlockType.ExtractVector2:
+            return async () => (await import("./blocks/math/extract2.js")).extract2Def;
 
         // ─── Data: property / variable ────────────────────────────
         case FgBlockType.GetProperty:

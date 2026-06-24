@@ -760,7 +760,7 @@ export { animationTypeForFgType, coerceValue, defaultForType, FgAnimationValueTy
 export type { FgInteger, FgMatrix2D, FgMatrix3D } from "./flow-graph/index.js";
 export { fgInt, fgMatrix2D, fgMatrix3D, isFgInt, isFgMatrix2D, isFgMatrix3D } from "./flow-graph/index.js";
 export { getBlockDef } from "./flow-graph/index.js";
-export { attachFlowGraph, detachFlowGraph } from "./flow-graph/index.js";
+export { attachFlowGraph, detachFlowGraph, runFlowGraphs } from "./flow-graph/index.js";
 export type { FgRuntime } from "./flow-graph/index.js";
 export {
     activateSignal,

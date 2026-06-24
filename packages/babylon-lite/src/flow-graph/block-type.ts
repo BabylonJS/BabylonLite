@@ -8,6 +8,7 @@ export const enum FgBlockType {
     // ─── Events ───────────────────────────────────────────────
     SceneStart = "SceneReadyEvent",
     SceneTick = "SceneTickEvent",
+    OnSelect = "OnSelect",
     SendCustomEvent = "SendCustomEvent",
     ReceiveCustomEvent = "ReceiveCustomEvent",
 
@@ -28,6 +29,15 @@ export const enum FgBlockType {
     Constant = "Constant",
     Add = "Add",
     Subtract = "Subtract",
+    Multiply = "Multiply",
+    Divide = "Divide",
+    Modulo = "Modulo",
+    Abs = "Abs",
+    Floor = "Floor",
+    LessThan = "LessThan",
+    Clamp = "Clamp",
+    CombineVector2 = "CombineVector2",
+    ExtractVector2 = "ExtractVector2",
 
     // ─── Pointer / variable / animation ───────────────────────
     GetProperty = "GetProperty",

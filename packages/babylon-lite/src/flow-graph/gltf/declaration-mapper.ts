@@ -44,6 +44,9 @@ export interface FgOpMapping {
     /** Variable op: the glTF configuration key holding the variable index/indices
      *  (`variable` for get, `variables` for set). */
     readonly variableConfigKey?: string;
+    /** Event op: copy a numeric glTF `configuration` value into `config[key]`
+     *  (e.g. `nodeIndex` for `event/onSelect`). */
+    readonly nodeConfigKey?: string;
 }
 
 const FPS = (arr: number[]): number[] => [(arr[0] ?? 0) * ANIMATION_FPS];
@@ -57,6 +60,16 @@ const NATIVE_OPS: Readonly<Record<string, FgOpMapping>> = {
     "flow/sequence": { block: FgBlockType.Sequence, dynamicSequence: true },
 
     "math/add": { block: FgBlockType.Add, valueInputs: { a: "a", b: "b" } },
+    "math/sub": { block: FgBlockType.Subtract, valueInputs: { a: "a", b: "b" } },
+    "math/mul": { block: FgBlockType.Multiply, valueInputs: { a: "a", b: "b" } },
+    "math/div": { block: FgBlockType.Divide, valueInputs: { a: "a", b: "b" } },
+    "math/rem": { block: FgBlockType.Modulo, valueInputs: { a: "a", b: "b" } },
+    "math/abs": { block: FgBlockType.Abs, valueInputs: { a: "a" } },
+    "math/floor": { block: FgBlockType.Floor, valueInputs: { a: "a" } },
+    "math/lt": { block: FgBlockType.LessThan, valueInputs: { a: "a", b: "b" } },
+    "math/clamp": { block: FgBlockType.Clamp, valueInputs: { a: "a", b: "b", c: "c" } },
+    "math/combine2": { block: FgBlockType.CombineVector2, valueInputs: { a: "a", b: "b" } },
+    "math/extract2": { block: FgBlockType.ExtractVector2, valueInputs: { a: "a" }, outputValues: { "0": "x", "1": "y" } },
 
     "variable/get": { block: FgBlockType.GetVariable, variableConfigKey: "variable" },
     "variable/set": { block: FgBlockType.SetVariable, variableConfigKey: "variables", valueInputs: { value: "value" } },
@@ -78,14 +91,22 @@ const BABYLON_OPS: Readonly<Record<string, FgOpMapping>> = {
     "flow/log": { block: FgBlockType.ConsoleLog, valueInputs: { message: "message" } },
 };
 
+/** KHR_node_selectability ops (`declaration.extension === "KHR_node_selectability"`). */
+const KHR_NODE_SELECTABILITY_OPS: Readonly<Record<string, FgOpMapping>> = {
+    "event/onSelect": { block: FgBlockType.OnSelect, nodeConfigKey: "nodeIndex" },
+};
+
+/** Extension-namespaced op tables, keyed by `declaration.extension`. */
+const EXTENSION_OPS: Readonly<Record<string, Readonly<Record<string, FgOpMapping>>>> = {
+    BABYLON: BABYLON_OPS,
+    KHR_node_selectability: KHR_NODE_SELECTABILITY_OPS,
+};
+
 /** Look up the Lite mapping for a glTF op, honoring the declaration `extension`.
  *  Returns `null` for an unknown op so the parser can fail loudly. */
 export function getOpMapping(op: string, extension?: string): FgOpMapping | null {
-    if (extension === "BABYLON") {
-        return BABYLON_OPS[op] ?? null;
-    }
     if (extension) {
-        return null; // unknown extension — Phase 3+ may add pass-through blocks
+        return EXTENSION_OPS[extension]?.[op] ?? null;
     }
     return NATIVE_OPS[op] ?? null;
 }

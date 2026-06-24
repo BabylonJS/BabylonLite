@@ -22,7 +22,9 @@ import { DEFAULT_FLOW_SOCKET, DEFAULT_VALUE_SOCKET, getOpMapping, type FgOpMappi
 // ─── glTF wire-format shapes (loose; spec-volatile) ──────────────────────────
 
 interface GltfValueEntry {
-    value?: number[];
+    /** Literal payload. Numeric for scalar/vector literals; a single-element
+     *  STRING array (`["/materials/4/"]`) for `ref`-typed pointer values. */
+    value?: (number | string)[];
     type?: number;
     node?: number;
     socket?: string;
@@ -87,10 +89,29 @@ function arrayToFgValue(arr: number[] | undefined, type: FgType): FgValue {
     }
 }
 
-/** Substitute `{segment}` template variables in a pointer with their literal
- *  value-socket values. Returns `null` if a segment is missing or non-literal. */
+/** Extract the trailing integer index from a glTF `ref` path string
+ *  (`"/materials/4/"` → `"4"`). Returns `null` when there's no trailing index. */
+function refPathIndex(ref: string): string | null {
+    const m = /(\d+)\/?$/.exec(ref);
+    return m ? m[1]! : null;
+}
+
+/** Resolve a pointer template against a node's value sockets.
+ *
+ *  Two spec forms are supported (mirrors BJS `FlowGraphPathConverterComponent`
+ *  + the newer relative-pointer draft targeted by PR #18455):
+ *  1. **Absolute + `{seg}` placeholders** — each `{seg}` reads `node.values[seg]`.
+ *     A `ref`-typed value (`["/materials/4/"]`) contributes its trailing index
+ *     (`4`); a numeric value is substituted directly.
+ *  2. **Relative** — when the substituted result doesn't start with `/`, prepend
+ *     the path of a `ref`-typed value socket that wasn't consumed as a
+ *     placeholder (e.g. `nodeRef` = `["/nodes/22/"]`).
+ *
+ *  Returns `null` if a placeholder segment is missing/non-literal, or a relative
+ *  template has no ref prefix to anchor it. */
 function resolvePointerTemplate(template: string, node: GltfNode): string | null {
     let ok = true;
+    const usedSegments = new Set<string>();
     const resolved = template.replace(/\{(\w+)\}/g, (_m, seg: string) => {
         const entry = node.values?.[seg];
         const literal = entry?.value?.[0];
@@ -98,9 +119,34 @@ function resolvePointerTemplate(template: string, node: GltfNode): string | null
             ok = false;
             return _m;
         }
+        usedSegments.add(seg);
+        if (typeof literal === "string") {
+            const idx = refPathIndex(literal);
+            if (idx === null) {
+                ok = false;
+                return _m;
+            }
+            return idx;
+        }
         return String(literal);
     });
-    return ok ? resolved : null;
+    if (!ok) {
+        return null;
+    }
+    if (resolved.startsWith("/")) {
+        return resolved;
+    }
+    // Relative pointer: anchor it on an unused ref-typed value socket.
+    for (const [key, entry] of Object.entries(node.values ?? {})) {
+        if (usedSegments.has(key) || entry.node !== undefined) {
+            continue;
+        }
+        const v = entry.value?.[0];
+        if (typeof v === "string" && v.startsWith("/")) {
+            return v.replace(/\/$/, "") + "/" + resolved;
+        }
+    }
+    return null;
 }
 
 /** Compute a node's per-flow-key → Lite signal-output-name map (handles the
@@ -158,6 +204,9 @@ export async function parseInteractivityGraph(json: GltfInteractivityGraph): Pro
             const idx = (node.configuration?.[mapping.variableConfigKey]?.value?.[0] as number) ?? 0;
             config.variable = String(idx);
         }
+        if (mapping.nodeConfigKey) {
+            config[mapping.nodeConfigKey] = node.configuration?.[mapping.nodeConfigKey]?.value?.[0] as number;
+        }
         if (mapping.pointer) {
             const template = node.configuration?.pointer?.value?.[0] as string | undefined;
             const resolved = template ? resolvePointerTemplate(template, node) : null;
@@ -205,8 +254,9 @@ export async function parseInteractivityGraph(json: GltfInteractivityGraph): Pro
                 const gltfSocket = entry.socket ?? DEFAULT_VALUE_SOCKET;
                 socket.source = { blockId: `node_${entry.node}`, socket: producer.outputValues?.[gltfSocket] ?? gltfSocket };
             } else {
+                const raw = (entry.value ?? []) as number[];
                 const transform = mapping.valueTransform?.[gltfKey];
-                const arr = transform ? transform(entry.value ?? []) : entry.value;
+                const arr = transform ? transform(raw) : raw;
                 socket.defaultValue = arrayToFgValue(arr, types[entry.type ?? -1] ?? socket.type);
             }
         }
