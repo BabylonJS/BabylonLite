@@ -2171,5 +2171,16 @@
         "description": "glTF Buffer_Interleaved_03: a textured plane whose POSITION/COLOR_0/TEXCOORD_0 are interleaved, with TEXCOORD_0 a normalized UNSIGNED_BYTE accessor. Validates denormalization of non-float UVs on the tight and interleaved loader paths (glTF-Asset-Generator Category E); Lite previously garbled the UVs and mis-mapped the texture.",
         "tags": ["gltf", "interleaved"],
         "skipPerf": true
+    },
+    {
+        "id": 259,
+        "slug": "scene259-material-emissive",
+        "name": "Scene 259 — Emissive Material",
+        "maxMad": 0.1,
+        "maxRegionMad": 0.3,
+        "maxRawKB": 77.5,
+        "description": "glTF Material_03: a flat plane with a dark base and a full-white emissiveFactor [1,1,1] but no emissive texture. Validates that emissiveFactor is applied when there is no emissive texture (glTF-Asset-Generator Category F); Lite previously dropped it and rendered the surface dark.",
+        "tags": ["gltf", "pbr", "emissive"],
+        "skipPerf": true
     }
 ]
