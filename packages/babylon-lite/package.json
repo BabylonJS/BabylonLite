@@ -36,25 +36,27 @@
         "dist"
     ],
     "scripts": {
-        "build": "vite build",
-        "build:prod": "vite build --mode prod",
-        "dev": "vite build --watch"
+        "build": "node -e \"require('fs').rmSync('build',{recursive:true,force:true})\" && pnpm build:lib && pnpm build:dist",
+        "build:lib": "vite build --mode lib",
+        "build:dist": "vite build --mode dist",
+        "dev": "vite build --mode lib --watch"
     },
     "sideEffects": false,
     "publishConfig": {
-        "types": "./dist/index.d.ts"
+        "types": "./build/dist/index.d.ts"
     },
     "devDependencies": {
+        "@ampproject/remapping": "^2.3.0",
         "@webgpu/types": "^0.1.52",
         "typescript": "^5.7.0",
         "vite": "^6.4.3",
         "vite-plugin-dts": "^4.5.4"
     },
     "dependencies": {
-        "text-shaper": "^0.1.18",
         "@recast-navigation/core": "0.43.0",
         "@recast-navigation/generators": "0.43.0",
         "@recast-navigation/wasm": "0.43.0",
-        "manifold-3d": "3.4.0"
+        "manifold-3d": "3.4.0",
+        "text-shaper": "^0.1.18"
     }
 }
