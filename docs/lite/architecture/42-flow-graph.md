@@ -88,10 +88,17 @@ GUIDANCE §4b forbids components from referencing the scene. A flow graph
 obviously needs to read/write node transforms, fire on scene events, and play
 animations — so the wiring is inverted exactly like the animation subsystem:
 
-- The **scene owns** the graphs: `scene._flowGraphs: FgRuntime[]` (plain data).
-- The graph is **driven** by the scene's existing per-frame hook
-  (`onBeforeRender(scene, cb)` → `scene._beforeRender`), exactly how animation
-  groups are ticked (`ctx._beforeRender.push(deltaMs => …)`).
+- The **scene owns** the graphs via an **optional** `scene._flowGraphs?:
+  FgRuntime[]` field (plain data). It is left `undefined` for non-interactivity
+  scenes and **lazily created by `attachFlowGraph()`** — so core stays
+  byte-identical when no graph is attached (verified: the per-scene bundle
+  manifest is unchanged by this subsystem's existence).
+- The graph is **driven** through the scene's existing generic seams, NOT a
+  hardcoded loop in `scene-core.ts` (GUIDANCE §4c′): `attachFlowGraph()` registers
+  a `onBeforeRender(scene, cb)` driver (exactly how animation groups are ticked)
+  and an `onSceneDispose(scene, cb)` teardown. The flow-graph drive therefore
+  lives entirely in `flow-graph/scene-flow-graph.ts`, pulled into a bundle only
+  when something imports it (the glTF interactivity feature or user code).
 - Blocks **never see the scene**. Anything scene-dependent is pre-resolved by the
   **loader** into plain capability objects stored in `FgEnv`:
   - **Object accessors** (`FgAccessor { get, set?, target }`) — closures over the
@@ -235,6 +242,8 @@ export interface FgContext {
     readonly pending: FgPendingTask[];
     /** glTF graphs are right-handed; drives Z/handedness coercion on read */
     readonly rightHanded: boolean;
+    /** @internal monotonic token source for addPending (unique task tokens) */
+    _tokenSeq: number;
 }
 
 /** One outstanding async task (a delay, an animation). Token enables precise cancel. */
@@ -242,6 +251,8 @@ export interface FgPendingTask {
     readonly blockId: string;
     readonly token: number;        // unique per task; a block may own several concurrently
     canceled: boolean;
+    /** set by onTick when finished; compacted out after the frame's pending loop */
+    done: boolean;
     state: Record<string, unknown>; // e.g. remainingMs, delayIndex, animation handle
 }
 
@@ -282,8 +293,9 @@ export function activateSignal(ctx: FgContext, env: FgEnv, block: FgBlock, socke
 
 /** Instantiate runtime state for a parsed graph. */
 export function createFgContext(graph: FgGraph, opts?: { rightHanded?: boolean }): FgContext;
-/** Build the resolved env (await needed defs, attach accessors/animations/bus). */
-export function createFgEnv(graph: FgGraph, wiring: FgWiring): Promise<FgEnv>;
+/** Build the resolved env (await needed defs, attach accessors/animations/bus).
+ *  FAILS LOUDLY (throws) on an unsupported block type — see registry note. */
+export function createFgEnv(graph: FgGraph, wiring?: FgWiring): Promise<FgEnv>;
 
 /** One graph runtime = graph + context + env, owned by the scene. */
 export interface FgRuntime {
@@ -291,14 +303,37 @@ export interface FgRuntime {
     readonly context: FgContext;
     readonly env: FgEnv;
     started: boolean;
+    /** @internal bus unsubscribe fns registered at start, called on dispose */
+    _unsub: (() => void)[];
 }
 
-/** Start the graph: fire `onStart` event blocks once. */
+/** Convenience: build env (awaiting defs) + context in one call. */
+export function createFgRuntime(graph: FgGraph, wiring?: FgWiring, opts?: { rightHanded?: boolean }): Promise<FgRuntime>;
+
+/** Start the graph: subscribe ALL non-start receivers first (init-priority
+ *  order), THEN fire `onStart` event blocks once. Idempotent. */
 export function startFlowGraph(rt: FgRuntime): void;
 /** Per-frame drive: pump tick events + advance pending async blocks. */
 export function tickFlowGraph(rt: FgRuntime, deltaMs: number): void;
 /** Tear down: cancel pending, clear caches, detach bus listeners. */
 export function disposeFlowGraph(rt: FgRuntime): void;
+
+// Pending-task helpers used by async block defs and the tick loop:
+export function addPending(ctx: FgContext, block: FgBlock, state?: Record<string, unknown>): FgPendingTask;
+export function stillPending(ctx: FgContext, task: FgPendingTask): boolean;
+export function cancelPendingForBlock(ctx: FgContext, block: FgBlock): void;
+export function compactPending(ctx: FgContext): void;
+```
+
+### Scene attachment (`flow-graph/scene-flow-graph.ts`)
+
+```typescript
+/** Attach a runtime to a scene: starts on the first frame, ticks every frame,
+ *  auto-disposed on scene dispose. Lazily creates `scene._flowGraphs`. Uses the
+ *  generic onBeforeRender/onSceneDispose seams (no scene-core loop). */
+export function attachFlowGraph(scene: SceneContext, rt: FgRuntime): void;
+/** Detach + dispose a previously attached runtime. */
+export function detachFlowGraph(scene: SceneContext, rt: FgRuntime): void;
 ```
 
 ### Block-type names & registry (`flow-graph/block-type.ts`, `block-registry.ts`)
@@ -726,9 +761,10 @@ packages/babylon-lite/src/flow-graph/
   block-registry.ts              # getBlockDef() dynamic-import switch
   context.ts                     # FgContext, FgEnv, FgAccessor
   runtime.ts                     # getDataValue/setDataValue/activateSignal, FgRuntime, start/tick/dispose
-  event-bus.ts                   # FgEventBus, FgEventType
+  event-bus.ts                   # FgEventBus, FgEventType, subscribe/pump/clear
   fg-math.ts                     # Vec2 + quaternion/matrix/bitwise helpers (lazy)
   rich-type.ts                   # defaultForType(), coerceValue(), animationTypeForFgType()
+  scene-flow-graph.ts            # attachFlowGraph/detachFlowGraph (onBeforeRender/onSceneDispose seams)
   custom-types/
     fg-integer.ts
     fg-matrix.ts
@@ -749,8 +785,12 @@ packages/babylon-lite/src/loader-gltf/
   gltf-feature-interactivity.ts  # GltfFeature.applyAsset
   gltf-feature-registry.ts       # + ["KHR_interactivity", () => import(...)]
 packages/babylon-lite/src/scene/
-  scene-core.ts                  # + _flowGraphs field + addToScene dispatch
+  scene-core.ts                  # + optional `_flowGraphs?` field (type-only; zero runtime cost)
 ```
+
+> Note: the scene driver is NOT hardcoded in `scene-core.ts`. `scene-flow-graph.ts`
+> attaches via the existing `onBeforeRender`/`onSceneDispose` seams, so non-
+> interactivity scenes stay byte-identical (verified against the bundle manifest).
 
 ---
 
@@ -760,15 +800,17 @@ packages/babylon-lite/src/scene/
 > `pnpm build:bundle-scenes` + `pnpm test:parity` and commit the regenerated
 > `lab/public/bundle/manifest.json` (GUIDANCE §0c).
 
-**Phase 0 — Spec & skill (this doc + `port-flow-graph-block.md`).** ✅ no code.
+**Phase 0 — Spec & skill (this doc + `port-flow-graph-block.md`).** ✅ DONE — no code.
 
-**Phase 1 — Core runtime, no blocks.** `types.ts`, `block-def.ts`,
+**Phase 1 — Core runtime, no blocks.** ✅ **DONE.** `types.ts`, `block-def.ts`,
 `context.ts`, `runtime.ts`, `event-bus.ts`, `rich-type.ts`, `block-type.ts`,
-empty `block-registry.ts`. Pure functions only. Full unit tests for pull
-recompute, push cascade, async pending (dedupe + cancel mid-tick), event
-dispatch + listener ordering, with a couple of hand-built test defs. Wire
-`scene._flowGraphs` + driver (behind a no-op when empty so bundle is unchanged).
-**Guard:** non-interactivity bundle byte-identical.
+`custom-types/{fg-integer,fg-matrix}.ts`, `scene-flow-graph.ts`, and an empty
+`block-registry.ts`. Pure functions only. 24 unit tests cover pull recompute,
+push cascade, branch routing, async pending (countdown, dedupe, cancel
+mid-tick, no retro-tick), event dispatch + custom-event-during-start ordering,
+tick pump, dispose, variable seeding, loud-fail on unknown ops, and rich-type
+defaults/coercion. Scene drive wired via the `onBeforeRender`/`onSceneDispose`
+seams. **Guard met:** non-interactivity bundle manifest byte-identical.
 
 **Phase 2 — Vertical slice (end-to-end EARLY).** Implement the *minimum* set that
 proves the whole pipeline before the long tail of blocks: `SceneStart`,
