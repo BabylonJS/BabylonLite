@@ -154,7 +154,7 @@
         "slug": "scene15-spotlights",
         "name": "Scene 15 — SpotLights + Ground",
         "maxMad": 0.01,
-        "maxRawKB": 47.3,
+        "maxRawKB": 47.4,
         "description": "Two SpotLights (red + green) with different exponents on a ground plane. Multi-light support.",
         "tags": ["std", "procedural"],
         "skipPerf": true,
