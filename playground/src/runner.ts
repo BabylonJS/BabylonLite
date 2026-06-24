@@ -1,0 +1,57 @@
+export type RunnerMessage = { type: "ready" } | { type: "ran" } | { type: "console"; level: "log" | "info" | "warn" | "error"; text: string } | { type: "error"; text: string };
+
+/**
+ * Owns the sandboxed runner iframe. Each run recreates the iframe so the previous
+ * engine, canvas, and render loop are fully torn down before the next snippet runs
+ * — a clean slate without needing a generic engine-dispose handle.
+ */
+export class Runner {
+    private readonly host: HTMLElement;
+    private readonly onMessage: (message: RunnerMessage) => void;
+    private frame: HTMLIFrameElement | null = null;
+
+    constructor(host: HTMLElement, onMessage: (message: RunnerMessage) => void) {
+        this.host = host;
+        this.onMessage = onMessage;
+        window.addEventListener("message", this.handleMessage);
+    }
+
+    private handleMessage = (event: MessageEvent): void => {
+        if (!this.frame || event.source !== this.frame.contentWindow) {
+            return;
+        }
+        const message = event.data as RunnerMessage | undefined;
+        if (message && typeof message.type === "string") {
+            this.onMessage(message);
+        }
+    };
+
+    /** Replace the iframe with a fresh one and run the given transpiled module code. */
+    async run(code: string): Promise<void> {
+        const frame = document.createElement("iframe");
+        frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
+        const ready = this.waitForReady(frame);
+        frame.src = "/runner.html";
+
+        if (this.frame) {
+            this.frame.remove();
+        }
+        this.frame = frame;
+        this.host.appendChild(frame);
+
+        await ready;
+        frame.contentWindow?.postMessage({ type: "run", code }, "*");
+    }
+
+    private waitForReady(frame: HTMLIFrameElement): Promise<void> {
+        return new Promise((resolve) => {
+            const listener = (event: MessageEvent): void => {
+                if (event.source === frame.contentWindow && (event.data as RunnerMessage | undefined)?.type === "ready") {
+                    window.removeEventListener("message", listener);
+                    resolve();
+                }
+            };
+            window.addEventListener("message", listener);
+        });
+    }
+}

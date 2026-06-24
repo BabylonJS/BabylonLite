@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Babylon Lite Playground</title>
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="stylesheet" href="/src/styles.css" />
+    </head>
+    <body>
+        <div id="app">
+            <header class="toolbar">
+                <div class="brand">Babylon <span>Lite</span> Playground</div>
+                <div class="actions">
+                    <button id="runBtn" class="btn btn-primary" title="Run (Ctrl/Cmd+Enter)">▶ Run</button>
+                </div>
+            </header>
+            <main class="split">
+                <section class="pane pane-editor">
+                    <div id="editor"></div>
+                </section>
+                <section class="pane pane-preview">
+                    <div class="preview-host" id="previewHost"></div>
+                    <div class="console" id="console" aria-live="polite"></div>
+                </section>
+            </main>
+        </div>
+        <script type="module" src="/src/main.ts"></script>
+    </body>
+</html>

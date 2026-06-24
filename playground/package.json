@@ -1,0 +1,23 @@
+{
+    "name": "@babylon-lite/playground",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build:engine": "vite build --config vite.engine.config.ts",
+        "predev": "pnpm build:engine",
+        "dev": "vite",
+        "prebuild": "pnpm build:engine",
+        "build": "vite build"
+    },
+    "dependencies": {
+        "babylon-lite": "workspace:*"
+    },
+    "devDependencies": {
+        "@webgpu/types": "^0.1.52",
+        "esbuild-wasm": "^0.25.0",
+        "monaco-editor": "^0.54.0",
+        "typescript": "^5.7.0",
+        "vite": "^6.4.3"
+    }
+}

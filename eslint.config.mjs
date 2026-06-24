@@ -149,6 +149,29 @@ export default tseslint.config(
     },
 
     // ===========================================
+    // Playground app (type-checked, general rules)
+    // ===========================================
+    {
+        files: ["playground/src/**/*.ts"],
+        extends: [...tseslint.configs.recommended],
+        languageOptions: {
+            parser: tseslint.parser,
+            parserOptions: {
+                projectService: true,
+            },
+        },
+        rules: {
+            "no-console": ["error", { allow: ["warn", "error", "time", "timeEnd", "trace"] }],
+            curly: "error",
+            "@typescript-eslint/no-explicit-any": "off",
+            "@typescript-eslint/no-floating-promises": "error",
+            "@typescript-eslint/await-thenable": "error",
+            "@typescript-eslint/consistent-type-imports": ["error", { disallowTypeAnnotations: false, fixStyle: "separate-type-imports" }],
+            "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", destructuredArrayIgnorePattern: "^_" }],
+        },
+    },
+
+    // ===========================================
     // Test files (lighter rules)
     // ===========================================
     {
