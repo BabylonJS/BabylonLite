@@ -13,371 +13,9 @@ import { build, type Plugin } from "vite";
 import { execFileSync } from "child_process";
 import { resolve, dirname, join, extname } from "path";
 import { rmSync, readdirSync, readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, statSync } from "fs";
-import { initialize as initMiniray, minify as minifyWgslMiniray } from "miniray";
 import { minify as terserMinify, type ECMA, type SourceMapOptions } from "terser";
-import { bytesToRoundedKB, IGNORED_BUNDLE_MODULE_PATTERN, summarizeRuntimeBundle, type RuntimeJsPayload } from "./bundle-size-accounting";
-
-/**
- * Vite plugin: minify WGSL shader text using miniray (whitespace removal + identifier mangling).
- * For `?raw` WGSL imports: miniray minifies whitespace AND short-renames module/local identifiers.
- *   - Caveat 1: miniray's mangler does NOT guard against shadowing module-scope vars (e.g. it may
- *     rename a local to the same letter as a uniform binding). We pass `keepNames: ["u", "in",
- *     "finalColor"]` for `gaussian-splatting.wgsl` to reserve (a) the uniform binding name `u`
- *     so locals don't collide with it (otherwise WGSL parsing fails with "cannot index into
- *     mat3x3"), and (b) the fragment-stage identifiers `in` (parameter) / `finalColor` (local)
- *     that runtime fragment-plugin code (`gsLinearDepthFragment` etc.) references.
- *   - Caveat 2: miniray strips block comments. The GS shaders embed `/* GS_FRAGMENT_* *\/`
- *     markers used by `applyGsFragments` to splice in fragment-plugin code at runtime. We
- *     encode each marker as a `const _GS_FRAGMENT_X_:u32=0u;` declaration before miniray
- *     (which survives with `treeShaking: false`), then decode back to a comment marker
- *     after minification — keeping the runtime API and source format unchanged.
- * For inline template-literal WGSL in JS output: regex-based operator/whitespace stripping.
- * Gaussian-splatting raw WGSL gets a small shader-specific identifier compaction pass.
- */
-export function wgslMinifyPlugin(opts: { mangle?: boolean } = {}): Plugin {
-    // Identifier mangling shortens scene WGSL to satisfy bundle-size ceilings, but it
-    // rewrites bare tokens (e.g. worldPos -> wp) PER CHUNK. That is only safe when a
-    // shader's struct declaration and all its usages land in the same chunk. The demo
-    // bundler splits code far more aggressively, so the declaration and usage can end up
-    // in different chunks (and esbuild may turn no-substitution templates into plain
-    // strings the mangler skips), producing inconsistent names like "struct member wp
-    // not found". Demos have no size ceilings, so they opt out of mangling entirely.
-    const mangle = opts.mangle !== false;
-    return {
-        name: "wgsl-minify",
-        enforce: "pre",
-        async buildStart() {
-            await initMiniray({});
-        },
-        transform(code: string, id: string) {
-            if (!id.includes(".wgsl")) return null;
-            const match = code.match(/^export default "(.*)"$/s);
-            if (!match) return null;
-            const raw = JSON.parse(`"${match[1]}"`);
-            const isGs = id.includes("gaussian-splatting.wgsl");
-            // Encode `/* GS_FRAGMENT_X *\/` comment markers as const declarations so they
-            // survive miniray's comment stripping. Decoded back below.
-            const encoded = isGs ? raw.replace(/\/\*(GS_FRAGMENT_\w+)\*\//g, "const _$1_:u32=0u;") : raw;
-            const result = minifyWgslMiniray(encoded, isGs ? { keepNames: ["u", "in", "finalColor"], treeShaking: false } : {});
-            let minified = typeof result === "string" ? result : result.code;
-            if (isGs) {
-                minified = minified.replace(/const\s+_(GS_FRAGMENT_\w+)_\s*:\s*u32\s*=\s*0u\s*;/g, "/*$1*/");
-            }
-            const compact = isGs ? mangleGaussianSplattingWgsl(minified) : minified;
-            return { code: `export default ${JSON.stringify(compact)}`, map: null };
-        },
-        renderChunk(code: string) {
-            // NOTE: the NME inline WGSL mangler (mangleInlineWgsl) was removed. It ran
-            // per-chunk only on "pbr-metallic-roughness-block" chunks, but NME PBR helper
-            // functions / shared bindings (nme_pbr_fresSchlick, nmeBrdfLUT, ...) live in
-            // sibling chunks (pbr-mr-helper-*, iridescence-block) that escaped the filter,
-            // so their definitions stayed unmangled while call sites were mangled — the
-            // assembled shader then failed with "unresolved call target". Renaming across
-            // code-split chunks cannot be done safely per-chunk, so we no longer mangle
-            // these identifiers at all (a small bundle-size cost on NME scenes only).
-            const minified = minifyTemplateWgsl(code, mangle);
-            return { code: minified, map: null };
-        },
-    };
-}
-
-function replaceWgslIdentifiers(code: string, replacements: readonly (readonly [string, string])[]): string {
-    let out = code;
-    for (const [from, to] of replacements) {
-        out = out.replace(new RegExp(`\\b${from}\\b`, "g"), to);
-    }
-    return out;
-}
-
-function mangleGaussianSplattingWgsl(code: string): string {
-    // KEEP IN SYNC with `packages/babylon-lite/src/mesh/GaussianSplatting/gaussian-splatting-pipeline.ts:GS_FIELD_MANGLE`.
-    // The runtime version normalises any spliced fragment-plugin code to use these mangled
-    // names so the WebGPU compiler sees a single consistent identifier set.
-    return replaceWgslIdentifiers(code, [
-        ["world", "w"],
-        ["view", "v"],
-        ["projection", "p"],
-        ["viewport", "vp"],
-        ["focal", "f"],
-        ["dataSize", "ds"],
-        ["alpha", "a"],
-        ["_pad", "_p"],
-        ["vColor", "vc"],
-        ["vPos", "vq"],
-        ["dataUv", "du"],
-        ["splatIndex", "si"],
-        ["corner", "co"],
-        ["center", "ce"],
-        ["color", "cl"],
-        ["covA", "ca"],
-        ["covB", "cb"],
-        ["worldPos", "wp"],
-        ["modelView", "mv"],
-        ["camspace", "cs"],
-        ["pos2d", "p2"],
-        ["bounds", "bd"],
-        ["Vrk", "vr"],
-        ["invZ2", "iz2"],
-        ["invZ", "iz"],
-        ["cov2d", "c2"],
-        ["kernelSize", "ks"],
-        ["radius", "ra"],
-        ["epsilon", "ep"],
-        ["lambda1", "l1"],
-        ["lambda2", "l2"],
-        ["diag", "dg"],
-        ["majorAxis", "ma"],
-        ["minorAxis", "mi"],
-        ["vCenter", "vc2"],
-    ]);
-}
-
-/** Strip spaces around WGSL operators inside template literal content.
- *  When `mangle` is true, also shorten known WGSL identifiers (scene size optimization). */
-function minifyTemplateWgsl(code: string, mangle = true): string {
-    const out: string[] = [];
-    let i = 0;
-    const len = code.length;
-
-    while (i < len) {
-        const ch = code[i]!;
-
-        // Skip regular string literals
-        if (ch === '"' || ch === "'") {
-            const q = ch;
-            let j = i + 1;
-            while (j < len && code[j] !== q) {
-                if (code[j] === "\\") j++;
-                j++;
-            }
-            out.push(code.slice(i, j + 1));
-            i = j + 1;
-            continue;
-        }
-
-        // Skip line comments
-        if (ch === "/" && i + 1 < len && code[i + 1] === "/") {
-            let j = i;
-            while (j < len && code[j] !== "\n") j++;
-            out.push(code.slice(i, j));
-            i = j;
-            continue;
-        }
-
-        // Template literal — minify WGSL whitespace
-        if (ch === "`") {
-            out.push("`");
-            i++;
-            i = processTemplateLiteral(code, i, len, out, mangle);
-            continue;
-        }
-
-        out.push(ch);
-        i++;
-    }
-    return out.join("");
-}
-
-function processTemplateLiteral(code: string, i: number, len: number, out: string[], mangle = true): number {
-    const wgsl: string[] = [];
-    const flushWgsl = (): void => {
-        if (wgsl.length > 0) {
-            const joined = wgsl.join("");
-            out.push(mangle ? mangleWgslIdentifiers(joined) : joined);
-            wgsl.length = 0;
-        }
-    };
-    while (i < len) {
-        const ch = code[i]!;
-
-        if (ch === "\\") {
-            wgsl.push(ch, code[i + 1] ?? "");
-            i += 2;
-            continue;
-        }
-        if (ch === "`") {
-            flushWgsl();
-            out.push("`");
-            return i + 1;
-        }
-        if (ch === "$" && i + 1 < len && code[i + 1] === "{") {
-            flushWgsl();
-            out.push("${");
-            i += 2;
-            let depth = 1;
-            while (i < len && depth > 0) {
-                const ec = code[i]!;
-                if (ec === "{") depth++;
-                else if (ec === "}") {
-                    depth--;
-                    if (depth === 0) {
-                        out.push("}");
-                        i++;
-                        break;
-                    }
-                } else if (ec === "`") {
-                    out.push("`");
-                    i++;
-                    i = processTemplateLiteral(code, i, len, out, mangle);
-                    continue;
-                } else if (ec === '"' || ec === "'") {
-                    const q = ec;
-                    let j = i + 1;
-                    while (j < len && code[j] !== q) {
-                        if (code[j] === "\\") j++;
-                        j++;
-                    }
-                    out.push(code.slice(i, j + 1));
-                    i = j + 1;
-                    continue;
-                }
-                out.push(ec);
-                i++;
-            }
-            continue;
-        }
-
-        // Strip WGSL line comments
-        if (ch === "/" && i + 1 < len && code[i + 1] === "/") {
-            i += 2;
-            while (i < len && code[i] !== "\n") i++;
-            continue;
-        }
-
-        // Collapse WGSL whitespace and strip it around punctuation/operators.
-        if (ch === " " || ch === "\n" || ch === "\t" || ch === "\r") {
-            const prev = wgsl.length > 0 ? wgsl[wgsl.length - 1]! : "";
-            const prevCh = prev.length > 0 ? prev[prev.length - 1]! : "";
-            let j = i + 1;
-            while (j < len && (code[j] === " " || code[j] === "\n" || code[j] === "\t" || code[j] === "\r")) j++;
-            const next = j < len ? code[j]! : "";
-            const ops = ":=,+-*/<>(){}[];";
-            if (ops.includes(prevCh) || ops.includes(next)) {
-                i = j;
-                continue;
-            }
-            if (prevCh !== " " && prevCh !== "`" && next !== "`") {
-                wgsl.push(" ");
-            }
-            i = j;
-            continue;
-        }
-
-        wgsl.push(ch);
-        i++;
-    }
-    flushWgsl();
-    return i;
-}
-
-function mangleWgslIdentifiers(code: string): string {
-    const replacements: [string, string][] = [
-        ["computeLighting", "cl"],
-        ["computeSphericalCoords", "csc"],
-        ["computePlanarCoords", "cpc"],
-        ["computePbrLight", "cpl"],
-        ["perturbNormal", "pn"],
-        ["PbrLightResult", "PLR"],
-        ["LightEntry", "LE"],
-        ["lightsUniforms", "LU"],
-        ["vLightData", "d"],
-        ["vLightDiffuse", "c"],
-        ["vLightSpecular", "s"],
-        ["vLightDirection", "r"],
-        ["viewDirectionW", "vdw"],
-        ["normalW", "nw"],
-        ["diffuseBase", "db"],
-        ["specularBase", "sb"],
-        ["baseAmbientColor", "bac"],
-        ["reflectionColor", "rc"],
-        ["finalDiffuse", "fd"],
-        ["finalSpecular", "fs"],
-        ["directDiffuse", "dd"],
-        ["directSpecular", "ds"],
-        ["directRoughness", "dr"],
-        ["directAlphaG", "dag"],
-        ["shadowFactors", "sf"],
-        ["lightIndex0", "li0"],
-        ["lightIndex", "lix"],
-        ["lightColor", "lc"],
-        ["lightAtten", "la"],
-        ["specColor", "sc"],
-        ["isHemi", "ih"],
-        ["viewNormal", "vn"],
-        ["viewDir", "vd"],
-        ["reflCoords", "rcd"],
-        ["finalWorld", "fw"],
-        ["worldPos4", "wp4"],
-        ["normalWorld", "nwm"],
-        ["positionW", "pw"],
-        ["bumpScale", "bs"],
-        ["opSample", "os"],
-        ["diffuseColor", "dc"],
-        ["emissiveContrib", "ec"],
-        ["specularColor", "spc"],
-        ["baseColor", "bc"],
-        ["glossiness", "gl"],
-        ["alpha", "al"],
-        ["surfaceAlbedo", "sa"],
-        ["roughness", "rg"],
-        ["colorF0", "f0"],
-        ["colorF90", "f90"],
-        ["finalIrradiance", "fi"],
-        ["finalRadianceScaled", "fr"],
-        ["finalSpecularScaled", "fss"],
-        ["AA_factor_x", "aax"],
-        ["AA_factor_y", "aay"],
-        ["alphaG", "ag"],
-        ["NdotV", "nv"],
-        ["rangeAtten", "ra"],
-        ["rangeAtt", "rat"],
-        ["spotC", "sc2"],
-        ["lightToFrag", "ltf"],
-        ["lightDist2", "ld2"],
-        ["lightDist", "ld"],
-        ["toLight", "tl"],
-        ["dist", "dst"],
-        ["entry", "e"],
-        ["hemiDiffuse", "hd"],
-        ["coloredFresnel", "cf"],
-        ["BillboardSystem", "BS"],
-        ["BillboardBasis", "BB"],
-        ["getBillboardBasis", "gbb"],
-        ["billboards", "bb"],
-        ["opacityMul", "om"],
-        ["cameraRight", "cr"],
-        ["cameraUp", "cu"],
-        ["lockAxis", "la"],
-        ["projectedRightLen", "prl"],
-        ["safeProjectedRightLen", "sprl"],
-        ["projectedRight", "pr"],
-        ["fallbackSeed", "fsd"],
-        ["fallbackRightRaw", "frr"],
-        ["fallbackRight", "fr"],
-        ["sampleColor", "scol"],
-        ["cosRot", "cr2"],
-        ["sinRot", "sr2"],
-        ["rotated", "rot"],
-        // NOTE: Do NOT add WGSL struct-varying member names (e.g. "worldPos",
-        // "worldNormal", "worldTangent", ...) to this list. Their struct is
-        // assembled at runtime from JS string literals (e.g. {Z:"worldPos"})
-        // which this mangler deliberately never touches (it only rewrites bare
-        // identifiers inside backtick WGSL template literals). Mangling the
-        // hardcoded `out.worldPos`/`input.worldPos` usages while leaving the
-        // string-built struct member as `worldPos` produces invalid WGSL
-        // ("struct member wp not found"), especially when usages and the struct
-        // declaration land in different code-split chunks. Only chunk-local
-        // temporaries like `worldPos4` (mangled to `wp4` above) are safe here.
-        ["iUvMin", "ium"],
-        ["iUvMax", "iux"],
-        ["iPivot", "ip"],
-        ["iColor", "ic"],
-        ["iSize", "isz"],
-        ["iPos", "ipos"],
-        ["iRot", "ir"],
-    ];
-    return replaceWgslIdentifiers(code, replacements);
-}
+import { bytesToRoundedKB, IGNORED_BUNDLE_MODULE_PATTERN, isVendorRuntimeChunkFile, summarizeRuntimeBundle, type RuntimeJsPayload } from "./bundle-size-accounting";
+import { wgslMinifyPlugin } from "./wgsl-minify-plugin";
 
 /**
  * Vite plugin: mangle underscore-prefixed properties via Terser.
@@ -392,6 +30,14 @@ export function terserPropertyManglePlugin(): Plugin {
 
             for (const [, chunk] of Object.entries(bundle)) {
                 if (chunk.type !== "chunk") continue;
+
+                // Skip bundled third-party WASM/shaping runtimes (text-shaper, manifold,
+                // recast-navigation). Their pre-built emscripten glue uses many `_`-prefixed
+                // internal names that this first-party mangler would rewrite, corrupting the
+                // runtime (e.g. recast's WASM init throws "… is not a function"). A real
+                // consumer of `build/lib` never runs this mangler, so excluding these chunks
+                // here keeps the measurement build aligned with what consumers actually ship.
+                if (isVendorRuntimeChunkFile(chunk.fileName)) continue;
 
                 // Dynamically extract WASM import binding names from emscripten
                 // glue code.  These are property keys in the env object that the
@@ -477,6 +123,69 @@ export const liteLabDir = resolve(labDir, "lite");
 export const outDir = resolve(labDir, "public/bundle");
 export const bundleInfoDir = resolve(outDir, "bundle-info");
 export const srcDir = resolve(ROOT, "packages/babylon-lite/src");
+// The bundle harness measures the bundle size a REAL consumer of the published
+// `@babylonjs/lite` package gets, so scenes are bundled against the built `build/lib`
+// tree (module-granular output that bundlers resolve) rather than the TS source. The
+// package build must run first; `assertLibBuilt()` enforces that with a clear error.
+// (The lab dev app and master-comparison build still resolve to `srcDir` — see notes
+// at their call sites.)
+export const libDir = resolve(ROOT, "packages/babylon-lite/build/lib");
+const LIB_FALLBACK_ENV = "LITE_BUNDLE_ALLOW_SRC_FALLBACK";
+const BUNDLE_SCENES_ENV = "BUNDLE_SCENES";
+
+function parseSceneSelectionArg(): string | null {
+    const argv = process.argv.slice(2);
+    for (let i = 0; i < argv.length; i++) {
+        const arg = argv[i]!;
+        if (arg === "--scene" || arg === "--scenes") {
+            return argv[i + 1] ?? null;
+        }
+        if (arg.startsWith("--scene=")) {
+            return arg.slice("--scene=".length);
+        }
+        if (arg.startsWith("--scenes=")) {
+            return arg.slice("--scenes=".length);
+        }
+    }
+    return process.env[BUNDLE_SCENES_ENV] ?? null;
+}
+
+function normalizeSceneSelection(raw: string | null): Set<string> | null {
+    if (!raw) {
+        return null;
+    }
+
+    const names = raw
+        .split(/[,\s]+/)
+        .map((name) => name.trim())
+        .filter(Boolean)
+        .map((name) => (/^\d+$/.test(name) ? `scene${name}` : name));
+
+    return names.length > 0 ? new Set(names) : null;
+}
+
+function selectRequestedScenes(allScenes: readonly string[], requested: Set<string> | null): string[] {
+    if (!requested) {
+        return [...allScenes];
+    }
+    return allScenes.filter((scene) => requested.has(scene));
+}
+
+/** Fail fast with an actionable message if the package's `build/lib` output (which the
+ *  scene bundles are measured against) hasn't been built yet. */
+function resolveLiteAliasDir(): string {
+    const libIndex = resolve(libDir, "index.js");
+    if (existsSync(libIndex)) {
+        return libDir;
+    }
+
+    if (process.env[LIB_FALLBACK_ENV] === "true") {
+        console.warn(`Missing ${libIndex}. Falling back to source alias (${srcDir}) because ${LIB_FALLBACK_ENV}=true.`);
+        return srcDir;
+    }
+
+    throw new Error(`Missing ${libIndex}.\n` + "Build the package first: `pnpm --filter babylon-lite build:lib` (or `pnpm build`).");
+}
 const MANIFEST_GIT_PATH = "lab/public/bundle/manifest.json";
 const MANIFEST_FILE = "manifest.json";
 const MASTER_MANIFEST_FILE = "master-manifest.json";
@@ -824,7 +533,13 @@ function writeBundleInfoToDir(scene: string, result: unknown, infoDir: string, s
         const modules: BundleInfoModule[] = [];
         for (const [rawId, m] of Object.entries(it.modules ?? {})) {
             const normalizedId = normalizeModuleId(rawId, sourceRoot);
-            const bytes = minifiedBytes[normalizedId] ?? 0;
+            // Prefer source-map-attributed minified bytes. Large pure-data modules (e.g.
+            // checked-in `*-nme.ts` NME payloads) are emitted as object/string literals for
+            // which esbuild produces NO per-token source-map segments, so attribution yields
+            // 0 even though the module contributes real bytes. Fall back to Rollup's
+            // `renderedLength` (the module's rendered size in the chunk) so such modules are
+            // still recorded — otherwise the ignored-module accounting can't subtract them.
+            const bytes = minifiedBytes[normalizedId] || m.renderedLength || 0;
             if (bytes <= 0) continue;
             const rawNames = Array.isArray(m.renderedExports) ? [...m.renderedExports].sort() : [];
             // Resolve kinds from the source file on disk (strip any ?query suffix).
@@ -1028,10 +743,12 @@ export function isLiteBundleExternal(id: string): boolean {
 /** Force certain modules into their own chunks so bundle-size accounting can isolate
  *  them cleanly. Currently used to separate `text-shaper` (a 670 KB vendor shaping
  *  library) so the gzip-bytes accounting can exclude it as a self-contained chunk
- *  matching the ignored-module pattern in `bundle-size-accounting.ts`. */
+ *  matching the ignored-module pattern in `bundle-size-accounting.ts`. Matches both the
+ *  source form (`node_modules/text-shaper/…`) and the built-package form, where the lib
+ *  build has already pre-bundled it into `build/lib/_chunks/vendor/text-shaper-<hash>.js`. */
 function liteManualChunks(id: string): string | undefined {
     const clean = id.replace(/\\/g, "/").split("?")[0]!;
-    if (/(?:^|\/)text-shaper\//.test(clean)) {
+    if (/(?:^|\/)text-shaper[-/]/.test(clean)) {
         return "text-shaper";
     }
     return undefined;
@@ -1095,6 +812,12 @@ export async function buildLiteSceneBundleInfo(scene: string, sourceRoot: string
         logLevel: "warn",
         plugins: [wgslMinifyPlugin({ mangle: false }), terserPropertyManglePlugin(), minimalVitePreloadPlugin()],
         resolve: {
+            // Master-comparison bundle-info resolves `babylon-lite` to the TS SOURCE of an
+            // arbitrary master worktree (`sourceRoot`), NOT its `build/lib`: that worktree
+            // generally has no built package, and this data only drives the lab's advisory
+            // "vs master" size delta (the per-scene ceilings remain the real blocker, and
+            // they ARE measured against `build/lib`). Sizes here may therefore differ
+            // slightly from a real consumer's, which is acceptable for an advisory baseline.
             alias: {
                 "babylon-lite": sourceSrcDir,
             },
@@ -1134,11 +857,24 @@ export function measurementBrowserArgs(): string[] {
 
 export async function buildBundleScenes(): Promise<void> {
     const t0 = performance.now();
+    // Scenes are bundled against the built `build/lib` tree by default; old baseline
+    // worktrees can opt into TS-source fallback via LITE_BUNDLE_ALLOW_SRC_FALLBACK=true.
+    const liteAliasDir = resolveLiteAliasDir();
+    const requestedSceneNames = normalizeSceneSelection(parseSceneSelectionArg());
+    const scenesToBuild = selectRequestedScenes(SCENES, requestedSceneNames);
+    const bjsScenesRequested = selectRequestedScenes(BJS_SCENES, requestedSceneNames);
+    const knownSceneNames = new Set<string>([...SCENES, ...BJS_SCENES]);
+    if (requestedSceneNames) {
+        const unknown = [...requestedSceneNames].filter((scene) => !knownSceneNames.has(scene));
+        if (unknown.length > 0) {
+            throw new Error(`Unknown bundle scene(s): ${unknown.join(", ")}.`);
+        }
+    }
     // Do NOT wipe outDir — keep existing data live in the lab tab during the build.
     // Each scene is updated atomically (new files written, stale old chunks removed).
     mkdirSync(outDir, { recursive: true });
     writeMasterBundleManifest();
-    for (const scene of SCENES) {
+    for (const scene of scenesToBuild) {
         ensureBundleHtmlImportMap(scene);
     }
 
@@ -1195,12 +931,13 @@ export async function buildBundleScenes(): Promise<void> {
             logLevel: "warn",
             plugins: isBjs ? [bjsSideEffectsFalsePlugin()] : [wgslMinifyPlugin({ mangle: false }), terserPropertyManglePlugin(), minimalVitePreloadPlugin()],
             resolve: {
-                // Point babylon-lite directly at TS source directory so the bundle always
-                // picks up the current code (no stale node_modules build).
-                // Using the directory (not index.ts) so sub-path imports like
-                // 'babylon-lite/loader-env/load-dds-env' resolve correctly.
+                // Resolve `babylon-lite` to the built `build/lib` tree (NOT the TS source)
+                // so the measured bundle reflects exactly what a consumer of the published
+                // package gets. Using the directory (not index.js) so sub-path imports like
+                // 'babylon-lite/loader-env/load-dds-env' resolve correctly. `build:lib` must
+                // run first unless explicit source fallback is enabled for legacy baselines.
                 alias: {
-                    "babylon-lite": srcDir,
+                    "babylon-lite": liteAliasDir,
                 },
                 dedupe: ["@babylonjs/core"],
             },
@@ -1280,25 +1017,27 @@ export async function buildBundleScenes(): Promise<void> {
     }
 
     // Only build BJS scenes whose sizes aren't already cached in the manifest
-    const bjsScenesToBuild = BJS_SCENES.filter((bjsScene) => {
-        const liteScene = bjsScene.replace("bjs-", "");
-        const cached = existingManifest[liteScene];
-        if (cached?.bjsRawKB == null) {
-            return true;
-        }
-        const sourcePath = bjsSceneEntry(liteScene);
-        const bundlePath = resolve(outDir, `${bjsScene}.js`);
-        if (!existsSync(bundlePath)) {
-            return true;
-        }
-        return statSync(sourcePath).mtimeMs > statSync(bundlePath).mtimeMs;
-    });
+    const bjsScenesToBuild = requestedSceneNames
+        ? bjsScenesRequested
+        : BJS_SCENES.filter((bjsScene) => {
+              const liteScene = bjsScene.replace("bjs-", "");
+              const cached = existingManifest[liteScene];
+              if (cached?.bjsRawKB == null) {
+                  return true;
+              }
+              const sourcePath = bjsSceneEntry(liteScene);
+              const bundlePath = resolve(outDir, `${bjsScene}.js`);
+              if (!existsSync(bundlePath)) {
+                  return true;
+              }
+              return statSync(sourcePath).mtimeMs > statSync(bundlePath).mtimeMs;
+          });
 
     // Build sequentially — parallel Vite build() calls within the same process
     // cause race conditions (0-byte chunk files, stale measurements on Windows).
-    const totalScenes = SCENES.length + bjsScenesToBuild.length;
+    const totalScenes = scenesToBuild.length + bjsScenesToBuild.length;
     let built = 0;
-    for (const scene of SCENES) {
+    for (const scene of scenesToBuild) {
         built++;
         const tScene = performance.now();
         console.log(`[${built}/${totalScenes}] Building ${scene}...`);
@@ -1325,11 +1064,11 @@ export async function buildBundleScenes(): Promise<void> {
         return;
     }
     const tMeasure = performance.now();
-    const manifest = await measureLiveSizes();
+    const manifest = await measureLiveSizes(scenesToBuild, bjsScenesToBuild, requestedSceneNames == null);
     console.log(`Live measurement completed in ${elapsed(tMeasure)}`);
 
     console.log("\n=== Per-scene bundle sizes (live runtime measurement) ===");
-    for (const scene of SCENES) {
+    for (const scene of scenesToBuild) {
         const s = manifest[scene];
         if (s) {
             let line = `  ${scene}: ${s.rawKB} KB raw, ${s.gzipKB} KB gzip`;
@@ -1345,19 +1084,10 @@ export async function buildBundleScenes(): Promise<void> {
  * bundle-sceneN.html, and measure only the /bundle/*.js bytes that are
  * actually fetched at runtime.
  */
-async function measureLiveSizes(): Promise<BundleManifest> {
+async function measureLiveSizes(liteScenes: readonly string[], bjsScenes: readonly string[], pruneManifest = true): Promise<BundleManifest> {
     const { chromium } = await import("@playwright/test");
     const { server, port } = await startStaticServer(labDir);
     const manifestPath = resolve(outDir, MANIFEST_FILE);
-    const masterManifestPath = resolve(outDir, MASTER_MANIFEST_FILE);
-    let masterManifest: BundleManifest = {};
-    if (existsSync(masterManifestPath)) {
-        try {
-            masterManifest = JSON.parse(readFileSync(masterManifestPath, "utf-8"));
-        } catch {
-            /* no master baseline */
-        }
-    }
 
     // Load existing manifest so we can update incrementally (UI can refresh mid-build)
     let manifest: BundleManifest = {};
@@ -1401,10 +1131,9 @@ async function measureLiveSizes(): Promise<BundleManifest> {
         console.log(`Browser launched in ${elapsed(tBrowser)}`);
 
         // Measure Lite scenes (write after each)
-        for (const scene of SCENES) {
+        for (const scene of liteScenes) {
             const tPage = performance.now();
-            const masterIgnoredRawKB = masterManifest[scene]?.ignoredRawKB;
-            const { rawKB, gzipKB, ignoredRawKB, chunks } = await measurePage(browser, port, scene, `lite/bundle-${scene}.html`, "/bundle/", masterIgnoredRawKB);
+            const { rawKB, gzipKB, ignoredRawKB, chunks } = await measurePage(browser, port, scene, `lite/bundle-${scene}.html`, "/bundle/");
             manifest[scene] = { ...manifest[scene], rawKB, gzipKB, ignoredRawKB, runtimeChunks: chunks };
             flush();
             const ignored = ignoredRawKB > 0 ? `, ignored ${ignoredRawKB} KB raw ${IGNORED_BUNDLE_MODULE_PATTERN}` : "";
@@ -1412,7 +1141,7 @@ async function measureLiveSizes(): Promise<BundleManifest> {
         }
 
         // Measure BJS scenes — skip if sizes already cached in manifest
-        for (const bjsScene of BJS_SCENES) {
+        for (const bjsScene of bjsScenes) {
             const liteScene = bjsScene.replace("bjs-", "");
             if (manifest[liteScene]?.bjsRawKB != null) {
                 console.log(`  ${bjsScene}: ${manifest[liteScene]!.bjsRawKB} KB raw, ${manifest[liteScene]!.bjsGzipKB} KB gzip (cached)`);
@@ -1440,8 +1169,8 @@ async function measureLiveSizes(): Promise<BundleManifest> {
         server.close();
     }
 
-    if (!process.env.BUNDLE_SCENES) {
-        const currentScenes = new Set(SCENES);
+    if (pruneManifest) {
+        const currentScenes = new Set(liteScenes);
         for (const scene of Object.keys(manifest)) {
             if (!currentScenes.has(scene)) {
                 delete manifest[scene];
@@ -1458,8 +1187,7 @@ export async function measurePage(
     port: number,
     scene: string,
     htmlFile: string,
-    bundlePath: string,
-    ignoredRawKBOverride?: number
+    bundlePath: string
 ): Promise<{ rawKB: number; gzipKB: number; ignoredRawKB: number; chunks: string[] }> {
     const page = await browser.newPage();
     const jsPayloads: RuntimeJsPayload[] = [];
@@ -1495,8 +1223,8 @@ export async function measurePage(
         throw responseReadErrors[0];
     }
     const summary = summarizeRuntimeBundle(jsPayloads, bundleInfoDir, scene);
-    const ignoredRawKB = ignoredRawKBOverride ?? bytesToRoundedKB(summary.ignoredRawBytes);
-    const rawBytes = ignoredRawKBOverride == null ? summary.rawBytes : Math.max(0, summary.fetchedRawBytes - ignoredRawKBOverride * 1024);
+    const ignoredRawKB = bytesToRoundedKB(summary.ignoredRawBytes);
+    const rawBytes = summary.rawBytes;
 
     await page.close();
     return {

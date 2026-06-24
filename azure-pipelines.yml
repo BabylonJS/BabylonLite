@@ -229,6 +229,13 @@ stages:
                   env:
                       SKIP_BJS: "true"
 
+                # Enforce that any PR which moves per-scene bundle sizes also
+                # commits the regenerated manifest. The build step above rewrites
+                # the working-tree manifest with fresh measurements; this compares
+                # it (rounded to whole KB) against the version committed at HEAD.
+                - script: pnpm validate:bundle-manifest
+                  displayName: "Validate bundle manifest is committed"
+
                 # Absolute ceiling checks (scene-config.json maxRawKB)
                 - script: npx playwright test tests/lite/parity/bundle-size.spec.ts --reporter=junit
                   displayName: "Bundle size ceiling checks"
@@ -279,6 +286,7 @@ stages:
           # ──────────────────────────────────────────────────────────────
           - job: PerfRegression
             displayName: "Performance: Lite vs Stable"
+            timeoutInMinutes: 120
             pool:
                 vmImage: "ubuntu-latest"
             steps:
@@ -397,7 +405,7 @@ stages:
           # ──────────────────────────────────────────────────────────────
           - job: ParityCloud
             displayName: "Parity Tests (Cloud Browser)"
-            timeoutInMinutes: 120
+            timeoutInMinutes: 180
             pool:
                 vmImage: "ubuntu-latest"
             steps:
@@ -495,3 +503,67 @@ stages:
                 - script: |
                       npx tsc -p tests/gl/tsconfig.json --noEmit 2>&1 | sed -E 's/^(.+)\(([0-9]+),([0-9]+)\): error (TS[0-9]+): (.+)/##vso[task.logissue type=error;sourcepath=\1;linenumber=\2;columnnumber=\3]\4: \5/'
                   displayName: "TypeScript type-check (gl tests)"
+
+                # Verifies docs/lite/02-feature-comparison.md is in sync with its
+                # source of truth (lab/lite/docs/feature-comparison.html). The check
+                # exits non-zero either when the doc is OUT OF SYNC or when generation
+                # itself fails (e.g. malformed HTML). On failure, emit a task.logissue
+                # so the error surfaces in the ADO build's Errors summary (the GitHub
+                # check links here via "Details"); the step log above has the specifics.
+                - script: |
+                      if ! pnpm gen:feature-doc:check; then
+                          echo "##vso[task.logissue type=error;sourcepath=docs/lite/02-feature-comparison.md]Feature-comparison doc check failed (see the step log above for details). If it reports OUT OF SYNC, run 'pnpm gen:feature-doc' and commit the result; otherwise fix the reported generation error."
+                          exit 1
+                      fi
+                  displayName: "Feature-comparison doc in sync"
+
+          # ──────────────────────────────────────────────────────────────
+          # Job 7: Compat Layer (@babylonjs/lite-compat)
+          # ──────────────────────────────────────────────────────────────
+          # Type-checks, builds, and unit-tests the opt-in compatibility layer so
+          # regressions are caught in PR CI. NOTE: this job intentionally does NOT
+          # publish the package — @babylonjs/lite-compat is not released yet. The
+          # npm-publish pipeline only publishes packages/babylon-lite/build.
+          - job: Compat
+            displayName: "Compat Layer"
+            pool:
+                vmImage: "ubuntu-latest"
+            steps:
+                - checkout: self
+
+                - task: UseNode@1
+                  inputs:
+                      version: $(NODE_VERSION)
+
+                - script: |
+                      corepack enable
+                      corepack prepare pnpm@$(PNPM_VERSION) --activate
+                  displayName: "Enable pnpm via corepack"
+
+                - script: pnpm install --frozen-lockfile
+                  displayName: "Install dependencies"
+
+                - script: |
+                      npx tsc -p packages/babylon-lite-compat/tsconfig.json --noEmit 2>&1 | sed -E 's/^(.+)\(([0-9]+),([0-9]+)\): error (TS[0-9]+): (.+)/##vso[task.logissue type=error;sourcepath=\1;linenumber=\2;columnnumber=\3]\4: \5/'
+                  displayName: "TypeScript type-check (compat src)"
+
+                - script: |
+                      npx tsc -p packages/babylon-lite-compat/tests/tsconfig.json --noEmit 2>&1 | sed -E 's/^(.+)\(([0-9]+),([0-9]+)\): error (TS[0-9]+): (.+)/##vso[task.logissue type=error;sourcepath=\1;linenumber=\2;columnnumber=\3]\4: \5/'
+                  displayName: "TypeScript type-check (compat tests)"
+
+                - script: pnpm --filter @babylonjs/lite-compat build
+                  displayName: "Build compat package (dist)"
+
+                - script: npx vitest run --project compat
+                  displayName: "Run compat unit tests"
+                  env:
+                      CI: "true"
+
+                - task: PublishTestResults@2
+                  condition: always()
+                  inputs:
+                      testResultsFormat: "JUnit"
+                      testResultsFiles: "**/test-results/unit-junit.xml"
+                      mergeTestResults: true
+                      testRunTitle: "Compat Layer"
+                  continueOnError: true

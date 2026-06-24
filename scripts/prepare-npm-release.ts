@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { execFileSync } from "child_process";
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync } from "fs";
 import { resolve } from "path";
 
 type ReleaseType = "auto" | "patch" | "minor" | "major";
@@ -20,7 +20,15 @@ type PublishPackageJson = {
 };
 
 const PACKAGE_NAME = process.env.RELEASE_PACKAGE_NAME ?? "@babylonjs/lite";
-const DIST_PACKAGE_JSON = resolve(process.cwd(), process.env.RELEASE_DIST_PACKAGE_JSON ?? "packages/babylon-lite/dist/package.json");
+// Resolution runs *before* `pnpm build`, so we read this package's source
+// manifest (the dist manifest does not exist yet). The build then bakes the
+// resolved version into both the bundle and the emitted dist `package.json`
+// (see packages/babylon-lite/vite.config.ts). `SOURCE_PACKAGE_NAME` is the
+// workspace-internal name; the published name is `PACKAGE_NAME`. All three are
+// overridable via env so sibling packages (e.g. @babylonjs/lite-gl) can reuse
+// this script from their own publish pipeline.
+const SOURCE_PACKAGE_NAME = process.env.RELEASE_SOURCE_PACKAGE_NAME ?? "babylon-lite";
+const SOURCE_PACKAGE_JSON = resolve(process.cwd(), process.env.RELEASE_SOURCE_PACKAGE_JSON ?? "packages/babylon-lite/package.json");
 const RELEASE_CONFIG_PATH = resolve(process.cwd(), process.env.RELEASE_CONFIG_PATH ?? "config/release.json");
 const RELEASE_TAG_PATTERN = process.env.RELEASE_TAG_PATTERN ?? "npm-lite-v*";
 const RELEASE_TAG_PREFIX = RELEASE_TAG_PATTERN.replace(/\*$/, "");
@@ -131,14 +139,14 @@ function hasBreakingChanges(previousReleaseTag: string): boolean {
 
 const requested = resolveRequestedReleaseType();
 const requestedReleaseType = requested.releaseType;
-const pkg = JSON.parse(readFileSync(DIST_PACKAGE_JSON, "utf-8")) as PublishPackageJson;
+const pkg = JSON.parse(readFileSync(SOURCE_PACKAGE_JSON, "utf-8")) as PublishPackageJson;
 
-if (pkg.name !== PACKAGE_NAME) {
-    throw new Error(`Refusing to publish '${pkg.name ?? "<missing>"}'. Expected '${PACKAGE_NAME}'.`);
+if (pkg.name !== SOURCE_PACKAGE_NAME) {
+    throw new Error(`Refusing to publish from '${pkg.name ?? "<missing>"}'. Expected source package '${SOURCE_PACKAGE_NAME}'.`);
 }
 
 if (!pkg.version) {
-    throw new Error(`${DIST_PACKAGE_JSON} does not contain a version.`);
+    throw new Error(`${SOURCE_PACKAGE_JSON} does not contain a version.`);
 }
 
 const latestPublishedVersion = getLatestPublishedVersion(pkg.version);
@@ -153,9 +161,12 @@ const previousReleaseTag = getPreviousReleaseTag(latestPublishedVersion);
 const breakingChangesDetected = hasBreakingChanges(previousReleaseTag);
 
 if (breakingChangesDetected && requestedReleaseType !== "auto" && requestedReleaseType !== "major") {
-    throw new Error(
-        `Breaking changes were detected since ${previousReleaseTag || "the start of history"}. ` +
-            `A ${requestedReleaseType} release would hide those changes from the next auto release; request a major release or remove the breaking-change marker if it is incorrect.`
+    // Azure Pipelines parses `##vso[task.logissue ...]` from stdout, so use console.log (not
+    // console.warn, which writes to stderr and may not be picked up as an annotation).
+    console.log(
+        `##vso[task.logissue type=warning]Breaking changes were detected since ${previousReleaseTag || "the start of history"}. ` +
+            `A ${requestedReleaseType} release will hide those changes from the next auto release. ` +
+            `This is currently allowed to avoid premature major releases; request a major release or remove the breaking-change marker if it is incorrect.`
     );
 }
 
@@ -166,13 +177,10 @@ if (isVersionPublished(nextVersion)) {
     throw new Error(`${PACKAGE_NAME}@${nextVersion} is already published. Refusing to overwrite an existing npm version.`);
 }
 
-pkg.version = nextVersion;
-pkg.babylonLiteRelease = {
-    ...(currentBuildId ? { azureBuildId: currentBuildId } : {}),
-    ...(process.env.BUILD_SOURCEVERSION ? { sourceVersion: process.env.BUILD_SOURCEVERSION } : {}),
-};
-writeFileSync(DIST_PACKAGE_JSON, `${JSON.stringify(pkg, null, 2)}\n`);
-
+// The resolved version is consumed by the build that runs next: `pnpm build`
+// reads `PACKAGE_VERSION` (set below) to bake `VERSION` into the bundle and to
+// emit the versioned dist `package.json`, including the `babylonLiteRelease`
+// provenance from `BUILD_BUILDID` / `BUILD_SOURCEVERSION`. Nothing is written here.
 console.log(`Package: ${PACKAGE_NAME}`);
 console.log(`Latest published version: ${latestPublishedVersion}`);
 console.log(`Previous release tag: ${previousReleaseTag || "<none>"}`);

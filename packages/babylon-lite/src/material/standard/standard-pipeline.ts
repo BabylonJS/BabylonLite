@@ -14,6 +14,8 @@ import { F32 } from "../../engine/typed-arrays.js";
 import type { EngineContext } from "../../engine/engine.js";
 import type { RenderTargetSignature } from "../../engine/render-target.js";
 import type { StandardMaterialProps } from "./standard-material.js";
+import type { ResolvedStencil } from "../stencil-state.js";
+import type { StencilState } from "../material.js";
 import { _standardFeatureKey } from "./standard-material.js";
 import { getSceneBindGroupLayout, clearSceneBGLCache } from "../../render/scene-helpers.js";
 import { createStandardTemplate } from "./standard-template.js";
@@ -36,6 +38,15 @@ import {
 } from "./standard-flags.js";
 import { MSH_RECEIVE_SHADOWS } from "../mesh-features.js";
 
+/** Stencil resolver, installed only by `enableMaterialStencil`. Module-local with a single exported setter:
+ *  when `enableMaterialStencil` is absent from the bundle the setter tree-shakes, the bundler proves this is
+ *  always null, and every stencil branch below folds away — stencil-free Standard scenes stay byte-identical. */
+let _stencilResolver: ((stencil: StencilState) => ResolvedStencil) | null = null;
+/** @internal Install the stencil resolver into the Standard pipeline (called by `enableMaterialStencil`). */
+export function _installStandardStencilResolver(resolve: (stencil: StencilState) => ResolvedStencil): void {
+    _stencilResolver = resolve;
+}
+
 // ─── Composer Path (Phase 1) ────────────────────────────────────────
 // Converts feature bitmask → StandardTemplateConfig → ComposedShader.
 // This produces identical WGSL to the old string-builder path but via
@@ -45,6 +56,7 @@ import { MSH_RECEIVE_SHADOWS } from "../mesh-features.js";
  *  @param fragments - Optional extra fragments (e.g. thin-instance). */
 export function composeStandardShader(features: number, _meshFeatures = 0, fragments: ShaderFragment[] = [], esmShadowDepthCode = ""): ComposedShader {
     const has = (bit: number) => (features & bit) !== 0;
+    const pc = fragments[0]?._pc;
     const template = createStandardTemplate(
         {
             _diffuse: has(HAS_DIFFUSE_TEXTURE),
@@ -54,10 +66,13 @@ export function composeStandardShader(features: number, _meshFeatures = 0, fragm
             _disableLighting: has(DISABLE_LIGHTING),
             _noColorOutput: has(NO_COLOR_OUTPUT),
             _esmShadowOutput: has(ESM_SHADOW_OUTPUT),
+            _hasMorph: !!pc,
         },
         esmShadowDepthCode
     );
-    return composeShader(template, fragments);
+    let composed = composeShader(template, fragments);
+    pc && (composed = pc(composed));
+    return composed;
 }
 
 // ─── Shader Bindings (sig-independent) ──────────────────────────────
@@ -76,6 +91,10 @@ export interface StandardShaderBindings {
     _shadowBGL: GPUBindGroupLayout | null;
     /** @internal */
     _composed: ComposedShader;
+    /** @internal Pre-baked partial depth-stencil descriptor for this material's stencil state. Present (and
+     *  the cache key carries the resolved `_key`) only when `enableMaterialStencil` was called — otherwise the
+     *  field is never assigned and the whole stencil path folds out of stencil-free bundles. */
+    _stencil?: Partial<GPUDepthStencilState>;
     /** @internal Per-sig pipeline cache. Key = `targetSignatureKey(sig)`. */
     _pipelines: Map<string, GPURenderPipeline>;
 }
@@ -120,10 +139,15 @@ export function getOrCreateStandardBindings(
     meshFeatures: number,
     fragments: ShaderFragment[] = [],
     shaderKey = "",
-    esmShadowDepthCode = ""
+    esmShadowDepthCode = "",
+    stencil: StencilState | null = null
 ): StandardShaderBindings {
     ensureDevice(engine);
-    const key = _standardFeatureKey(features, meshFeatures, shaderKey);
+    // Stencil state is baked into the GPU pipeline (no dynamic stencil ref), so two materials that differ only in
+    // stencil must NOT share bindings/pipelines — fold the resolved stencil token into the cache key. Resolution
+    // goes through the opt-in `_stencilResolver` hook, so non-stencil scenes fold this whole block away.
+    const resolvedStencil = stencil && _stencilResolver ? _stencilResolver(stencil) : null;
+    const key = _standardFeatureKey(features, meshFeatures, shaderKey) + (resolvedStencil ? resolvedStencil._key : "");
     const cached = _bindingsCache.get(key);
     if (cached) {
         return cached;
@@ -152,6 +176,10 @@ export function getOrCreateStandardBindings(
         _composed: composed,
         _pipelines: new Map(),
     };
+    // Gated by the opt-in resolver so the field assignment folds out of stencil-free bundles entirely.
+    if (resolvedStencil) {
+        bindings._stencil = resolvedStencil._desc;
+    }
     _bindingsCache.set(key, bindings);
     return bindings;
 }
@@ -199,6 +227,11 @@ export function getOrCreateStandardPipeline(engine: EngineContext, sig: RenderTa
                       format: sig._depthStencilFormat,
                       depthCompare: sig._depthCompare ?? REVERSE_DEPTH_COMPARE,
                       depthWriteEnabled: noColorOutput || esmShadowOutput || !needsBlend,
+                      // Pre-baked stencil sub-fields, applied only on a stencil-capable target — the same
+                      // material in the depth32float shadow/depth pass keeps plain depth state (no stencil → no
+                      // format mismatch). Gated on `_stencilResolver` (the opt-in hook) so the entire branch —
+                      // including the `bindings._stencil` reads — folds out of stencil-free bundles.
+                      ...(_stencilResolver && bindings._stencil && sig._depthStencilFormat.includes("stencil") ? bindings._stencil : {}),
                   },
               }
             : {}),
@@ -223,7 +256,8 @@ export function createStandardMeshBindGroup(
     bindings: StandardShaderBindings,
     meshUBO: GPUBuffer,
     materialUBO: GPUBuffer,
-    material: StandardMaterialProps
+    material: StandardMaterialProps,
+    morphTargets: { deltasBuffer: GPUBuffer; weightsBuffer: GPUBuffer } | null = null
 ): GPUBindGroup {
     const device = engine._device;
     const features = bindings._features;
@@ -231,12 +265,18 @@ export function createStandardMeshBindGroup(
     const hasDiffuseTex = (features & HAS_DIFFUSE_TEXTURE) !== 0;
     const esmShadowOutput = (features & ESM_SHADOW_OUTPUT) !== 0;
 
-    // Sequential numbering matches composer output.
+    // Sequential numbering matches composer output:
+    // meshUBO(0) → morph vertex bindings → material UBO → diffuse → uv → esm → exts.
     let nextBinding = 0;
-    const entries: GPUBindGroupEntry[] = [
-        { binding: nextBinding++, resource: { buffer: meshUBO } },
-        { binding: nextBinding++, resource: { buffer: materialUBO } },
-    ];
+    const entries: GPUBindGroupEntry[] = [{ binding: nextBinding++, resource: { buffer: meshUBO } }];
+
+    // Morph bindings are fragment vertex bindings, so the composer places them
+    // immediately after the mesh UBO and before the material UBO.
+    if (morphTargets) {
+        entries.push({ binding: nextBinding++, resource: { buffer: morphTargets.deltasBuffer } }, { binding: nextBinding++, resource: { buffer: morphTargets.weightsBuffer } });
+    }
+
+    entries.push({ binding: nextBinding++, resource: { buffer: materialUBO } });
 
     if (hasDiffuseTex) {
         const tex = material.diffuseTexture!;

@@ -44,17 +44,26 @@ import type { PbrGeometryMaterialView } from "./pbr-geometry-view.js";
 import { composePbrGeometryShader, _ensurePbrGeometryExt } from "./pbr-geometry-output-shader.js";
 import { _setActivePbrGeometryAttachments } from "./pbr-geometry-view.js";
 
-/** Singleton {@link MeshGroupBuilder} that geometry views point at via their
- *  overridden `_buildGroup`. The async builder body is unreachable —
- *  geometry views are dispatched per-mesh via `_rebuildSingle` directly. */
-export const pbrGeometryGroupBuilder: MeshGroupBuilder = (async () => {
-    throw new Error("pbr-geometry view does not support scene group building");
-}) as MeshGroupBuilder;
-pbrGeometryGroupBuilder._rebuildSingle = (scene: SceneContext, mesh: Mesh, materialOverride?: Material): Renderable => {
-    const view = (materialOverride ?? mesh.material) as PbrGeometryMaterialView;
-    return buildPbrGeometryRenderable(scene, mesh, view);
-};
-pbrGeometryGroupBuilder._materialFamily = "pbr";
+/** Lazily-created singleton {@link MeshGroupBuilder} that geometry views point at
+ *  via their overridden `_buildGroup`. The async builder body is unreachable —
+ *  geometry views are dispatched per-mesh via `_rebuildSingle` directly. Lazy-init
+ *  keeps the module free of top-level side effects so an unused geometry path
+ *  tree-shakes away. */
+let _pbrGeometryGroupBuilder: MeshGroupBuilder | null = null;
+export function getPbrGeometryGroupBuilder(): MeshGroupBuilder {
+    if (_pbrGeometryGroupBuilder) {
+        return _pbrGeometryGroupBuilder;
+    }
+    const builder = (async () => {
+        throw new Error("pbr-geometry view does not support scene group building");
+    }) as MeshGroupBuilder;
+    builder._materialFamily = "pbr";
+    builder._rebuildSingle = (scene: SceneContext, mesh: Mesh, materialOverride?: Material): Renderable => {
+        const view = (materialOverride ?? mesh.material) as PbrGeometryMaterialView;
+        return buildPbrGeometryRenderable(scene, mesh, view);
+    };
+    return (_pbrGeometryGroupBuilder = builder);
+}
 
 interface PbrGeometryViewResources {
     _composed: ComposedShader;
@@ -218,18 +227,20 @@ export function buildPbrGeometryRenderable(scene: SceneContext, mesh: Mesh, view
             pass.setBindGroup(2, shadowBindGroup);
         }
         let slot = 0;
-        const vb = gpu._vbLayout;
-        pass.setVertexBuffer(slot++, gpu.positionBuffer, vb?._p?._offset);
-        pass.setVertexBuffer(slot++, gpu.normalBuffer, vb?._n?._offset);
+        // Bind every attribute at offset 0 — the per-attribute byte offset is baked into the
+        // pipeline vertex layout (see pbr-template). A non-zero setVertexBuffer bind offset
+        // corrupts vertex fetch on some AMD/Dawn paths; this mirrors the color pass and BJS.
+        pass.setVertexBuffer(slot++, gpu.positionBuffer);
+        pass.setVertexBuffer(slot++, gpu.normalBuffer);
         if (hasNormalMap && gpu.tangentBuffer) {
-            pass.setVertexBuffer(slot++, gpu.tangentBuffer, vb?._t?._offset);
+            pass.setVertexBuffer(slot++, gpu.tangentBuffer);
         }
-        pass.setVertexBuffer(slot++, gpu.uvBuffer, vb?._u?._offset);
+        pass.setVertexBuffer(slot++, gpu.uvBuffer);
         if (hasUV2 && gpu.uv2Buffer) {
-            pass.setVertexBuffer(slot++, gpu.uv2Buffer, vb?._u2?._offset);
+            pass.setVertexBuffer(slot++, gpu.uv2Buffer);
         }
         if (hasVertexColor && gpu.colorBuffer) {
-            pass.setVertexBuffer(slot++, gpu.colorBuffer, vb?._c?._offset);
+            pass.setVertexBuffer(slot++, gpu.colorBuffer);
         }
         // Skinning vertex buffers: live skeleton OR baked VAT (same field names, mutually exclusive).
         // Mirrors the main PBR renderable — without the VAT branch, VAT-animated thin instances leave the

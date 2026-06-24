@@ -5,6 +5,8 @@ import type { Camera } from "../camera/camera.js";
 import type { LightBase } from "../light/types.js";
 import type { Mesh } from "../mesh/mesh.js";
 import { disposeMeshGpu } from "../mesh/mesh-dispose.js";
+import { registerMeshScene, unregisterMeshScene, enqueueMaterialSwap } from "./mesh-scene-registry.js";
+import { processMaterialSwaps } from "./scene-material-swap.js";
 import type { AnimationGroup } from "../animation/animation-group.js";
 import type { ShadowGenerator } from "../shadow/shadow-generator.js";
 import type { FogConfig } from "../material/standard/standard-material.js";
@@ -103,8 +105,12 @@ export interface SceneContext extends RenderingContext {
     _materialSwapQueue: Mesh[];
     /** @internal Monotonic counter bumped when the renderable list changes (add/remove/rebuild). */
     _renderableVersion: number;
-    /** @internal Lazily-loaded processor; populated on first material reassignment. */
-    _processSwaps?: (scene: SceneContext) => void;
+    /** @internal Monotonic counter bumped ONLY when a material's renderables are rebuilt/swapped (material
+     *  swap drain or `rebuildMaterial`) — NOT on a geometry resize (which bumps `_renderableVersion` alone).
+     *  Lets consumers that cache material-view-derived GPU state (e.g. the CSM shadow tasks' no-color material
+     *  views) cheaply re-record on a geometry-only edit and only fully rebuild when a caster's material UBOs
+     *  were actually destroyed/recreated (which would otherwise leave their cached views dangling). */
+    _materialEpoch: number;
     /** True once the initial deferred build (buildScene) has run. Meshes added after
      *  this point are materialized via the per-frame swap drain rather than the
      *  boot-only deferred-builder path. */
@@ -133,43 +139,6 @@ export interface SceneContext extends RenderingContext {
 /** Options passed to the scene-context factory. */
 export interface SceneContextOptions {
     defaultRenderTask?: boolean;
-}
-
-/** Queue a mesh for renderable (re)build on the next frame's material-swap drain.
- *  Shared by the material setter (runtime material change) and addToScene (runtime
- *  mesh add). Lazily loads the swap processor so scenes that never mutate at runtime
- *  don't pull it into their bundle. */
-function enqueueMaterialSwap(scene: SceneContext, mesh: Mesh): void {
-    const mi = mesh as Mesh;
-    if (mi._materialDirty) {
-        return;
-    }
-    mi._materialDirty = true;
-    scene._materialSwapQueue.push(mesh);
-    if (!scene._processSwaps) {
-        void import("./scene-material-swap.js").then((m) => {
-            scene._processSwaps = m.processMaterialSwaps;
-        });
-    }
-}
-
-/** Install a property setter on mesh.material that sets _materialDirty
- *  and pushes the mesh into the scene's swap queue for processing. */
-function installMaterialSetter(scene: SceneContext, mesh: Mesh): void {
-    let _mat = mesh.material;
-    Object.defineProperty(mesh, "material", {
-        get() {
-            return _mat;
-        },
-        set(v) {
-            if (v !== _mat) {
-                _mat = v;
-                enqueueMaterialSwap(scene, mesh);
-            }
-        },
-        configurable: true,
-        enumerable: true,
-    });
 }
 
 /** Create an empty scene context bound to the given `surface`. The default render task
@@ -204,6 +173,7 @@ export function createSceneContext(surface: SurfaceContext, options?: SceneConte
         _meshDisposables: new Map(),
         _materialSwapQueue: [],
         _renderableVersion: 0,
+        _materialEpoch: 0,
         _built: false,
         _drawCallsPre: 0,
 
@@ -226,7 +196,7 @@ export function createSceneContext(surface: SurfaceContext, options?: SceneConte
                 cb(d);
             }
             if (ctx._materialSwapQueue.length > 0) {
-                ctx._processSwaps?.(ctx);
+                processMaterialSwaps(ctx);
             }
             for (const pp of ctx._prePasses) {
                 draws += pp.execute(encoder, eng);
@@ -344,7 +314,7 @@ export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camer
     if ("_gpu" in entity && "material" in entity) {
         const mesh = entity as unknown as Mesh;
         ctx.meshes.push(mesh);
-        installMaterialSetter(ctx, mesh);
+        registerMeshScene(ctx, mesh);
         const build = mesh.material ? (mesh.material as unknown as { _buildGroup?: MeshGroupBuilder })._buildGroup : undefined;
         if (build) {
             let group = ctx._groups.get(build);
@@ -394,7 +364,10 @@ export function disposeScene(scene: SceneContext): void {
     }
     ctx._meshDisposables.clear();
     for (const mesh of ctx.meshes) {
-        disposeMeshGpu(mesh);
+        // Free the mesh's shared GPU buffers only when this was its LAST owning scene.
+        if (unregisterMeshScene(ctx, mesh)) {
+            disposeMeshGpu(mesh);
+        }
     }
     ctx.meshes.length = 0;
     ctx._renderables.length = 0;
@@ -419,9 +392,6 @@ export async function buildScene(scene: SceneContext): Promise<void> {
         ctx._deferredBuilders = [];
         await Promise.all(builders.map(async (b) => b()));
     }
-    for (const mesh of ctx._materialSwapQueue) {
-        (mesh as Mesh)._materialDirty = false;
-    }
     ctx._materialSwapQueue.length = 0;
     ctx._renderableVersion++;
     ctx._built = true;
@@ -444,7 +414,8 @@ export async function registerScene(scene: SceneContext): Promise<void> {
     await Promise.all(ctx._frameGraph._tasks.map((task) => task._preload?.()).filter((preload): preload is Promise<void> => preload !== undefined));
     ctx._frameGraph.build();
     if (surface._renderingContexts.length > 0) {
-        (await import("./swapchain-overlay.js")).configureSwapchainOverlayScene(surface, ctx);
+        const overlay = await import("./swapchain-overlay.js");
+        overlay.configureSwapchainOverlayScene(surface, ctx);
     }
     registerRenderingContext(surface, ctx);
 }
@@ -466,7 +437,8 @@ export async function registerSceneWithShadowSupport(scene: SceneContext): Promi
     await Promise.all(ctx._frameGraph._tasks.map((task) => task._preload?.()).filter((preload): preload is Promise<void> => preload !== undefined));
     ctx._frameGraph.build();
     if (surface._renderingContexts.length > 0) {
-        (await import("./swapchain-overlay.js")).configureSwapchainOverlayScene(surface, ctx);
+        const overlay = await import("./swapchain-overlay.js");
+        overlay.configureSwapchainOverlayScene(surface, ctx);
     }
     registerRenderingContext(surface, ctx);
 }

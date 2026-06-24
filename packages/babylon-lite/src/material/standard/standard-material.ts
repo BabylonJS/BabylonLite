@@ -7,7 +7,7 @@
  */
 
 import type { Texture2D } from "../../texture/texture-2d.js";
-import type { Material } from "../material.js";
+import type { Material, StencilState } from "../material.js";
 import type { MaterialPlugin } from "../plugin/material-plugin.js";
 import {
     AMBIENT_USES_UV2,
@@ -25,6 +25,8 @@ import {
     HAS_REFLECTION_TEXTURE,
     HAS_SPECULAR_TEXTURE,
     LIGHTMAP_USES_UV2,
+    LIGHTMAP_SHADOWMAP,
+    LIGHTMAP_FLIP_V,
     MATERIAL_ALPHA_BLEND,
     OPACITY_FROM_RGB,
     SPECULAR_USES_UV2,
@@ -38,6 +40,9 @@ export interface StandardMaterialProps extends Material {
      *  on top of the built-in Standard pipeline). Attach via `material.plugins = [plugin]`,
      *  then call `enableMaterialPlugins(scene)` before `registerScene`. */
     plugins?: MaterialPlugin[];
+    /** Optional stencil-test state baked into the main-pass pipeline (mask write / discard). Default none.
+     *  See `StencilState`. */
+    stencil?: StencilState;
     diffuseColor: [number, number, number];
     alpha: number;
     specularColor: [number, number, number];
@@ -70,6 +75,10 @@ export interface StandardMaterialProps extends Material {
     lightmapLevel: number;
     /** Lightmap UV channel. 0=UV1, 1=UV2. Default 1 (BJS convention). */
     lightmapCoordIndex: 0 | 1;
+    /** When true, the lightmap is a baked shadowmap that multiplies the final color
+     *  (`color *= lightmap * level`) instead of being added. Matches BJS
+     *  StandardMaterial.useLightmapAsShadowmap. Default false. */
+    useLightmapAsShadowmap: boolean;
     /** Optional opacity texture. Multiplies alpha (.a channel). */
     opacityTexture: Texture2D | null;
     /** Opacity texture intensity. Default 1.0. */
@@ -129,6 +138,12 @@ export function _computeStandardMaterialFeatures(m: StandardMaterialProps): numb
         if (m.lightmapCoordIndex === 1) {
             f |= LIGHTMAP_USES_UV2;
         }
+        if (m.useLightmapAsShadowmap) {
+            f |= LIGHTMAP_SHADOWMAP;
+        }
+        if (m.lightmapTexture.uAng === Math.PI) {
+            f |= LIGHTMAP_FLIP_V;
+        }
     }
     if (m.opacityTexture) {
         f |= HAS_OPACITY_TEXTURE;
@@ -175,4 +190,4 @@ export interface FogConfig {
 
 export { collectStdBoundTextures } from "./collect-std-bound-textures.js";
 export { createStandardMaterial } from "./create-standard-material.js";
-export { standardGroupBuilder } from "./standard-group-builder.js";
+export { getStandardGroupBuilder } from "./standard-group-builder.js";

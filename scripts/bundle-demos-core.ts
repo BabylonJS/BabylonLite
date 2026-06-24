@@ -26,7 +26,6 @@ import {
     labDir,
     srcDir,
     outDir,
-    wgslMinifyPlugin,
     terserPropertyManglePlugin,
     isLiteBundleExternal,
     writeBundleInfo,
@@ -36,6 +35,7 @@ import {
     LITE_BUNDLE_TARGET,
     NAME_POLYFILL,
 } from "./bundle-scenes-core";
+import { wgslMinifyPlugin } from "./wgsl-minify-plugin";
 import { fetchDemoAssets } from "./demo-fetchers";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -69,6 +69,7 @@ interface DemoManifestEntry {
 const demosDir = resolve(outDir, "demos");
 const DEMOS_MANIFEST_FILE = resolve(outDir, "demos-manifest.json");
 const DEMO_SUPPORT_BUNDLES = ["landing-bg"] as const;
+const DEMO_SOURCE_BASE_URL = "https://github.com/BabylonJS/Babylon-Lite/blob/master/lab/lite/src/demos/";
 
 /** Stub Vite's preload helper so it doesn't add bytes to measured bundles. */
 function minimalVitePreloadPlugin(): Plugin {
@@ -100,14 +101,28 @@ function rewriteDemoHtmlForBundle(html: string): string {
     return html.replace(/(["'])\/(?:lite\/)?bundle\/demos\//g, "$1./");
 }
 
+/**
+ * Inject the measured engine/code size (the same KB shown on the gallery card)
+ * into a built demo page so its loading overlay can reiterate it next to the
+ * asset estimate. `installFetchProgress` reads `window.__DEMO_ENGINE_KB`; the
+ * pre-hydration `.loading-size` text is rewritten to match.
+ */
+function injectDemoEngineSize(html: string, rawKB: number): string {
+    const tag = `<script>window.__DEMO_ENGINE_KB=${rawKB};</script>`;
+    const out = html.includes("</head>") ? html.replace("</head>", `  ${tag}\n</head>`) : `${tag}\n${html}`;
+    return out.replace(/Estimated demo assets:\s*/g, `Engine ${rawKB} KB · Assets `);
+}
+
 function renderCard(demo: DemoConfigEntry, size: DemoManifestEntry | undefined): string {
     const tagList = demo.tags ?? [];
     const tags = tagList.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("");
     const sizeRow = size
         ? `<div class="size" title="Engine + demo code only — excludes external assets (textures, game data, etc.)"><strong>${size.rawKB} KB</strong> · ${size.gzipKB} KB gzip</div>`
         : "";
+    const sourceHref = `${DEMO_SOURCE_BASE_URL}${encodeURIComponent(demo.slug)}.ts`;
     return [
-        `<a class="card" href="./demo-${demo.slug}.html" data-tags="${escapeHtml(tagList.join(" "))}" data-mobile="${demo.mobile === false ? "false" : "true"}">`,
+        `<article class="card" data-tags="${escapeHtml(tagList.join(" "))}" data-mobile="${demo.mobile === false ? "false" : "true"}">`,
+        `<a class="card-main" href="./demo-${demo.slug}.html" aria-label="Open ${escapeHtml(demo.name)} demo">`,
         `<div class="card-image">`,
         `<img src="thumbnails/demo-${demo.slug}.jpg" alt="${escapeHtml(demo.name)} thumbnail" loading="lazy" decoding="async" onerror="this.remove()" />`,
         `</div>`,
@@ -118,6 +133,8 @@ function renderCard(demo: DemoConfigEntry, size: DemoManifestEntry | undefined):
         sizeRow,
         `<span class="card-disabled-badge">Requires WebGPU</span>`,
         `</div></a>`,
+        `<div class="card-links"><a class="source-link" href="${escapeHtml(sourceHref)}" target="_blank" rel="noopener noreferrer">Source code</a></div>`,
+        `</article>`,
     ].join("");
 }
 
@@ -233,7 +250,9 @@ function writeDemoHtml(demos: DemoConfigEntry[], manifest: Record<string, DemoMa
         if (!existsSync(source)) {
             throw new Error(`Missing demo HTML: ${source}`);
         }
-        writeFileSync(resolve(demosDir, `demo-${demo.slug}.html`), rewriteDemoHtmlForBundle(readFileSync(source, "utf-8")));
+        const html = rewriteDemoHtmlForBundle(readFileSync(source, "utf-8"));
+        const rawKB = manifest[demo.slug]?.rawKB;
+        writeFileSync(resolve(demosDir, `demo-${demo.slug}.html`), rawKB != null ? injectDemoEngineSize(html, rawKB) : html);
     }
     copyDemoIndexAssets(demos);
     copyDemoRuntimeAssets(demos);
@@ -252,6 +271,11 @@ export async function buildDemo(slug: string): Promise<void> {
         logLevel: "warn",
         plugins: [wgslMinifyPlugin({ mangle: false }), terserPropertyManglePlugin(), minimalVitePreloadPlugin()],
         resolve: {
+            // Demos resolve `babylon-lite` to the TS SOURCE (not `build/lib`) on purpose:
+            // demos have no bundle-size ceilings, and using source keeps the dev iteration
+            // loop fast (no package rebuild required to see demo changes). Demo sizes could
+            // therefore differ slightly from a real consumer's, but the scene bundle-size
+            // tests (which DO build against `build/lib`) are what guard against size drift.
             alias: { "babylon-lite": srcDir },
             dedupe: ["@babylonjs/core"],
         },
@@ -347,11 +371,6 @@ export async function buildSingleDemo(slug: string, options: { measure?: boolean
     await buildDemo(slug);
     copyDemoRuntimeAssets([demo]);
 
-    const source = resolve(labDir, "lite", `demo-${slug}.html`);
-    if (existsSync(source)) {
-        writeFileSync(resolve(demosDir, `demo-${slug}.html`), rewriteDemoHtmlForBundle(readFileSync(source, "utf-8")));
-    }
-
     if (options.measure) {
         const { chromium } = await import("@playwright/test");
         const { server, port } = await startStaticServer(labDir);
@@ -371,6 +390,16 @@ export async function buildSingleDemo(slug: string, options: { measure?: boolean
         } finally {
             server.close();
         }
+    }
+
+    const source = resolve(labDir, "lite", `demo-${slug}.html`);
+    if (existsSync(source)) {
+        const html = rewriteDemoHtmlForBundle(readFileSync(source, "utf-8"));
+        const manifest: Record<string, DemoManifestEntry> = existsSync(DEMOS_MANIFEST_FILE)
+            ? (JSON.parse(readFileSync(DEMOS_MANIFEST_FILE, "utf-8")) as Record<string, DemoManifestEntry>)
+            : {};
+        const rawKB = manifest[slug]?.rawKB;
+        writeFileSync(resolve(demosDir, `demo-${slug}.html`), rawKB != null ? injectDemoEngineSize(html, rawKB) : html);
     }
 
     console.log(`Demo "${slug}" ready → lab/public/bundle/demos/${slug}.js`);

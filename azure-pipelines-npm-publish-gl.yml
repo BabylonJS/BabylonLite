@@ -103,7 +103,8 @@ stages:
                   env:
                       RELEASE_TYPE: ${{ parameters.releaseType }}
                       RELEASE_PACKAGE_NAME: "@babylonjs/lite-gl"
-                      RELEASE_DIST_PACKAGE_JSON: packages/babylon-lite-gl/dist/package.json
+                      RELEASE_SOURCE_PACKAGE_NAME: "@babylonjs/lite-gl"
+                      RELEASE_SOURCE_PACKAGE_JSON: packages/babylon-lite-gl/dist/package.json
                       RELEASE_CONFIG_PATH: config/release-gl.json
                       RELEASE_TAG_PATTERN: "npm-lite-gl-v*"
 

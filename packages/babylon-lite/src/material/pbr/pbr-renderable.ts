@@ -104,6 +104,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
     let hasAnyUvTransform = false;
     let hasAnyUv2 = false;
     let hasAnyVertexColor = false;
+    let hasAnyFlatNormal = false;
     for (let i = 0; i < meshes.length; i++) {
         const m = meshes[i]!;
         const mat = m.material as PbrMaterialProps & { _hasReflExt?: boolean; _hasUvTx?: boolean };
@@ -127,6 +128,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         // UV2 only counts when occlusion samples texcoord 1.
         hasAnyUv2 ||= !!m._gpu.uv2Buffer && mat.occlusionTexCoord === 1;
         hasAnyVertexColor ||= !!m._gpu.colorBuffer;
+        hasAnyFlatNormal ||= !!(m as { _flatNormal?: boolean })._flatNormal;
     }
 
     // ── Dynamically import fragment creators based on scene capabilities ──
@@ -141,6 +143,14 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
             const sky = await import("./fragments/ibl-skybox-wgsl.js");
             _iblSkyboxCalc = sky.IBL_SKYBOX_CALCULATION;
         }
+    }
+
+    // Flat-normal WGSL is only loaded when at least one mesh lacks a NORMAL attribute
+    // (glTF flat-shading) — normal-having scenes bundle zero bytes.
+    let _flatNormalWgsl = "";
+    if (hasAnyFlatNormal) {
+        const flatNormal = await import("./fragments/flat-normal-wgsl.js");
+        _flatNormalWgsl = flatNormal.FLAT_NORMAL_WGSL;
     }
 
     // Light/shadow helpers stay dynamic so single-light and non-shadow bundles stay lean.
@@ -286,6 +296,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         _createPbrTemplateExt,
         _anisoExt,
         _iblSkyboxCalc,
+        _flatNormalWgsl,
         _createPbrShadowFragment,
         _shadowLights: shadowLights,
         _createThinInstanceFragment,
@@ -326,7 +337,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
         const vbKey = mi._gpu._vbKey ?? "";
 
         const composed = composePbr(features, features2, meshFeatures, sceneFeatures, lightMode, singleLightType, esmShadowDepthCode, vbLayout, vbKey);
-        const bindings = getOrCreatePbrBindings(engine, features, features2, meshFeatures, sceneFeatures, composed, `${lightMode}:${singleLightType}${vbKey}`);
+        const bindings = getOrCreatePbrBindings(engine, features, features2, meshFeatures, sceneFeatures, composed, `${lightMode}:${singleLightType}${vbKey}`, mat.stencil ?? null);
 
         // Mesh UBO (world matrix at offset 0; spec.totalBytes covers any extra fields).
         const meshUboData = new F32(composed._meshUboSpec._totalBytes / 4);
@@ -450,18 +461,22 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
                 pass.setBindGroup(2, shadowBindGroup);
             }
             let slot = 0;
-            const vb = gpu._vbLayout;
-            pass.setVertexBuffer(slot++, gpu.positionBuffer, vb?._p?._offset);
-            pass.setVertexBuffer(slot++, gpu.normalBuffer, vb?._n?._offset);
+            // Interleaved meshes share one GPU buffer across attributes; the per-attribute
+            // byte offset is baked into the pipeline vertex layout (attributes[].offset), so
+            // every slot binds at offset 0. This matches Babylon.js WebGPU and avoids a
+            // non-zero setVertexBuffer bind offset, which corrupts vertex fetch on some
+            // AMD (Renoir) / Dawn paths (interleaved ClearCoatTest labels went black/garbage).
+            pass.setVertexBuffer(slot++, gpu.positionBuffer);
+            pass.setVertexBuffer(slot++, gpu.normalBuffer);
             if (hasNormalMap && gpu.tangentBuffer) {
-                pass.setVertexBuffer(slot++, gpu.tangentBuffer, vb?._t?._offset);
+                pass.setVertexBuffer(slot++, gpu.tangentBuffer);
             }
-            pass.setVertexBuffer(slot++, gpu.uvBuffer, vb?._u?._offset);
+            pass.setVertexBuffer(slot++, gpu.uvBuffer);
             if (hasUV2 && gpu.uv2Buffer) {
-                pass.setVertexBuffer(slot++, gpu.uv2Buffer, vb?._u2?._offset);
+                pass.setVertexBuffer(slot++, gpu.uv2Buffer);
             }
             if (hasVertexColor && gpu.colorBuffer) {
-                pass.setVertexBuffer(slot++, gpu.colorBuffer, vb?._c?._offset);
+                pass.setVertexBuffer(slot++, gpu.colorBuffer);
             }
             // Skinning vertex buffers: live skeleton OR baked VAT (same field names, mutually exclusive).
             const skin = mesh.skeleton ?? mesh.vat;
@@ -501,7 +516,7 @@ export async function buildPbrRenderables(scene: SceneContext, meshes: Mesh[], e
                     ? createPbrMeshBindGroup(engine, bindings, composed, meshUBO, materialUBO, mat, envTextures ?? null, mesh, sig._transmissionTexture)
                     : materialBindGroupStatic!;
                 // Opaque-only GPU culling (opt-in): tryBind returns a per-binding lifecycle or undefined.
-                const cb = _cull?.tryBind(r, s, mesh, engine, hasTIColor, isTransparent || needsTaskRefraction, update);
+                const cb = _cull?.tryBind(r, s, mesh, engine, hasTIColor, isTransparent || needsTaskRefraction, update, sig);
                 return {
                     renderable: r,
                     pipeline,

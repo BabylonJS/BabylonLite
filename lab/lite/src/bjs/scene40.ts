@@ -14,11 +14,29 @@ import { PhysicsAggregate } from "@babylonjs/core/Physics/v2/physicsAggregate";
 import { PhysicsShapeType } from "@babylonjs/core/Physics/v2/IPhysicsEnginePlugin";
 import "@babylonjs/core/Physics/joinedPhysicsEngineComponent";
 
+const PHYSICS_FPS = 60;
+
+function readCaptureAfterFrames(): number | null {
+    const params = new URLSearchParams(window.location.search);
+    const frameValue = params.get("captureFrame");
+    if (frameValue !== null) {
+        const frame = Number(frameValue);
+        return Number.isFinite(frame) && frame >= 0 ? Math.round(frame) : null;
+    }
+    const value = params.get("captureAfter");
+    if (value === null) {
+        return null;
+    }
+    const seconds = Number(value);
+    return Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds * PHYSICS_FPS) : null;
+}
+
 (async function () {
     const __initStart = performance.now();
     const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
     const engine = new WebGPUEngine(canvas, { antialias: true });
     await engine.initAsync();
+    const captureAfterFrames = readCaptureAfterFrames();
 
     const scene = new Scene(engine);
     scene.clearColor = new Color4(0.2, 0.2, 0.3, 1.0);
@@ -40,7 +58,9 @@ import "@babylonjs/core/Physics/joinedPhysicsEngineComponent";
 
     // Havok physics
     const havokInstance = await HavokPhysics({ locateFile: () => "/HavokPhysics.wasm" });
-    const hk = new HavokPlugin(true, havokInstance);
+    // Fixed-step mode keeps the 2s parity capture deterministic across machines.
+    const hk = new HavokPlugin(false, havokInstance);
+    hk.setTimeStep(1 / PHYSICS_FPS);
     scene.enablePhysics(new Vector3(0, -9.8, 0), hk);
 
     // Dynamic sphere body
@@ -49,7 +69,8 @@ import "@babylonjs/core/Physics/joinedPhysicsEngineComponent";
     // Static ground body
     new PhysicsAggregate(ground, PhysicsShapeType.BOX, { mass: 0 }, scene);
 
-    // Render and wait for sphere to settle
+    // Render live. In parity capture mode, freeze after the requested number of
+    // 60 Hz physics frames so Playwright screenshots a stable 2s simulation frame.
     const eng = engine as any;
     scene.onBeforeRenderObservable.add(() => {
         if (eng._drawCalls) {
@@ -57,24 +78,27 @@ import "@babylonjs/core/Physics/joinedPhysicsEngineComponent";
         }
     });
 
-    let settleFrames = 0;
-    let settled = false;
+    let ready = false;
+    let simulatedFrames = 0;
+    let captureQueued = false;
+    // Count ACTUAL physics steps (one per Havok fixed step) so the capture lands on the
+    // same step as the Lite scene. onAfterPhysicsObservable fires once per physics step.
+    scene.onAfterPhysicsObservable.add(() => {
+        simulatedFrames++;
+        if (captureAfterFrames !== null && !captureQueued && simulatedFrames >= captureAfterFrames) {
+            captureQueued = true;
+            window.setTimeout(() => {
+                canvas.dataset.captureReady = "true";
+                engine.stopRenderLoop();
+            }, 0);
+        }
+    });
     scene.onAfterRenderObservable.add(() => {
         canvas.dataset.drawCalls = String(eng._drawCalls ? eng._drawCalls.current : 0);
-
-        // Wait for sphere to come to rest on the ground (y ≈ 1.0)
-        if (!settled) {
-            const y = sphere.position.y;
-            if (Math.abs(y - 1.0) < 0.05) {
-                settleFrames++;
-                if (settleFrames > 30) {
-                    settled = true;
-                    canvas.dataset.initMs = String(performance.now() - __initStart);
-                    canvas.dataset.ready = "true";
-                }
-            } else {
-                settleFrames = 0;
-            }
+        if (!ready) {
+            ready = true;
+            canvas.dataset.initMs = String(performance.now() - __initStart);
+            canvas.dataset.ready = "true";
         }
     });
 
