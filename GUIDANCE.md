@@ -193,7 +193,6 @@ Hard-won gotchas that have each caused multiple parity failures. Check these fir
 - **BJS loading overlay leaks into canvas screenshots.** `page.locator("canvas").screenshot()` captures whatever HTML composites over the canvas box, **including Babylon's `babylonjsLoadingDiv` spinner**. A still-fading overlay darkens the whole frame by a scene-dependent amount and inflates MAD (worst on heavy scenes). In BJS reference scenes that import `@babylonjs/core/Loading/loadingScreen` (a required side-effect for some assets), no-op the overlay right after engine init: `engine.displayLoadingUI = function () {};`.
 - **Use the same flat `clearColor` in both engines** for IBL-only test scenes (a buffer clear is pixel-identical across BJS/Lite, unlike a skybox whose projected geometry diverges at arbitrary framings) so the full-image compare passes with no background masking.
 
-
 ### 2. Iterative Scene-Based Evolution
 
 - Engine is built progressively, one reference scene at a time.

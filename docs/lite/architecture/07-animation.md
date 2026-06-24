@@ -179,12 +179,12 @@ export interface AnimationGroup {
     readonly duration: number; // seconds
     readonly frameRate: number; // used by goToFrame()
     isPlaying: boolean;
-    currentTime: number;                   // seconds
+    currentTime: number; // seconds
     readonly targetedAnimations: readonly TargetedAnimation[];
-    speedRatio: number;                    // default 1
-    loopAnimation: boolean;               // default true
-    weight: number;                        // default 1
-    mask?: AnimationGroupMask;             // optional include/exclude target-name filter
+    speedRatio: number; // default 1
+    loopAnimation: boolean; // default true
+    weight: number; // default 1
+    mask?: AnimationGroupMask; // optional include/exclude target-name filter
     _stopped: boolean;
     readonly _ctrl?: AnimationController;
 }
@@ -213,8 +213,8 @@ export enum AnimationGroupMaskMode {
 
 export interface AnimationGroupMask {
     mode: AnimationGroupMaskMode;
-    names: string[];      // target (node/bone) names
-    disabled: boolean;    // when true the mask is ignored (everything animates)
+    names: string[]; // target (node/bone) names
+    disabled: boolean; // when true the mask is ignored (everything animates)
 }
 
 export function createAnimationGroupMask(names?: string[], mode?: AnimationGroupMaskMode): AnimationGroupMask;
@@ -490,28 +490,28 @@ N/A — No shaders in this module. Skinning WGSL is in `shader/fragments/skeleto
 
 ## Babylon.js Equivalence Map
 
-| Babylon.js API | Babylon Lite |
-|---|---|
-| `new Animation(name, "position.x", frameRate, FLOAT, CYCLE)` | `createPropertyAnimationClip(name, [{ path: "position.x", frameRate, keys }])` |
-| `animation.setKeys(keys)` | keys passed to `createPropertyAnimationClip()` |
-| `scene.beginDirectAnimation(target, [anim], from, to, loop)` | `createPropertyAnimationGroup(manager, target, clip, { fromFrame: from, toFrame: to, loop })` |
-| `AnimationGroup` | `AnimationGroup` interface |
-| `AnimationGroup.play()` | `playAnimation(group)` |
-| `AnimationGroup.pause()` | `pauseAnimation(group)` |
-| `AnimationGroup.stop()` | `stopAnimation(group)` |
-| `AnimationGroup.goToFrame(f)` | `goToFrame(group, f)` (uses `group.frameRate`) |
-| `AnimationGroup.speedRatio` | `group.speedRatio` |
-| `AnimationGroup.loopAnimation` | `group.loopAnimation` |
-| `AnimationGroup.weight` / `setWeightForAllAnimatables()` | `setAnimationWeight(group, weight)`; call `enableAnimationBlending(manager)` for weighted glTF skeleton clips |
-| `AnimationGroup.MakeAnimationAdditive(group, frame)` | `setAnimationAdditive(group, { referenceFrame: frame })` |
-| `AnimationGroup.mask = new AnimationGroupMask(names, mode)` | `group.mask = createAnimationGroupMask(names, mode)` |
-| `AnimationGroupMask` / `AnimationGroupMaskMode` / `mask.retainsTarget(name)` | `AnimationGroupMask` / `AnimationGroupMaskMode` / `animationGroupMaskRetainsTarget(mask, name)` |
-| manual property weighted blending | `enablePropertyAnimationBlending(manager)` + `setAnimationWeight(group, weight)` |
-| manual weight ramp / blending speed | `fadeAnimationWeight(manager, group, { to, durationMs })` |
-| manual cross-fade | `crossFadeAnimationGroups(manager, from, to, { durationMs })` |
-| `scene.animationGroups` | `scene.animationGroups` |
-| `Animation.ANIMATIONTYPE_QUATERNION` | `PATH_ROTATION = 1` |
-| `Animation.ANIMATIONTYPE_VECTOR3` | `PATH_TRANSLATION = 0`, `PATH_SCALE = 2` |
+| Babylon.js API                                                               | Babylon Lite                                                                                                  |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `new Animation(name, "position.x", frameRate, FLOAT, CYCLE)`                 | `createPropertyAnimationClip(name, [{ path: "position.x", frameRate, keys }])`                                |
+| `animation.setKeys(keys)`                                                    | keys passed to `createPropertyAnimationClip()`                                                                |
+| `scene.beginDirectAnimation(target, [anim], from, to, loop)`                 | `createPropertyAnimationGroup(manager, target, clip, { fromFrame: from, toFrame: to, loop })`                 |
+| `AnimationGroup`                                                             | `AnimationGroup` interface                                                                                    |
+| `AnimationGroup.play()`                                                      | `playAnimation(group)`                                                                                        |
+| `AnimationGroup.pause()`                                                     | `pauseAnimation(group)`                                                                                       |
+| `AnimationGroup.stop()`                                                      | `stopAnimation(group)`                                                                                        |
+| `AnimationGroup.goToFrame(f)`                                                | `goToFrame(group, f)` (uses `group.frameRate`)                                                                |
+| `AnimationGroup.speedRatio`                                                  | `group.speedRatio`                                                                                            |
+| `AnimationGroup.loopAnimation`                                               | `group.loopAnimation`                                                                                         |
+| `AnimationGroup.weight` / `setWeightForAllAnimatables()`                     | `setAnimationWeight(group, weight)`; call `enableAnimationBlending(manager)` for weighted glTF skeleton clips |
+| `AnimationGroup.MakeAnimationAdditive(group, frame)`                         | `setAnimationAdditive(group, { referenceFrame: frame })`                                                      |
+| `AnimationGroup.mask = new AnimationGroupMask(names, mode)`                  | `group.mask = createAnimationGroupMask(names, mode)`                                                          |
+| `AnimationGroupMask` / `AnimationGroupMaskMode` / `mask.retainsTarget(name)` | `AnimationGroupMask` / `AnimationGroupMaskMode` / `animationGroupMaskRetainsTarget(mask, name)`               |
+| manual property weighted blending                                            | `enablePropertyAnimationBlending(manager)` + `setAnimationWeight(group, weight)`                              |
+| manual weight ramp / blending speed                                          | `fadeAnimationWeight(manager, group, { to, durationMs })`                                                     |
+| manual cross-fade                                                            | `crossFadeAnimationGroups(manager, from, to, { durationMs })`                                                 |
+| `scene.animationGroups`                                                      | `scene.animationGroups`                                                                                       |
+| `Animation.ANIMATIONTYPE_QUATERNION`                                         | `PATH_ROTATION = 1`                                                                                           |
+| `Animation.ANIMATIONTYPE_VECTOR3`                                            | `PATH_TRANSLATION = 0`, `PATH_SCALE = 2`                                                                      |
 
 ## Dependencies
 
@@ -547,14 +547,14 @@ N/A — No shaders in this module. Skinning WGSL is in `shader/fragments/skeleto
 
 ## File Manifest
 
-| File | Purpose |
-|---|---|
-| `types.ts` | All animation data types, interpolation/path constants, GPU-attached data interfaces |
-| `evaluate.ts` | Keyframe interpolation engine (LINEAR, STEP, CUBICSPLINE); binary search; zero-allocation |
-| `animation-group.ts` | User-facing AnimationGroup factory; wraps AnimationController per clip |
-| `animation-group-mask.ts` | Opt-in include/exclude target-name mask (`AnimationGroupMask`); installs the controller's mask resolver on first use |
-| `animation-manager.ts` | Generic animation task scheduler; no 2D, 3D, glTF, or property-animation runtime imports |
-| `animation-group-task.ts` | AnimationGroup-to-AnimationTask adapter, owner tracking, and `getAnimationGroups()` lookup |
-| `property-animation.ts` | Manual property animation clip builder and property path binding |
-| `weighted-pointer-mixer.ts` | Optional manual property weight mixer plus fade/cross-fade scheduling |
-| `weighted-gltf-mixer.ts` | Optional glTF skeleton weighted/additive mixer with single skeleton upload per blended target |
+| File                        | Purpose                                                                                                              |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `types.ts`                  | All animation data types, interpolation/path constants, GPU-attached data interfaces                                 |
+| `evaluate.ts`               | Keyframe interpolation engine (LINEAR, STEP, CUBICSPLINE); binary search; zero-allocation                            |
+| `animation-group.ts`        | User-facing AnimationGroup factory; wraps AnimationController per clip                                               |
+| `animation-group-mask.ts`   | Opt-in include/exclude target-name mask (`AnimationGroupMask`); installs the controller's mask resolver on first use |
+| `animation-manager.ts`      | Generic animation task scheduler; no 2D, 3D, glTF, or property-animation runtime imports                             |
+| `animation-group-task.ts`   | AnimationGroup-to-AnimationTask adapter, owner tracking, and `getAnimationGroups()` lookup                           |
+| `property-animation.ts`     | Manual property animation clip builder and property path binding                                                     |
+| `weighted-pointer-mixer.ts` | Optional manual property weight mixer plus fade/cross-fade scheduling                                                |
+| `weighted-gltf-mixer.ts`    | Optional glTF skeleton weighted/additive mixer with single skeleton upload per blended target                        |

@@ -119,11 +119,7 @@ export function mat4Translation(x: number, y: number, z: number): Mat4;
 export function mat4FromQuat(qx: number, qy: number, qz: number, qw: number): Mat4;
 
 /** Compose TRS (translation * rotation * scale) into a single Mat4. */
-export function mat4Compose(
-  tx: number, ty: number, tz: number,
-  qx: number, qy: number, qz: number, qw: number,
-  sx: number, sy: number, sz: number,
-): Mat4;
+export function mat4Compose(tx: number, ty: number, tz: number, qx: number, qy: number, qz: number, qw: number, sx: number, sy: number, sz: number): Mat4;
 
 /** Decompose a column-major affine Mat4 into translation/rotation(quaternion)/scale.
  *  Shared by setParent() and the Havok compound-shape path. */

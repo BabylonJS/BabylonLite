@@ -62,12 +62,12 @@ export interface AssetContainer {
     /** Camera parsed from the file. addToScene() sets it as scene.camera when present. */
     camera?: Camera;
 
-  /** KHR_materials_variants data. Use selectVariant() / getVariantNames() to interact. */
-  materialVariants?: MaterialVariantData;
+    /** KHR_materials_variants data. Use selectVariant() / getVariantNames() to interact. */
+    materialVariants?: MaterialVariantData;
 
-  /** Bone-control handles (one per glTF skin). Populated only after enableBoneControl();
-   *  drive bones via getBoneByName() + setBone*(). See module 13 (Skeleton). */
-  skeletons?: Skeleton[];
+    /** Bone-control handles (one per glTF skin). Populated only after enableBoneControl();
+     *  drive bones via getBoneByName() + setBone*(). See module 13 (Skeleton). */
+    skeletons?: Skeleton[];
 }
 ```
 
