@@ -42,7 +42,7 @@ function attachGeospatialControls(
     camera: GeospatialCamera,
     canvas: HTMLCanvasElement,
     scene: SceneContext,
-    options?: { zoomToCursor?: boolean; checkCollisions?: boolean }
+    options?: { zoomToCursor?: boolean; checkCollisions?: boolean }z
 ): () => void;
 
 // Animation
