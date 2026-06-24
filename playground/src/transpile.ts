@@ -53,6 +53,10 @@ function toDiagnostics(messages: readonly esbuild.Message[]): BuildDiagnostic[] 
 }
 
 function loaderFor(name: string): esbuild.Loader {
+    // `.tsx` needs the JSX-aware TS loader; the plain `ts` loader rejects JSX syntax.
+    if (name.endsWith(".tsx")) {
+        return "tsx";
+    }
     if (name.endsWith(".js") || name.endsWith(".jsx")) {
         return "jsx";
     }
@@ -97,8 +101,14 @@ function virtualFilesPlugin(files: Record<string, string>): esbuild.Plugin {
         name: "playground-virtual-files",
         setup(build) {
             build.onResolve({ filter: /.*/ }, (args) => {
-                if (args.path === LITE_SPECIFIER || args.path.startsWith(`${LITE_SPECIFIER}/`)) {
+                if (args.path === LITE_SPECIFIER) {
                     return { path: args.path, external: true };
+                }
+                // The engine is a single module mapped only at the bare specifier in the
+                // runner's import map, so subpath imports would compile but fail at run
+                // time — surface that as a build error immediately.
+                if (args.path.startsWith(`${LITE_SPECIFIER}/`)) {
+                    return { errors: [{ text: `Subpath imports like '${args.path}' aren't supported — import everything from '${LITE_SPECIFIER}' directly.` }] };
                 }
                 if (args.kind === "entry-point") {
                     return { path: args.path, namespace: "virtual" };

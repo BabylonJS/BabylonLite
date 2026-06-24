@@ -22,6 +22,11 @@ export class Runner {
     }
 
     private handleMessage = (event: MessageEvent): void => {
+        // The runner iframe is same-origin (`/runner.html`); reject anything else so a
+        // cross-origin page (e.g. if user code navigates the iframe away) can't spoof it.
+        if (event.origin !== window.location.origin) {
+            return;
+        }
         if (!this.frame || event.source !== this.frame.contentWindow) {
             return;
         }
@@ -45,7 +50,9 @@ export class Runner {
         this.host.appendChild(frame);
 
         await ready;
-        frame.contentWindow?.postMessage({ type: "run", code }, "*");
+        // Same-origin iframe: target our own origin so code is never delivered to a
+        // page that navigated the frame cross-origin.
+        frame.contentWindow?.postMessage({ type: "run", code }, window.location.origin);
     }
 
     /** Tear down the current runner iframe, stopping its engine and render loop. */
@@ -59,6 +66,9 @@ export class Runner {
     private waitForReady(frame: HTMLIFrameElement): Promise<void> {
         return new Promise((resolve) => {
             const listener = (event: MessageEvent): void => {
+                if (event.origin !== window.location.origin) {
+                    return;
+                }
                 if (event.source === frame.contentWindow && (event.data as RunnerMessage | undefined)?.type === "ready") {
                     window.removeEventListener("message", listener);
                     resolve();

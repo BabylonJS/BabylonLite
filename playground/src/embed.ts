@@ -14,6 +14,23 @@ export const EMBED_CHANNEL = "babylon-lite-playground";
 
 export type EmbedMode = "runner" | "split";
 
+/**
+ * Validate a host-supplied `embedOrigin`. `postMessage` throws if the targetOrigin
+ * isn't `"*"`/`"/"` or a valid absolute origin, so an invalid value (e.g.
+ * `?embedOrigin=foo`) would break all embed messaging — fall back to `"*"` instead.
+ */
+function sanitizeTargetOrigin(value: string | null): string {
+    if (!value || value === "*" || value === "/") {
+        return "*";
+    }
+    try {
+        // A well-formed origin round-trips through URL with an identical `.origin`.
+        return new URL(value).origin === value ? value : "*";
+    } catch {
+        return "*";
+    }
+}
+
 /** Messages the host sends to the embedded playground. */
 export type EmbedInboundMessage =
     | { channel: typeof EMBED_CHANNEL; type: "loadCode"; code: string; run?: boolean }
@@ -66,7 +83,7 @@ export class EmbedHost {
     constructor(mode: EmbedMode, handlers: EmbedHandlers, search: string = location.search) {
         this.mode = mode;
         this.handlers = handlers;
-        this.targetOrigin = new URLSearchParams(search).get("embedOrigin") ?? "*";
+        this.targetOrigin = sanitizeTargetOrigin(new URLSearchParams(search).get("embedOrigin"));
         window.addEventListener("message", this.handleMessage);
     }
 

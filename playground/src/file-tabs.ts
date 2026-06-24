@@ -21,8 +21,12 @@ export function mountFileTabs(container: HTMLElement, editor: PlaygroundEditor):
         if (existing.length === names.length && existing.every((name, i) => name === names[i])) {
             for (const tab of container.querySelectorAll<HTMLElement>(".file-tab")) {
                 const name = tab.dataset.name ?? "";
-                tab.classList.toggle("is-active", name === active);
+                const isActive = name === active;
+                tab.classList.toggle("is-active", isActive);
                 tab.classList.toggle("is-entry", name === entry);
+                // Keep the accessibility state in sync with the active tab (roving tabindex).
+                tab.setAttribute("aria-selected", String(isActive));
+                tab.tabIndex = isActive ? 0 : -1;
             }
             return;
         }
@@ -42,10 +46,64 @@ export function mountFileTabs(container: HTMLElement, editor: PlaygroundEditor):
         container.appendChild(add);
     }
 
+    /** Move keyboard focus to (and activate) the tab at `index`, wrapping around. */
+    function focusTabByIndex(index: number): void {
+        const tabs = Array.from(container.querySelectorAll<HTMLElement>(".file-tab"));
+        if (tabs.length === 0) {
+            return;
+        }
+        const target = tabs[(index + tabs.length) % tabs.length]!;
+        editor.setActive(target.dataset.name ?? ""); // re-renders + updates roving tabindex
+        target.focus();
+    }
+
+    function onTabKeydown(event: KeyboardEvent): void {
+        const tab = event.currentTarget as HTMLElement;
+        // Only act when the tab itself is focused — let the entry/close buttons handle
+        // their own key activation rather than hijacking it here.
+        if (event.target !== tab) {
+            return;
+        }
+        const name = tab.dataset.name ?? "";
+        const tabs = Array.from(container.querySelectorAll<HTMLElement>(".file-tab"));
+        const index = tabs.indexOf(tab);
+        switch (event.key) {
+            case "Enter":
+            case " ":
+                event.preventDefault();
+                editor.setActive(name);
+                break;
+            case "ArrowRight":
+                event.preventDefault();
+                focusTabByIndex(index + 1);
+                break;
+            case "ArrowLeft":
+                event.preventDefault();
+                focusTabByIndex(index - 1);
+                break;
+            case "Home":
+                event.preventDefault();
+                focusTabByIndex(0);
+                break;
+            case "End":
+                event.preventDefault();
+                focusTabByIndex(tabs.length - 1);
+                break;
+            default:
+                break;
+        }
+    }
+
     function buildTab(name: string, isActive: boolean, isEntry: boolean, fileCount: number): HTMLElement {
         const tab = document.createElement("div");
         tab.className = "file-tab" + (isActive ? " is-active" : "") + (isEntry ? " is-entry" : "");
         tab.dataset.name = name;
+        // ARIA tab semantics: a single roving tab stop (the active tab), arrow-key
+        // navigation between tabs, and Enter/Space to activate.
+        tab.setAttribute("role", "tab");
+        tab.setAttribute("aria-selected", String(isActive));
+        tab.tabIndex = isActive ? 0 : -1;
+        tab.addEventListener("keydown", onTabKeydown);
 
         // Entry marker: click to make this file the bundle entry point.
         const dot = document.createElement("button");
