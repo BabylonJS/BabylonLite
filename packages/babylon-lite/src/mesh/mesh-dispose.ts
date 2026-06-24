@@ -9,6 +9,7 @@ export function disposeMeshGpu(mesh: Mesh): void {
     g.indexBuffer.destroy();
     g.tangentBuffer?.destroy();
     g.uv2Buffer?.destroy();
+    g.colorBuffer?.destroy();
     mesh.thinInstances?._gpuBuffer?.destroy();
     mesh.thinInstances?._colorGpuBuffer?.destroy();
     const sk = mesh.skeleton;
@@ -20,7 +21,7 @@ export function disposeMeshGpu(mesh: Mesh): void {
         sk.weights1Buffer?.destroy();
     }
     if (mesh.morphTargets) {
-        mesh.morphTargets.texture.destroy();
+        mesh.morphTargets.deltasBuffer.destroy();
         mesh.morphTargets.weightsBuffer.destroy();
     }
 }

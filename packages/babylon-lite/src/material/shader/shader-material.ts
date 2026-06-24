@@ -1,9 +1,8 @@
 import { F32 } from "../../engine/typed-arrays.js";
-import type { Material } from "../material.js";
-import type { MeshGroupBuilder } from "../../render/renderable.js";
+import type { Material, StencilState } from "../material.js";
 import type { Texture2D } from "../../texture/texture-2d.js";
 import type { Mat4 } from "../../math/types.js";
-import { shaderGroupBuilder } from "./shader-group-builder.js";
+import { getShaderGroupBuilder } from "./shader-group-builder.js";
 
 /** Vertex attribute names a ShaderMaterial can bind. */
 export type ShaderAttributeName = "position" | "normal" | "uv" | "uv2" | "tangent" | "color";
@@ -134,6 +133,10 @@ export interface ShaderMaterial extends Material {
     readonly depthOnlyFragment: boolean;
     readonly depthBias: number;
     readonly depthBiasSlopeScale: number;
+    /** Optional stencil-test state baked into the main-pass pipeline (mask write / discard). Set after
+     *  creation (`mat.stencil = { ... }`) and call `enableMaterialStencil()` before `registerScene`. Default
+     *  none. See `StencilState`. */
+    stencil?: StencilState;
     /** @internal */
     _uniformValues: Map<string, ShaderUniformSlot>;
     /** @internal */
@@ -287,7 +290,7 @@ export function createShaderMaterial(options: ShaderMaterialOptions): ShaderMate
         depthOnlyFragment: options.depthOnlyFragment ?? false,
         depthBias: options.depthBias ?? 0,
         depthBiasSlopeScale: options.depthBiasSlopeScale ?? 0,
-        _buildGroup: shaderGroupBuilder as MeshGroupBuilder,
+        _buildGroup: getShaderGroupBuilder(),
         _uboVersion: 0,
         _uniformValues: uniformValues,
         _textureSlots: textureSlots,
@@ -383,7 +386,7 @@ export function setShaderTexture(material: ShaderMaterial, name: string, texture
         throw new Error(`ShaderMaterial: sampler "${name}" was not declared.`);
     }
     if (texture) {
-        const expectsDepth = slot.decl.sampleType === "depth" || slot.decl.comparison === true;
+        const expectsDepth = slot.decl.comparison || slot.decl.sampleType === "depth";
         const isDepthTexture = texture._sampleType === "depth";
         if (expectsDepth && !isDepthTexture) {
             throw new Error(`ShaderMaterial: sampler "${name}" expects a depth Texture2D.`);
@@ -392,8 +395,17 @@ export function setShaderTexture(material: ShaderMaterial, name: string, texture
             throw new Error(`ShaderMaterial: sampler "${name}" cannot use a depth Texture2D.`);
         }
     }
-    slot.current = texture;
-    material._resourceVersion++;
+    // Only invalidate the cached bind groups when the bound texture HANDLE actually changes. The bind group
+    // references the texture's view + sampler (see createShaderBindGroup), so re-binding the SAME Texture2D (the
+    // common "keep my shadow map / scene-depth bound every frame" pattern) leaves those identical. Bumping the
+    // resource version unconditionally therefore forced a BRAND-NEW bind group every frame (per material, for every
+    // packet using it), churning the D3D12 descriptor heap until it OOMed on content-heavy scenes (e.g. reloading
+    // a big save). A texture's CONTENTS can change freely without a new bind group (the bound view is live), so
+    // identity comparison is correct.
+    if (slot.current !== texture) {
+        slot.current = texture;
+        material._resourceVersion++;
+    }
 }
 
 /** Bind (or clear) a declared read-only storage buffer. */
@@ -402,8 +414,12 @@ export function setShaderStorageBuffer(material: ShaderMaterial, name: string, b
     if (!slot) {
         throw new Error(`ShaderMaterial: storage buffer "${name}" was not declared.`);
     }
-    slot.current = buffer;
-    material._resourceVersion++;
+    // See setShaderTexture: only invalidate the bind groups when the bound buffer HANDLE changes; re-binding the
+    // same GPUBuffer is a no-op (contents update live), so an unconditional bump churned the descriptor heap.
+    if (slot.current !== buffer) {
+        slot.current = buffer;
+        material._resourceVersion++;
+    }
 }
 
 /** Set a declared `f32` uniform. Convenience wrapper over `setShaderUniform()`. */

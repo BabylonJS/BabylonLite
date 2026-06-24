@@ -107,14 +107,29 @@ export abstract class AbstractScene {
         return this._cameras.find((c) => c.name === name) ?? null;
     }
 
+    /** Babylon.js `scene.getCameraById(id)` — first camera whose `id` matches, else `null`. */
+    public getCameraById(id: string): Camera | null {
+        return this._cameras.find((c) => (c as unknown as { id?: string }).id === id) ?? null;
+    }
+
     /** Babylon.js `scene.getLightByName(name)` — first light with a matching name, else `null`. */
     public getLightByName(name: string): Light | null {
         return this._lights.find((l) => l.name === name) ?? null;
     }
 
+    /** Babylon.js `scene.getLightById(id)` — first light whose `id` matches, else `null`. */
+    public getLightById(id: string): Light | null {
+        return this._lights.find((l) => (l as unknown as { id?: string }).id === id) ?? null;
+    }
+
     /** Babylon.js `scene.getMaterialByName(name)` — first material with a matching name, else `null`. */
     public getMaterialByName(name: string): Material | null {
         return this._materials.find((m) => m.name === name) ?? null;
+    }
+
+    /** Babylon.js `scene.getMaterialById(id)` — first material whose `id` matches, else `null`. */
+    public getMaterialById(id: string): Material | null {
+        return this._materials.find((m) => (m as unknown as { id?: string }).id === id) ?? null;
     }
 
     /**
@@ -127,8 +142,29 @@ export abstract class AbstractScene {
         return this._trackedMeshes.find((m) => m.name === name) ?? null;
     }
 
+    /** Babylon.js `scene.getMeshById(id)` — first tracked mesh whose `id` matches, else `null`. */
+    public getMeshById(id: string): TransformNode | null {
+        return this._trackedMeshes.find((m) => (m as unknown as { id?: string }).id === id) ?? null;
+    }
+
+    /** Babylon.js legacy `scene.getMeshByID(id)` — alias of {@link getMeshById}. */
+    public getMeshByID(id: string): TransformNode | null {
+        return this.getMeshById(id);
+    }
+
     /** Babylon.js `scene.getNodeByName(name)` — searches tracked meshes, cameras, and lights. */
     public getNodeByName(name: string): Node | null {
         return this._trackedMeshes.find((m) => m.name === name) ?? this._cameras.find((c) => c.name === name) ?? this._lights.find((l) => l.name === name) ?? null;
+    }
+
+    /** Babylon.js `scene.getNodeById(id)` — searches tracked meshes, cameras, and lights by `id`. */
+    public getNodeById(id: string): Node | null {
+        const byId = (n: { id?: string }): boolean => n.id === id;
+        return (
+            this._trackedMeshes.find((m) => byId(m as unknown as { id?: string })) ??
+            this._cameras.find((c) => byId(c as unknown as { id?: string })) ??
+            this._lights.find((l) => byId(l as unknown as { id?: string })) ??
+            null
+        );
     }
 }

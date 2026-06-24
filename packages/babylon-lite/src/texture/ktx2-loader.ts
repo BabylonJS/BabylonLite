@@ -71,6 +71,25 @@ const GL_R8 = 0x8229;
 const GL_RG8 = 0x822b;
 const RGBA_CAPS: Ktx2DecoderCaps = { astc: false, bptc: false, s3tc: false, pvrtc: false, etc2: false, etc1: false };
 
+/** Build the decoder's transcode-target caps from the device's enabled compressed-texture features, so the
+ *  Basis transcoder emits a GPU-compressed format (BC7/BC3/ETC2/ASTC) instead of uncompressed RGBA8 — a few
+ *  times less data to upload (writeTexture) and to keep resident in VRAM. Mirrors basis-loader.ts's format
+ *  selection. Falls back to RGBA8 automatically on devices without any compression feature (all caps false).
+ *  PVRTC is intentionally false (WebGPU does not expose it). */
+function deviceKtx2Caps(engine: EngineContext): Ktx2DecoderCaps {
+    const f = engine._device.features;
+    const bc = f.has("texture-compression-bc"); // BC1–BC7 (S3TC/DXT + BPTC)
+    const etc2 = f.has("texture-compression-etc2");
+    return {
+        astc: f.has("texture-compression-astc"),
+        bptc: bc, // BC6H/BC7
+        s3tc: bc, // BC1/BC2/BC3
+        pvrtc: false, // unsupported on WebGPU
+        etc2,
+        etc1: etc2, // ETC1 content transcodes on ETC2-capable GPUs
+    };
+}
+
 function loadKtx2Decoder(): Promise<Ktx2Decoder> {
     if (_ktx2DecoderPromise) {
         return _ktx2DecoderPromise;
@@ -266,7 +285,9 @@ function uploadUncompressed(engine: EngineContext, mips: Ktx2DecodedMip[], info:
  *  decoder-provided full mip chain directly to a Texture2D. */
 export async function uploadKtx2Texture2D(engine: EngineContext, buffer: ArrayBuffer, sRGB: boolean): Promise<Texture2D> {
     const decoder = await loadKtx2Decoder();
-    const decoded = await decoder.decode(new U8(buffer), RGBA_CAPS, { forceRGBA: true });
+    // Transcode to the best GPU-supported compressed format (or RGBA8 on devices without one). The compressed
+    // path below uploads a few times less data than uncompressed RGBA8 and keeps the texture compressed in VRAM.
+    const decoded = await decoder.decode(new U8(buffer), deviceKtx2Caps(engine));
     const mips = validateDecoded(decoded);
 
     const compressed = getCompressedFormat(decoded.transcodedFormat);
@@ -280,6 +301,20 @@ export async function uploadKtx2Texture2D(engine: EngineContext, buffer: ArrayBu
     }
 
     throw new Error(`KTX2: unsupported transcoded format 0x${decoded.transcodedFormat.toString(16)}`);
+}
+
+/** Fetch and decode a standalone KTX2 (Basis Universal) texture from a URL into a Texture2D, transcoded to the
+ *  device's best GPU-compressed format (BC7/ETC2/ASTC) so it STAYS compressed in VRAM (a few times less than the
+ *  uncompressed RGBA8 `loadTexture2D` always uploads). Mirrors `loadKtxTexture2D` (KTX1) for app textures that
+ *  live outside a glTF. Requires the KTX2 decoder (configure self-hosting via `setKtx2DecoderUrl`). `sRGB`
+ *  selects the `*-srgb` GPU format (default false: raw/linear sampling, matching `loadTexture2D`'s `srgb:false`).
+ *  The decoder uploads the stored mips as-is (no V-flip), so author the .ktx2 in the orientation you want. */
+export async function loadKtx2Texture2D(engine: EngineContext, url: string, sRGB = false): Promise<Texture2D> {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+        throw new Error(`KTX2 fetch failed: ${resp.status} for ${url}`);
+    }
+    return uploadKtx2Texture2D(engine, await resp.arrayBuffer(), sRGB);
 }
 
 /** Decode the first mip level of a KTX2 texture into an ImageBitmap so glTF

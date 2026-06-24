@@ -116,23 +116,23 @@ overloads within a supported area may still be absent.
 
 | Feature area                                                                                            | Status | Notes                                                                                                    |
 | ------------------------------------------------------------------------------------------------------- | :----: | -------------------------------------------------------------------------------------------------------- |
-| Math (`Vector*`, `Color*`, `Quaternion`, `Matrix`, `Plane`, `Ray`, `Frustum`, `Scalar`, `Axis`/`Space`) |   ✅   | `Angle` / `Curve3` / `Path3D` partial                                                                    |
-| Engine (`WebGPUEngine`, `Engine`, `ThinEngine`, `NullEngine`)                                           |   ⚡   | async startup + render loop; `beginFrame`/`endFrame` and manual `scene.render()` unsupported             |
-| Scene (clear color, cameras/lights, fog, environment, observables, ready state)                         |   ⚡   | sync `scene.pick` unsupported (use async `GPUPicker`); some scene enumeration needs Lite core            |
-| Cameras (`ArcRotateCamera`, `FreeCamera`/`Universal`/`Target`, `FollowCamera`)                          |   ✅   | XR / device-orientation / stereoscopic rigs unsupported                                                  |
-| Lights (`Hemispheric`, `Directional`, `Point`, `Spot`)                                                  |   ✅   | `RectAreaLight` / clustered lights unsupported                                                           |
-| Shadows (`ShadowGenerator` directional ESM/PCF, spot PCF)                                               |   ⚡   | `CascadedShadowGenerator` falls back to single cascade                                                   |
-| Meshes & geometry (class chain, `MeshBuilder` primitives, transforms, thin instances, `VertexData`)     |   ⚡   | `CreateLines`/`CreateDecal`/`CreateText`, `InstancedMesh`, LOD/edges/outline, clone/instance unsupported |
-| CSG / CSG2                                                                                              |   ✅   | over Lite boolean ops                                                                                    |
-| Gizmos (position/rotation/scale/bounding-box/light/camera + `GizmoManager`)                             |   ⚡   | over Lite gizmo suite                                                                                    |
-| Materials (`StandardMaterial`, `PBRMaterial`, metallic-rough / spec-gloss, `NodeMaterial`)              |   ⚡   | `ShaderMaterial` (GLSL), `MultiMaterial`, `BackgroundMaterial` unsupported                               |
-| Textures (`Texture`, `RawTexture`, `DynamicTexture`, `CubeTexture`)                                     |   ⚡   | `HDRCubeTexture` / `RenderTargetTexture` / `MirrorTexture` unsupported                                   |
-| Animation (keyframe `Animation`, easing, `Animatable`, `AnimationGroup` incl. weighted/additive blend)  |   ⚡   | CPU evaluation; loaded glTF skeletal blending supported                                                  |
-| Morph targets (`MorphTarget` / `MorphTargetManager`)                                                    |   ✅   | over Lite morph targets                                                                                  |
-| Sprites (`SpriteManager` / `Sprite`)                                                                    |   ⚡   | camera-facing billboards; `SpriteMap` / packed atlas unsupported                                         |
-| Behaviors / Actions (`AutoRotation`, `Framing`, `ActionManager`, conditions)                            |   ⚡   | `ActionManager` is manual-dispatch; drag behaviors need Lite core                                        |
-| Misc (`Observable`, `Tools`, `SmartArray`, `Tags`, gradients, `PerformanceMonitor`)                     |   ✅   |                                                                                                          |
-| Particles, post-processes, layers (glow/highlight), probes, physics, audio, WebXR                       |   ❌   | not in Babylon Lite — use native Lite `create*Task` / Havok-V2 functions                                 |
+| Math (`Vector*`, `Color*`, `Quaternion`, `Matrix`, `Plane`, `Ray`, `Frustum`, `Scalar`, `Axis`/`Space`) |   ✅    | `Angle` / `Curve3` / `Path3D` partial                                                                    |
+| Engine (`WebGPUEngine`, `Engine`, `ThinEngine`, `NullEngine`)                                           |   ⚡    | async startup + render loop; `beginFrame`/`endFrame` and manual `scene.render()` unsupported             |
+| Scene (clear color, cameras/lights, fog, environment, observables, ready state)                         |   ⚡    | sync `scene.pick` unsupported (use async `GPUPicker`); some scene enumeration needs Lite core            |
+| Cameras (`ArcRotateCamera`, `FreeCamera`/`Universal`/`Target`, `FollowCamera`, `GeospatialCamera`)      |   ✅    | XR / device-orientation / stereoscopic rigs unsupported                                                  |
+| Lights (`Hemispheric`, `Directional`, `Point`, `Spot`)                                                  |   ✅    | `RectAreaLight` / clustered lights unsupported                                                           |
+| Shadows (`ShadowGenerator` directional ESM/PCF, spot PCF)                                               |   ⚡    | `CascadedShadowGenerator` falls back to single cascade                                                   |
+| Meshes & geometry (class chain, `MeshBuilder` primitives, transforms, thin instances, `VertexData`)     |   ⚡    | `CreateLines`/`CreateDecal`/`CreateText`, `InstancedMesh`, LOD/edges/outline, clone/instance unsupported |
+| CSG / CSG2                                                                                              |   ✅    | over Lite boolean ops                                                                                    |
+| Gizmos (position/rotation/scale/bounding-box/light/camera + `GizmoManager`)                             |   ⚡    | over Lite gizmo suite                                                                                    |
+| Materials (`StandardMaterial`, `PBRMaterial`, metallic-rough / spec-gloss, `NodeMaterial`)              |   ⚡    | `ShaderMaterial` (GLSL), `MultiMaterial`, `BackgroundMaterial` unsupported                               |
+| Textures (`Texture`, `RawTexture`, `DynamicTexture`, `CubeTexture`)                                     |   ⚡    | `HDRCubeTexture` / `RenderTargetTexture` / `MirrorTexture` unsupported                                   |
+| Animation (keyframe `Animation`, easing, `Animatable`, `AnimationGroup` incl. weighted/additive blend)  |   ⚡    | CPU evaluation; loaded glTF skeletal blending supported                                                  |
+| Morph targets (`MorphTarget` / `MorphTargetManager`)                                                    |   ✅    | over Lite morph targets                                                                                  |
+| Sprites (`SpriteManager` / `Sprite`)                                                                    |   ⚡    | camera-facing billboards; `SpriteMap` / packed atlas unsupported                                         |
+| Behaviors / Actions (`AutoRotation`, `Framing`, `ActionManager`, conditions)                            |   ⚡    | `ActionManager` is manual-dispatch; drag behaviors need Lite core                                        |
+| Misc (`Observable`, `Tools`, `SmartArray`, `Tags`, gradients, `PerformanceMonitor`)                     |   ✅    |                                                                                                          |
+| Particles, post-processes, layers (glow/highlight), probes, physics, audio, WebXR                       |   ❌    | not in Babylon Lite — use native Lite `create*Task` / Havok-V2 functions                                 |
 
 ### `@babylonjs/loaders`
 
@@ -147,7 +147,7 @@ overloads within a supported area may still be absent.
 
 | Feature area                                                     | Status | Notes                            |
 | ---------------------------------------------------------------- | :----: | -------------------------------- |
-| `RecastJSPlugin` (navmesh, crowd, path, raycast, off-mesh links) |   ✅   | over Lite's native Recast-V2 API |
+| `RecastJSPlugin` (navmesh, crowd, path, raycast, off-mesh links, tile-cache obstacles) |   ✅    | over Lite's native Recast-V2 API |
 
 ### `@babylonjs/materials`
 

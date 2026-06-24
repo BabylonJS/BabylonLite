@@ -7,8 +7,15 @@ import type { GpuFrameTimer } from "./gpu-timer.js";
 import type { GpuTaskTimer } from "./gpu-task-timer.js";
 import type { RenderTaskGpuTimings } from "./gpu-task-timing.js";
 
+// `__BL_VERSION__` is replaced at build time with the resolved package version
+// by the lite Vite build (see `define` in packages/babylon-lite/vite.config.ts).
+// The release pipeline resolves the published npm version *before* `pnpm build`,
+// so the published bundle reports the version it actually ships as. When the
+// source is consumed directly (lab dev server, unit tests) the define is absent,
+// so the `typeof` guard falls back to the literal dev version below.
+declare const __BL_VERSION__: string;
 /** Babylon Lite version string. */
-export const VERSION = "0.1.0";
+export const VERSION: string = /* @__PURE__ */ (() => (typeof __BL_VERSION__ !== "undefined" ? __BL_VERSION__ : "0.1.0"))();
 
 // Module-scoped visibility epoch. setSubtreeVisible (scene/visibility.ts,
 // loaded only by KHR_node_visibility / KHR_animation_pointer features) bumps
@@ -108,6 +115,14 @@ export interface EngineContext extends SurfaceContext {
 
     /** @internal */
     _device: GPUDevice;
+    /** @internal Shared 1×1 white texture used as the default baseColor / ORM for
+     *  factor-only PBR materials (created via `createPbrMaterial` without textures).
+     *  A white ORM yields `metallic = metallicFactor`, `roughness = roughnessFactor`,
+     *  matching the glTF/Babylon.js defaults. Lazily created on first use by the
+     *  fallback resolver that `createPbrMaterial` installs into the PBR pipeline, so
+     *  loader-only PBR scenes pay zero bundle bytes. Device-lost recovery rebuilds it
+     *  in place via the solid-texture recovery path. */
+    _pbrFallbackTex?: Texture2D;
     /** @internal */
     _dlr?: DeviceLostRecoveryCapture;
     /** @internal */
@@ -323,7 +338,7 @@ export async function createEngine(canvas: RenderCanvas, options?: EngineOptions
     // F64-specific module that we gate dynamically.
     // **Constraint:** allocator is process-global — mixing HPM and non-HPM
     // engines on the same page is unsupported (see
-    // `docs/architecture/33-high-precision-matrix.md`).
+    // `docs/lite/architecture/36-high-precision-matrix.md`).
     if (useHpm) {
         const { allocateF64Mat4 } = await import("../math/_mat4-storage-f64.js");
         _setHpmAllocator(allocateF64Mat4);
@@ -466,6 +481,7 @@ export function disposeEngine(engine: EngineContext): void {
     engine._device.destroy();
 }
 
+/** Render one frame for every surface registered on the engine. Updates each rendering context, records its GPU work into a shared command encoder, submits the frame, and publishes the total draw-call count. */
 export function renderFrame(engine: EngineContext, delta: number): void {
     const surfaces = engine.surfaces;
     // `surfaces` is typed as a non-empty tuple — the engine itself is always at

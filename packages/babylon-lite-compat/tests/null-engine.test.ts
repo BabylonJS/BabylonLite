@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { NullEngine, WebGPUEngine, AbstractEngine } from "../src/engine/engine";
 import { Scene } from "../src/scene/scene";
 import { Animation } from "../src/animations/animation";
+import { Color3, Color4 } from "../src/math/color";
 
 /**
  * The headless `NullEngine` runs scene logic with no GPU device — a deviceless
@@ -27,6 +28,17 @@ describe("NullEngine (headless)", () => {
         // registries and animation surface still work.
         expect(scene.cameras).toEqual([]);
         expect(scene.dispose()).toBeUndefined();
+    });
+
+    it("defaults clearColor alpha to 1 when assigned a Color3", () => {
+        const scene = new Scene(new NullEngine());
+        // Babylon.js accepts a Color3 for clearColor; alpha must default to 1 so the
+        // value reaching WebGPU's render pass is never `undefined`.
+        scene.clearColor = new Color3(0.1, 0.2, 0.3) as unknown as Color4;
+        expect(scene._lite.clearColor).toEqual({ r: 0.1, g: 0.2, b: 0.3, a: 1 });
+        // An explicit Color4 alpha is preserved.
+        scene.clearColor = new Color4(0.4, 0.5, 0.6, 0.7);
+        expect(scene._lite.clearColor).toEqual({ r: 0.4, g: 0.5, b: 0.6, a: 0.7 });
     });
 
     it("evaluates a direct animation onto a plain target each tick", () => {

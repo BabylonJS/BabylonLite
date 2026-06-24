@@ -20,6 +20,7 @@ import { onBeforeRender } from "../scene/scene-core.js";
 import { mat4Invert } from "../math/mat4-invert.js";
 import { mat4Multiply } from "../math/mat4-multiply.js";
 import { mat4Scale } from "../math/mat4-scale.js";
+import { mat4Decompose } from "../math/mat4-decompose.js";
 
 // ─── Enums ───────────────────────────────────────────────────────────
 
@@ -40,6 +41,18 @@ export const enum PhysicsMotionType {
     STATIC = 0,
     ANIMATED = 1,
     DYNAMIC = 2,
+}
+
+/**
+ * How a moved transform node is propagated to its physics body before each step.
+ * `DISABLED` skips the sync, `TELEPORT` snaps the body to the node (`HP_Body_SetQTransform`),
+ * and `ACTION` sets the body's velocity so it reaches the node (`HP_Body_SetTargetQTransform`,
+ * dragging resting bodies via friction). Values match Babylon.js `PhysicsPrestepType`.
+ */
+export const enum PhysicsPrestepType {
+    DISABLED = 0,
+    TELEPORT = 1,
+    ACTION = 2,
 }
 
 /** Type of Havok Physics V2 constraint. */
@@ -145,6 +158,8 @@ export interface PhysicsBody {
     /** @internal */ readonly _world: PhysicsWorld;
     /** @internal */ _shape?: PhysicsShape | null;
     /** @internal */ _preStep: boolean;
+    /** @internal How a moved node is propagated to the body pre-step (TELEPORT by default). */
+    _prestepType: PhysicsPrestepType;
     readonly node: SceneNode;
     readonly motionType: PhysicsMotionType;
     /** @internal The floating-origin region this body lives in; set only under floating origin. */
@@ -263,11 +278,17 @@ function _stepWorld(world: PhysicsWorld, deltaMs: number): void {
         return;
     }
 
-    // Pre-step: sync ANIMATED bodies from node → Havok
+    // Pre-step: sync moved nodes into Havok. A body syncs only when its prestep type is not
+    // DISABLED and it is either ANIMATED (kinematic) or explicitly pre-stepped. TELEPORT snaps the
+    // body to the node; ACTION sets a velocity toward it (so resting bodies are dragged via friction).
     for (let i = 0; i < bodies.length; i++) {
         const b = bodies[i]!;
-        if (b.motionType === (PhysicsMotionType.ANIMATED as number) || b._preStep) {
-            _syncNodeToBody(hknp, b);
+        if (b._prestepType !== PhysicsPrestepType.DISABLED && (b.motionType === (PhysicsMotionType.ANIMATED as number) || b._preStep)) {
+            if (b._prestepType === PhysicsPrestepType.ACTION) {
+                _syncNodeToBodyTarget(hknp, b);
+            } else {
+                _syncNodeToBody(hknp, b);
+            }
         }
     }
 
@@ -318,6 +339,19 @@ function _syncNodeToBody(hknp: any, body: PhysicsBody): void {
     const p = node.position;
     const q = node.rotationQuaternion;
     hknp.HP_Body_SetQTransform(body._hkBody, [
+        [p.x, p.y, p.z],
+        [q.x, q.y, q.z, q.w],
+    ]);
+}
+
+// ACTION prestep: instead of snapping the body, set its target transform so Havok derives a
+// velocity that carries the body to the node over the step. Resting bodies stacked on top are then
+// dragged along by friction rather than tunneled through.
+function _syncNodeToBodyTarget(hknp: any, body: PhysicsBody): void {
+    const node = body.node;
+    const p = node.position;
+    const q = node.rotationQuaternion;
+    hknp.HP_Body_SetTargetQTransform(body._hkBody, [
         [p.x, p.y, p.z],
         [q.x, q.y, q.z, q.w],
     ]);
@@ -425,6 +459,7 @@ export function createPhysicsBody(world: PhysicsWorld, node: SceneNode, motionTy
         _hkBody: hkBody,
         _shape: null,
         _preStep: false,
+        _prestepType: PhysicsPrestepType.TELEPORT,
         _world: world,
         node,
         motionType,
@@ -456,6 +491,22 @@ export function createPhysicsBody(world: PhysicsWorld, node: SceneNode, motionTy
  */
 export function setPhysicsBodyPreStep(body: PhysicsBody, enabled: boolean): void {
     body._preStep = enabled;
+}
+
+/**
+ * Sets how a moved transform node is propagated to its physics body before each step.
+ * `TELEPORT` snaps the body to the node, `ACTION` sets a velocity toward it (so resting bodies are
+ * dragged along by friction), and `DISABLED` skips the pre-step sync entirely. Setting any type
+ * other than `DISABLED` automatically enables prestep syncing for the body (equivalent to
+ * {@link setPhysicsBodyPreStep}), so STATIC/DYNAMIC bodies are synced without an extra call.
+ * @param body - The physics body to update.
+ * @param type - The prestep behaviour to apply.
+ */
+export function setPhysicsBodyPrestepType(body: PhysicsBody, type: PhysicsPrestepType): void {
+    body._prestepType = type;
+    if (type !== PhysicsPrestepType.DISABLED) {
+        body._preStep = true;
+    }
 }
 
 /**
@@ -893,7 +944,7 @@ export function addPhysicsShapeChildFromParent(world: PhysicsWorld, container: P
         throw new Error("Cannot add physics child shape from a singular parent transform.");
     }
     const childToParent = mat4Multiply(invParent, childNode.worldMatrix as Mat4);
-    const transform = decomposeMatrix(childToParent);
+    const transform = mat4Decompose(childToParent);
     addPhysicsShapeChild(world, container, child, transform.translation, transform.rotation, transform.scale);
 }
 
@@ -975,61 +1026,6 @@ function buildMassProperties(world: PhysicsWorld, body: PhysicsBody): any[] {
         }
     }
     return [[0, 0, 0], 1, [1, 1, 1], [0, 0, 0, 1]];
-}
-
-function decomposeMatrix(m: Mat4): { translation: Vec3; rotation: Quat; scale: Vec3 } {
-    const sx = Math.hypot(m[0]!, m[1]!, m[2]!);
-    const sy = Math.hypot(m[4]!, m[5]!, m[6]!);
-    const sz = Math.hypot(m[8]!, m[9]!, m[10]!);
-    const invSx = sx > 1e-8 ? 1 / sx : 0;
-    const invSy = sy > 1e-8 ? 1 / sy : 0;
-    const invSz = sz > 1e-8 ? 1 / sz : 0;
-    const r00 = m[0]! * invSx;
-    const r01 = m[4]! * invSy;
-    const r02 = m[8]! * invSz;
-    const r10 = m[1]! * invSx;
-    const r11 = m[5]! * invSy;
-    const r12 = m[9]! * invSz;
-    const r20 = m[2]! * invSx;
-    const r21 = m[6]! * invSy;
-    const r22 = m[10]! * invSz;
-
-    let x: number;
-    let y: number;
-    let z: number;
-    let w: number;
-    const trace = r00 + r11 + r22;
-    if (trace > 0) {
-        const s = Math.sqrt(trace + 1) * 2;
-        w = 0.25 * s;
-        x = (r21 - r12) / s;
-        y = (r02 - r20) / s;
-        z = (r10 - r01) / s;
-    } else if (r00 > r11 && r00 > r22) {
-        const s = Math.sqrt(1 + r00 - r11 - r22) * 2;
-        w = (r21 - r12) / s;
-        x = 0.25 * s;
-        y = (r01 + r10) / s;
-        z = (r02 + r20) / s;
-    } else if (r11 > r22) {
-        const s = Math.sqrt(1 + r11 - r00 - r22) * 2;
-        w = (r02 - r20) / s;
-        x = (r01 + r10) / s;
-        y = 0.25 * s;
-        z = (r12 + r21) / s;
-    } else {
-        const s = Math.sqrt(1 + r22 - r00 - r11) * 2;
-        w = (r10 - r01) / s;
-        x = (r02 + r20) / s;
-        y = (r12 + r21) / s;
-        z = 0.25 * s;
-    }
-    const invLen = 1 / Math.hypot(x, y, z, w);
-    return {
-        translation: { x: m[12]!, y: m[13]!, z: m[14]! },
-        rotation: { x: x * invLen, y: y * invLen, z: z * invLen, w: w * invLen },
-        scale: { x: sx, y: sy, z: sz },
-    };
 }
 
 // ─── Body control (impulse / velocity / motion type / transform) ─────

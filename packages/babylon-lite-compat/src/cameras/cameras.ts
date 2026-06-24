@@ -11,6 +11,9 @@
 import {
     createArcRotateCamera,
     createFreeCamera,
+    createGeospatialCamera,
+    setGeospatialOrientation,
+    attachGeospatialControls,
     attachControl as liteAttachControl,
     attachFreeControl,
     getCameraPosition,
@@ -18,7 +21,7 @@ import {
     getProjectionMatrix as liteGetProjectionMatrix,
     onBeforeRender,
 } from "babylon-lite";
-import type { ArcRotateCamera as LiteArcRotateCamera, FreeCamera as LiteFreeCamera, Camera as LiteCamera } from "babylon-lite";
+import type { ArcRotateCamera as LiteArcRotateCamera, FreeCamera as LiteFreeCamera, GeospatialCamera as LiteGeospatialCamera, Camera as LiteCamera } from "babylon-lite";
 
 import { unsupported } from "../error.js";
 import { Vector3 } from "../math/vector.js";
@@ -114,6 +117,9 @@ export class ArcRotateCamera extends Camera {
     /** @internal Underlying Babylon Lite arc-rotate camera. */
     public readonly _lite: LiteArcRotateCamera;
 
+    public constructor(name: string, alpha: number, beta: number, radius: number, target: Vector3, scene?: Scene);
+    /** @internal Adopt an already-built Lite arc-rotate camera (e.g. from `createDefaultCamera`) instead of creating a new one. */
+    public constructor(name: string, alpha: number, beta: number, radius: number, target: Vector3, scene: Scene | undefined, adoptLite: LiteArcRotateCamera);
     public constructor(name: string, alpha: number, beta: number, radius: number, target: Vector3, scene?: Scene, adoptLite?: LiteArcRotateCamera) {
         super(name, scene);
         this._lite = adoptLite ?? createArcRotateCamera(alpha, beta, radius, { x: target.x, y: target.y, z: target.z });
@@ -193,9 +199,12 @@ export class TargetCamera extends Camera {
     /** @internal Underlying Babylon Lite free camera. */
     public readonly _lite: LiteFreeCamera;
 
-    public constructor(name: string, position: Vector3, scene?: Scene) {
+    public constructor(name: string, position: Vector3, scene?: Scene);
+    /** @internal Adopt an already-built Lite free camera (e.g. one parsed from a `.babylon` file) instead of creating a new one. */
+    public constructor(name: string, position: Vector3, scene: Scene | undefined, adoptLite: LiteFreeCamera);
+    public constructor(name: string, position: Vector3, scene?: Scene, adoptLite?: LiteFreeCamera) {
         super(name, scene);
-        this._lite = createFreeCamera({ x: position.x, y: position.y, z: position.z }, { x: position.x, y: position.y, z: position.z - 1 });
+        this._lite = adoptLite ?? createFreeCamera({ x: position.x, y: position.y, z: position.z }, { x: position.x, y: position.y, z: position.z - 1 });
         this._makeActive(scene);
     }
 
@@ -224,7 +233,7 @@ export class TargetCamera extends Camera {
     }
 
     public attachControl(canvas: HTMLCanvasElement, _noPreventDefault?: boolean): void {
-        const detach = attachFreeControl(this._lite, canvas);
+        const detach = attachFreeControl(this._lite, canvas, this._scene?._lite);
         this._setDetach(detach);
     }
 }
@@ -233,6 +242,12 @@ export class TargetCamera extends Camera {
 export class FreeCamera extends TargetCamera {
     public override getClassName(): string {
         return "FreeCamera";
+    }
+
+    /** @internal Wrap an already-built Lite free camera (e.g. one parsed from a `.babylon` file). */
+    public static _adopt(name: string, lite: LiteFreeCamera, scene?: Scene): FreeCamera {
+        const p = lite.position;
+        return new FreeCamera(name, new Vector3(p.x, p.y, p.z), scene, lite);
     }
 }
 
@@ -302,6 +317,68 @@ export class FollowCamera extends TargetCamera {
         const y = target.position.y + this.heightOffset;
         this._lite.position.set(x, y, z);
         this.setTarget(new Vector3(target.position.x, target.position.y, target.position.z));
+    }
+}
+
+/**
+ * Babylon.js `GeospatialCamera` — globe-orbit camera anchored to a surface
+ * `center` (ECEF), orbiting at `radius` with `yaw`/`pitch`. Wraps Babylon Lite's
+ * `createGeospatialCamera` + `setGeospatialOrientation` (which clamps pitch
+ * against the effective max for the current radius, so each orientation field is
+ * applied through Lite with the others left at their current values).
+ */
+export class GeospatialCamera extends Camera {
+    /** @internal Underlying Babylon Lite geospatial camera. */
+    public readonly _lite: LiteGeospatialCamera;
+
+    public constructor(name: string, scene?: Scene, options?: { planetRadius: number }) {
+        super(name, scene);
+        this._lite = createGeospatialCamera({ planetRadius: options?.planetRadius ?? 1 });
+        this._makeActive(scene);
+    }
+
+    public override getClassName(): string {
+        return "GeospatialCamera";
+    }
+
+    /** Anchored surface point the camera orbits (ECEF coordinates). */
+    public get center(): Vector3 {
+        const c = this._lite.center;
+        return new Vector3(c.x, c.y, c.z);
+    }
+    public set center(value: Vector3) {
+        setGeospatialOrientation(this._lite, { center: { x: value.x, y: value.y, z: value.z } });
+    }
+
+    /** Distance from the camera to its centre point. */
+    public get radius(): number {
+        return this._lite.radius;
+    }
+    public set radius(value: number) {
+        setGeospatialOrientation(this._lite, { radius: value });
+    }
+
+    /** Yaw about the geocentric up axis (0 = north, π/2 = east). */
+    public get yaw(): number {
+        return this._lite.yaw;
+    }
+    public set yaw(value: number) {
+        setGeospatialOrientation(this._lite, { yaw: value });
+    }
+
+    /** Pitch from looking straight down (0) to the horizon (π/2). */
+    public get pitch(): number {
+        return this._lite.pitch;
+    }
+    public set pitch(value: number) {
+        setGeospatialOrientation(this._lite, { pitch: value });
+    }
+
+    public attachControl(canvas: HTMLCanvasElement, _noPreventDefault?: boolean): void {
+        if (this._scene) {
+            const detach = attachGeospatialControls(this._lite, canvas, this._scene._lite);
+            this._setDetach(detach);
+        }
     }
 }
 

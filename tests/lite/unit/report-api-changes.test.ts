@@ -36,6 +36,55 @@ describe("API report breaking-change classifier", () => {
         expect(breakingApiLines(diff)).toEqual(["export declare function createMesh(name: string): Mesh;"]);
     });
 
+    it("treats a const literal widening to its primitive base as additive", () => {
+        const diff = apiDiff('export const VERSION = "0.1.0";', "export const VERSION: string;");
+
+        expect(breakingApiLines(diff)).toEqual([]);
+    });
+
+    it("treats numeric and boolean const literal widening as additive", () => {
+        expect(breakingApiLines(apiDiff("export const MAX = 100;", "export const MAX: number;"))).toEqual([]);
+        expect(breakingApiLines(apiDiff("export const ENABLED = true;", "export const ENABLED: boolean;"))).toEqual([]);
+    });
+
+    it("flags a const widening to an unrelated type as breaking", () => {
+        const diff = apiDiff('export const VERSION = "0.1.0";', "export const VERSION: number;");
+
+        expect(breakingApiLines(diff)).toEqual(['export const VERSION = "0.1.0";']);
+    });
+
+    it("flags a renamed const as breaking", () => {
+        const diff = apiDiff('export const VERSION = "0.1.0";', "export const REVISION: string;");
+
+        expect(breakingApiLines(diff)).toEqual(['export const VERSION = "0.1.0";']);
+    });
+
+    it("treats a TypedArray gaining its TS 5.7 buffer type argument as additive", () => {
+        expect(breakingApiLines(apiDiff("readonly weights: Float32Array;", "readonly weights: Float32Array<ArrayBuffer>;"))).toEqual([]);
+        expect(breakingApiLines(apiDiff("readonly weights: Float32Array<ArrayBuffer>;", "readonly weights: Float32Array;"))).toEqual([]);
+    });
+
+    it("treats TypedArray buffer-argument changes inside composite types as additive", () => {
+        const diff = apiDiff(
+            "readonly targets: readonly { positions: Float32Array; normals: Float32Array | null }[];",
+            "readonly targets: readonly { positions: Float32Array<ArrayBuffer>; normals: Float32Array<ArrayBuffer> | null }[];"
+        );
+
+        expect(breakingApiLines(diff)).toEqual([]);
+    });
+
+    it("still flags a genuine TypedArray element-type change as breaking", () => {
+        const diff = apiDiff("readonly weights: Float32Array<ArrayBuffer>;", "readonly weights: Float64Array<ArrayBuffer>;");
+
+        expect(breakingApiLines(diff)).toEqual(["readonly weights: Float32Array<ArrayBuffer>;"]);
+    });
+
+    it("still flags a non-default backing-buffer change as breaking", () => {
+        const diff = apiDiff("readonly weights: Float32Array<ArrayBuffer>;", "readonly weights: Float32Array<SharedArrayBuffer>;");
+
+        expect(breakingApiLines(diff)).toEqual(["readonly weights: Float32Array<ArrayBuffer>;"]);
+    });
+
     it("does not flag purely added API lines", () => {
         const diff = [
             "diff --git a/target.api.md b/current.api.md",

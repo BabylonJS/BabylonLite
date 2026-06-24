@@ -31,6 +31,16 @@ export default defineConfig({
                     include: ["packages/babylon-lite-compat/tests/**/*.test.ts"],
                 },
             },
+            {
+                // Opt-in Tier-2/3 tests that render through a REAL OfflineAudioContext
+                // via the native dev dependency `node-web-audio-api`. Specs self-skip
+                // when the binary is unavailable, so this project is safe everywhere.
+                extends: true,
+                test: {
+                    name: "audio-offline",
+                    include: ["tests/lite/audio/**/*.test.ts"],
+                },
+            },
         ],
     },
 });

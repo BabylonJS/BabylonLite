@@ -27,14 +27,14 @@ import {
     enableAnimationBlending,
     updateAnimationManager,
 } from "babylon-lite";
-import type { SceneContext, Camera as LiteCamera, ArcRotateCamera as LiteArcRotateCamera, AnimationManager } from "babylon-lite";
+import type { SceneContext, Camera as LiteCamera, ArcRotateCamera as LiteArcRotateCamera, FreeCamera as LiteFreeCamera, AnimationManager } from "babylon-lite";
 
 import { Color3, Color4 } from "../math/color.js";
 import type { Plane } from "../math/plane.js";
 import { unsupported } from "../error.js";
 import { Observable } from "../misc/observable.js";
 import type { Camera } from "../cameras/cameras.js";
-import { ArcRotateCamera } from "../cameras/cameras.js";
+import { ArcRotateCamera, FreeCamera } from "../cameras/cameras.js";
 import { StandardMaterial } from "../materials/materials.js";
 import { Animatable } from "../animations/animation.js";
 import type { Animation } from "../animations/animation.js";
@@ -373,7 +373,9 @@ export class Scene extends AbstractScene {
         return new Color4(c.r, c.g, c.b, c.a ?? 1);
     }
     public set clearColor(value: Color4) {
-        this._lite.clearColor = { r: value.r, g: value.g, b: value.b, a: value.a };
+        // Babylon.js accepts a `Color3` here (alpha defaults to 1). A `Color3` has no
+        // `a`, which would otherwise reach WebGPU's render pass as `undefined`.
+        this._lite.clearColor = { r: value.r, g: value.g, b: value.b, a: value.a ?? 1 };
     }
 
     public get activeCamera(): Camera | null {
@@ -382,6 +384,21 @@ export class Scene extends AbstractScene {
     public set activeCamera(camera: Camera | null) {
         this._activeCamera = camera;
         this._lite.camera = (camera?._lite as LiteCamera | undefined) ?? null;
+    }
+
+    /**
+     * @internal Surface a camera parsed from a loaded asset (`.babylon` files carry
+     * their own camera) as the compat `scene.activeCamera`. Babylon Lite's
+     * `addToScene` sets `scene._lite.camera` from the asset, but the compat scene
+     * only tracks cameras created through the wrapper classes — so after a load with
+     * no explicit camera we wrap the Lite one here. Loaded `.babylon` cameras are
+     * always free cameras (see `parseBabylonCamera`).
+     */
+    public _surfaceLoadedCamera(): void {
+        if (this._activeCamera || !this._lite.camera) {
+            return;
+        }
+        FreeCamera._adopt("camera", this._lite.camera as LiteFreeCamera, this);
     }
 
     /** Image-processing exposure proxy (Babylon.js `imageProcessingConfiguration.exposure`). */

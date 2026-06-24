@@ -64,7 +64,6 @@ export type { CopyToTextureTask, CopyToTextureTaskConfig } from "./frame-graph/c
 export { createGeometryRendererTask } from "./frame-graph/geometry-renderer-task.js";
 export type { GeometryRendererTask, GeometryRendererTaskConfig, GeometryRendererTextureDescription } from "./frame-graph/geometry-renderer-task.js";
 export { GeometryTextureType } from "./frame-graph/geometry-types.js";
-export { createShadowTask } from "./frame-graph/shadow-task.js";
 export type { ShadowTask } from "./frame-graph/shadow-task.js";
 export type { RenderTarget, RenderTargetDescriptor } from "./engine/render-target.js";
 export { createRenderTarget } from "./engine/render-target.js";
@@ -186,7 +185,7 @@ export { createTexture2DFromPixels, updateTexture2DFromPixels, createRenderTextu
 export type { PixelsTexture2DOptions, RenderTexture2DOptions } from "./texture/pixels-texture.js";
 export { loadKtxTexture2D } from "./texture/ktx-loader.js";
 export { loadBasisTexture2D } from "./texture/basis-loader.js";
-export { setKtx2DecoderUrl } from "./texture/ktx2-loader.js";
+export { setKtx2DecoderUrl, loadKtx2Texture2D } from "./texture/ktx2-loader.js";
 
 // ─── Materials ───────────────────────────────────────────────────────
 export { createStandardMaterial } from "./material/standard/create-standard-material.js";
@@ -216,6 +215,7 @@ export { markMaterialUboDirty } from "./material/material-dirty.js";
 export { rebuildMaterial } from "./material/material-rebuild.js";
 export type { MaterialPlugin, MaterialPluginPoint, PluginUboField, PluginSamplerDecl, PluginTextureBinding } from "./material/plugin/material-plugin.js";
 export { enableMaterialPlugins } from "./material/plugin/enable-material-plugins.js";
+export { enableMaterialStencil } from "./material/enable-material-stencil.js";
 export { enableMaterialTracking } from "./material/observable-material.js";
 
 // ─── Loaders ─────────────────────────────────────────────────────────
@@ -224,6 +224,11 @@ export type { AssetContainer } from "./asset-container.js";
 export { getContainerMeshes } from "./asset-container.js";
 export { selectVariant, getVariantNames, resetVariant } from "./loader-gltf/material-variants.js";
 export type { MaterialVariantData } from "./loader-gltf/material-variants.js";
+// Decoder base-URL config for KHR_draco_mesh_compression / EXT_meshopt_compression.
+// The heavy decoder glue stays dynamic-imported (zero bytes for assets that don't
+// use it); only these tiny setters are statically reachable from the entry point.
+export { setDracoBaseUrl } from "./loader-gltf/draco-decode.js";
+export { setMeshoptBaseUrl } from "./loader-gltf/meshopt-decode.js";
 // ─── Hierarchy ───────────────────────────────────────────────────────
 export type { IWorldMatrixProvider, IParentable } from "./scene/parentable.js";
 export { setParent } from "./scene/set-parent.js";
@@ -260,7 +265,12 @@ export { setShadowTaskCasterMeshes } from "./frame-graph/shadow-inputs.js";
 
 // ─── Animation ───────────────────────────────────────────────────────
 export { createAnimationController } from "./skeleton/skeleton-updater.js";
+// Opt-in bone control for skinned models (near-zero bundle cost unless enableBoneControl is called).
+export { enableBoneControl, getBoneByName, setBonePosition, setBoneRotationQuaternion, setBoneScaling, setBoneVisible, clearBoneOverride } from "./skeleton/bone-control.js";
+export type { Skeleton, Bone } from "./skeleton/bone-control.js";
 export { createAnimationGroups, playAnimation, pauseAnimation, stopAnimation, goToFrame } from "./animation/animation-group.js";
+export { AnimationGroupMaskMode, createAnimationGroupMask, animationGroupMaskRetainsTarget } from "./animation/animation-group-mask.js";
+export type { AnimationGroupMask } from "./animation/animation-group-mask.js";
 export { setAnimationWeight } from "./animation/animation-weight.js";
 export { crossFadeAnimationGroups, enablePropertyAnimationBlending, fadeAnimationWeight } from "./animation/weighted-pointer-mixer.js";
 export { enableAnimationBlending, setAnimationAdditive } from "./animation/weighted-gltf-mixer.js";
@@ -298,6 +308,22 @@ export { crossVec3 } from "./math/cross-vec3.js";
 export { lengthVec3 } from "./math/length-vec3.js";
 export { negateVec3 } from "./math/negate-vec3.js";
 export { lerpVec3 } from "./math/lerp-vec3.js";
+export {
+    addVec3InPlace,
+    addVec3ToRef,
+    crossVec3InPlace,
+    crossVec3ToRef,
+    lerpVec3InPlace,
+    lerpVec3ToRef,
+    negateVec3InPlace,
+    negateVec3ToRef,
+    normalizeVec3InPlace,
+    normalizeVec3ToRef,
+    scaleVec3InPlace,
+    scaleVec3ToRef,
+    subVec3InPlace,
+    subVec3ToRef,
+} from "./math/vec3-ref.js";
 export { writeVec3 } from "./math/write-vec3.js";
 export { mat4Translation } from "./math/mat4-translation.js";
 export { mat4Identity } from "./math/mat4-identity.js";
@@ -308,9 +334,14 @@ export { mat4Multiply } from "./math/mat4-multiply.js";
 export { mat4LookAtLH } from "./math/mat4-look-at-lh.js";
 export { mat4PerspectiveLH } from "./math/mat4-perspective-lh.js";
 export { mat4FromQuat } from "./math/mat4-from-quat.js";
+export { quatFromRotationMatrix } from "./math/quat-from-rotation-matrix.js";
+export { quatFromLookDirectionRH } from "./math/quat-from-look-direction-rh.js";
+export { mat4Decompose } from "./math/mat4-decompose.js";
+export type { DecomposedTransform } from "./math/mat4-decompose.js";
 export type { Vec3, Vec3Tuple, Vec4, Color3, Color4, Mat4, Quat } from "./math/types.js";
 export type { Aabb } from "./math/aabb.js";
 export { computeAabb } from "./math/aabb.js";
+export type { GltfMetadata, LiteMetadata } from "./metadata.js";
 
 // ─── Color ───────────────────────────────────────────────────────────
 export { linearToSrgbByte, srgbByteToLinear, packedSrgbToLinearRgba } from "./math/color.js";
@@ -347,10 +378,11 @@ export { resolveCameraViewport } from "./camera/viewport.js";
 export type { PixelViewport } from "./camera/viewport.js";
 export type { FreeCamera } from "./camera/free-camera.js";
 export type { Mesh, MeshGPU } from "./mesh/mesh.js";
+export { disposeMeshGpu } from "./mesh/mesh-dispose.js";
 export { ObservableVec3 } from "./math/observable-vec3.js";
 export { ObservableQuat } from "./math/observable-quat.js";
 export type { StandardMaterialProps, FogConfig } from "./material/standard/standard-material.js";
-export type { Material, MaterialRenderFeatures, MaterialView } from "./material/material.js";
+export type { Material, MaterialRenderFeatures, MaterialView, StencilState } from "./material/material.js";
 export type {
     ShaderMaterial,
     ShaderMaterialOptions,
@@ -388,7 +420,7 @@ export type { PcfSpotlightShadowGeneratorConfig } from "./shadow/pcf-spotlight-s
 export type { PcfDirectionalShadowGeneratorConfig } from "./shadow/pcf-directional-shadow-generator.js";
 export type { CsmDirectionalShadowGeneratorConfig } from "./shadow/csm-directional-shadow-generator.js";
 export type { AnimationController } from "./skeleton/skeleton-updater.js";
-export type { AnimationGroup } from "./animation/animation-group.js";
+export type { AnimationGroup, TargetedAnimation } from "./animation/animation-group.js";
 export type { AnimationManager, AnimationManagerOptions } from "./animation/animation-manager.js";
 export type {
     AnimationKeyframe,
@@ -590,6 +622,7 @@ export {
     getPhysicsVelocityLimits,
     setPhysicsBodyShape,
     setPhysicsBodyPreStep,
+    setPhysicsBodyPrestepType,
     applyPhysicsBodyImpulse,
     applyPhysicsBodyForce,
     addPhysicsShapeChild,
@@ -610,6 +643,7 @@ export {
     disposePhysics,
     PhysicsShapeType,
     PhysicsMotionType,
+    PhysicsPrestepType,
     PhysicsConstraintType,
     PhysicsConstraintAxis,
 } from "./physics/havok.js";
@@ -628,14 +662,21 @@ export type {
 } from "./physics/havok.js";
 export { createHeightFieldShape } from "./physics/havok-heightfield.js";
 export type { HeightFieldShapeOptions } from "./physics/havok-heightfield.js";
-export { shapeProximity, shapeCast } from "./physics/havok-queries.js";
-export type { ShapeProximityQuery, ShapeCastQuery, ShapeProximityResult, ShapeCastResult } from "./physics/havok-queries.js";
+export { shapeProximity, shapeCast, physicsRaycast } from "./physics/havok-queries.js";
+export type { ShapeProximityQuery, ShapeCastQuery, ShapeProximityResult, ShapeCastResult, RaycastQuery, RaycastResult } from "./physics/havok-queries.js";
+export { setPhysicsBodyCollisionEventsEnabled, onPhysicsCollision } from "./physics/havok-collision.js";
+export type { PhysicsCollisionInfo } from "./physics/havok-collision.js";
+export { setPhysicsShapeIsTrigger, onPhysicsTrigger } from "./physics/havok-trigger.js";
+export type { PhysicsTriggerInfo } from "./physics/havok-trigger.js";
 export { createPhysicsViewer, showPhysicsBody, showPhysicsConstraint, hidePhysicsBody, disposePhysicsViewer } from "./physics/physics-viewer.js";
 export type { PhysicsViewer, PhysicsViewerOptions, PhysicsConstraintDebug } from "./physics/physics-viewer.js";
+export { createPhysicsCharacterController, PhysicsCharacterController, CharacterSupportedState, CharacterCollisionObservable } from "./physics/character-controller.js";
+export type { PhysicsCharacterControllerOptions, CharacterSurfaceInfo, CharacterCollisionEvent } from "./physics/character-controller.js";
 
 // ─── Navigation (Recast V2) ──────────────────────────────────────────
 export {
     createNavigationPluginAsync,
+    disposeNavigationPlugin,
     createNavMesh,
     createNavMeshFromSources,
     createDebugNavMeshGeometry,
@@ -658,3 +699,51 @@ export {
     updateNavMeshObstacles,
 } from "./navigation/navigation.js";
 export type { NavigationPlugin, NavCrowd, NavMeshParameters, NavMeshSource, AgentParameters, OffMeshConnection, ObstacleHandle } from "./navigation/navigation.js";
+
+// ─── Audio (AudioV2 port) ────────────────────────────────────────────
+export { createAudioEngineAsync, disposeAudioEngine, unlockAudioEngineAsync, setMasterVolume, getMasterVolume } from "./audio/audio-engine.js";
+export type { AudioEngine, AudioEngineOptions, AudioEngineState } from "./audio/audio-engine.js";
+export { createSoundAsync, playSound, pauseSound, resumeSound, stopSound, disposeSound, setSoundVolume, SoundState } from "./audio/static-sound.js";
+export type { StaticSound, StaticSoundOptions, StaticSoundPlayOptions, StaticSoundStopOptions } from "./audio/static-sound.js";
+export {
+    createStreamingSoundAsync,
+    preloadStreamingInstanceAsync,
+    preloadStreamingInstancesAsync,
+    playStreamingSound,
+    pauseStreamingSound,
+    resumeStreamingSound,
+    stopStreamingSound,
+    disposeStreamingSound,
+    setStreamingSoundVolume,
+} from "./audio/streaming-sound.js";
+export type { StreamingSound, StreamingSoundOptions, StreamingSoundPlayOptions, StreamingSoundSource } from "./audio/streaming-sound.js";
+export { createAudioBusAsync, disposeAudioBus, setBusVolume } from "./audio/audio-bus.js";
+export type { AudioBus, AudioBusOptions, PrimaryAudioBus } from "./audio/audio-bus.js";
+export type { MainBus } from "./audio/bus.js";
+export {
+    enableSpatial,
+    setSpatialPosition,
+    setSpatialOrientation,
+    attachSpatialTarget,
+    detachSpatialTarget,
+    setSpatialListener,
+    setSpatialListenerPosition,
+    updateSpatialAudio,
+    setSpatialAutoUpdate,
+} from "./audio/spatial.js";
+export type { SpatialSoundOptions, SpatialListenerOptions, SpatialTarget, SpatialAttachmentType } from "./audio/spatial.js";
+export { enableStereo, setStereoPan } from "./audio/stereo.js";
+export type { StereoSoundOptions } from "./audio/stereo.js";
+export { enableAnalyzer, getByteFrequencyData, getFloatFrequencyData, getByteTimeDomainData, getFloatTimeDomainData } from "./audio/analyzer.js";
+export type { AudioAnalyzerOptions } from "./audio/analyzer.js";
+export type { AudioGraphHost } from "./audio/host-types.js";
+export { createSoundSourceAsync, createMicrophoneSoundSourceAsync, setSoundSourceVolume, disposeSoundSource } from "./audio/sound-source.js";
+export type { AudioInputSource, SoundSourceOptions } from "./audio/sound-source.js";
+export { createUnmuteUI, setUnmuteUIEnabled, disposeUnmuteUI } from "./audio/unmute-ui.js";
+export type { UnmuteUI, UnmuteUIOptions } from "./audio/unmute-ui.js";
+export { createAudioVisualizer, renderAudioVisualizerFrame, startAudioVisualizer, stopAudioVisualizer, disposeAudioVisualizer } from "./audio/visualizer.js";
+export type { AudioVisualizer, AudioVisualizerOptions, AudioVisualizerMode } from "./audio/visualizer.js";
+export { createSoundBufferAsync } from "./audio/sound-buffer.js";
+export type { SoundBuffer, SoundSource, SoundBufferOptions } from "./audio/sound-buffer.js";
+export type { AudioSignal } from "./audio/audio-signal.js";
+export type { AudioRampShape, RampOptions } from "./audio/audio-param.js";

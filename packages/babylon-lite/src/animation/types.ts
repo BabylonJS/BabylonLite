@@ -90,11 +90,11 @@ export interface SkeletonBinding {
 export interface MorphBinding {
     /** Node index that owns the morph targets. */
     readonly nodeIdx: number;
-    /** GPU uniform buffer written each frame with current weights. */
+    /** GPU storage buffer written each frame with current weights (header + weights array). */
     readonly weightsBuffer: GPUBuffer;
-    /** CPU mirror of the first four current weights, used by deformation-aware picking. */
+    /** CPU mirror of the current weights, used by deformation-aware picking. */
     readonly weights: Float32Array;
-    /** Number of morph targets (max 4 supported). */
+    /** Number of morph targets. */
     readonly targetCount: number;
     readonly runtimeMorphTargets?: MorphTargetData;
 }
@@ -124,6 +124,16 @@ export interface GltfAnimationData {
      *  matrices bake an `invMeshWorld` captured at load, so moving them at runtime
      *  would double-transform the skinned vertices). */
     readonly excludedNodeIndices: ReadonlySet<number>;
+    /** glTF node names indexed by node index (undefined for unnamed nodes). Used by
+     *  {@link AnimationGroupMask} to resolve include/exclude target names to the node
+     *  indices its channels animate. */
+    readonly nodeNames: readonly (string | undefined)[];
+    /** Shared node-index → bone override map, present only when `enableBoneControl()`
+     *  installed bone control. Handed to every AnimationController so a playing clip
+     *  honours user bone overrides (animation wins per-component). `undefined` on the
+     *  default path. Typed as `unknown` value to keep the internal `BoneOverride`
+     *  shape out of the public API surface. */
+    readonly boneOverrides?: ReadonlyMap<number, unknown>;
 }
 
 // ─── GPU-side data objects attached to Mesh ─────────────────────────────────
@@ -171,12 +181,14 @@ export interface VatData {
     instanceTexture?: GPUTexture | null;
 }
 
-/** Morph target GPU data — delta texture + weights UBO.
+/** Morph target GPU data — delta storage buffer + weights storage buffer.
  *  Created by createMorphTargets() in morph/create-morph-targets.ts.
  *  Attached to mesh.morphTargets. */
 export interface MorphTargetData {
-    readonly texture: GPUTexture;
+    /** Read-only storage buffer: 6 f32 per (target, vertex) — position xyz then normal xyz. */
+    readonly deltasBuffer: GPUBuffer;
     readonly count: number;
+    /** Read-only storage buffer: 16-byte header (count, vertexCount) + one f32 weight per target. */
     readonly weightsBuffer: GPUBuffer;
     readonly targets: readonly { positions: Float32Array; normals: Float32Array | null }[];
     readonly weights: Float32Array<ArrayBuffer>;
