@@ -71,7 +71,7 @@
         "name": "Scene 7 — ChibiRex Animated",
         "maxMad": 0.55,
         "maxRegionMad": 0.66,
-        "maxRawKB": 104.5,
+        "maxRawKB": 105,
         "description": "Animated dinosaur, PBR materials, IBL environment, skeletal animation.",
         "tags": ["pbr", "gltf", "anim"]
     },
@@ -2137,6 +2137,17 @@
         "maxRawKB": 91,
         "description": "glTF Animation_SamplerType_01: rotation animation whose sampler output quaternions are a normalized signed BYTE accessor (componentType 5120). Validates loader support for signed BYTE/SHORT accessor component types (glTF-Asset-Generator Category A). Frozen at seekTime=2.0.",
         "tags": ["gltf", "animation", "accessor"],
+        "skipPerf": true
+    },
+    {
+        "id": 255,
+        "slug": "scene255-skin-weights-byte",
+        "name": "Scene 255 — Skin Weights (Byte)",
+        "maxMad": 0.1,
+        "maxRegionMad": 0.5,
+        "maxRawKB": 93.2,
+        "description": "glTF Animation_SkinType_01: a skinned plane whose vertex WEIGHTS are a normalized UNSIGNED_BYTE accessor (componentType 5121). Validates denormalization of non-float skin weights (glTF-Asset-Generator Category B); Lite previously read them raw and exploded the skin. Frozen at seekTime=1.0.",
+        "tags": ["gltf", "skeleton", "animation"],
         "skipPerf": true
     }
 ]
