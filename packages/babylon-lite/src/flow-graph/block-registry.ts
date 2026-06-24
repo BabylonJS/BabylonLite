@@ -56,6 +56,148 @@ export function getBlockDef(type: string): (() => Promise<FgBlockDef>) | null {
         case FgBlockType.ExtractVector2:
             return async () => (await import("./blocks/math/extract2.js")).extract2Def;
 
+        // ─── Math: Phase 3 (scalar / trig / compare / bitwise / vector) ──
+        case FgBlockType.Negation:
+            return async () => (await import("./blocks/math/negation.js")).negationDef;
+        case FgBlockType.Sign:
+            return async () => (await import("./blocks/math/sign.js")).signDef;
+        case FgBlockType.Ceil:
+            return async () => (await import("./blocks/math/ceil.js")).ceilDef;
+        case FgBlockType.Round:
+            return async () => (await import("./blocks/math/round.js")).roundDef;
+        case FgBlockType.Trunc:
+            return async () => (await import("./blocks/math/trunc.js")).truncDef;
+        case FgBlockType.Fraction:
+            return async () => (await import("./blocks/math/fraction.js")).fractionDef;
+        case FgBlockType.Saturate:
+            return async () => (await import("./blocks/math/saturate.js")).saturateDef;
+        case FgBlockType.SquareRoot:
+            return async () => (await import("./blocks/math/square-root.js")).squareRootDef;
+        case FgBlockType.CubeRoot:
+            return async () => (await import("./blocks/math/cube-root.js")).cubeRootDef;
+        case FgBlockType.Exponential:
+            return async () => (await import("./blocks/math/exponential.js")).exponentialDef;
+        case FgBlockType.Log:
+            return async () => (await import("./blocks/math/log.js")).logDef;
+        case FgBlockType.Log2:
+            return async () => (await import("./blocks/math/log2.js")).log2Def;
+        case FgBlockType.Log10:
+            return async () => (await import("./blocks/math/log10.js")).log10Def;
+        case FgBlockType.DegToRad:
+            return async () => (await import("./blocks/math/deg-to-rad.js")).degToRadDef;
+        case FgBlockType.RadToDeg:
+            return async () => (await import("./blocks/math/rad-to-deg.js")).radToDegDef;
+        case FgBlockType.Sin:
+            return async () => (await import("./blocks/math/sin.js")).sinDef;
+        case FgBlockType.Cos:
+            return async () => (await import("./blocks/math/cos.js")).cosDef;
+        case FgBlockType.Tan:
+            return async () => (await import("./blocks/math/tan.js")).tanDef;
+        case FgBlockType.Asin:
+            return async () => (await import("./blocks/math/asin.js")).asinDef;
+        case FgBlockType.Acos:
+            return async () => (await import("./blocks/math/acos.js")).acosDef;
+        case FgBlockType.Atan:
+            return async () => (await import("./blocks/math/atan.js")).atanDef;
+        case FgBlockType.Sinh:
+            return async () => (await import("./blocks/math/sinh.js")).sinhDef;
+        case FgBlockType.Cosh:
+            return async () => (await import("./blocks/math/cosh.js")).coshDef;
+        case FgBlockType.Tanh:
+            return async () => (await import("./blocks/math/tanh.js")).tanhDef;
+        case FgBlockType.Asinh:
+            return async () => (await import("./blocks/math/asinh.js")).asinhDef;
+        case FgBlockType.Acosh:
+            return async () => (await import("./blocks/math/acosh.js")).acoshDef;
+        case FgBlockType.Atanh:
+            return async () => (await import("./blocks/math/atanh.js")).atanhDef;
+        case FgBlockType.Min:
+            return async () => (await import("./blocks/math/min.js")).minDef;
+        case FgBlockType.Max:
+            return async () => (await import("./blocks/math/max.js")).maxDef;
+        case FgBlockType.Power:
+            return async () => (await import("./blocks/math/power.js")).powerDef;
+        case FgBlockType.Atan2:
+            return async () => (await import("./blocks/math/atan2.js")).atan2Def;
+        case FgBlockType.Equality:
+            return async () => (await import("./blocks/math/equality.js")).equalityDef;
+        case FgBlockType.LessThanOrEqual:
+            return async () => (await import("./blocks/math/less-than-or-equal.js")).lessThanOrEqualDef;
+        case FgBlockType.GreaterThan:
+            return async () => (await import("./blocks/math/greater-than.js")).greaterThanDef;
+        case FgBlockType.GreaterThanOrEqual:
+            return async () => (await import("./blocks/math/greater-than-or-equal.js")).greaterThanOrEqualDef;
+        case FgBlockType.IsNaN:
+            return async () => (await import("./blocks/math/is-nan.js")).isNaNDef;
+        case FgBlockType.IsInfinity:
+            return async () => (await import("./blocks/math/is-infinity.js")).isInfinityDef;
+        case FgBlockType.BitwiseAnd:
+            return async () => (await import("./blocks/math/bitwise-and.js")).bitwiseAndDef;
+        case FgBlockType.BitwiseOr:
+            return async () => (await import("./blocks/math/bitwise-or.js")).bitwiseOrDef;
+        case FgBlockType.BitwiseXor:
+            return async () => (await import("./blocks/math/bitwise-xor.js")).bitwiseXorDef;
+        case FgBlockType.BitwiseNot:
+            return async () => (await import("./blocks/math/bitwise-not.js")).bitwiseNotDef;
+        case FgBlockType.BitwiseLeftShift:
+            return async () => (await import("./blocks/math/bitwise-left-shift.js")).bitwiseLeftShiftDef;
+        case FgBlockType.BitwiseRightShift:
+            return async () => (await import("./blocks/math/bitwise-right-shift.js")).bitwiseRightShiftDef;
+        case FgBlockType.LeadingZeros:
+            return async () => (await import("./blocks/math/leading-zeros.js")).leadingZerosDef;
+        case FgBlockType.TrailingZeros:
+            return async () => (await import("./blocks/math/trailing-zeros.js")).trailingZerosDef;
+        case FgBlockType.OneBitsCounter:
+            return async () => (await import("./blocks/math/one-bits-counter.js")).oneBitsCounterDef;
+        case FgBlockType.Length:
+            return async () => (await import("./blocks/math/length.js")).lengthDef;
+        case FgBlockType.Normalize:
+            return async () => (await import("./blocks/math/normalize.js")).normalizeDef;
+        case FgBlockType.Dot:
+            return async () => (await import("./blocks/math/dot.js")).dotDef;
+        case FgBlockType.Cross:
+            return async () => (await import("./blocks/math/cross.js")).crossDef;
+        case FgBlockType.Rotate2D:
+            return async () => (await import("./blocks/math/rotate2d.js")).rotate2DDef;
+        case FgBlockType.Rotate3D:
+            return async () => (await import("./blocks/math/rotate3d.js")).rotate3DDef;
+        case FgBlockType.MathInterpolation:
+            return async () => (await import("./blocks/math/mix.js")).mathInterpolationDef;
+        case FgBlockType.CombineVector3:
+            return async () => (await import("./blocks/math/combine3.js")).combine3Def;
+        case FgBlockType.CombineVector4:
+            return async () => (await import("./blocks/math/combine4.js")).combine4Def;
+        case FgBlockType.ExtractVector3:
+            return async () => (await import("./blocks/math/extract3.js")).extract3Def;
+        case FgBlockType.ExtractVector4:
+            return async () => (await import("./blocks/math/extract4.js")).extract4Def;
+        case FgBlockType.E:
+            return async () => (await import("./blocks/math/constant-e.js")).eDef;
+        case FgBlockType.PI:
+            return async () => (await import("./blocks/math/constant-pi.js")).piDef;
+        case FgBlockType.Inf:
+            return async () => (await import("./blocks/math/constant-inf.js")).infDef;
+        case FgBlockType.NaN:
+            return async () => (await import("./blocks/math/constant-nan.js")).nanDef;
+        case FgBlockType.Random:
+            return async () => (await import("./blocks/math/random.js")).randomDef;
+        case FgBlockType.Conditional:
+            return async () => (await import("./blocks/math/conditional.js")).conditionalDef;
+        case FgBlockType.DataSwitch:
+            return async () => (await import("./blocks/math/data-switch.js")).dataSwitchDef;
+        case FgBlockType.BooleanToFloat:
+            return async () => (await import("./blocks/conversion/boolean-to-float.js")).booleanToFloatDef;
+        case FgBlockType.BooleanToInt:
+            return async () => (await import("./blocks/conversion/boolean-to-int.js")).booleanToIntDef;
+        case FgBlockType.FloatToBoolean:
+            return async () => (await import("./blocks/conversion/float-to-boolean.js")).floatToBooleanDef;
+        case FgBlockType.IntToBoolean:
+            return async () => (await import("./blocks/conversion/int-to-boolean.js")).intToBooleanDef;
+        case FgBlockType.IntToFloat:
+            return async () => (await import("./blocks/conversion/int-to-float.js")).intToFloatDef;
+        case FgBlockType.FloatToInt:
+            return async () => (await import("./blocks/conversion/float-to-int.js")).floatToIntDef;
+
         // ─── Data: property / variable ────────────────────────────
         case FgBlockType.GetProperty:
             return async () => (await import("./blocks/data/get-property.js")).getPropertyDef;

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AnimationGroup } from "../../../packages/babylon-lite/src/animation/animation-group";
 import type { FgAccessor, FgBlock, FgBlockDef, FgGraph, FgValue, FgWiring } from "../../../packages/babylon-lite/src/flow-graph/index";
-import { createFgRuntime, FgEventType, FgType, getBlockDef, getDataValue, pumpFgEvent, startFlowGraph, tickFlowGraph } from "../../../packages/babylon-lite/src/flow-graph/index";
+import { createFgRuntime, fgInt, FgEventType, FgType, getBlockDef, getDataValue, pumpFgEvent, startFlowGraph, tickFlowGraph } from "../../../packages/babylon-lite/src/flow-graph/index";
 
 // ─── graph + runtime builder driven by the REAL registry ────────────────────
 
@@ -360,6 +360,216 @@ describe("flow-graph blocks — math/data", () => {
         expect(log[0]!.value).toBe(42);
     });
 });
+
+describe("flow-graph blocks — math Phase 3", () => {
+    /** Build start→op→recorder, fire start, return the value pulled off `outSocket`. */
+    async function evalOp(
+        type: string,
+        dataDefaults: Record<string, FgValue>,
+        opts: { config?: Record<string, unknown>; outSocket?: string } = {}
+    ): Promise<FgValue> {
+        const log: { label: string; value: FgValue }[] = [];
+        const rt = await makeRuntime(
+            [
+                { id: "start", type: "SceneReadyEvent", signalTargets: { out: [{ blockId: "rec", socket: "in" }] } },
+                { id: "op", type, config: opts.config, dataDefaults },
+                { id: "rec", type: RECORD, dataSources: { value: { blockId: "op", socket: opts.outSocket ?? "value" } } },
+            ],
+            { defs: { [RECORD]: recorderDef(log) } }
+        );
+        startFlowGraph(rt);
+        return log[0]!.value;
+    }
+
+    it.each([
+        ["Negation", -5, 5],
+        ["Sign", -2, -1],
+        ["Sign", 0, 0],
+        ["Ceil", 3.2, 4],
+        ["Round", 2.5, 3],
+        ["Round", -2.5, -2],
+        ["Trunc", -3.9, -3],
+        ["Fraction", 3.25, 0.25],
+        ["Saturate", 1.5, 1],
+        ["Saturate", -0.5, 0],
+        ["SquareRoot", 9, 3],
+        ["CubeRoot", 27, 3],
+        ["Exponential", 0, 1],
+        ["Log2", 8, 3],
+        ["Log10", 1000, 3],
+    ])("%s(%d) → %d", async (type, a, expected) => {
+        expect(await evalOp(type, { a })).toBeCloseTo(expected as number, 10);
+    });
+
+    it.each([
+        ["Sin", 0, 0],
+        ["Cos", 0, 1],
+        ["Tan", 0, 0],
+        ["Asin", 1, Math.PI / 2],
+        ["Acos", 1, 0],
+        ["Atan", 0, 0],
+        ["Sinh", 0, 0],
+        ["Cosh", 0, 1],
+        ["Tanh", 0, 0],
+        ["DegToRad", 180, Math.PI],
+        ["RadToDeg", Math.PI, 180],
+    ])("%s(%d) trig/conv", async (type, a, expected) => {
+        expect(await evalOp(type, { a })).toBeCloseTo(expected as number, 10);
+    });
+
+    it.each([
+        ["Min", 3, 5, 3],
+        ["Max", 3, 5, 5],
+        ["Power", 2, 10, 1024],
+        ["Atan2", 1, 1, Math.PI / 4],
+    ])("%s(%d, %d) → %d", async (type, a, b, expected) => {
+        expect(await evalOp(type, { a, b })).toBeCloseTo(expected as number, 10);
+    });
+
+    it.each([
+        ["Equality", 2, 2, true],
+        ["Equality", 2, 3, false],
+        ["LessThanOrEqual", 2, 2, true],
+        ["LessThanOrEqual", 3, 2, false],
+        ["GreaterThan", 3, 2, true],
+        ["GreaterThan", 2, 2, false],
+        ["GreaterThanOrEqual", 2, 2, true],
+        ["GreaterThanOrEqual", 1, 2, false],
+    ])("%s(%d, %d) → %s", async (type, a, b, expected) => {
+        expect(await evalOp(type, { a, b })).toBe(expected);
+    });
+
+    it.each([
+        ["IsNaN", NaN, true],
+        ["IsNaN", 3, false],
+        ["IsInfinity", Infinity, true],
+        ["IsInfinity", 3, false],
+    ])("%s(%d) → %s", async (type, a, expected) => {
+        expect(await evalOp(type, { a })).toBe(expected);
+    });
+
+    it.each([
+        ["BitwiseAnd", 6, 3, 2],
+        ["BitwiseOr", 6, 1, 7],
+        ["BitwiseXor", 6, 3, 5],
+        ["BitwiseLeftShift", 1, 4, 16],
+        ["BitwiseRightShift", 16, 2, 4],
+    ])("%s(%d, %d) on numbers → %d", async (type, a, b, expected) => {
+        const r = await evalOp(type, { a, b });
+        expect(isFgIntResult(r) ? (r as { value: number }).value : r).toBe(expected);
+    });
+
+    it.each([
+        ["LeadingZeros", 1, 31],
+        ["TrailingZeros", 8, 3],
+        ["OneBitsCounter", 7, 3],
+        ["BitwiseNot", 0, -1],
+    ])("%s(%d) on numbers → %d", async (type, a, expected) => {
+        const r = await evalOp(type, { a });
+        expect(isFgIntResult(r) ? (r as { value: number }).value : r).toBe(expected);
+    });
+
+    it("bitwise and/or/not dispatch booleans logically", async () => {
+        expect(await evalOp("BitwiseAnd", { a: true, b: false })).toBe(false);
+        expect(await evalOp("BitwiseOr", { a: true, b: false })).toBe(true);
+        expect(await evalOp("BitwiseNot", { a: true })).toBe(false);
+    });
+
+    it("bitwise ops round-trip FlowGraphInteger", async () => {
+        const r = await evalOp("BitwiseAnd", { a: fgInt(6), b: fgInt(3) });
+        expect(isFgIntResult(r)).toBe(true);
+        expect((r as { value: number }).value).toBe(2);
+    });
+
+    it.each([
+        ["Length", { x: 3, y: 4, z: 0 }, 5],
+        ["Dot", undefined, 32],
+    ] as const)("vector scalar op %s", async (type) => {
+        if (type === "Length") {
+            expect(await evalOp("Length", { a: { x: 3, y: 4, z: 0 } })).toBeCloseTo(5, 10);
+        } else {
+            expect(await evalOp("Dot", { a: { x: 1, y: 2, z: 3 }, b: { x: 4, y: 5, z: 6 } })).toBeCloseTo(32, 10);
+        }
+    });
+
+    it("Normalize returns a unit vector", async () => {
+        const r = (await evalOp("Normalize", { a: { x: 3, y: 4, z: 0 } })) as { x: number; y: number; z: number };
+        expect(r.x).toBeCloseTo(0.6, 10);
+        expect(r.y).toBeCloseTo(0.8, 10);
+        expect(r.z).toBeCloseTo(0, 10);
+    });
+
+    it("Cross computes the right-handed cross product", async () => {
+        expect(await evalOp("Cross", { a: { x: 1, y: 0, z: 0 }, b: { x: 0, y: 1, z: 0 } })).toEqual({ x: 0, y: 0, z: 1 });
+    });
+
+    it("Rotate2D rotates a Vec2 CCW by angle (b)", async () => {
+        const r = (await evalOp("Rotate2D", { a: { x: 1, y: 0 }, b: Math.PI / 2 })) as { x: number; y: number };
+        expect(r.x).toBeCloseTo(0, 10);
+        expect(r.y).toBeCloseTo(1, 10);
+    });
+
+    it("Rotate3D by identity quaternion is a no-op", async () => {
+        const r = (await evalOp("Rotate3D", { a: { x: 1, y: 2, z: 3 }, b: { x: 0, y: 0, z: 0, w: 1 } })) as { x: number; y: number; z: number };
+        expect(r.x).toBeCloseTo(1, 10);
+        expect(r.y).toBeCloseTo(2, 10);
+        expect(r.z).toBeCloseTo(3, 10);
+    });
+
+    it("CombineVector3/4 build vectors from scalars", async () => {
+        expect(await evalOp("CombineVector3", { a: 1, b: 2, c: 3 })).toEqual({ x: 1, y: 2, z: 3 });
+        expect(await evalOp("CombineVector4", { a: 1, b: 2, c: 3, d: 4 })).toEqual({ x: 1, y: 2, z: 3, w: 4 });
+    });
+
+    it("ExtractVector3/4 split vectors into component sockets", async () => {
+        expect(await evalOp("ExtractVector3", { a: { x: 7, y: 8, z: 9 } }, { outSocket: "z" })).toBe(9);
+        expect(await evalOp("ExtractVector4", { a: { x: 7, y: 8, z: 9, w: 10 } }, { outSocket: "w" })).toBe(10);
+    });
+
+    it.each([
+        ["E", Math.E],
+        ["PI", Math.PI],
+    ])("constant %s emits its value", async (type, expected) => {
+        expect(await evalOp(type, {})).toBeCloseTo(expected as number, 12);
+    });
+
+    it("Inf and NaN constants", async () => {
+        expect(await evalOp("Inf", {})).toBe(Infinity);
+        expect(Number.isNaN(await evalOp("NaN", {}))).toBe(true);
+    });
+
+    it("MathInterpolation mixes a→b by t = (1-t)a + t·b", async () => {
+        expect(await evalOp("MathInterpolation", { a: 0, b: 10, c: 0.25 })).toBeCloseTo(2.5, 10);
+    });
+
+    it("Conditional (select) picks onTrue/onFalse from condition", async () => {
+        expect(await evalOp("Conditional", { condition: true, onTrue: 11, onFalse: 22 })).toBe(11);
+        expect(await evalOp("Conditional", { condition: false, onTrue: 11, onFalse: 22 })).toBe(22);
+    });
+
+    it("DataSwitch selects the matching case, else default", async () => {
+        const config = { cases: [0, 1, 2] };
+        expect(await evalOp("DataSwitch", { case: 1, default: -1, in_0: 10, in_1: 20, in_2: 30 }, { config })).toBe(20);
+        expect(await evalOp("DataSwitch", { case: 9, default: -1, in_0: 10, in_1: 20, in_2: 30 }, { config })).toBe(-1);
+    });
+
+    it.each([
+        ["BooleanToFloat", true, 1],
+        ["BooleanToInt", false, 0],
+        ["FloatToBoolean", 0, false],
+        ["FloatToBoolean", 2.5, true],
+        ["IntToFloat", 5, 5],
+    ])("conversion %s", async (type, a, expected) => {
+        const r = await evalOp(type, { a });
+        const v = isFgIntResult(r) ? (r as { value: number }).value : r;
+        expect(v).toBe(expected);
+    });
+});
+
+/** True when a value is a FlowGraphInteger box (re-wrapped by bitwise/int ops). */
+function isFgIntResult(v: FgValue): boolean {
+    return typeof v === "object" && v !== null && "value" in (v as Record<string, unknown>) && typeof (v as { value: unknown }).value === "number" && !("x" in (v as Record<string, unknown>));
+}
 
 describe("flow-graph blocks — property accessors", () => {
     function vec3Accessor(initial: { x: number; y: number; z: number }): { acc: FgAccessor; box: { v: FgValue } } {
