@@ -64,7 +64,7 @@ const COVERAGE_GAMMA_HOOK: SpriteCoverageGammaHook = {
         if (!isGammaActive(layer)) {
             return null;
         }
-        return getCoverageGammaShaderModule(engine, hasDepth, layer._uvScroll === true);
+        return getCoverageGammaShaderModule(engine, hasDepth, layer._uvScrollAttr != null);
     },
     writeUbo(layer: Sprite2DLayer, ubo: Float32Array): void {
         // aa.x = 1/coverageGamma for active gamma layers; 0 otherwise (the base shader ignores aa,

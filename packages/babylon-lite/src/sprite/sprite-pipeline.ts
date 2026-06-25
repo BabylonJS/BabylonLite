@@ -6,7 +6,7 @@ import type { Sprite2DLayer, SpriteBlendMode } from "./sprite-2d.js";
 import type { SpriteLayerFx } from "./custom-shader-core.js";
 import { _getSpriteFxHook } from "./sprite-fx-hook.js";
 import { _getSpriteCoverageGammaHook } from "./sprite-coverage-gamma-hook.js";
-import { DEPTH_INSTANCE_STRIDE_BYTES, DEPTH_UVSCROLL_STRIDE_BYTES, PURE_2D_INSTANCE_STRIDE_BYTES, PURE_2D_UVSCROLL_STRIDE_BYTES } from "./sprite-2d.js";
+import { DEPTH_INSTANCE_STRIDE_BYTES, PURE_2D_INSTANCE_STRIDE_BYTES } from "./sprite-2d.js";
 
 /** @internal */
 export interface SpritePipelineDeviceCache {
@@ -29,9 +29,6 @@ const SPRITE_UV_MAX_OFFSET_BYTES = 24;
 const SPRITE_ROTATION_OFFSET_BYTES = 32;
 const SPRITE_COLOR_OFFSET_BYTES = 36;
 const SPRITE_DEPTH_OFFSET_BYTES = 52;
-/** uvOffset.xy byte offset: appended after the base layout (52 pure-2D, 56 depth-hosted). */
-const SPRITE_UVOFFSET_OFFSET_PURE_2D_BYTES = 52;
-const SPRITE_UVOFFSET_OFFSET_DEPTH_BYTES = 56;
 
 function makeSpriteWgsl(hasDepth: boolean, spriteGroupIndex: 0 | 1, uvScroll: boolean): string {
     return `${makeSpritePrologueWgsl(hasDepth, spriteGroupIndex, uvScroll)}
@@ -208,7 +205,7 @@ function spritePipelineKey(
     layer?: Sprite2DLayer
 ): string {
     const customKey = layer ? (_getSpriteFxHook()?.pipelineKeyPart(layer) ?? "") : "";
-    const uvKey = layer?._uvScroll ? "1" : "0";
+    const uvKey = layer?._uvScrollAttr ? "1" : "0";
     const cgKey = layer ? (_getSpriteCoverageGammaHook()?.pipelineKeyPart(layer) ?? "0") : "0";
     return `${format}:${sampleCount}:${blendMode._key}:${hasDepth ? 1 : 0}:${depthWrite ? 1 : 0}:${depthStencilFormat ?? "-"}:cs${customKey}:uv${uvKey}:cg${cgKey}`;
 }
@@ -222,7 +219,7 @@ function getShaderModule(engine: EngineContext, cache: SpritePipelineDeviceCache
     if (gammaModule) {
         return gammaModule;
     }
-    const uvScroll = layer?._uvScroll === true;
+    const uvScroll = layer?._uvScrollAttr != null;
     const key = `${hasDepth ? 1 : 0}:${uvScroll ? 1 : 0}`;
     let module = cache._shaderModules.get(key);
     if (!module) {
@@ -275,21 +272,14 @@ function buildSpritePipeline(
     if (hasDepth) {
         instanceAttributes.push({ shaderLocation: 6, offset: SPRITE_DEPTH_OFFSET_BYTES, format: "float32" });
     }
-    const uvScroll = layer?._uvScroll === true;
-    if (uvScroll) {
-        instanceAttributes.push({
-            shaderLocation: 7,
-            offset: hasDepth ? SPRITE_UVOFFSET_OFFSET_DEPTH_BYTES : SPRITE_UVOFFSET_OFFSET_PURE_2D_BYTES,
-            format: "float32x2",
-        });
+    // uvScroll (opt-in via setSprite2DUvOffset) appends a `uvOffset.xy` attribute after the base
+    // layout, like `hasDepth` appends `@location(6)`. The attribute is precomputed by the opt-in
+    // module and stashed on the layer as plain data — so the always-loaded path ships none of the
+    // attribute-building, just this data consume. The widened stride is likewise already on the layer.
+    if (layer?._uvScrollAttr) {
+        instanceAttributes.push(layer._uvScrollAttr);
     }
-    const arrayStride = uvScroll
-        ? hasDepth
-            ? DEPTH_UVSCROLL_STRIDE_BYTES
-            : PURE_2D_UVSCROLL_STRIDE_BYTES
-        : hasDepth
-          ? DEPTH_INSTANCE_STRIDE_BYTES
-          : PURE_2D_INSTANCE_STRIDE_BYTES;
+    const arrayStride = layer?._instanceStrideBytes ?? (hasDepth ? DEPTH_INSTANCE_STRIDE_BYTES : PURE_2D_INSTANCE_STRIDE_BYTES);
     const descriptor: GPURenderPipelineDescriptor = {
         layout: device.createPipelineLayout({ bindGroupLayouts }),
         vertex: {
@@ -347,9 +337,11 @@ export function createSpriteInstanceBuffer(device: GPUDevice, layer: Sprite2DLay
 }
 
 /**
- * Reallocate the instance buffer if `layer._capacity` outgrew the current GPU buffer.
- * Returns the (possibly new) buffer + the new capacity, plus a `reallocated` flag the
- * caller uses to invalidate per-buffer caches (render bundles, `uploadedVersion`, etc).
+ * Reallocate the instance buffer if it can no longer hold `layer._capacity` sprites at the layer's
+ * current per-sprite stride. The comparison is **byte-based** (`currentBuffer.size` vs the required
+ * byte size) so it triggers both on capacity growth *and* on a stride change — e.g. when the opt-in
+ * `setSprite2DUvOffset` widens a previously narrow layer in place. Returns the (possibly new) buffer
+ * plus a `reallocated` flag the caller uses to invalidate per-buffer caches (render bundles, etc).
  */
 export function ensureSpriteInstanceBuffer(
     device: GPUDevice,
@@ -358,7 +350,8 @@ export function ensureSpriteInstanceBuffer(
     currentCapacity: number,
     label?: string
 ): { buffer: GPUBuffer; capacity: number; reallocated: boolean } {
-    if (currentCapacity >= layer._capacity) {
+    const neededBytes = layer._capacity * layer._instanceStrideBytes;
+    if (currentBuffer.size >= neededBytes) {
         return { buffer: currentBuffer, capacity: currentCapacity, reallocated: false };
     }
     currentBuffer.destroy();
