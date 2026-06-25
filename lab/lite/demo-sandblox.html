@@ -49,9 +49,11 @@
       var canvas = document.getElementById("renderCanvas");
       if (!overlay || !canvas) return;
       var done = false;
+      var observer = null;
       function hide() {
         if (done) return;
         done = true;
+        if (observer) { observer.disconnect(); observer = null; }
         overlay.classList.add("is-hidden");
         setTimeout(function () { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }, 600);
       }
@@ -60,7 +62,8 @@
         return false;
       }
       if (!check()) {
-        new MutationObserver(check).observe(canvas, { attributes: true, attributeFilter: ["data-ready", "data-error"] });
+        observer = new MutationObserver(check);
+        observer.observe(canvas, { attributes: true, attributeFilter: ["data-ready", "data-error"] });
         setTimeout(hide, 45000);
       }
     })();
