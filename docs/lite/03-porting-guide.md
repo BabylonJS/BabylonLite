@@ -15,7 +15,7 @@ This guide shows how to translate a Babylon.js (BJS) scene to Babylon Lite, side
 > `LiteCompatError` rather than mis-rendering. The intended path is:
 >
 > ```
-> @babylonjs/core  →  @babylonjs/lite-compat  →  babylon-lite (native)
+> @babylonjs/core  →  @babylonjs/lite-compat  →  @babylonjs/lite (native)
 > ```
 >
 > Use lite-compat to get running fast, then port to the native factory-function
