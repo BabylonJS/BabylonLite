@@ -79,6 +79,7 @@ import type {
     StaticSoundOptions as LiteStaticSoundOptions,
     StreamingSoundOptions as LiteStreamingSoundOptions,
     SpatialSoundOptions as LiteSpatialSoundOptions,
+    AudioGraphHost as LiteHost,
 } from "babylon-lite";
 
 import { Observable } from "../misc/observable.js";
@@ -87,14 +88,11 @@ import { Quaternion } from "../math/quaternion.js";
 import { unsupported } from "../error.js";
 import { SpatialAudioAttachmentType, toLiteRamp, type SoundState, type AudioAnalyzerFFTSizeType, type AudioEngineV2State, type IAudioParameterRampOptions } from "./audio-enums.js";
 
-/** Any Lite handle that can carry spatial / stereo / analyzer sub-nodes. @internal */
-type LiteHost = LiteStaticSound | LiteStreamingSound | LiteAudioBus | LiteAudioInputSource;
-
 /** A bus a sound or bus can output to (mirrors AudioV2 `PrimaryAudioBus`). */
 export type PrimaryAudioBus = MainAudioBus | AudioBus;
 
-/** A node that can have a world transform (subset of the compat `Node`). @internal */
-interface SpatialNodeLike {
+/** A node that can have a world transform (subset of the compat `Node`). */
+export interface SpatialNodeLike {
     getAbsolutePosition?: () => { x: number; y: number; z: number };
     absolutePosition?: { x: number; y: number; z: number };
     position?: { x: number; y: number; z: number };

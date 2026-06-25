@@ -195,6 +195,7 @@ export {
 export type {
     PrimaryAudioBus,
     StaticSoundSource,
+    SpatialNodeLike,
     IAudioNodeNameChange,
     IAudioEngineV2Options,
     IWebAudioEngineOptions,
