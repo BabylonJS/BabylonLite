@@ -104,7 +104,9 @@ export function createTaaPostProcessTask(config: TaaPostProcessTaskConfig, engin
     const name = config.name ?? "taa";
     const source = config.sourceTexture;
     const target = config.targetTexture ?? null;
-    const samples = config.samples ?? 8;
+    // Clamp to >= 1: a zero/negative sample count would make `generateHalton` return an
+    // empty sequence and `advanceJitter` write NaN jitter offsets into the source UBO.
+    const samples = Math.max(1, Math.floor(config.samples ?? 8));
     const sizeRef = source._descriptor.size;
 
     // History accumulates at RGBA16F so the 0.05 moving average does not band on
@@ -187,8 +189,7 @@ export function createTaaPostProcessTask(config: TaaPostProcessTaskConfig, engin
             // Marking them eager makes the sub-tasks' internal `buildRenderTarget`
             // no-op on them — critical because `historyUpdate` targets `history`, and a
             // rebuild there would destroy the texture `blend`'s bind group references.
-            const w = task.sourceTexture._width || engine.canvas.width;
-            const h = task.sourceTexture._height || engine.canvas.height;
+            const { width: w, height: h } = resolveSourceSize(task.sourceTexture);
             ensurePersistentTarget(history, engine, w, h);
             ensurePersistentTarget(temp, engine, w, h);
             blend.record();
@@ -217,11 +218,11 @@ export function createTaaPostProcessTask(config: TaaPostProcessTaskConfig, engin
             task._firstUpdate = false;
 
             // Prepare the NEXT frame's jitter: advance the Halton sequence and write the
-            // jittered viewProjection into the source task's UBO. Skipped while resetting
-            // (the source already re-packed a clean matrix on a camera move).
-            if (!reset) {
-                advanceJitter(task);
-            }
+            // jittered viewProjection into the source task's UBO. Always done — even on a
+            // reset frame — so accumulation starts immediately on the following frame.
+            // The blend `factor` reset already prevents stale-history bleed, and a still-
+            // moving camera re-packs a clean matrix next frame anyway (overwriting this).
+            advanceJitter(task);
             return draws;
         },
         updateUniforms(): void {
@@ -255,6 +256,20 @@ function ensurePersistentTarget(rt: RenderTarget, engine: EngineContext, width: 
     rt._descriptor.size = { width, height };
     buildRenderTarget(rt, engine);
     rt._eager = true;
+}
+
+/** Resolve a render target's pixel size: prefer its allocated dimensions, falling back
+ *  to the descriptor's surface (multi-surface safe — does not assume the engine canvas)
+ *  or explicit pixel size before the target has been built. */
+function resolveSourceSize(source: RenderTarget): { width: number; height: number } {
+    if (source._width > 0 && source._height > 0) {
+        return { width: source._width, height: source._height };
+    }
+    const size = source._descriptor.size;
+    if ("canvas" in size) {
+        return { width: size.canvas.width, height: size.canvas.height };
+    }
+    return { width: size.width, height: size.height };
 }
 
 /** Generate `samples` 2D Halton offsets (base 2 / base 3) centered on [-0.5, 0.5). */

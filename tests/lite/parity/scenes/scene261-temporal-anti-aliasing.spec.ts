@@ -1,3 +1,9 @@
+// Parity test for Scene 261 — Temporal Anti-Aliasing.
+//
+// Renders three tilted boxes through the frame-graph TAA chain (source render task →
+// `createTaaPostProcessTask` → swapchain), lets the temporal accumulation converge over
+// many frames, then freezes and screenshots. Asserts the converged Lite output matches
+// the Babylon.js `TAARenderingPipeline` golden within the scene's full-image MAD ceiling.
 import { test, expect } from "@playwright/test";
 import * as path from "path";
 import { attachCompareArtifacts, captureGolden, compareImages, getSceneConfig } from "../compare-utils";
