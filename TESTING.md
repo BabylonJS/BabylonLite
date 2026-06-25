@@ -138,6 +138,24 @@ RECAPTURE_GOLDEN=true pnpm exec playwright test tests/lite/parity/scenes/sceneN-
 
 After capturing, open the PNG and confirm it looks correct before committing.
 
+> **Only commit goldens that actually changed.** Re-rendering WebGPU is not
+> bit-deterministic — anti-aliasing, floating-point order, GPU/driver, and frame
+> timing make every recapture produce slightly different bytes. A blanket
+> `RECAPTURE_GOLDEN=true pnpm test:parity` therefore rewrites **every** golden,
+> even ones with no visual change, churning large binary PNGs for nothing. Before
+> committing a recapture, drop the noise-only diffs and keep only goldens that are
+> **new** or have a **real visual change** (a diff above the scene's `maxMad`, or
+> an intended scene/Babylon.js change). A quick filter:
+>
+> ```sh
+> # restore any golden whose change is within tolerance / not intended
+> git checkout -- reference/lite/<scene-slug>/babylon-ref-golden.png
+> ```
+>
+> Normal CI runs never overwrite an existing golden (`captureGolden()` only
+> recaptures when `RECAPTURE_GOLDEN` is set), so this churn only ever comes from a
+> manual blanket recapture being committed wholesale.
+
 ### Adding a new scene
 
 When you add a parity scene you **must generate and commit its golden in the same

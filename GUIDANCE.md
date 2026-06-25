@@ -218,6 +218,7 @@ Hard-won gotchas that have each caused multiple parity failures. Check these fir
 
 - **All golden and test images live under `reference/lite/sceneN-<slug>/`** — never in `tests/lite/` or anywhere else.
 - **Golden reference:** `babylon-ref-golden.png` (every scene, no exceptions). It is **committed** to git and is the ground truth the Lite render is diffed against. Capture/recapture it on macOS (to match the cloud WebGPU renderer) via `RECAPTURE_GOLDEN=true pnpm test:parity` (all scenes) or per-scene with a single-spec invocation; see TESTING.md → "Golden References".
+- **Only commit goldens that actually changed.** WebGPU re-rendering is not bit-deterministic, so a blanket `RECAPTURE_GOLDEN=true` run rewrites every golden — including ones with no visual change — churning large binary PNGs for nothing. Before committing a recapture, `git checkout --` any golden whose diff is within the scene's `maxMad` (i.e. not a real, intended visual change) and commit only **new** scenes or **genuine** visual updates. Normal CI never overwrites an existing golden, so this churn only comes from committing a manual blanket recapture wholesale.
 - **Test actual output:** `test-actual.png` (written by the parity test).
 - **Live reference (optional):** `live-ref.png` (captured at test time from Babylon.js; falls back to golden if capture fails).
 - **Thumbnail:** A downscaled JPG of the golden lives at `lab/public/thumbnails/sceneN.jpg` — see **§2b″ Thumbnail Convention**.
