@@ -28,6 +28,8 @@ variables:
       value: "true"
     - name: HEADLESS
       value: "true"
+    - name: PLAYWRIGHT_BROWSERS_PATH
+      value: "$(Pipeline.Workspace)/.playwright-browsers"
 
 stages:
     - stage: CI
@@ -48,13 +50,7 @@ stages:
                   inputs:
                       version: $(NODE_VERSION)
 
-                - script: |
-                      corepack enable
-                      corepack prepare pnpm@$(PNPM_VERSION) --activate
-                  displayName: "Enable pnpm via corepack"
-
-                - script: pnpm install --frozen-lockfile
-                  displayName: "Install dependencies"
+                - template: config/templates/install-deps.yml
 
                 - script: pnpm validate:release-markers
                   displayName: "Validate breaking-change markers"
@@ -79,13 +75,7 @@ stages:
                   inputs:
                       version: $(NODE_VERSION)
 
-                - script: |
-                      corepack enable
-                      corepack prepare pnpm@$(PNPM_VERSION) --activate
-                  displayName: "Enable pnpm via corepack"
-
-                - script: pnpm install --frozen-lockfile
-                  displayName: "Install dependencies"
+                - template: config/templates/install-deps.yml
 
                 - script: pnpm report:api-changes
                   displayName: "Generate API report diff"
@@ -118,16 +108,9 @@ stages:
                   inputs:
                       version: $(NODE_VERSION)
 
-                - script: |
-                      corepack enable
-                      corepack prepare pnpm@$(PNPM_VERSION) --activate
-                  displayName: "Enable pnpm via corepack"
-
-                - script: pnpm install --frozen-lockfile
-                  displayName: "Install dependencies"
-
-                - script: pnpm exec playwright install chromium
-                  displayName: "Install Playwright browsers"
+                - template: config/templates/install-deps.yml
+                  parameters:
+                      playwright: true
 
                 - script: npx vitest run --project unit --project gl-unit
                   displayName: "Run vitest unit tests"
@@ -207,16 +190,9 @@ stages:
                   inputs:
                       version: $(NODE_VERSION)
 
-                - script: |
-                      corepack enable
-                      corepack prepare pnpm@$(PNPM_VERSION) --activate
-                  displayName: "Enable pnpm via corepack"
-
-                - script: pnpm install --frozen-lockfile
-                  displayName: "Install dependencies"
-
-                - script: pnpm exec playwright install chromium
-                  displayName: "Install Playwright browsers"
+                - template: config/templates/install-deps.yml
+                  parameters:
+                      playwright: true
 
                 - script: |
                       TARGET_BRANCH="${SYSTEM_PULLREQUEST_TARGETBRANCH:-refs/heads/master}"
@@ -299,13 +275,7 @@ stages:
                   inputs:
                       version: $(NODE_VERSION)
 
-                - script: |
-                      corepack enable
-                      corepack prepare pnpm@$(PNPM_VERSION) --activate
-                  displayName: "Enable pnpm via corepack"
-
-                - script: pnpm install --frozen-lockfile
-                  displayName: "Install dependencies"
+                - template: config/templates/install-deps.yml
 
                 # Build current bundle scenes (skip size measurement — not needed for perf)
                 - script: pnpm build:bundle-scenes
@@ -416,13 +386,7 @@ stages:
                   inputs:
                       version: $(NODE_VERSION)
 
-                - script: |
-                      corepack enable
-                      corepack prepare pnpm@$(PNPM_VERSION) --activate
-                  displayName: "Enable pnpm via corepack"
-
-                - script: pnpm install --frozen-lockfile
-                  displayName: "Install dependencies"
+                - template: config/templates/install-deps.yml
 
                 - script: pnpm build:bundle-scenes
                   displayName: "Build bundle scenes"
@@ -509,13 +473,7 @@ stages:
                   inputs:
                       version: $(NODE_VERSION)
 
-                - script: |
-                      corepack enable
-                      corepack prepare pnpm@$(PNPM_VERSION) --activate
-                  displayName: "Enable pnpm via corepack"
-
-                - script: pnpm install --frozen-lockfile
-                  displayName: "Install dependencies"
+                - template: config/templates/install-deps.yml
 
                 - script: npx eslint . --format ./scripts/eslint-vso-formatter.cjs
                   displayName: "ESLint"
@@ -571,13 +529,7 @@ stages:
                   inputs:
                       version: $(NODE_VERSION)
 
-                - script: |
-                      corepack enable
-                      corepack prepare pnpm@$(PNPM_VERSION) --activate
-                  displayName: "Enable pnpm via corepack"
-
-                - script: pnpm install --frozen-lockfile
-                  displayName: "Install dependencies"
+                - template: config/templates/install-deps.yml
 
                 - script: |
                       npx tsc -p packages/babylon-lite-compat/tsconfig.json --noEmit 2>&1 | sed -E 's/^(.+)\(([0-9]+),([0-9]+)\): error (TS[0-9]+): (.+)/##vso[task.logissue type=error;sourcepath=\1;linenumber=\2;columnnumber=\3]\4: \5/'
