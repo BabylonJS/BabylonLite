@@ -106,6 +106,10 @@ function readNodePosition(node: SpatialNodeLike | null): { x: number; y: number;
     return node.getAbsolutePosition?.() ?? node.absolutePosition ?? node.position ?? null;
 }
 
+function readNodeRotation(node: SpatialNodeLike | null): { x: number; y: number; z: number; w: number } | null {
+    return node?.rotationQuaternion ?? null;
+}
+
 // ───────────────────────────── Options interfaces ────────────────────────────
 
 /** Babylon.js `IAudioEngineV2Options` (subset backed by Lite). */
@@ -642,11 +646,28 @@ export class AbstractSpatialAudio {
 
     /** Pulls the attached node's current world position/rotation into the source. */
     public update(): void {
-        const pos = readNodePosition(this._attachedNode);
-        if (pos) {
-            this._position = new Vector3(pos.x, pos.y, pos.z);
-            this._ensure();
-            setSpatialPosition(this._host, pos);
+        const node = this._attachedNode;
+        if (!node) {
+            return;
+        }
+        let dirty = false;
+        if ((this.attachmentType & SpatialAudioAttachmentType.Position) !== 0) {
+            const pos = readNodePosition(node);
+            if (pos) {
+                this._position = new Vector3(pos.x, pos.y, pos.z);
+                dirty = true;
+            }
+        }
+        if ((this.attachmentType & SpatialAudioAttachmentType.Rotation) !== 0) {
+            const quat = readNodeRotation(node);
+            if (quat) {
+                this._rotationQuaternion = new Quaternion(quat.x, quat.y, quat.z, quat.w);
+                dirty = true;
+            }
+        }
+        if (dirty) {
+            enableSpatial(this._host, this._options());
+            this._enabled = true;
         }
     }
 
@@ -750,12 +771,18 @@ export class AbstractSpatialAudioListener {
         this._attachedNode = null;
     }
 
-    /** Pulls the attached node's current world position into the listener. */
+    /** Pulls the attached node's current world position/rotation into the listener. */
     public update(): void {
-        const pos = readNodePosition(this._attachedNode);
+        const node = this._attachedNode;
+        const pos = readNodePosition(node);
         if (pos) {
             this._position = new Vector3(pos.x, pos.y, pos.z);
             setSpatialListenerPosition(this._engine, pos);
+        }
+        const quat = readNodeRotation(node);
+        if (quat) {
+            this._rotationQuaternion = new Quaternion(quat.x, quat.y, quat.z, quat.w);
+            setSpatialListener(this._engine, { rotationQuaternion: this._rotationQuaternion });
         }
         updateSpatialAudio(this._engine);
     }
@@ -775,10 +802,11 @@ export class AudioBus extends AbstractAudioBus {
     private _outBus: PrimaryAudioBus | null;
 
     /** @internal */
-    public constructor(engine: AudioEngineV2, lite: LiteAudioBus, outBus: PrimaryAudioBus | null) {
+    public constructor(engine: AudioEngineV2, lite: LiteAudioBus, outBus: PrimaryAudioBus | null, volume = 1) {
         super(lite.name, engine);
         this._lite = lite;
         this._outBus = outBus;
+        this._volume = volume;
     }
 
     /** The output bus this bus routes to. */
@@ -786,6 +814,10 @@ export class AudioBus extends AbstractAudioBus {
         return this._outBus;
     }
     public set outBus(value: PrimaryAudioBus | null) {
+        if (this._outBus === value) {
+            return;
+        }
+        rerouteLiteOutBus(this._lite, unwrapBus(value) ?? null);
         this._outBus = value;
     }
 
@@ -862,6 +894,10 @@ export abstract class AbstractSoundSource extends AbstractAudioOutNode {
         return this._outBus;
     }
     public set outBus(value: PrimaryAudioBus | null) {
+        if (this._outBus === value) {
+            return;
+        }
+        rerouteLiteOutBus(this._spatialHost(), unwrapBus(value) ?? null);
         this._outBus = value;
     }
 
@@ -882,9 +918,10 @@ export class SoundSource extends AbstractSoundSource {
     public readonly _lite: LiteAudioInputSource;
 
     /** @internal */
-    public constructor(engine: AudioEngineV2, lite: LiteAudioInputSource, outBus: PrimaryAudioBus | null) {
+    public constructor(engine: AudioEngineV2, lite: LiteAudioInputSource, outBus: PrimaryAudioBus | null, volume = 1) {
         super(lite.name, engine, outBus);
         this._lite = lite;
+        this._volume = volume;
     }
 
     public getClassName(): string {
@@ -1001,11 +1038,12 @@ export class StaticSound extends AbstractSound {
     private _buffer: StaticSoundBuffer;
 
     /** @internal */
-    public constructor(engine: AudioEngineV2, lite: LiteStaticSound, buffer: StaticSoundBuffer, outBus: PrimaryAudioBus | null, autoplay: boolean) {
-        super(lite.name ?? "Sound", engine, outBus);
+    public constructor(engine: AudioEngineV2, lite: LiteStaticSound, buffer: StaticSoundBuffer, outBus: PrimaryAudioBus | null, autoplay: boolean, name?: string, volume = 1) {
+        super(name ?? lite.name ?? "Sound", engine, outBus);
         this._lite = lite;
         this._buffer = buffer;
         this._autoplay = autoplay;
+        this._volume = volume;
         lite.onEnded.add(() => this.onEndedObservable.notifyObservers(this));
     }
 
@@ -1147,13 +1185,14 @@ export class StreamingSound extends AbstractSound {
     private _maxInstances: number;
 
     /** @internal */
-    public constructor(engine: AudioEngineV2, lite: LiteStreamingSound, outBus: PrimaryAudioBus | null, options: Partial<IStreamingSoundOptions>) {
-        super(lite.name ?? "Sound", engine, outBus);
+    public constructor(engine: AudioEngineV2, lite: LiteStreamingSound, outBus: PrimaryAudioBus | null, options: Partial<IStreamingSoundOptions>, name?: string) {
+        super(name ?? lite.name ?? "Sound", engine, outBus);
         this._lite = lite;
         this._autoplay = options.autoplay ?? false;
         this._loop = options.loop ?? false;
         this._startOffset = options.startOffset ?? 0;
         this._maxInstances = options.maxInstances ?? Infinity;
+        this._volume = options.volume ?? 1;
         lite.onEnded.add(() => this.onEndedObservable.notifyObservers(this));
     }
 
@@ -1274,6 +1313,35 @@ function unwrapBus(bus: PrimaryAudioBus | null | undefined): LitePrimaryAudioBus
         return undefined;
     }
     return (bus as AudioBus | MainAudioBus)._lite as LitePrimaryAudioBus;
+}
+
+/** The Web Audio input node a Lite primary bus exposes (mirrors Lite's internal `getBusInputNode`). */
+function liteBusInputNode(bus: LitePrimaryAudioBus): AudioNode {
+    return "_graph" in bus ? (bus as LiteAudioBus)._graph._in : (bus as LiteMainBus)._in;
+}
+
+/**
+ * Re-routes a Lite graph-bearing handle (sound, source, or generic bus) from its
+ * current output bus to `newOutBus`, mirroring AudioV2's `outBus` setter. Lite
+ * exposes no public re-route entry point, so this rewires the single stable tail
+ * link (the sub-graph's `_out` node to the target bus input) directly, exactly as
+ * Lite wires it at creation time.
+ */
+function rerouteLiteOutBus(host: LiteHost, newOutBus: LitePrimaryAudioBus | null): void {
+    const out = host._graph._out;
+    const oldOutBus = host._outBus;
+    if (oldOutBus) {
+        try {
+            out.disconnect(liteBusInputNode(oldOutBus));
+        } catch {
+            // The tail may not be connected yet (e.g. a microphone source created
+            // without an output bus); ignore.
+        }
+    }
+    if (newOutBus) {
+        out.connect(liteBusInputNode(newOutBus));
+    }
+    (host as { _outBus: LitePrimaryAudioBus | null })._outBus = newOutBus;
 }
 
 function unwrapBufferSource(source: StaticSoundSource): ArrayBuffer | AudioBuffer | LiteSoundBuffer | string | string[] {
@@ -1407,7 +1475,7 @@ export class AudioEngineV2 {
         const liteOptions = toLiteStaticSoundOptions(name, options);
         const lite = await createSoundAsync(this._lite, unwrapBufferSource(source), liteOptions);
         const buffer = new StaticSoundBuffer(this, lite.buffer, name);
-        return new StaticSound(this, lite, buffer, (options?.outBus as PrimaryAudioBus | undefined) ?? this.defaultMainBus, options?.autoplay ?? false);
+        return new StaticSound(this, lite, buffer, (options?.outBus as PrimaryAudioBus | undefined) ?? this.defaultMainBus, options?.autoplay ?? false, name, options?.volume ?? 1);
     }
 
     /** Creates a decoded sound buffer. */
@@ -1417,7 +1485,7 @@ export class AudioEngineV2 {
     }
 
     /** Creates a streaming, media-element-backed sound. */
-    public async createStreamingSoundAsync(_name: string, source: HTMLMediaElement | string | string[], options?: Partial<IStreamingSoundOptions>): Promise<StreamingSound> {
+    public async createStreamingSoundAsync(name: string, source: HTMLMediaElement | string | string[], options?: Partial<IStreamingSoundOptions>): Promise<StreamingSound> {
         const liteOptions: LiteStreamingSoundOptions = {
             autoplay: options?.autoplay,
             loop: options?.loop,
@@ -1428,7 +1496,7 @@ export class AudioEngineV2 {
             volume: options?.volume,
         };
         const lite = await createStreamingSoundAsync(this._lite, source, liteOptions);
-        return new StreamingSound(this, lite, (options?.outBus as PrimaryAudioBus | undefined) ?? this.defaultMainBus, options ?? {});
+        return new StreamingSound(this, lite, (options?.outBus as PrimaryAudioBus | undefined) ?? this.defaultMainBus, options ?? {}, name);
     }
 
     /** Creates a generic mixer bus. */
@@ -1437,7 +1505,7 @@ export class AudioEngineV2 {
             volume: options?.volume,
             outBus: unwrapBus(options?.outBus) as LitePrimaryAudioBus | undefined,
         });
-        return new AudioBus(this, lite, (options?.outBus as PrimaryAudioBus | undefined) ?? this.defaultMainBus);
+        return new AudioBus(this, lite, (options?.outBus as PrimaryAudioBus | undefined) ?? this.defaultMainBus, options?.volume ?? 1);
     }
 
     /**
@@ -1457,7 +1525,7 @@ export class AudioEngineV2 {
             outBusAutoDefault: options?.outBusAutoDefault,
             volume: options?.volume,
         });
-        return new SoundSource(this, lite, (options?.outBus as PrimaryAudioBus | undefined) ?? null);
+        return new SoundSource(this, lite, (options?.outBus as PrimaryAudioBus | undefined) ?? null, options?.volume ?? 1);
     }
 
     /** Creates a microphone-backed sound source. */
@@ -1468,7 +1536,7 @@ export class AudioEngineV2 {
             outBusAutoDefault: options?.outBusAutoDefault,
             volume: options?.volume,
         });
-        return new SoundSource(this, lite, (options?.outBus as PrimaryAudioBus | undefined) ?? null);
+        return new SoundSource(this, lite, (options?.outBus as PrimaryAudioBus | undefined) ?? null, options?.volume ?? 1);
     }
 
     /** Disposes the engine and all its sounds/buses. */

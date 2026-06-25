@@ -305,6 +305,82 @@ describe("SoundSource", () => {
     });
 });
 
+describe("review-feedback fixes", () => {
+    it("StaticSound uses the caller-provided name over the Lite handle and the creation volume", () => {
+        const engine = new AudioEngineV2(makeFakeLiteEngine());
+        const lite = makeFakeLiteStaticSound(); // lite.name === "shoot"
+        const buffer = new StaticSoundBuffer(engine, lite.buffer, "explosion");
+        const sound = new StaticSound(engine, lite, buffer, engine.defaultMainBus, false, "explosion", 0.3);
+        expect(sound.name).toBe("explosion");
+        expect(sound.volume).toBe(0.3);
+        engine.dispose();
+    });
+
+    it("StreamingSound initializes volume from creation options and uses the caller name", () => {
+        const engine = new AudioEngineV2(makeFakeLiteEngine());
+        const lite: any = { name: "fallback", state: SoundState.Stopped, instanceCount: 0, preloadCompletedCount: 0, onEnded: makeSignal(), _options: {} };
+        const sound = new StreamingSound(engine, lite, engine.defaultMainBus, { volume: 0.7 }, "track");
+        expect(sound.name).toBe("track");
+        expect(sound.volume).toBe(0.7);
+        engine.dispose();
+    });
+
+    it("AudioBus and SoundSource initialize volume from the creation volume", () => {
+        const engine = new AudioEngineV2(makeFakeLiteEngine());
+        const bus = new AudioBus(engine, { name: "music" } as any, engine.defaultMainBus, 0.25);
+        const source = new SoundSource(engine, { name: "mic", _instances: new Set() } as any, null, 0.6);
+        expect(bus.volume).toBe(0.25);
+        expect(source.volume).toBe(0.6);
+        engine.dispose();
+    });
+
+    it("AudioBus.outBus reassignment reroutes the Lite output graph", () => {
+        const engine = new AudioEngineV2(makeFakeLiteEngine());
+        const connected: any[] = [];
+        const disconnected: any[] = [];
+        const tail = { connect: (n: any) => connected.push(n), disconnect: (n: any) => disconnected.push(n) };
+        const oldIn = { id: "old-in" };
+        const newIn = { id: "new-in" };
+        const oldLiteBus: any = { name: "old", _graph: { _in: oldIn } };
+        const newLiteBus: any = { name: "new", _graph: { _in: newIn } };
+        const oldCompat = new AudioBus(engine, oldLiteBus, null);
+        const newCompat = new AudioBus(engine, newLiteBus, null);
+        const liteBus: any = { name: "src", _graph: { _in: {}, _out: tail }, _outBus: oldLiteBus };
+        const bus = new AudioBus(engine, liteBus, oldCompat);
+
+        bus.outBus = newCompat;
+
+        expect(disconnected).toContain(oldIn);
+        expect(connected).toContain(newIn);
+        expect(bus.outBus).toBe(newCompat);
+        expect(liteBus._outBus).toBe(newLiteBus);
+
+        // Reassigning to the same bus is a no-op (no extra connect calls).
+        const connectsBefore = connected.length;
+        bus.outBus = newCompat;
+        expect(connected.length).toBe(connectsBefore);
+        engine.dispose();
+    });
+
+    it("SoundSource.outBus reassignment reroutes the Lite output graph", () => {
+        const engine = new AudioEngineV2(makeFakeLiteEngine());
+        const connected: any[] = [];
+        const tail = { connect: (n: any) => connected.push(n), disconnect() {} };
+        const newIn = { id: "new-in" };
+        const newLiteBus: any = { name: "new", _graph: { _in: newIn } };
+        const newCompat = new AudioBus(engine, newLiteBus, null);
+        const liteSource: any = { name: "mic", _instances: new Set(), _graph: { _in: {}, _out: tail }, _outBus: null };
+        const source = new SoundSource(engine, liteSource, null);
+
+        source.outBus = newCompat;
+
+        expect(connected).toContain(newIn);
+        expect(source.outBus).toBe(newCompat);
+        expect(liteSource._outBus).toBe(newLiteBus);
+        engine.dispose();
+    });
+});
+
 describe("sub-properties (defaults)", () => {
     it("AbstractSpatialAudio exposes Babylon.js defaults before enabling", () => {
         const spatial = new AbstractSpatialAudio({} as any);
