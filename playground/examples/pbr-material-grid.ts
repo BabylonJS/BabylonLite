@@ -12,7 +12,6 @@ import {
     createEngine,
     createPbrMaterial,
     createSceneContext,
-    createSolidTexture2D,
     createSphere,
     loadEnvironment,
     onBeforeRender,
@@ -43,8 +42,6 @@ async function main(): Promise<void> {
         brdfUrl: "/brdf-lut.png",
     });
 
-    const baseColorTexture = createSolidTexture2D(engine, BASE[0], BASE[1], BASE[2]);
-
     for (let row = 0; row < GRID; row++) {
         const metallic = row / (GRID - 1);
         for (let col = 0; col < GRID; col++) {
@@ -53,10 +50,12 @@ async function main(): Promise<void> {
 
             const sphere = createSphere(engine, { diameter: 1, segments: 32 });
             sphere.position.set((col - (GRID - 1) / 2) * SPACING, (row - (GRID - 1) / 2) * SPACING, 0);
+            // No per-sphere textures: factors multiply the shared 1×1 white fallback,
+            // so all 36 materials reuse the same GPU textures (no allocations in the loop).
             sphere.material = createPbrMaterial({
-                baseColorTexture,
-                // ORM packed: R=occlusion, G=roughness, B=metallic.
-                ormTexture: createSolidTexture2D(engine, 1.0, roughness, metallic),
+                baseColorFactor: [BASE[0], BASE[1], BASE[2], 1],
+                metallicFactor: metallic,
+                roughnessFactor: roughness,
                 environmentIntensity: 1.0,
             });
             addToScene(scene, sphere);

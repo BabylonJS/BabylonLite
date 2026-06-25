@@ -1,5 +1,5 @@
 /**
- * Spinning Polyhedra — a ring of the five Platonic-ish solids orbiting a central
+ * Spinning Polyhedra — a ring of six solids orbiting a central
  * pillar, each tumbling on its own axis while the whole carousel rotates. Pure
  * procedural geometry and standard materials, so it loads instantly with no
  * external assets — a compact tour of the mesh factories and the per-frame
