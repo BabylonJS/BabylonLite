@@ -303,8 +303,26 @@ export async function captureGolden(browser: Browser, opts: CaptureGoldenOptions
     const goldenPath = path.join(refDir, "babylon-ref-golden.png");
 
     // Skip capture if golden already exists (unless RECAPTURE_GOLDEN is set)
-    if (fs.existsSync(goldenPath) && !opts.force && !process.env.RECAPTURE_GOLDEN) {
+    const goldenExists = fs.existsSync(goldenPath);
+    if (goldenExists && !opts.force && !process.env.RECAPTURE_GOLDEN) {
         return goldenPath;
+    }
+
+    // Strict mode: when PARITY_REQUIRE_GOLDEN is set, a missing golden is a hard
+    // error instead of a slow live-capture of the Babylon.js reference page.
+    // Live-capturing at runtime is ~10x slower per scene and is forbidden by
+    // GUIDANCE §2c ("no parity test may open a BJS reference page at runtime").
+    // Recapture runs (RECAPTURE_GOLDEN / opts.force) are exempt — they exist
+    // precisely to regenerate goldens.
+    const recapturing = !!process.env.RECAPTURE_GOLDEN || !!opts.force;
+    if (!goldenExists && !recapturing && process.env.PARITY_REQUIRE_GOLDEN === "true") {
+        throw new Error(
+            `[parity] Missing committed golden for scene ${opts.sceneId}: ${goldenPath}\n` +
+                `Every parity scene must ship a committed golden (see GUIDANCE.md §2b/§2c and TESTING.md → "Golden References").\n` +
+                `Capture it on macOS and commit it:\n` +
+                `  RECAPTURE_GOLDEN=true pnpm exec playwright test <this scene's spec>\n` +
+                `Live-capturing a Babylon.js reference page at runtime is disabled in strict mode (PARITY_REQUIRE_GOLDEN).`
+        );
     }
 
     const timeout = opts.timeout ?? 60_000;

@@ -398,5 +398,6 @@ entry specifies:
 | `PERF_SCENES`             | Perf   | all     | Comma-separated scene IDs               |
 | `BUNDLE_DELTA_PCT`        | Bundle | —       | Max allowed bundle size growth %        |
 | `RECAPTURE_GOLDEN`        | Parity | —       | Set to `true` to force golden recapture |
+| `PARITY_REQUIRE_GOLDEN`   | Parity | —       | Set to `true` to fail (not live-capture) when a scene's golden is missing |
 | `BROWSERSTACK_USERNAME`   | Cloud  | —       | BrowserStack credentials                |
 | `BROWSERSTACK_ACCESS_KEY` | Cloud  | —       | BrowserStack credentials                |

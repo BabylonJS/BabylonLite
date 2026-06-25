@@ -422,6 +422,13 @@ stages:
                   env:
                       HEADLESS: "true"
                       PARITY_BASE_URL: "$(SERVE_DOMAIN)/lite/$(Build.BuildNumber)/parity-lab/lite/"
+                      # Strict golden enforcement: when "true", a scene with no
+                      # committed golden fails loudly instead of live-capturing a
+                      # Babylon.js reference page at runtime (slow, forbidden by
+                      # GUIDANCE §2c). Keep "false" until every scene's golden is
+                      # committed (144 still missing); flip to "true" afterwards to
+                      # lock it in and keep the parity job fast.
+                      PARITY_REQUIRE_GOLDEN: "false"
                       BSTACK_SESSIONS_REQUIRED: "3"
                       BSTACK_SESSIONS_MIN: "1"
                       BSTACK_MAX_SESSIONS: "3"
