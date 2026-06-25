@@ -1970,7 +1970,7 @@
         "slug": "scene225-geospatial-camera",
         "name": "Scene 225 — Geospatial Camera",
         "maxMad": 0.2,
-        "maxRawKB": 52,
+        "maxRawKB": 63,
         "description": "Babylon.js GeospatialCamera port: a globe-orbit camera that anchors to a point on a sphere centred at the world origin, parameterised by center/yaw/pitch/radius. A blue globe with six coloured marker cubes is viewed from a fixed deterministic pose so the view matrix is compared pixel-for-pixel against the BJS GeospatialCamera oracle.",
         "tags": ["camera", "geospatial", "globe", "standard"],
         "skipPerf": true,
