@@ -9,7 +9,22 @@
 import type { EventEmitter, PlayerEvents } from "./events.js";
 
 /** Keys the demo consumes — preventDefault is called for these to avoid page scroll. */
-const CONSUMED_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]);
+function isConsumedKey(code: string): boolean {
+    switch (code) {
+        case "KeyW":
+        case "KeyA":
+        case "KeyS":
+        case "KeyD":
+        case "Space":
+        case "ArrowLeft":
+        case "ArrowRight":
+        case "ArrowUp":
+        case "ArrowDown":
+            return true;
+        default:
+            return false;
+    }
+}
 
 export class InputManager {
     private readonly _canvas: HTMLCanvasElement;
@@ -41,7 +56,7 @@ export class InputManager {
 
         // ── Keyboard ─────────────────────────────────────────────────────────
         this._onKeyDown = (e: KeyboardEvent): void => {
-            if (CONSUMED_KEYS.has(e.code)) {
+            if (isConsumedKey(e.code)) {
                 e.preventDefault();
             }
             this._keys.add(e.code);

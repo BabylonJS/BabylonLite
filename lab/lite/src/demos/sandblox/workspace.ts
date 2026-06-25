@@ -1,5 +1,5 @@
 /**
- * Workspace — the single registry of every Part in the world .
+ * Workspace — the single registry of every Part in the world.
  *
  * Owns all world objects in one registry and provides one
  * raycast query surface for tools, one collision source for the character.

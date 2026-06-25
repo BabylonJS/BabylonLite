@@ -68,8 +68,9 @@ export function loadWorld(json: unknown, createPart: (options: PartOptions) => P
             continue;
         }
         try {
+            const size: [number, number, number] = [Math.max(1, e.s[0]!), Math.max(1, e.s[1]!), Math.max(1, e.s[2]!)];
             const part = createPart({
-                size: e.s as [number, number, number],
+                size,
                 position: { x: e.p![0]!, y: e.p![1]!, z: e.p![2]! },
                 color: e.c as [number, number, number],
                 shape: e.sh === 1 ? "wedge" : "block",

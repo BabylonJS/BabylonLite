@@ -204,7 +204,7 @@ export class AnimationController {
         const fromGroup = this._groups[this._currentState];
         const toGroup = this._groups[state];
         if (!toGroup.loopAnimation) {
-            toGroup.currentFrame = 0;
+            toGroup.currentTime = 0;
         }
         playAnimation(toGroup);
         crossFadeAnimationGroups(this._manager, fromGroup, toGroup, { durationMs: CROSS_FADE_MS });

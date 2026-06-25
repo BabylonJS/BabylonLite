@@ -1,5 +1,5 @@
 /**
- * ToolManager — binds the Toolbar to tool lifecycles .
+ * ToolManager — binds the Toolbar to tool lifecycles.
  *
  * Exactly one active tool; switching deactivates the old tool FIRST (its
  * contract: release drags, clear adornees, unsubscribe). Esc deselection and

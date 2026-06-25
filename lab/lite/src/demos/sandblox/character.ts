@@ -202,9 +202,9 @@ function createBeveledBox(engine: EngineContext, opts: { width: number; height: 
         const patchUv: number[] = [];
 
         for (let vi = 0; vi < vCount; vi++) {
-            const vT = vCount > 1 ? vi / (vCount - 1) : 0;
+            const vT = vi / (vCount - 1);
             for (let ui = 0; ui < uCount; ui++) {
-                const uT = uCount > 1 ? ui / (uCount - 1) : 0;
+                const uT = ui / (uCount - 1);
                 const vert = makeVertex(ui, vi, uT, vT);
                 patchPos.push(...vert.position);
                 patchNorm.push(...vert.normal);

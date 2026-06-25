@@ -1,5 +1,5 @@
 /**
- * Tool — the thin-controller contract . Faithful to the HopperBin
+ * Tool — the thin-controller contract. Faithful to the HopperBin
  * model: a tool is a small script that wires the shared services (Mouse,
  * Dragger, SelectionBox) to Part mutations while selected, and cleans up
  * completely when deselected.

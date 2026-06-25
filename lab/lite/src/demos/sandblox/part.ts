@@ -24,7 +24,7 @@ export interface PartOptions {
     color?: readonly [number, number, number];
     /** Locked parts are invisible to tools but still collide. Default false. */
     locked?: boolean;
-    /** Render on the receiver-only mesh (baseplate). Default false. */
+    /** Casts shadows unless explicitly false; false renders on the receiver-only mesh (baseplate). Default true. */
     castShadows?: boolean;
     /** Geometry: block or wedge (sloped, stud-free). Default "block". */
     shape?: "block" | "wedge";

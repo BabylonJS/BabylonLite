@@ -1,5 +1,5 @@
 /**
- * Resize tool — classic per-face-handle resizing .
+ * Resize tool — classic per-face-handle resizing.
  *
  * Click an unlocked part to select it (SelectionBox + Handles); drag a handle
  * to grow/shrink along that face's normal in 1-stud increments — the opposite
