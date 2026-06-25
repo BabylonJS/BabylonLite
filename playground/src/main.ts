@@ -24,6 +24,8 @@ import { NIGHTLY, engineUrlForVersion, fetchPublishedVersions } from "./versions
 const editorContainer = document.getElementById("editor") as HTMLElement;
 const fileTabsContainer = document.getElementById("fileTabs") as HTMLElement;
 const previewHost = document.getElementById("previewHost") as HTMLElement;
+const previewLoader = document.getElementById("previewLoader") as HTMLElement;
+const previewLoaderText = document.getElementById("previewLoaderText") as HTMLElement;
 const consoleEl = document.getElementById("console") as HTMLElement;
 const splitEl = document.getElementById("split") as HTMLElement;
 const splitter = document.getElementById("splitter") as HTMLElement;
@@ -76,6 +78,30 @@ function clearConsole(): void {
     consoleEl.replaceChildren();
 }
 
+/** Show/hide the preview loading screen, optionally updating its label. */
+function setLoading(on: boolean, label?: string): void {
+    previewLoader.hidden = !on;
+    if (label) {
+        previewLoaderText.textContent = label;
+    }
+}
+
+/** Human-readable byte size, e.g. `48.2 KB`. */
+function formatBytes(bytes: number): string {
+    if (bytes < 1024) {
+        return `${bytes} B`;
+    }
+    if (bytes < 1024 * 1024) {
+        return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+/** Human-readable duration, e.g. `820 ms` or `1.24 s`. */
+function formatDuration(ms: number): string {
+    return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(2)} s`;
+}
+
 /** Append a clickable build error that jumps the editor to the offending location. */
 function appendBuildError(file: string, line: number, column: number, text: string): void {
     const lineEl = document.createElement("div");
@@ -106,6 +132,8 @@ const runner = new Runner(previewHost, (message: RunnerMessage) => {
             embedHost?.emit({ channel: "babylon-lite-playground", type: "console", level: message.level, text: message.text });
             break;
         case "error":
+            setLoading(false);
+            runStartedAt = null;
             appendConsole("error", message.text);
             embedHost?.emit({ channel: "babylon-lite-playground", type: "error", text: message.text });
             break;
@@ -115,6 +143,11 @@ const runner = new Runner(previewHost, (message: RunnerMessage) => {
             embedHost?.emit({ channel: "babylon-lite-playground", type: "stats", fps: message.fps });
             break;
         case "ran":
+            setLoading(false);
+            if (runStartedAt !== null) {
+                appendConsole("system", `Scene ready in ${formatDuration(performance.now() - runStartedAt)}`);
+                runStartedAt = null;
+            }
             embedHost?.emit({ channel: "babylon-lite-playground", type: "ran" });
             break;
         default:
@@ -124,6 +157,9 @@ const runner = new Runner(previewHost, (message: RunnerMessage) => {
 
 let running = false;
 let rerunPending = false;
+// When the transpiled module was handed to the runner, so we can report how long
+// the scene took to become ready (the runner posts `ran` once it finishes).
+let runStartedAt: number | null = null;
 
 async function run(): Promise<void> {
     // Coalesce concurrent requests: remember that another run was asked for and
@@ -135,13 +171,22 @@ async function run(): Promise<void> {
     running = true;
     runBtn.disabled = true;
     clearConsole();
+    setLoading(true, "Compiling…");
     appendConsole("system", "Compiling…");
     try {
+        const compileStart = performance.now();
         const code = await transpile(editor.getFiles(), editor.getEntry());
+        const compileMs = performance.now() - compileStart;
+        const size = new Blob([code]).size;
         editor.clearBuildMarkers();
+        appendConsole("system", `Compiled ${formatBytes(size)} in ${formatDuration(compileMs)}`);
+        setLoading(true, "Running…");
         appendConsole("system", "Running…");
+        runStartedAt = performance.now();
         await runner.run(code, engineUrlForVersion(currentVersion));
     } catch (err) {
+        setLoading(false);
+        runStartedAt = null;
         if (err instanceof TranspileError) {
             editor.setBuildMarkers(err.diagnostics);
             for (const diag of err.diagnostics) {

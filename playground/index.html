@@ -44,6 +44,16 @@
                 <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize editor and preview" tabindex="0"></div>
                 <section class="pane pane-preview">
                     <div class="preview-host" id="previewHost">
+                        <div class="preview-loader" id="previewLoader">
+                            <div class="loader-spinner">
+                                <img class="loader-logo" src="/favicon.svg" alt="" width="52" height="52" />
+                                <svg class="loader-ring" viewBox="0 0 100 100" aria-hidden="true">
+                                    <circle class="loader-ring-track" cx="50" cy="50" r="46" />
+                                    <circle class="loader-ring-arc" cx="50" cy="50" r="46" />
+                                </svg>
+                            </div>
+                            <span class="loader-text" id="previewLoaderText" role="status" aria-live="polite">Loading…</span>
+                        </div>
                         <div class="preview-overlay">
                             <span id="fpsCounter" class="fps-counter" title="Frames per second" hidden>0 FPS</span>
                             <button id="fullscreenBtn" class="overlay-btn" title="Toggle fullscreen" aria-label="Toggle fullscreen">
