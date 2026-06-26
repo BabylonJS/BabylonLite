@@ -147,12 +147,15 @@ In-repo, this harness is `tests/gl/parity/` driven by `scene-config-webgl.json`
 
 ## 6. Consuming the package (dev loop & bundle size)
 
-- **Consume the built tarball during development.** Point the consumer at
-  `file:…/packages/babylon-lite-gl/dist/prod/babylonjs-lite-gl-0.1.0.tgz`.
-- **npm caches by version — sync manually after a rebuild.** Because the version
-  stays `0.1.0`, `npm install` will **not** re-fetch a freshly rebuilt tarball;
-  copy the new `dist/prod` output into the consumer's
-  `node_modules/@babylonjs/lite-gl` by hand (or bump the version) after each
+- **Consume the built package during development.** `pnpm build:gl` emits the
+  publishable tree at `packages/babylon-lite-gl/dist/` (with its own
+  `package.json`). Point the consumer at `file:…/packages/babylon-lite-gl/dist`,
+  or `npm pack ./packages/babylon-lite-gl/dist` and install the generated
+  `babylonjs-lite-gl-<version>.tgz`.
+- **npm caches by version — sync manually after a rebuild.** Local builds report
+  the source version (`0.1.0`; the release pipeline injects the real version via
+  `PACKAGE_VERSION`), so `npm install` will **not** re-fetch a freshly rebuilt
+  tarball; reinstall from the rebuilt `dist/` (or bump the version) after each
   package rebuild, or you'll test stale code.
 - **Sprites & HTML-element textures are tree-shakeable.** Import them from the
   `@babylonjs/lite-gl` barrel (`import { createSpriteRenderer } from "@babylonjs/lite-gl"`);

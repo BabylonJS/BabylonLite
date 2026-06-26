@@ -114,7 +114,7 @@ describe("babylon-lite-gl build output", () => {
             "createDynamicTexture",
             "updateDynamicTexture",
             "clearDynamicTextureSource",
-            // render targets (LDR core + HDR opt-in + ping-pong)
+            // render targets (LDR core + HDR opt-in)
             "createRenderTarget",
             "createFloatRenderTarget",
             "bindRenderTarget",
@@ -122,9 +122,6 @@ describe("babylon-lite-gl build output", () => {
             "resizeRenderTarget",
             "readRenderTargetPixels",
             "disposeRenderTarget",
-            "createPingPong",
-            "resizePingPong",
-            "disposePingPong",
             // meshes / buffers / instancing
             "createVertexBuffer",
             "updateVertexBuffer",
