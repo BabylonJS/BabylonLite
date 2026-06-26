@@ -281,11 +281,11 @@ export class AbstractMesh extends TransformNode {
      *
      * Babylon Lite stores a mesh's local bounds on `boundMin` / `boundMax` (set by
      * the mesh factories and the glTF loader); when present they are returned
-     * directly. For a mesh whose bounds were never precomputed (e.g. one rebuilt
-     * via `setVerticesData`), the AABB is folded on demand from the retained CPU
-     * position buffer with Lite's `computeAabb`. Bounds are reported in local
-     * geometry space, matching `LoadedMesh.getBoundingInfo` and how Lite's
-     * `createDefaultCamera` frames models.
+     * directly. When the bounds were never set but a CPU position buffer is still
+     * retained, the AABB is folded on demand from those positions with Lite's
+     * `computeAabb`. Bounds are reported in local geometry space, matching
+     * `LoadedMesh.getBoundingInfo` and how Lite's `createDefaultCamera` frames
+     * models.
      */
     public getBoundingInfo(): BoundingInfo {
         const lo = this._lite.boundMin;
@@ -294,9 +294,9 @@ export class AbstractMesh extends TransformNode {
             return new BoundingInfo(new Vector3(lo[0], lo[1], lo[2]), new Vector3(hi[0], hi[1], hi[2]));
         }
         const positions = this._lite._cpuPositions;
-        if (positions && positions.length >= 3) {
+        if (positions && positions.length >= 3 && positions.length % 3 === 0) {
             const [min, max] = computeAabb(positions);
-            if (isFinite(min[0])) {
+            if (isFinite(min[0]) && isFinite(min[1]) && isFinite(min[2])) {
                 return new BoundingInfo(new Vector3(min[0], min[1], min[2]), new Vector3(max[0], max[1], max[2]));
             }
         }

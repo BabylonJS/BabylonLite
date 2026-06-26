@@ -35,6 +35,16 @@ describe("AbstractMesh.getBoundingInfo", () => {
         expect(info.maximum.asArray()).toEqual([1, 1, 1]);
     });
 
+    it("returns a zero-extent box when the CPU position buffer is not a multiple of 3", () => {
+        // A truncated buffer (length 4) would make computeAabb read past the end,
+        // leaving Y/Z as Infinity; getBoundingInfo must reject it.
+        const positions = new Float32Array([0, 0, 0, 1]);
+        const mesh = meshWithLite({ _cpuPositions: positions });
+        const info = mesh.getBoundingInfo();
+        expect(info.minimum.asArray()).toEqual([0, 0, 0]);
+        expect(info.maximum.asArray()).toEqual([0, 0, 0]);
+    });
+
     it("returns a zero-extent box when no bounds or positions exist", () => {
         const mesh = meshWithLite({});
         const info = mesh.getBoundingInfo();
