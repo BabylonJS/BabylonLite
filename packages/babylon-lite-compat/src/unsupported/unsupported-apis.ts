@@ -114,7 +114,7 @@ export class MirrorTexture {
 // New in BJS: `Materials/Textures/HTML/*` — uploads a live DOM element into a
 // texture and forwards pointer/raycast interaction onto an overlaid HTML layer.
 // This is a DOM-driven, host-page feature with no Babylon Lite equivalent (Lite
-// is a headless WebGPU renderer with no HTML overlay / interaction subsystem),
+// is a WebGPU renderer with no HTML overlay / interaction subsystem),
 // so every entry throws.
 
 /** Options accepted by Babylon.js `HtmlTexture` (shape-only stub for type parity). */
@@ -150,13 +150,13 @@ export class HtmlTexture {
 
 export class HtmlInteractionManager {
     public constructor() {
-        unsupported("HtmlInteractionManager", "HTML overlay interaction is not part of Babylon Lite's headless WebGPU renderer.");
+        unsupported("HtmlInteractionManager", "HTML overlay interaction is not part of Babylon Lite's WebGPU renderer.");
     }
 }
 
 export class HtmlRaycastInteractionManager {
     public constructor() {
-        unsupported("HtmlRaycastInteractionManager", "HTML overlay raycast interaction is not part of Babylon Lite's headless WebGPU renderer.");
+        unsupported("HtmlRaycastInteractionManager", "HTML overlay raycast interaction is not part of Babylon Lite's WebGPU renderer.");
     }
 }
 
