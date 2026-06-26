@@ -146,29 +146,6 @@ export interface GLRenderTarget {
 }
 
 /**
- * A pair of {@link GLRenderTarget}s for self-feedback effects: SAMPLE the
- * {@link GLPingPong.read | read} target (last frame's output) while RENDERING
- * into the {@link GLPingPong.write | write} target, then {@link GLPingPong.swap}.
- */
-export interface GLPingPong {
-    /** The target to SAMPLE this frame (the previous frame's output). */
-    readonly read: GLRenderTarget;
-    /** The target to RENDER into this frame. */
-    readonly write: GLRenderTarget;
-    /** Exchange `read` and `write`. Call after rendering the `write` target each
-     *  frame. Allocation-free — flips an internal index, no objects created. */
-    swap(): void;
-    /** @internal */
-    _a: GLRenderTarget;
-    /** @internal */
-    _b: GLRenderTarget;
-    /** @internal */
-    _readIsA: boolean;
-    /** @internal */
-    _disposed: boolean;
-}
-
-/**
  * Create an offscreen **RGBA8** render target.
  *
  * The color attachment is an owned {@link GLTexture} (rebuilt by this target's
@@ -392,76 +369,6 @@ export function disposeRenderTarget(engine: GLEngineContext, rt: GLRenderTarget 
             }
         }
     }
-}
-
-/**
- * Create a {@link GLPingPong}: two same-sized {@link GLRenderTarget}s for
- * self-feedback effects. `read` starts as the first target and `write` the
- * second; {@link GLPingPong.swap} exchanges them allocation-free.
- *
- * @param engine - The engine to create GL resources on.
- * @param options - Applied identically to both targets.
- * @returns The new {@link GLPingPong}.
- * @throws As {@link createRenderTarget}. If the second target fails to build the
- *  first is disposed before rethrowing (no leak).
- */
-export function createPingPong(engine: GLEngineContext, options: GLRenderTargetOptions): GLPingPong {
-    const a = createRenderTarget(engine, options);
-    let b: GLRenderTarget;
-    try {
-        b = createRenderTarget(engine, options);
-    } catch (e) {
-        disposeRenderTarget(engine, a);
-        throw e;
-    }
-    const pp: GLPingPong = {
-        _a: a,
-        _b: b,
-        _readIsA: true,
-        _disposed: false,
-        get read(): GLRenderTarget {
-            return pp._readIsA ? pp._a : pp._b;
-        },
-        get write(): GLRenderTarget {
-            return pp._readIsA ? pp._b : pp._a;
-        },
-        swap(): void {
-            pp._readIsA = !pp._readIsA;
-        },
-    };
-    return pp;
-}
-
-/**
- * Resize both targets of a {@link GLPingPong}. No-op when disposed.
- *
- * @param engine - The engine that owns `pp`.
- * @param pp - The ping-pong pair to resize.
- * @param width - New width in texels (positive integer).
- * @param height - New height in texels (positive integer).
- */
-export function resizePingPong(engine: GLEngineContext, pp: GLPingPong, width: number, height: number): void {
-    if (pp._disposed) {
-        return;
-    }
-    resizeRenderTarget(engine, pp._a, width, height);
-    resizeRenderTarget(engine, pp._b, width, height);
-}
-
-/**
- * Release both targets of a {@link GLPingPong}. Idempotent, and a no-op for
- * `null`/`undefined` (matching {@link disposeRenderTarget}).
- *
- * @param engine - The engine that owns `pp`.
- * @param pp - The ping-pong pair to release, or `null`/`undefined` for a no-op.
- */
-export function disposePingPong(engine: GLEngineContext, pp: GLPingPong | null | undefined): void {
-    if (pp === null || pp === undefined || pp._disposed) {
-        return;
-    }
-    pp._disposed = true;
-    disposeRenderTarget(engine, pp._a);
-    disposeRenderTarget(engine, pp._b);
 }
 
 /* ────────────────────────────  internal helpers  ──────────────────────────── */

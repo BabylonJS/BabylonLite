@@ -41,7 +41,7 @@ Non-goals:
 
 - No WebGL1 path.
 - No scene graph, no materials, no meshes, no skinning, no PBR.
-- Render-to-texture is available from the barrel (§3.8): RGBA8 (or a bring-your-own `colorTexture`, e.g. a float/half-float HDR target), optional core depth, opt-in stencil (`generateRenderTargetStencil`) and mipmap (`generateRenderTargetMipMaps`) helpers, ping-pong feedback and `readPixels` readback. No MRT (multiple render targets). Core effects render to the canvas by default.
+- Render-to-texture is available from the barrel (§3.8): RGBA8 (or a bring-your-own `colorTexture`, e.g. a float/half-float HDR target), optional core depth, opt-in stencil (`generateRenderTargetStencil`) and mipmap (`generateRenderTargetMipMaps`) helpers and `readPixels` readback. No MRT (multiple render targets). Core effects render to the canvas by default.
 - No `SpriteRenderer` / `ThinSprite` in v1 (deferred; the magic loading screen keeps stock Babylon until v2).
 - No runtime shader preprocessor (`attribute`→`in` etc.). Consumers ship GLSL ES 3.00.
 - No shader-store, no `#include`, no observables, no engine-level customization extension points.
@@ -613,7 +613,7 @@ export type { GLEngineOptions, GLEngineCaps, GLEngineContext } from "./context.j
 // tree-shakes them from bundles that don't use them.
 export { createSpriteRenderer, renderSprites, setSpriteRendererTexture, disposeSpriteRenderer } from "./sprites.js";
 export { createHtmlElementTexture, updateHtmlElementTexture, GLSamplingMode } from "./html-texture.js";
-export { createRenderTarget, bindRenderTarget, resizeRenderTarget, disposeRenderTarget, createPingPong, resizePingPong, disposePingPong } from "./render-target.js";
+export { createRenderTarget, bindRenderTarget, resizeRenderTarget, disposeRenderTarget } from "./render-target.js";
 ```
 
 ---
@@ -624,9 +624,7 @@ Re-exported from the barrel; `sideEffects: false` means a consumer that never
 renders to a texture doesn't pull the FBO code into its bundle. This is the lite-gl
 equivalent of Babylon's `RenderTargetTexture` / `createRenderTargetTexture` +
 `bindFramebuffer`. A `GLRenderTarget` owns an FBO plus a sampleable color
-`GLTexture` (and an optional `DEPTH_COMPONENT16` renderbuffer); a `GLPingPong`
-pairs two same-sized targets for self-feedback effects (sample last frame → render
-this frame → `swap`).
+`GLTexture` (and an optional `DEPTH_COMPONENT16` renderbuffer).
 
 ```ts
 export interface GLRenderTargetOptions {
@@ -644,7 +642,6 @@ export interface GLRenderTargetOptions {
 }
 
 export interface GLRenderTarget { readonly texture: GLTexture; width: number; height: number; /* + @internal FBO/depth/restore */ }
-export interface GLPingPong     { readonly read: GLRenderTarget; readonly write: GLRenderTarget; swap(): void; /* + @internal _a/_b */ }
 
 // Engine-first params everywhere; GL-prefixed, Options-suffixed type names (lite-gl convention).
 export function createRenderTarget(engine: GLEngineContext, options: GLRenderTargetOptions): GLRenderTarget;
@@ -659,9 +656,6 @@ export function generateRenderTargetMipMaps(engine: GLEngineContext, rt: GLRende
 //     packs DEPTH24_STENCIL8 (depth default true) or stencil-only STENCIL_INDEX8 (depth:false),
 //     replacing the core depth-only buffer; installs a restore/resize hook so it survives FBO rebuilds.
 export function readRenderTargetPixels(engine: GLEngineContext, rt: GLRenderTarget, x: number, y: number, w: number, h: number, into?: ArrayBufferView): ArrayBufferView; // GPU→CPU readback
-export function createPingPong(engine: GLEngineContext, options: GLRenderTargetOptions): GLPingPong;
-export function resizePingPong(engine: GLEngineContext, pp: GLPingPong, width: number, height: number): void;
-export function disposePingPong(engine: GLEngineContext, pp: GLPingPong | null | undefined): void;
 ```
 
 - **`createRenderTarget`** allocates the FBO + an engine-registered color texture
@@ -678,9 +672,9 @@ export function disposePingPong(engine: GLEngineContext, pp: GLPingPong | null |
   (with the new-size viewport) after the rebuild, because deleting a bound FBO reverts
   GL to framebuffer 0 — without the re-bind an in-flight pass would silently start
   drawing to the canvas.
-- **`disposeRenderTarget` / `disposePingPong`** delete every GL resource, unhook the
-  restore handler, and are idempotent — and a no-op for `null` / `undefined`, matching
-  the WebGPU `@babylonjs/lite` `disposeRenderTarget`.
+- **`disposeRenderTarget`** deletes every GL resource, unhooks the restore handler,
+  and is idempotent — and a no-op for `null` / `undefined`, matching the WebGPU
+  `@babylonjs/lite` `disposeRenderTarget`.
 - **Context restore.** A default (owned) RGBA8 color texture is owned, rebuilt and
   deleted by the render target itself: each target registers its OWN
   `onContextRestored` hook that re-creates the FBO + depth and the color texture.
@@ -1356,16 +1350,15 @@ Not implemented (NeonBrush doesn't need them): shader-store / `useShaderStore: t
 1. No WebGL1 fallback.
 2. Render-to-texture IS available from the barrel
    (`createRenderTarget` / `bindRenderTarget` / `resizeRenderTarget` /
-   `disposeRenderTarget`, plus the `createPingPong` / `resizePingPong` /
-   `disposePingPong` feedback helper; types `GLRenderTarget` /
-   `GLRenderTargetOptions` / `GLPingPong` — see §3.8). Scope is a single RGBA8
+   `disposeRenderTarget`; types `GLRenderTarget` /
+   `GLRenderTargetOptions` — see §3.8). Scope is a single RGBA8
    color attachment (or a bring-your-own `colorTexture` — e.g. a `createFloatTexture`
    half-float HDR target — with `createFloatRenderTarget` as the direct HDR sugar),
    an optional core
    `DEPTH_COMPONENT16` renderbuffer (`generateDepthBuffer`), opt-in stencil via
    `generateRenderTargetStencil` (packed `DEPTH24_STENCIL8` or
    stencil-only `STENCIL_INDEX8`) and opt-in mipmaps via
-   `generateRenderTargetMipMaps`, ping-pong feedback, and GPU→CPU readback
+   `generateRenderTargetMipMaps`, and GPU→CPU readback
    (`readRenderTargetPixels`). NOT supported: multiple render targets (MRT,
    item 10).
 3. `SpriteRenderer` / `ThinSprite` are available from the barrel
@@ -1734,7 +1727,7 @@ packages/babylon-lite-gl/
         html-texture.ts     createHtmlElementTexture/updateHtmlElementTexture/GLSamplingMode
         blend.ts            GLBlendMode preset + setBlendMode (cached, Babylon setAlphaMode parity)
         sprites.ts          GLSprite + createSpriteRenderer/renderSprites/dispose (own VAO/VBO/IBO)
-        render-target.ts    createRenderTarget/bindRenderTarget/resizeRenderTarget/disposeRenderTarget + createPingPong/resizePingPong/disposePingPong (FBO + color tex + optional depth)
+        render-target.ts    createRenderTarget/bindRenderTarget/resizeRenderTarget/disposeRenderTarget (FBO + color tex + optional depth)
         effect-renderer.ts  ensureQuad, setViewport, applyEffectWrapper, drawEffect
 
 tests/gl/                   four-layer harness (mirrors tests/lite/), tsconfig.json

@@ -121,10 +121,6 @@ generateRenderTargetMipMaps(engine, rt): void
 // stencil — generateRenderTargetStencil(engine, rt, { depth? }) (depth-stencil module)
 //   packs DEPTH24_STENCIL8 (default) or stencil-only STENCIL_INDEX8 (depth:false);
 //   opt-in, installs a restore/resize hook so the attachment survives context loss
-// ping-pong (from newdemo) — feedback helper
-createPingPong(engine, options): GLPingPong            // { read, write, swap() }
-resizePingPong(engine, pp, width, height): void
-disposePingPong(engine, pp | null | undefined): void
 // MRT — future addition (barrel export)
 ```
 
@@ -188,7 +184,7 @@ clearDynamicTextureSource(tex): void
 | stencil | ✗ | option | — | **`generateRenderTargetStencil`** (depth-stencil module), opt-in |
 | mipmaps (RT) | ✗ | option | — | **`generateRenderTargetMipMaps`** fn |
 | `readRenderTargetPixels` | ✗ | ✓ | — | **keep** (Tier 1) |
-| ping-pong | ✓ | ✗ | — | **keep** (Tier 1) |
+| ping-pong | ✓ | ✗ | — | **out of package** (compose two render targets) |
 | `GLRenderTarget.isReady` | ✗ | ✓ | — | **include** |
 | `createRawTexture` HDR table | inline | inline | inline | **inline LDR only + `internalFormat`**; HDR → `createFloatTexture` |
 | `updateRawTexture` / sampling / wrap / fromHandle | ✗ | ✓ | ✗ | **keep** (Tier 1, separate exports) |
@@ -202,7 +198,7 @@ Everything ships from the single `@babylonjs/lite-gl` barrel (one public `export
 entry). The package is `sideEffects: false`, so unused features tree-shake out
 regardless of which symbols a consumer imports. The barrel covers: engine,
 render-loop, effects, effect-renderer, **texture core**, blend, render targets
-(Tier-0 RT + ping-pong + readback + `generateRenderTargetMipMaps`), dynamic
+(Tier-0 RT + readback + `generateRenderTargetMipMaps`), dynamic
 (canvas) textures, meshes, depth-stencil, scissor, sprites, and html-element
 textures. HDR sugar (`createFloatTexture` / `createFloatRenderTarget`) ships in the
 barrel too (tiny, tree-shakes when unused).

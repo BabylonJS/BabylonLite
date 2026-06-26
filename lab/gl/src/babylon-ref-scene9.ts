@@ -98,7 +98,7 @@ function parseSeekTime(): number | null {
     const engine = new ThinEngine(canvas, false, { alpha: false, premultipliedAlpha: false, stencil: false }, false);
 
     // Two offscreen color targets — RGBA8, BILINEAR/CLAMP, no depth: matches
-    // lite-gl's createPingPong defaults (gl.LINEAR / gl.CLAMP_TO_EDGE, RGBA8).
+    // createRenderTarget's defaults (gl.LINEAR / gl.CLAMP_TO_EDGE, RGBA8).
     const rtOptions = {
         generateDepthBuffer: false,
         generateStencilBuffer: false,
