@@ -361,6 +361,95 @@ body {
     background: rgba(1, 4, 9, 0.85);
 }
 
+/* Loading screen over the preview while booting / compiling a scene.
+   A Babylon logo with a spinning ring around it (à la the Babylon.js playground). */
+.preview-loader {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    background: rgba(1, 4, 9, 0.82);
+    backdrop-filter: blur(2px);
+}
+
+.preview-loader[hidden] {
+    display: none;
+}
+
+.loader-spinner {
+    position: relative;
+    width: 92px;
+    height: 92px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.loader-logo {
+    width: 50px;
+    height: 50px;
+    display: block;
+    animation: loader-pulse 1.6s ease-in-out infinite;
+}
+
+.loader-ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform-origin: center;
+    animation: loader-spin 1s linear infinite;
+}
+
+.loader-ring-track {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 4;
+}
+
+.loader-ring-arc {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 4;
+    stroke-linecap: round;
+    stroke-dasharray: 70 220;
+}
+
+.loader-text {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+}
+
+@keyframes loader-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes loader-pulse {
+    0%,
+    100% {
+        opacity: 0.85;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.06);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .loader-ring,
+    .loader-logo {
+        animation: none;
+    }
+}
+
 .console {
     flex: 0 0 auto;
     height: 9rem;
@@ -430,6 +519,9 @@ body {
 
 /* Save dialog */
 .dialog {
+    /* Native modal dialogs center via `margin: auto`, which the global reset
+       (`* { margin: 0 }`) clobbers — restore it so the dialog is centered. */
+    margin: auto;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--bg-elevated);
