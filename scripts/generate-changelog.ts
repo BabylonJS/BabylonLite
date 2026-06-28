@@ -3,8 +3,9 @@
 /**
  * Generates a Markdown changelog for an @babylonjs/lite release by scanning the
  * Conventional-Commit history between the previous published release tag and
- * HEAD. The output is suitable for use as GitHub release notes and is also
- * appended to a repository CHANGELOG.md when one is maintained.
+ * HEAD. The output is suitable for use as GitHub release notes. It is printed to
+ * stdout and, when CHANGELOG_OUTPUT is set, also written to that file (the npm
+ * publish pipeline points it at the GitHub release notes artifact).
  *
  * The commit-range resolution mirrors scripts/prepare-npm-release.ts so the
  * changelog always covers exactly the commits that the resolved version ships.
@@ -204,8 +205,9 @@ function buildChangelog(commits: ParsedCommit[], previousTag: string, repoSlug: 
     }
 
     const used = new Set<string>();
+    const breakingHashes = new Set(breaking.map((commit) => commit.hash));
     for (const section of SECTIONS) {
-        const entries = relevant.filter((commit) => commit.type !== undefined && section.types.includes(commit.type));
+        const entries = relevant.filter((commit) => commit.type !== undefined && section.types.includes(commit.type) && !breakingHashes.has(commit.hash));
         if (entries.length === 0) {
             continue;
         }
