@@ -155,7 +155,7 @@ function parseCommit(hash: string, subjectRaw: string, body: string): ParsedComm
         type: header[1],
         scope: header[2],
         breaking,
-        subject: header[4].trim(),
+        subject: (header[4] ?? subject).trim(),
         prNumber,
     };
 }
