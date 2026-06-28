@@ -3,7 +3,21 @@
 // and quantized. Both extensions are decoded in dynamic-imported loader features
 // so non-meshopt scenes pay nothing. Frozen via ?seekTime for deterministic parity.
 
-import { onBeforeRender, addToScene, startEngine, createEngine, createSceneContext, createArcRotateCamera, loadGltf, createHemisphericLight, attachControl, goToFrame, pauseAnimation, registerScene } from "babylon-lite";
+import {
+    onBeforeRender,
+    addToScene,
+    startEngine,
+    createEngine,
+    createSceneContext,
+    createArcRotateCamera,
+    loadGltf,
+    createHemisphericLight,
+    attachControl,
+    goToFrame,
+    pauseAnimation,
+    registerScene,
+} from "babylon-lite";
+import { configureParityDecoderBases } from "../shared/asset-url.js";
 
 const MODEL_URL = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/BrainStem/glTF-Meshopt-EXT/BrainStem.gltf";
 
@@ -15,13 +29,13 @@ async function main(): Promise<void> {
     const scene = createSceneContext(engine);
 
     // The meshopt decoder (meshopt_decoder.js) is deployed at the site root, a
-    // sibling of the scene pages — not under the page's own directory. Resolve it
-    // relative to the page so it loads under ANY base path (local root or the
-    // per-build parity-lab/<build>/ path), instead of the default site root which
-    // 404s on the deployed static site. Dynamic import mirrors the demo helper and
-    // keeps the meshopt feature out of non-meshopt bundles.
-    const { setMeshoptBaseUrl } = await import("babylon-lite/loader-gltf/meshopt-decode.js");
-    setMeshoptBaseUrl(new URL("../", document.baseURI).href);
+    // sibling of the scene pages — not under the page's own directory. Point the
+    // decoder base at the deployed asset root so it loads under ANY base path
+    // (local root or the per-build parity-lab/<build>/ path) instead of the
+    // default site root which 404s on the deployed static site. This only sets a
+    // global; the meshopt decoder is still dynamic-imported by its feature on
+    // demand, so it stays out of non-meshopt bundles.
+    configureParityDecoderBases();
 
     addToScene(scene, await loadGltf(engine, MODEL_URL));
 

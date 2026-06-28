@@ -42,14 +42,15 @@ export function rebaseRootUrl(url: string): string {
 /**
  * Point the glTF Draco + meshopt decoders at the deployed asset root so their
  * decoder scripts/wasm load from the per-build site instead of the site root.
- * Mirrors lab/lite/src/demos/demo-asset-url.ts for the parity scenes.
+ *
+ * This sets the `__babylonLiteDecoderBase__` global that draco-decode.ts and
+ * meshopt-decode.ts read lazily. Crucially it does NOT import those modules, so
+ * the decoders stay out of the scene bundle unless the scene actually loads a
+ * compressed asset (in which case the glTF feature dynamic-imports them on
+ * demand and they pick up this base). Importing them eagerly here previously
+ * pulled both decoders into every wired scene's bundle — even scene30, which
+ * uses Draco only — pushing those bundles over their size ceilings.
  */
-export async function configureParityDecoderBases(): Promise<void> {
-    const base = assetRoot().href;
-    const [{ setDracoBaseUrl }, { setMeshoptBaseUrl }] = await Promise.all([
-        import("babylon-lite/loader-gltf/draco-decode.js"),
-        import("babylon-lite/loader-gltf/meshopt-decode.js"),
-    ]);
-    setDracoBaseUrl(base);
-    setMeshoptBaseUrl(base);
+export function configureParityDecoderBases(): void {
+    (globalThis as Record<string, unknown>).__babylonLiteDecoderBase__ = assetRoot().href;
 }

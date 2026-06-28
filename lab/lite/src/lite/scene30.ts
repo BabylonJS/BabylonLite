@@ -3,7 +3,19 @@
 // default IBL environment (environmentSpecular.env) with frame-graph
 // scene-texture transmission enabled.
 
-import { addToScene, startEngine, createEngine, createSceneContext, createArcRotateCamera, loadEnvironment, loadGltf, attachControl, registerScene, getFrameGraph, type RenderTask } from "babylon-lite";
+import {
+    addToScene,
+    startEngine,
+    createEngine,
+    createSceneContext,
+    createArcRotateCamera,
+    loadEnvironment,
+    loadGltf,
+    attachControl,
+    registerScene,
+    getFrameGraph,
+    type RenderTask,
+} from "babylon-lite";
 import { configureParityDecoderBases } from "../shared/asset-url.js";
 
 async function main(): Promise<void> {
@@ -22,7 +34,7 @@ async function main(): Promise<void> {
     scene.camera = cam;
     attachControl(cam, canvas, scene);
 
-    await configureParityDecoderBases();
+    configureParityDecoderBases();
 
     await Promise.all([
         loadGltf(engine, "https://assets.babylonjs.com/meshes/KHR_materials_volume_testing.glb").then((asset) => addToScene(scene, asset)),
