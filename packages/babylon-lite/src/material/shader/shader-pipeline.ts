@@ -197,7 +197,12 @@ function attributeLayout(name: ShaderAttributeName, shaderLocation: number): GPU
             return { arrayStride: 8, attributes: [{ shaderLocation, offset: 0, format: "float32x2" }] };
         case "tangent":
         case "color":
+        case "weights":
+        case "weights1":
             return { arrayStride: 16, attributes: [{ shaderLocation, offset: 0, format: "float32x4" }] };
+        case "joints":
+        case "joints1":
+            return { arrayStride: 16, attributes: [{ shaderLocation, offset: 0, format: "uint32x4" }] };
     }
 }
 
@@ -266,6 +271,11 @@ function attributeWgslType(name: ShaderAttributeName): string {
             return "vec2<f32>";
         case "tangent":
         case "color":
+        case "weights":
+        case "weights1":
             return "vec4<f32>";
+        case "joints":
+        case "joints1":
+            return "vec4<u32>";
     }
 }
