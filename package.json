@@ -31,6 +31,7 @@
         "test:unit:gl": "vitest run --project gl-unit",
         "test:build:gl": "vitest run --project gl-build",
         "test:build": "vitest run --project build",
+        "test:no-webgpu": "vitest run --project no-webgpu",
         "test:audio-offline": "vitest run --project audio-offline",
         "test:bundle-size": "npx playwright test tests/lite/parity/bundle-size.spec.ts",
         "test:perf": "npx playwright test --config playwright.perf.config.ts",
