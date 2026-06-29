@@ -32,6 +32,6 @@ describe("@babylonjs/lite imports without WebGPU globals", () => {
     });
 
     it("imports the engine entry point without throwing", async () => {
-        await expect(import("../../../packages/babylon-lite/src/index.ts")).resolves.toBeDefined();
+        await expect(import("../../../packages/babylon-lite/src/index.js")).resolves.toBeDefined();
     });
 });
