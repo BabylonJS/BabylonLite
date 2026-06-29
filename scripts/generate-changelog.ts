@@ -1,14 +1,21 @@
 /// <reference types="node" />
 
 /**
- * Generates a Markdown changelog for an @babylonjs/lite release by scanning the
- * Conventional-Commit history between the previous published release tag and
- * HEAD. The output is suitable for use as GitHub release notes. It is printed to
- * stdout and, when CHANGELOG_OUTPUT is set, also written to that file (the npm
- * publish pipeline points it at the GitHub release notes artifact).
+ * Generates Markdown changelog content for an @babylonjs/lite release from the
+ * Conventional-Commit history, with no committed CHANGELOG file required — git
+ * release tags (npm-lite-v*) are the source of truth, so the whole changelog is
+ * regenerated deterministically on every release.
  *
- * The commit-range resolution mirrors scripts/prepare-npm-release.ts so the
- * changelog always covers exactly the commits that the resolved version ships.
+ * Two artefacts are produced:
+ *   - Release notes: the single section for the version being released
+ *     (previous tag..HEAD). Written to RELEASE_NOTES_OUTPUT if set; always
+ *     printed to stdout. Used as the GitHub release body.
+ *   - Full cumulative changelog: the pending version plus one section per prior
+ *     npm-lite-v* tag, newest first. Written to CHANGELOG_OUTPUT if set. Shipped
+ *     in the npm tarball (build/CHANGELOG.md) so consumers get the whole history.
+ *
+ * The pending range mirrors scripts/prepare-npm-release.ts so the top section
+ * always covers exactly the commits the resolved version ships.
  *
  * Inputs (all via env):
  *   PACKAGE_VERSION        Version being released (e.g. "1.4.0"). Required for a
@@ -16,12 +23,10 @@
  *   PACKAGE_NAME           Published package name. Default "@babylonjs/lite".
  *   PREVIOUS_RELEASE_TAG   Override the auto-detected previous release tag.
  *   RELEASE_TAG_PATTERN    Glob for release tags. Default "npm-lite-v*".
- *   CHANGELOG_OUTPUT       File to write the release-notes Markdown to. When set
- *                          the notes are written there (for the GitHub release).
+ *   RELEASE_NOTES_OUTPUT   File to write the latest-version notes to.
+ *   CHANGELOG_OUTPUT       File to write the full cumulative changelog to.
  *   BUILD_REPOSITORY_URI / GITHUB_REPOSITORY
  *                          Used to build commit/PR links when available.
- *
- * Always prints the generated release-notes Markdown to stdout.
  */
 
 import { execFileSync } from "child_process";
@@ -30,8 +35,10 @@ import { resolve } from "path";
 
 const PACKAGE_NAME = process.env.PACKAGE_NAME ?? "@babylonjs/lite";
 const RELEASE_TAG_PATTERN = process.env.RELEASE_TAG_PATTERN ?? "npm-lite-v*";
+const RELEASE_TAG_PREFIX = RELEASE_TAG_PATTERN.replace(/\*$/, "");
 const NEXT_VERSION = (process.env.PACKAGE_VERSION ?? "").trim();
 const CHANGELOG_OUTPUT = process.env.CHANGELOG_OUTPUT?.trim();
+const RELEASE_NOTES_OUTPUT = process.env.RELEASE_NOTES_OUTPUT?.trim();
 
 type ParsedCommit = {
     hash: string;
@@ -88,6 +95,33 @@ function getPreviousReleaseTag(): string {
     return run("git", ["describe", "--tags", "--abbrev=0", "--match", RELEASE_TAG_PATTERN], true);
 }
 
+function parseSemver(version: string): [number, number, number] | undefined {
+    const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+    return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : undefined;
+}
+
+// All release tags, newest version first. Each entry pairs the tag with the
+// version it represents so the cumulative changelog can render one section per
+// tag and link compare ranges. Tags whose version is not strict semver are
+// dropped (they cannot be ordered reliably).
+function getReleaseTagsDescending(): { tag: string; version: string }[] {
+    const raw = run("git", ["tag", "--list", RELEASE_TAG_PATTERN], true);
+    if (!raw) {
+        return [];
+    }
+    return raw
+        .split("\n")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+        .map((tag) => ({ tag, version: tag.slice(RELEASE_TAG_PREFIX.length) }))
+        .filter((entry): entry is { tag: string; version: string } => parseSemver(entry.version) !== undefined)
+        .sort((a, b) => {
+            const av = parseSemver(a.version) as [number, number, number];
+            const bv = parseSemver(b.version) as [number, number, number];
+            return bv[0] - av[0] || bv[1] - av[1] || bv[2] - av[2];
+        });
+}
+
 function getRepoSlug(): string | undefined {
     const direct = process.env.GITHUB_REPOSITORY?.trim();
     if (direct && direct.includes("/")) {
@@ -104,8 +138,8 @@ function getRepoSlug(): string | undefined {
     return undefined;
 }
 
-function readCommits(previousTag: string): ParsedCommit[] {
-    const range = previousTag ? `${previousTag}..HEAD` : "HEAD";
+function readCommits(fromRef: string, toRef: string): ParsedCommit[] {
+    const range = fromRef ? `${fromRef}..${toRef}` : toRef;
     // Records are separated by a record-separator (0x1e) and fields within a
     // record by a unit-separator (0x1f). We emit these via git's %x1e/%x1f
     // format escapes so the control bytes appear only in git's output, never in
@@ -184,14 +218,19 @@ function formatEntry(commit: ParsedCommit, repoSlug: string | undefined): string
     return line;
 }
 
-function buildChangelog(commits: ParsedCommit[], previousTag: string, repoSlug: string | undefined): string {
-    const heading = NEXT_VERSION ? `## ${PACKAGE_NAME} v${NEXT_VERSION}` : `## ${PACKAGE_NAME} (Unreleased)`;
+// Renders one version's section. `version` may be a real semver or "Unreleased".
+// `fromTag`/`toRef` define the commit range; `compareTag` is the tag for the
+// version being rendered (used for the compare link), or "HEAD" for a pending
+// release whose tag does not exist yet.
+function buildSection(version: string, fromTag: string, toRef: string, compareTag: string, repoSlug: string | undefined): string {
+    const heading = version === "Unreleased" ? `## ${PACKAGE_NAME} (Unreleased)` : `## ${PACKAGE_NAME} v${version}`;
     const lines: string[] = [heading, ""];
 
+    const commits = readCommits(fromTag, toRef);
     const relevant = commits.filter((commit) => !shouldSkip(commit));
 
     if (relevant.length === 0) {
-        lines.push(previousTag ? `_No notable changes since ${previousTag}._` : "_No notable changes._");
+        lines.push(fromTag ? `_No notable changes since ${fromTag}._` : "_No notable changes._", "");
         return lines.join("\n").trimEnd() + "\n";
     }
 
@@ -228,27 +267,46 @@ function buildChangelog(commits: ParsedCommit[], previousTag: string, repoSlug: 
         lines.push("");
     }
 
-    if (repoSlug && previousTag && NEXT_VERSION) {
-        const newTag = RELEASE_TAG_PATTERN.replace(/\*$/, "") + NEXT_VERSION;
-        lines.push(`**Full Changelog**: https://github.com/${repoSlug}/compare/${previousTag}...${newTag}`);
+    if (repoSlug && fromTag) {
+        lines.push(`**Full Changelog**: https://github.com/${repoSlug}/compare/${fromTag}...${compareTag}`, "");
     }
 
     return lines.join("\n").trimEnd() + "\n";
 }
 
 function main(): void {
-    const previousTag = getPreviousReleaseTag();
     const repoSlug = getRepoSlug();
-    const commits = readCommits(previousTag);
-    const changelog = buildChangelog(commits, previousTag, repoSlug);
+    const tags = getReleaseTagsDescending();
+    const previousTag = getPreviousReleaseTag() || (tags[0]?.tag ?? "");
 
-    if (CHANGELOG_OUTPUT) {
-        const outPath = resolve(process.cwd(), CHANGELOG_OUTPUT);
-        writeFileSync(outPath, changelog, "utf-8");
+    // Top section: the version being released (or "Unreleased" when no version
+    // is provided), covering the previous tag..HEAD range.
+    const version = NEXT_VERSION || "Unreleased";
+    const pendingTag = NEXT_VERSION ? `${RELEASE_TAG_PREFIX}${NEXT_VERSION}` : "HEAD";
+    const releaseNotes = buildSection(version, previousTag, "HEAD", pendingTag, repoSlug);
+
+    // Full cumulative changelog: pending section, then one section per existing
+    // tag, newest first. Git tags are immutable, so this is fully regenerable.
+    const sections = [releaseNotes];
+    for (let i = 0; i < tags.length; i++) {
+        const { tag, version: tagVersion } = tags[i] as { tag: string; version: string };
+        const prevTag = tags[i + 1]?.tag ?? "";
+        sections.push(buildSection(tagVersion, prevTag, tag, tag, repoSlug));
+    }
+    const fullChangelog = `# Changelog\n\n${sections.join("\n").trimEnd()}\n`;
+
+    if (RELEASE_NOTES_OUTPUT) {
+        const outPath = resolve(process.cwd(), RELEASE_NOTES_OUTPUT);
+        writeFileSync(outPath, releaseNotes, "utf-8");
         console.error(`Wrote release notes to ${outPath}`);
     }
+    if (CHANGELOG_OUTPUT) {
+        const outPath = resolve(process.cwd(), CHANGELOG_OUTPUT);
+        writeFileSync(outPath, fullChangelog, "utf-8");
+        console.error(`Wrote full changelog to ${outPath}`);
+    }
 
-    process.stdout.write(changelog);
+    process.stdout.write(releaseNotes);
 }
 
 main();

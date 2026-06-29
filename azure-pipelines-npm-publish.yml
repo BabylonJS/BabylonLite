@@ -117,15 +117,12 @@ stages:
                   env:
                       PACKAGE_VERSION: $(PACKAGE_VERSION)
 
-                - script: npm pack --dry-run ./packages/babylon-lite/build
-                  displayName: "Validate npm package contents"
-
-                # Generate release-notes Markdown from the Conventional-Commit
-                # history between the previous npm-lite-v* tag and HEAD. This must
-                # run BEFORE the new release tag is created below, so that the
-                # auto-detected "previous tag" is the prior release rather than
-                # the tag we are about to push. The output feeds the GitHub
-                # release notes and is archived as a build artifact.
+                # Generate the changelog from the Conventional-Commit history.
+                # This must run BEFORE the new release tag is created below, so the
+                # auto-detected "previous tag" is the prior release rather than the
+                # tag we are about to push. Two artefacts: the full cumulative
+                # CHANGELOG.md ships inside the npm tarball (build root), and the
+                # single latest section feeds the GitHub release notes.
                 - script: |
                       set -euo pipefail
                       mkdir -p "$(Build.ArtifactStagingDirectory)"
@@ -134,9 +131,13 @@ stages:
                   env:
                       PACKAGE_VERSION: $(PACKAGE_VERSION)
                       PACKAGE_NAME: $(PACKAGE_NAME)
-                      CHANGELOG_OUTPUT: $(Build.ArtifactStagingDirectory)/release-notes.md
+                      CHANGELOG_OUTPUT: packages/babylon-lite/build/CHANGELOG.md
+                      RELEASE_NOTES_OUTPUT: $(Build.ArtifactStagingDirectory)/release-notes.md
                       GITHUB_REPOSITORY: $(Build.Repository.Name)
                       BUILD_REPOSITORY_URI: $(Build.Repository.Uri)
+
+                - script: npm pack --dry-run ./packages/babylon-lite/build
+                  displayName: "Validate npm package contents"
 
                 - script: |
                       set -euo pipefail
