@@ -11,7 +11,6 @@
  */
 
 import type { ShaderTemplate, UboField, VertexAttribute, Varying, BindingDecl } from "../../shader/fragment-types.js";
-import { WGSL_FOG } from "../../shader/wgsl-helpers.js";
 import { MAX_LIGHTS } from "../../light/types.js";
 import { appendMeshLightUboFields, meshLightIndexWGSL } from "../../render/lights-ubo.js";
 
@@ -69,6 +68,11 @@ export interface StandardTemplateConfig {
     readonly _esmShadowOutput?: boolean;
     /** @internal Has morph targets — switches the vertex shader to morphedPos/morphedNorm (defined by the morph fragment's VR slot). */
     readonly _hasMorph?: boolean;
+    /** @internal `calcFogFactor` helper WGSL, supplied (non-empty) only when the scene has fog;
+     *  threaded in from `std-fog-wgsl` so non-fog scenes bundle zero fog bytes. "" otherwise. */
+    readonly _fogHelper?: string;
+    /** @internal Fog blend block WGSL, supplied alongside `_fogHelper`. "" for non-fog scenes. */
+    readonly _fogBlock?: string;
 }
 
 /**
@@ -76,7 +80,7 @@ export interface StandardTemplateConfig {
  * The template contains slot markers that the composer fills.
  */
 export function createStandardTemplate(config: StandardTemplateConfig, esmShadowDepthCode = ""): ShaderTemplate {
-    const { _diffuse, _needsUV, _needsUV2, _diffuseUsesUV2, _disableLighting, _noColorOutput, _esmShadowOutput, _hasMorph } = config;
+    const { _diffuse, _needsUV, _needsUV2, _diffuseUsesUV2, _disableLighting, _noColorOutput, _esmShadowOutput, _hasMorph, _fogHelper = "", _fogBlock = "" } = config;
 
     // ── Base vertex attributes ──────────────────────────────────
     const _baseVertexAttributes: VertexAttribute[] = [
@@ -201,7 +205,7 @@ _1: f32,
 };
 `;
 
-    const helpers = _disableLighting ? WGSL_FOG : WGSL_FOG + LIGHTING_FN;
+    const helpers = _disableLighting ? _fogHelper : _fogHelper + LIGHTING_FN;
     // reflection, shadow, bump helpers are provided by their respective fragments
 
     // Main fragment body — mirrors old composeFragmentShader exactly
@@ -281,10 +285,7 @@ ${_noColorOutput ? "return;" : _esmShadowOutput ? esmShadowDepthCode : ""}
 ${lightingBlock}
 /*BC*/
 color = vec4<f32>(max(color.rgb, vec3<f32>(0.0)), color.a);
-if (scene.vFogInfos.x > 0.0) {
-let fog = calcFogFactor(input.vf);
-color = vec4<f32>(mix(scene.vFogColor.rgb, color.rgb, fog), color.a);
-}
+${_fogBlock}
 /*BA*/
 ${_noColorOutput ? "" : "return color;"}
 }`;

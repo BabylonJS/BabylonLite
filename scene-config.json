@@ -27,7 +27,7 @@
         "slug": "scene3-fog",
         "name": "Scene 3 — Fog + Skybox",
         "maxMad": 0.01,
-        "maxRawKB": 54,
+        "maxRawKB": 54.5,
         "description": "Exponential² fog, multiple colored boxes, skybox, ground plane.",
         "tags": ["fog", "procedural", "std"],
         "skipPerf": true
@@ -2005,6 +2005,15 @@
         "maxRawKB": 68.2,
         "description": "Minimal glTF tutorial asset whose single triangle primitive omits `indices`. Verifies Lite expands non-indexed triangle primitives to identity indices before GPU upload so the existing indexed draw path remains fast and unchanged.",
         "tags": ["pbr", "gltf", "non-indexed"],
+        "skipPerf": true
+    },
+    {
+        "id": 231,
+        "slug": "scene231-standard-deform-features",
+        "name": "Scene 231 — StandardMaterial Deform Features",
+        "maxMad": 0.1,
+        "description": "In-code (no glTF) beam exercising StandardMaterial per-vertex color + skeletal skinning + UV offset, with programmatically animated bones frozen at a deterministic frame. Validates the opt-in Standard deform features against Babylon.js.",
+        "tags": ["std", "procedural", "skeleton", "vertex-color", "uv-offset", "animated"],
         "skipPerf": true
     },
     {

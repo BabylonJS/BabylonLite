@@ -1,6 +1,6 @@
 {
-  "rawKB": 126,
-  "gzipKB": 51.8,
+  "rawKB": 125,
+  "gzipKB": 51.3,
   "ignoredRawKB": 0,
   "runtimeChunks": [
     "scene115-create-morph-targets-BxcR5t59.js",
@@ -20,8 +20,7 @@
     "scene115-shader-composer-CgJmQyJj.js",
     "scene115-singlelight-hemispheric-wgsl-D4qRhfo5.js",
     "scene115-skeleton-fragment-Wgm6o2IA.js",
-    "scene115-standard-renderable-BJyVFLpF.js",
-    "scene115-wgsl-helpers-CwHFFXvt.js",
+    "scene115-standard-renderable-CJQ3hAVX.js",
     "scene115.js"
   ]
 }

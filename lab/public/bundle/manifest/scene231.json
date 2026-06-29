@@ -1,0 +1,12 @@
+{
+  "rawKB": 52.9,
+  "gzipKB": 21,
+  "ignoredRawKB": 0,
+  "runtimeChunks": [
+    "scene231-standard-renderable-D0Q4Homm.js",
+    "scene231-std-feature-hooks-C2W70yZH.js",
+    "scene231-std-skeleton-fragment-XbOa0aFW.js",
+    "scene231-std-vertex-color-fragment-BesIHRMf.js",
+    "scene231.js"
+  ]
+}

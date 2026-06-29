@@ -1,12 +1,11 @@
 {
-  "rawKB": 92.8,
-  "gzipKB": 35,
+  "rawKB": 91.7,
+  "gzipKB": 34.5,
   "ignoredRawKB": 0,
   "runtimeChunks": [
-    "scene49-standard-renderable-ytL-ZaT7.js",
+    "scene49-standard-renderable-DypapRX-.js",
     "scene49-swapchain-overlay-ilhN4El_.js",
     "scene49-ubo-layout-CnrP4RZD.js",
-    "scene49-wgsl-helpers-CwHFFXvt.js",
     "scene49.js"
   ]
 }
