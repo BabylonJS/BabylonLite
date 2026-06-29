@@ -9,7 +9,11 @@
  *   - GH_APP_ID + GH_APP_PRIVATE_KEY → mint a short-lived **GitHub App
  *     installation token** scoped to the repo. PRs opened with it are authored by
  *     the app's bot identity (`<app>[bot]`), so a human (even the pipeline owner)
- *     can review/approve them. Preferred path.
+ *     can review/approve them. Preferred path. GH_APP_PRIVATE_KEY MUST be the App's
+ *     `.pem` file base64-encoded as a single line (base64 is the only format that
+ *     survives CI secret stores without newline mangling). Produce it with:
+ *       PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes("app.pem"))
+ *       bash:       base64 -w0 app.pem
  *   - GITHUB_TOKEN → fallback PAT. PRs opened with it are authored by the PAT's
  *     owner, who then cannot review their own PR.
  *
@@ -39,7 +43,7 @@ export async function resolveGithubToken(repo: string): Promise<ResolvedToken> {
     const secrets: string[] = [];
 
     if (appId && privateKeyRaw) {
-        const privateKey = normalizePem(privateKeyRaw);
+        const privateKey = decodePrivateKey(privateKeyRaw);
         secrets.push(privateKey);
         const token = await mintInstallationToken(appId, privateKey, repo);
         secrets.push(token);
@@ -98,9 +102,42 @@ export function cleanEnv(raw: string | undefined): string | undefined {
     return value;
 }
 
-/** Normalize a PEM that may have been stored with literal `\n` instead of real newlines. */
-function normalizePem(raw: string): string {
-    return raw.includes("\n") ? raw : raw.replace(/\\n/g, "\n");
+/**
+ * Decode the GitHub App private key. `GH_APP_PRIVATE_KEY` MUST be the App's `.pem`
+ * file base64-encoded as a single line — this is the only supported format because
+ * it is the only one that survives CI secret stores intact (a raw multi-line PEM
+ * gets its newlines mangled, which corrupts the key and yields the cryptic OpenSSL
+ * `DECODER routines::unsupported` error at sign time).
+ *
+ * To produce the value:
+ *   - PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes("app.pem"))
+ *   - bash:       base64 -w0 app.pem
+ *
+ * Throws a clear, actionable error if the value is not base64 that decodes to a PEM
+ * private key.
+ */
+function decodePrivateKey(raw: string): string {
+    const value = raw.trim();
+    const bad = (why: string): never => {
+        throw new Error(
+            `GH_APP_PRIVATE_KEY ${why}. It must be the App's .pem file base64-encoded as a single line, e.g. ` +
+                `PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes("app.pem")) — or bash: base64 -w0 app.pem`
+        );
+    };
+
+    if (!/^[A-Za-z0-9+/=]+$/.test(value)) {
+        bad("is not valid single-line base64 (it contains non-base64 characters — did you paste the raw PEM instead?)");
+    }
+    let decoded: string;
+    try {
+        decoded = Buffer.from(value, "base64").toString("utf8");
+    } catch {
+        return bad("could not be base64-decoded");
+    }
+    if (!/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(decoded) || !/-----END [A-Z ]*PRIVATE KEY-----/.test(decoded)) {
+        bad("did not base64-decode to a PEM private key");
+    }
+    return decoded;
 }
 
 /** Base64url-encode a string or buffer (no padding), per the JWT spec. */
@@ -118,7 +155,16 @@ function makeAppJwt(appId: string, privateKey: string): string {
     const signer = createSign("RSA-SHA256");
     signer.update(signingInput);
     signer.end();
-    const signature = signer.sign(privateKey).toString("base64url");
+    let signature: string;
+    try {
+        signature = signer.sign(privateKey).toString("base64url");
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(
+            `Failed to sign the GitHub App JWT — GH_APP_PRIVATE_KEY decoded but is not a usable RSA private key (${detail}). ` +
+                "Verify the base64 was produced from the App's full .pem (PKCS#1 or PKCS#8), not a passphrase-protected or truncated key."
+        );
+    }
     return `${signingInput}.${signature}`;
 }
 

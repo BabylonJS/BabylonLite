@@ -37,8 +37,11 @@
 #                         The PR driver mints a short-lived installation token, so the
 #                         PR is authored by the app's bot identity (`<app>[bot]`) and
 #                         a human — even the pipeline owner — can review/approve it.
-#                         Store GH_APP_PRIVATE_KEY as the App's PEM (newlines or
-#                         literal `\n` both accepted).
+#                         Store GH_APP_PRIVATE_KEY as the App's .pem base64-encoded on
+#                         a single line (base64 avoids newline mangling in the secret
+#                         store). Produce it with:
+#                           PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes("app.pem"))
+#                           bash:       base64 -w0 app.pem
 #       (fallback)  GITHUB_TOKEN
 #                         PAT with contents:write + pull_requests:write. PRs are then
 #                         authored by the PAT owner, who CANNOT review their own PR —
