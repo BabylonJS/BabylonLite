@@ -211,9 +211,19 @@ nightly or the pinned CDN release). Absolute `https://` imports are left as-is.
 The built-in **Physics — Havok wrecking ball** example shows this end to end: it
 imports `@babylonjs/havok` (rewritten to the active CDN) and loads the Havok
 WebAssembly binary via `locateFile`, with no local copy of the package or `.wasm`.
-Note: that example hard-codes the `.wasm` URL to `https://esm.sh/...` in its
-snippet source, so the wasm file specifically is not covered by the jsDelivr
-fallback — edit the URL in the snippet if esm.sh is unreachable for you.
+Its wasm URL comes from a `?url` import, so it follows the same CDN fallback:
+
+```ts
+import HavokPhysics from "@babylonjs/havok";
+import havokWasmUrl from "@babylonjs/havok/lib/esm/HavokPhysics.wasm?url";
+// → https://esm.sh/...HavokPhysics.wasm (or the jsDelivr equivalent)
+const havok = await HavokPhysics({ locateFile: () => havokWasmUrl });
+```
+
+A `?url` suffix on a bare specifier resolves to that package asset's **raw-file**
+URL on the active CDN (as a string), rather than importing it as a module — the
+right shape for a non-module asset like a `.wasm` binary handed to `locateFile`.
+It is baked into downloads too, so an exported Havok project stays self-contained.
 
 ## Adding examples
 

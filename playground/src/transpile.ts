@@ -17,6 +17,9 @@ function ensureInitialized(): Promise<void> {
 
 const LITE_SPECIFIER = "@babylonjs/lite";
 
+/** Suffix marking a bare specifier whose raw-file URL (not its module) is wanted. */
+const URL_SUFFIX = "?url";
+
 /** A single compile/bundle diagnostic mapped to a 1-based editor location. */
 export interface BuildDiagnostic {
     file: string;
@@ -96,7 +99,9 @@ function isUrlSpecifier(path: string): boolean {
  * `@babylonjs/lite` (and its subpaths) stay external so the runner iframe's import
  * map resolves the engine at run time; any *other* bare package import is rewritten
  * to a CDN URL (esm.sh, or its jsDelivr fallback) so external npm packages work
- * without an import-map entry.
+ * without an import-map entry. A bare specifier with a `?url` suffix resolves to the
+ * raw-file URL of that package asset on the active CDN, exported as a string — used
+ * for non-module assets like a `.wasm` binary passed to a `locateFile` callback.
  */
 function virtualFilesPlugin(files: Record<string, string>, cdn: Cdn): esbuild.Plugin {
     return {
@@ -125,6 +130,11 @@ function virtualFilesPlugin(files: Record<string, string>, cdn: Cdn): esbuild.Pl
                 if (isUrlSpecifier(args.path)) {
                     return { path: args.path, external: true };
                 }
+                // `import url from "pkg/path/to/asset.wasm?url"` → the asset's raw-file URL
+                // on the active CDN, emitted as a string (see the `cdn-url` loader below).
+                if (args.path.endsWith(URL_SUFFIX)) {
+                    return { path: cdn.rawFileUrl(args.path.slice(0, -URL_SUFFIX.length)), namespace: "cdn-url" };
+                }
                 // Any other bare specifier loads from the active CDN at run time.
                 return { path: cdn.packageUrl(args.path), external: true };
             });
@@ -135,6 +145,11 @@ function virtualFilesPlugin(files: Record<string, string>, cdn: Cdn): esbuild.Pl
                     return { errors: [{ text: `Missing file '${args.path}'` }] };
                 }
                 return { contents, loader: loaderFor(args.path) };
+            });
+
+            // A `?url` import resolves to a string: the asset's URL on the active CDN.
+            build.onLoad({ filter: /.*/, namespace: "cdn-url" }, (args) => {
+                return { contents: `export default ${JSON.stringify(args.path)};`, loader: "js" };
             });
         },
     };
