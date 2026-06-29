@@ -1,13 +1,103 @@
 import type { SceneContext } from "./scene-core.js";
 import { unregisterMeshScene } from "./mesh-scene-registry.js";
 import type { Mesh } from "../mesh/mesh.js";
+import type { LightBase } from "../light/types.js";
+import type { Camera } from "../camera/camera.js";
+import type { ShadowGenerator } from "../shadow/shadow-generator.js";
+import type { TransformNode } from "./transform-node.js";
+import type { SceneNode } from "./scene-node.js";
+import type { AssetContainer } from "../asset-container.js";
 import { disposeMeshGpu } from "../mesh/mesh-dispose.js";
 import { removeMeshFromTask } from "../frame-graph/render-task.js";
 import type { RenderTask } from "../frame-graph/render-task.js";
 
-/** Remove a mesh from the scene and destroy its GPU resources.
+/** Remove an entity from the scene, undoing what `addToScene` did. Accepts the same
+ *  union as {@link addToScene}: a Mesh, light, camera, shadow generator, transform node,
+ *  or a whole AssetContainer. Safe to call more than once (idempotent).
+ *
  *  Standalone function for tree-shaking — only included when actually used. */
-export function removeFromScene(scene: SceneContext, mesh: Mesh): void {
+export function removeFromScene(scene: SceneContext, entity: Mesh | LightBase | Camera | ShadowGenerator | TransformNode | AssetContainer): void {
+    // AssetContainer — undo addToScene(scene, container) field by field.
+    if ("entities" in entity) {
+        const container = entity as AssetContainer;
+        for (const e of container.entities) {
+            removeFromScene(scene, e as Mesh | LightBase | TransformNode);
+        }
+        if (container.camera && scene.camera === container.camera) {
+            scene.camera = null;
+        }
+        const groups = container.animationGroups;
+        if (groups?.length) {
+            for (const g of groups) {
+                const gi = scene.animationGroups.indexOf(g);
+                if (gi >= 0) {
+                    scene.animationGroups.splice(gi, 1);
+                }
+            }
+        }
+        const hook = container._beforeRenderHook;
+        if (hook) {
+            const hi = scene._beforeRender.indexOf(hook);
+            if (hi >= 0) {
+                scene._beforeRender.splice(hi, 1);
+            }
+            container._beforeRenderHook = undefined;
+        }
+        return;
+    }
+    // Mesh — carries GPU geometry + material.
+    if ("_gpu" in entity && "material" in entity) {
+        removeMeshFromScene(scene, entity as unknown as Mesh);
+        removeChildren(scene, entity as unknown as SceneNode);
+        return;
+    }
+    // Shadow generator — drop from the scene list and dispose its task resources.
+    if ("_shadowType" in entity && "_light" in entity) {
+        const si = scene.shadowGenerators.indexOf(entity as ShadowGenerator);
+        if (si >= 0) {
+            scene.shadowGenerators.splice(si, 1);
+        }
+        (entity as unknown as { _task?: { dispose(): void } })._task?.dispose();
+        return;
+    }
+    // Light — drop from the scene list and remove its shadow generator with it.
+    if ("lightType" in entity) {
+        const light = entity as LightBase;
+        const li = scene.lights.indexOf(light);
+        if (li >= 0) {
+            scene.lights.splice(li, 1);
+        }
+        if (light.shadowGenerator) {
+            removeFromScene(scene, light.shadowGenerator);
+        }
+        removeChildren(scene, light);
+        return;
+    }
+    // Camera — clear the scene reference if this camera is the active one.
+    if ("fov" in entity && "nearPlane" in entity) {
+        if (scene.camera === (entity as Camera)) {
+            scene.camera = null;
+        }
+        removeChildren(scene, entity as unknown as SceneNode);
+        return;
+    }
+    // TransformNode (or any other scene-graph node) — nothing to dispose itself; just
+    // detach children so a removed sub-tree is fully unwound.
+    removeChildren(scene, entity as unknown as SceneNode);
+}
+
+function removeChildren(scene: SceneContext, node: SceneNode): void {
+    const kids = node.children;
+    if (kids?.length) {
+        for (const child of [...kids]) {
+            removeFromScene(scene, child as Mesh);
+        }
+    }
+}
+
+/** Remove a mesh from the scene and destroy its GPU resources.
+ *  Internal helper — `removeFromScene` dispatches here for the Mesh case. */
+function removeMeshFromScene(scene: SceneContext, mesh: Mesh): void {
     const fns = scene._meshDisposables.get(mesh);
     // Whether this call actually mutated scene state — used to gate the renderable
     // version bump so a no-op removal (mesh never registered) doesn't needlessly
