@@ -1,5 +1,6 @@
 import * as esbuild from "esbuild-wasm";
 import esbuildWasmUrl from "esbuild-wasm/esbuild.wasm?url";
+import { getCdn, type Cdn } from "./cdn";
 
 let initPromise: Promise<void> | null = null;
 
@@ -94,9 +95,10 @@ function isUrlSpecifier(path: string): boolean {
  * esbuild plugin that resolves the project's own files from an in-memory map.
  * `@babylonjs/lite` (and its subpaths) stay external so the runner iframe's import
  * map resolves the engine at run time; any *other* bare package import is rewritten
- * to an esm.sh CDN URL so external npm packages work without an import-map entry.
+ * to a CDN URL (esm.sh, or its jsDelivr fallback) so external npm packages work
+ * without an import-map entry.
  */
-function virtualFilesPlugin(files: Record<string, string>): esbuild.Plugin {
+function virtualFilesPlugin(files: Record<string, string>, cdn: Cdn): esbuild.Plugin {
     return {
         name: "playground-virtual-files",
         setup(build) {
@@ -123,8 +125,8 @@ function virtualFilesPlugin(files: Record<string, string>): esbuild.Plugin {
                 if (isUrlSpecifier(args.path)) {
                     return { path: args.path, external: true };
                 }
-                // Any other bare specifier loads from the esm.sh CDN at run time.
-                return { path: `https://esm.sh/${args.path}`, external: true };
+                // Any other bare specifier loads from the active CDN at run time.
+                return { path: cdn.packageUrl(args.path), external: true };
             });
 
             build.onLoad({ filter: /.*/, namespace: "virtual" }, (args) => {
@@ -149,6 +151,7 @@ function virtualFilesPlugin(files: Record<string, string>): esbuild.Plugin {
  */
 export async function transpile(files: Record<string, string>, entry: string): Promise<string> {
     await ensureInitialized();
+    const cdn = await getCdn();
     let result: esbuild.BuildResult;
     try {
         result = await esbuild.build({
@@ -158,7 +161,7 @@ export async function transpile(files: Record<string, string>, entry: string): P
             format: "esm",
             target: "esnext",
             sourcemap: "inline",
-            plugins: [virtualFilesPlugin(files)],
+            plugins: [virtualFilesPlugin(files, cdn)],
             logLevel: "silent",
         });
     } catch (err) {
