@@ -23,27 +23,33 @@ function fakeScene(): SceneContext {
 }
 
 describe("removeFromScene symmetry", () => {
-    it("removes a light and clears its shadow generator", () => {
+    it("removes a light, clears its shadow generator, disposes its task and detaches parent", () => {
         const scene = fakeScene();
-        const sg = { _shadowType: "esm", _light: {}, _task: { dispose: () => {} } };
-        const light = { lightType: "point", children: [], shadowGenerator: sg };
+        let disposed = 0;
+        // Real ShadowGenerator stores the disposable render task under _shadowTaskState._task.
+        const sg = { _shadowType: "esm", _light: {}, _shadowTaskState: { _task: { dispose: () => disposed++ } } };
+        const light = { lightType: "point", children: [], shadowGenerator: sg, parent: {} };
         scene.lights.push(light as never);
         scene.shadowGenerators.push(sg as never);
 
         removeFromScene(scene, light as never);
         expect(scene.lights).toHaveLength(0);
         expect(scene.shadowGenerators).toHaveLength(0);
+        expect(disposed).toBe(1);
+        expect(light.parent).toBeNull();
         // idempotent
         removeFromScene(scene, light as never);
         expect(scene.lights).toHaveLength(0);
+        expect(disposed).toBe(1);
     });
 
-    it("clears the scene camera only when it matches", () => {
+    it("clears the scene camera only when it matches, detaching its parent", () => {
         const scene = fakeScene();
-        const cam = { fov: 0.8, nearPlane: 0.1, children: [] };
+        const cam = { fov: 0.8, nearPlane: 0.1, children: [], parent: {} };
         scene.camera = cam as never;
         removeFromScene(scene, cam as never);
         expect(scene.camera).toBeNull();
+        expect(cam.parent).toBeNull();
         const other = { fov: 1, nearPlane: 0.1, children: [] };
         scene.camera = cam as never;
         removeFromScene(scene, other as never);

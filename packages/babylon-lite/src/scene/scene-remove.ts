@@ -53,11 +53,18 @@ export function removeFromScene(scene: SceneContext, entity: Mesh | LightBase | 
     }
     // Shadow generator — drop from the scene list and dispose its task resources.
     if ("_shadowType" in entity && "_light" in entity) {
-        const si = scene.shadowGenerators.indexOf(entity as ShadowGenerator);
+        const sg = entity as ShadowGenerator;
+        const si = scene.shadowGenerators.indexOf(sg);
         if (si >= 0) {
             scene.shadowGenerators.splice(si, 1);
         }
-        (entity as unknown as { _task?: { dispose(): void } })._task?.dispose();
+        // The disposable render task lives on the lazily-created task state, not on the
+        // generator itself. Dispose it (once) and drop the state so a repeat removal is a
+        // no-op, keeping the call idempotent.
+        if (sg._shadowTaskState) {
+            sg._shadowTaskState._task.dispose();
+            sg._shadowTaskState = undefined;
+        }
         return;
     }
     // Light — drop from the scene list and remove its shadow generator with it.
@@ -70,6 +77,10 @@ export function removeFromScene(scene: SceneContext, entity: Mesh | LightBase | 
         if (light.shadowGenerator) {
             removeFromScene(scene, light.shadowGenerator);
         }
+        // Detach from any parent so the push-based world-matrix registry stops
+        // retaining/traversing this removed light on every invalidation (mirrors the
+        // `mesh.parent = null` done in removeMeshFromScene).
+        detachParent(light);
         removeChildren(scene, light);
         return;
     }
@@ -78,12 +89,22 @@ export function removeFromScene(scene: SceneContext, entity: Mesh | LightBase | 
         if (scene.camera === (entity as Camera)) {
             scene.camera = null;
         }
+        detachParent(entity);
         removeChildren(scene, entity as unknown as SceneNode);
         return;
     }
     // TransformNode (or any other scene-graph node) — nothing to dispose itself; just
-    // detach children so a removed sub-tree is fully unwound.
+    // detach from its parent and unwind children so a removed sub-tree is fully released.
+    detachParent(entity);
     removeChildren(scene, entity as unknown as SceneNode);
+}
+
+/** Clear an entity's `parent` link when it has one, so the world-matrix child registry
+ *  stops retaining/walking a removed node during parent invalidation. */
+function detachParent(node: unknown): void {
+    if (node && typeof node === "object" && "parent" in node) {
+        (node as { parent: unknown }).parent = null;
+    }
 }
 
 function removeChildren(scene: SceneContext, node: SceneNode): void {
