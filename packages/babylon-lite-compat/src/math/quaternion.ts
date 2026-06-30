@@ -202,4 +202,63 @@ export class Quaternion {
 
         return new Quaternion(num3 * left.x + num2 * right.x, num3 * left.y + num2 * right.y, num3 * left.z + num2 * right.z, num3 * left.w + num2 * right.w);
     }
+
+    /**
+     * Babylon.js `Quaternion.RotationQuaternionFromAxis` — build a rotation quaternion
+     * from three orthonormal axes. Backed by Lite's `quatFromRotationMatrix`.
+     */
+    public static RotationQuaternionFromAxis(axis1: Vector3, axis2: Vector3, axis3: Vector3, ref?: Quaternion): Quaternion {
+        return Quaternion.RotationQuaternionFromAxisToRef(axis1, axis2, axis3, ref ?? new Quaternion());
+    }
+
+    /**
+     * Babylon.js `Quaternion.RotationQuaternionFromAxisToRef` — build a rotation
+     * quaternion from three orthonormal axes, writing into `ref`.
+     */
+    public static RotationQuaternionFromAxisToRef(axis1: Vector3, axis2: Vector3, axis3: Vector3, ref: Quaternion): Quaternion {
+        // prettier-ignore
+        const rot = new Float32Array([
+            axis1.x, axis1.y, axis1.z, 0,
+            axis2.x, axis2.y, axis2.z, 0,
+            axis3.x, axis3.y, axis3.z, 0,
+            0, 0, 0, 1,
+        ]);
+        const q = quatFromRotationMatrix(rot as unknown as Mat4);
+        return ref.set(q.x, q.y, q.z, q.w);
+    }
+
+    /**
+     * Babylon.js `Quaternion.toRotationMatrix(result)` — write this quaternion's
+     * rotation into `result` (a `Matrix`), matching the BJS element layout.
+     */
+    public toRotationMatrix(result: Matrix): Matrix {
+        const { x, y, z, w } = this;
+        const xx = x * x;
+        const yy = y * y;
+        const zz = z * z;
+        const xy = x * y;
+        const zw = z * w;
+        const zx = z * x;
+        const yw = y * w;
+        const yz = y * z;
+        const xw = x * w;
+        const m = result.m;
+        m[0] = 1 - 2 * (yy + zz);
+        m[1] = 2 * (xy + zw);
+        m[2] = 2 * (zx - yw);
+        m[3] = 0;
+        m[4] = 2 * (xy - zw);
+        m[5] = 1 - 2 * (zz + xx);
+        m[6] = 2 * (yz + xw);
+        m[7] = 0;
+        m[8] = 2 * (zx + yw);
+        m[9] = 2 * (yz - xw);
+        m[10] = 1 - 2 * (yy + xx);
+        m[11] = 0;
+        m[12] = 0;
+        m[13] = 0;
+        m[14] = 0;
+        m[15] = 1;
+        return result;
+    }
 }

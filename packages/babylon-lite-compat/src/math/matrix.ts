@@ -195,6 +195,28 @@ export class Matrix {
         return new Matrix();
     }
 
+    /** Babylon.js `Matrix.FromXYZAxesToRef(xaxis, yaxis, zaxis, result)` — build a rotation matrix whose rows are the given axes. */
+    public static FromXYZAxesToRef(xaxis: Vector3, yaxis: Vector3, zaxis: Vector3, result: Matrix): Matrix {
+        const m = result.m;
+        m[0] = xaxis.x;
+        m[1] = xaxis.y;
+        m[2] = xaxis.z;
+        m[3] = 0;
+        m[4] = yaxis.x;
+        m[5] = yaxis.y;
+        m[6] = yaxis.z;
+        m[7] = 0;
+        m[8] = zaxis.x;
+        m[9] = zaxis.y;
+        m[10] = zaxis.z;
+        m[11] = 0;
+        m[12] = 0;
+        m[13] = 0;
+        m[14] = 0;
+        m[15] = 1;
+        return result;
+    }
+
     public static Translation(x: number, y: number, z: number): Matrix {
         return Matrix.FromValues(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1);
     }

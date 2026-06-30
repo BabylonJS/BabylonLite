@@ -116,7 +116,7 @@ overloads within a supported area may still be absent.
 
 | Feature area                                                                                            | Status | Notes                                                                                                    |
 | ------------------------------------------------------------------------------------------------------- | :----: | -------------------------------------------------------------------------------------------------------- |
-| Math (`Vector*`, `Color*`, `Quaternion`, `Matrix`, `Plane`, `Ray`, `Frustum`, `Scalar`, `Axis`/`Space`) |   ✅   | `Angle` / `Curve3` / `Path3D` partial                                                                    |
+| Math (`Vector*`, `Color*`, `Quaternion`, `Matrix`, `Plane`, `Ray`, `Frustum`, `Scalar`, `Axis`/`Space`) |   ✅   | full `Angle` / `Curve3` / `Path3D` (Frenet frame, splines)                                               |
 | Engine (`WebGPUEngine`, `Engine`, `ThinEngine`, `NullEngine`)                                           |   ⚡   | async startup + render loop; `beginFrame`/`endFrame` and manual `scene.render()` unsupported             |
 | Scene (clear color, cameras/lights, fog, environment, observables, ready state)                         |   ⚡   | sync `scene.pick` unsupported (use async `GPUPicker`); some scene enumeration needs Lite core            |
 | Cameras (`ArcRotateCamera`, `FreeCamera`/`Universal`/`Target`, `FollowCamera`, `GeospatialCamera`)      |   ✅   | XR / device-orientation / stereoscopic rigs unsupported                                                  |

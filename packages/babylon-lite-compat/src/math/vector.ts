@@ -334,6 +334,30 @@ export class Vector3 {
         return result;
     }
 
+    /** Babylon.js `Vector3.Hermite` — cubic Hermite interpolation between `value1` and `value2` with the given tangents. */
+    public static Hermite(value1: Vector3, tangent1: Vector3, value2: Vector3, tangent2: Vector3, amount: number): Vector3 {
+        const squared = amount * amount;
+        const cubed = amount * squared;
+        const part1 = 2 * cubed - 3 * squared + 1;
+        const part2 = -2 * cubed + 3 * squared;
+        const part3 = cubed - 2 * squared + amount;
+        const part4 = cubed - squared;
+        return new Vector3(
+            value1.x * part1 + value2.x * part2 + tangent1.x * part3 + tangent2.x * part4,
+            value1.y * part1 + value2.y * part2 + tangent1.y * part3 + tangent2.y * part4,
+            value1.z * part1 + value2.z * part2 + tangent1.z * part3 + tangent2.z * part4
+        );
+    }
+
+    /** Babylon.js `Vector3.CatmullRom` — Catmull-Rom spline interpolation through `value2`/`value3` using `value1`/`value4` as neighbours. */
+    public static CatmullRom(value1: Vector3, value2: Vector3, value3: Vector3, value4: Vector3, amount: number): Vector3 {
+        const squared = amount * amount;
+        const cubed = amount * squared;
+        const coord = (v1: number, v2: number, v3: number, v4: number): number =>
+            0.5 * (2 * v2 + (-v1 + v3) * amount + (2 * v1 - 5 * v2 + 4 * v3 - v4) * squared + (-v1 + 3 * v2 - 3 * v3 + v4) * cubed);
+        return new Vector3(coord(value1.x, value2.x, value3.x, value4.x), coord(value1.y, value2.y, value3.y, value4.y), coord(value1.z, value2.z, value3.z, value4.z));
+    }
+
     /** Midpoint between two vectors. */
     public static Center(a: Vector3, b: Vector3): Vector3 {
         return Vector3.CenterToRef(a, b, new Vector3());

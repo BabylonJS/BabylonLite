@@ -80,4 +80,82 @@ describe("Curve / Path", () => {
         expect(Angle.FromDegrees(180).radians()).toBeCloseTo(Math.PI, 6);
         expect(Angle.FromRadians(Math.PI).degrees()).toBeCloseTo(180, 6);
     });
+
+    it("continues a curve by sticking the next curve onto its end", () => {
+        const a = new Curve3([new Vector3(0, 0, 0), new Vector3(1, 0, 0)]);
+        const b = new Curve3([new Vector3(5, 0, 0), new Vector3(5, 2, 0)]);
+        const pts = a.continue(b).getPoints();
+        expect(pts.map((p) => p.asArray())).toEqual([
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, 2, 0],
+        ]);
+    });
+
+    it("samples cubic bezier, hermite and catmull-rom splines", () => {
+        const cubic = Curve3.CreateCubicBezier(new Vector3(0, 0, 0), new Vector3(0, 1, 0), new Vector3(1, 1, 0), new Vector3(1, 0, 0), 12).getPoints();
+        expect(cubic[0]!.asArray()).toEqual([0, 0, 0]);
+        expect(cubic[cubic.length - 1]!.x).toBeCloseTo(1, 6);
+
+        const hermite = Curve3.CreateHermiteSpline(new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(1, 1, 0), new Vector3(0, 1, 0), 8).getPoints();
+        expect(hermite.length).toBe(9);
+        expect(hermite[0]!.asArray()).toEqual([0, 0, 0]);
+        expect(hermite[8]!.asArray()).toEqual([1, 1, 0]);
+
+        const closed = Curve3.CreateCatmullRomSpline([new Vector3(0, 0, 0), new Vector3(1, 1, 0), new Vector3(2, 0, 0), new Vector3(1, -1, 0)], 4, true).getPoints();
+        expect(closed.length).toBe(17);
+        expect(closed[0]!.asArray()).toEqual(closed[closed.length - 1]!.asArray());
+    });
+
+    it("builds an arc through three points and returns an empty curve for colinear points", () => {
+        const arc = Curve3.ArcThru3Points(new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(-1, 0, 0), 16);
+        expect(arc.getPoints().length).toBeGreaterThan(2);
+        const first = arc.getPoints()[0]!;
+        expect(first.x).toBeCloseTo(1, 3);
+        expect(first.y).toBeCloseTo(0, 3);
+        const colinear = Curve3.ArcThru3Points(new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(2, 0, 0));
+        expect(colinear.getPoints().length).toBe(0);
+    });
+
+    it("computes an orthonormal Frenet frame along a Path3D", () => {
+        const path = new Path3D([new Vector3(0, 0, 0), new Vector3(0, 0, 1), new Vector3(0, 1, 1)]);
+        const t = path.getTangents()[1]!;
+        const n = path.getNormals()[1]!;
+        const b = path.getBinormals()[1]!;
+        expect(t.length()).toBeCloseTo(1, 6);
+        expect(n.length()).toBeCloseTo(1, 6);
+        expect(b.length()).toBeCloseTo(1, 6);
+        expect(Vector3.Dot(t, n)).toBeCloseTo(0, 6);
+        expect(Vector3.Dot(t, b)).toBeCloseTo(0, 6);
+        expect(Vector3.Dot(n, b)).toBeCloseTo(0, 6);
+    });
+
+    it("interpolates points, indices and tangents along a Path3D", () => {
+        const straight = new Path3D([new Vector3(0, 0, 0), new Vector3(2, 0, 0), new Vector3(4, 0, 0)]);
+        expect(straight.length()).toBeCloseTo(4, 6);
+        expect(straight.getPointAt(0.5).asArray()).toEqual([2, 0, 0]);
+        expect(straight.getDistanceAt(0.25)).toBeCloseTo(1, 6);
+        expect(straight.getPreviousPointIndexAt(0.75)).toBe(1);
+        expect(straight.getSubPositionAt(0.25)).toBeCloseTo(0.5, 6);
+        expect(straight.getClosestPositionTo(new Vector3(3, 1, 0))).toBeCloseTo(0.75, 6);
+        const interpTangent = straight.getTangentAt(0.5, true);
+        expect(interpTangent.x).toBeCloseTo(1, 6);
+        expect(interpTangent.y).toBeCloseTo(0, 6);
+        expect(interpTangent.z).toBeCloseTo(0, 6);
+    });
+
+    it("slices a sub-path and recomputes on update", () => {
+        const straight = new Path3D([new Vector3(0, 0, 0), new Vector3(2, 0, 0), new Vector3(4, 0, 0)]);
+        const sliced = straight.slice(0.25, 0.75).getPoints();
+        expect(sliced.map((p) => p.asArray())).toEqual([
+            [1, 0, 0],
+            [2, 0, 0],
+            [3, 0, 0],
+        ]);
+
+        const path = new Path3D([new Vector3(0, 0, 0), new Vector3(0, 0, 3), new Vector3(0, 0, 7)]);
+        path.update([new Vector3(0, 0, 0), new Vector3(0, 0, 1), new Vector3(0, 0, 2)]);
+        expect(path.length()).toBeCloseTo(2, 6);
+        expect(path.getDistances()).toEqual([0, 1, 2]);
+    });
 });
