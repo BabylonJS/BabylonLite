@@ -380,7 +380,7 @@ export async function pickAsync(picker: GpuPicker, x: number, y: number, options
     // this guarded dispatch plus a numeric id-range compare at resolve time.
     const billboardIdStart = nextId;
     let bbPick: typeof BillboardPickPipeline | null = null;
-    if ((scene as unknown as { _billboardSystems: readonly unknown[] })._billboardSystems.length > 0) {
+    if (scene._billboardSystems.length > 0) {
         bbPick = await import("./billboard-pick-pipeline.js");
         nextId = bbPick.drawBillboardsForPicking(picker, pass, engine, scene, camera, nextId, picker._sceneBG!);
     }

@@ -730,8 +730,6 @@ export interface Sprite2DProps {
     flipX?: boolean;
     flipY?: boolean;
     visible?: boolean;
-    /** Accepted for API compatibility; not consulted by `pickSprite2D` (every visible sprite is pickable). */
-    pickable?: boolean;
     /** Reserved for clip animation (later PR). Accepted but unused today. */
     clip?: unknown;
     /**
@@ -1329,17 +1327,17 @@ to a storage buffer at `@group(1) @binding(3)` (not a vertex buffer — 3D
 sprite families read sprite data through a storage buffer indexed by a
 sort-indirection vertex attribute, see below). The 24-float layout:
 
-| Offset (floats) | Field         | Notes                                               |
-| --------------- | ------------- | --------------------------------------------------- |
-| 0..2            | `worldPos`    | xyz — anchor position in world space                |
-| 3               | `_reserved`   | 0 (anchored layers use this slot for `depthBias`)   |
-| 4..5            | `_reserved`   | (0,0) (anchored layers use these for `offsetPx`)    |
-| 6..7            | `sizeWorld`   | width/height in world units                         |
-| 8..9            | `pivot`       | normalized [0,1]                                    |
-| 10..11          | `sinCos`      | precomputed sin/cos of rotation                     |
-| 12..15          | `uvRect`      | uvMin.xy, uvMax.xy                                  |
-| 16..19          | `color`       | RGBA tint                                           |
-| 20..23          | `flagsAndPad` | float-encoded `[flipX, flipY, pickable, _reserved]` |
+| Offset (floats) | Field         | Notes                                                |
+| --------------- | ------------- | ---------------------------------------------------- |
+| 0..2            | `worldPos`    | xyz — anchor position in world space                 |
+| 3               | `_reserved`   | 0 (anchored layers use this slot for `depthBias`)    |
+| 4..5            | `_reserved`   | (0,0) (anchored layers use these for `offsetPx`)     |
+| 6..7            | `sizeWorld`   | width/height in world units                          |
+| 8..9            | `pivot`       | normalized [0,1]                                     |
+| 10..11          | `sinCos`      | precomputed sin/cos of rotation                      |
+| 12..15          | `uvRect`      | uvMin.xy, uvMax.xy                                   |
+| 16..19          | `color`       | RGBA tint                                            |
+| 20..23          | `flagsAndPad` | float-encoded `[flipX, flipY, _reserved, _reserved]` |
 
 The lock axis (axis-locked variant only) lives in the **system UBO**, not
 per-sprite. The reserved slots at floats 3..5 stay in the layout because
@@ -1387,7 +1385,7 @@ struct SpriteData {
     sinCos: vec2<f32>,
     uvRect: vec4<f32>,
     color: vec4<f32>,
-    flagsAndPad: vec4<f32>,            // .x flipX, .y flipY, .z pickable, .w reserved
+    flagsAndPad: vec4<f32>,            // .x flipX, .y flipY, .z reserved, .w reserved
 };
 @group(1) @binding(3) var<storage, read> sprites: array<SpriteData>;
 
@@ -2027,7 +2025,6 @@ maps.
 | `rotation` | (via `updateSprite2DIndex` patch — sin/cos at `[off+6..7]`)           | Marks worldMatrix2D dirty                                                    |
 | `frame`    | UV at `[off+8..11]`                                                   | Calls `setSprite2DFrameIndex`                                                |
 | `visible`  | Toggles packed sizePx between value and 0                             | Calls `writeSizePx`                                                          |
-| `pickable` | Updates `_meta[i].pickable`                                           | —                                                                            |
 | `layerZ`   | `[off+16]`                                                            | Clamped to `[0, 1]`                                                          |
 | `parent`   | (only `IParentable2D`; doesn't touch slot directly)                   | Adds/removes from `_parentedHandles`; installs walker on first parent        |
 | `anchor`   | (none directly; CPU projection writes positionPx + layerZ each frame) | Setting `AnchorSource` adds to layer `_anchored` map; setting `null` removes |

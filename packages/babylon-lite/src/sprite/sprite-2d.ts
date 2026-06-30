@@ -169,8 +169,6 @@ export interface Sprite2DProps {
     flipX?: boolean;
     flipY?: boolean;
     visible?: boolean;
-    /** Accepted for API compatibility but not yet consulted by `pickSprite2D` (every visible sprite is pickable). */
-    pickable?: boolean;
     /** Reserved for clip animation. Accepted but unused today. */
     clip?: unknown;
     /**
