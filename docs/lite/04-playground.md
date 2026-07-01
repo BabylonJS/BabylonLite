@@ -37,8 +37,12 @@ Your code imports from the bare `@babylonjs/lite` specifier and grabs the canvas
 ```typescript
 import { createEngine, createSceneContext, /* … */ } from "@babylonjs/lite";
 
-const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
-// … build your scene …
+async function main() {
+    const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
+    const engine = await createEngine(canvas);
+    const scene = createSceneContext(engine);
+    // … build your scene, then register and start …
+}
 
 main().catch((err) => console.error(err));
 ```
@@ -112,7 +116,7 @@ The upshot: the Playground is a real, self-contained Babylon Lite app builder th
 The Playground can be embedded in another page — docs, a blog, or the classic Babylon Playground — as an iframe, and driven over a small `postMessage` API to load code and run it. This is how live, editable Lite demos are hosted inside written content.
 
 ```html
-<iframe src="https://liteplayground.babylonjs.com/?embed=runner" style="width: 100%; height: 480px; border: 0"></iframe>
+<iframe src="https://liteplayground.babylonjs.com/?embed=runner" title="Babylon Lite Playground" style="width: 100%; height: 480px; border: 0"></iframe>
 ```
 
 `?embed=runner` shows just the canvas and console (best for demos); `?embed=split` shows a compact editor beside the canvas so readers can tweak the code themselves.
