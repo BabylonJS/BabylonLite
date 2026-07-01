@@ -36,7 +36,8 @@ export function stripManifoldNodeRequire(): Plugin {
         name: "strip-manifold-node-require",
         enforce: "pre",
         transform(code, id) {
-            if (!MANIFOLD_ENTRY.test(id.split("?")[0])) {
+            const path = id.split("?")[0] ?? id;
+            if (!MANIFOLD_ENTRY.test(path)) {
                 return null;
             }
             NODE_MODULE_IMPORT.lastIndex = 0;
