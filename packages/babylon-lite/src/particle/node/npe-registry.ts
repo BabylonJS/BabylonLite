@@ -17,6 +17,12 @@ export async function loadParticleBlockEvaluator(className: string): Promise<Par
             return (await import("./blocks/box-shape-block.js")).boxShapeBlock;
         case "SphereShapeBlock":
             return (await import("./blocks/sphere-shape-block.js")).sphereShapeBlock;
+        case "PointShapeBlock":
+            return (await import("./blocks/point-shape-block.js")).pointShapeBlock;
+        case "ConeShapeBlock":
+            return (await import("./blocks/cone-shape-block.js")).coneShapeBlock;
+        case "CylinderShapeBlock":
+            return (await import("./blocks/cylinder-shape-block.js")).cylinderShapeBlock;
         case "ParticleInputBlock":
             return (await import("./blocks/particle-input-block.js")).particleInputBlock;
         case "ParticleTextureSourceBlock":
