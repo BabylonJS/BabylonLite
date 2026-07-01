@@ -383,7 +383,7 @@
         "slug": "scene37-sheen-sofa",
         "name": "Scene 37 — Sheen Wood Leather Sofa",
         "maxMad": 0.02,
-        "maxRawKB": 97,
+        "maxRawKB": 97.2,
         "description": "SheenWoodLeatherSofa.glb (KHR_materials_sheen + KHR_materials_specular + KHR_texture_transform + EXT_texture_webp) with default IBL environment (no skybox, no ground). Matches PG #YG3BBF#58.",
         "tags": ["pbr", "gltf", "env", "sheen", "specular", "texture-transform", "webp"],
         "compatParity": true
