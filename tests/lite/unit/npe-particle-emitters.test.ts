@@ -5,6 +5,8 @@ import coneGraph from "./fixtures/emitter-cone-npe.json";
 import coneStates from "./fixtures/emitter-cone-states.json";
 import cylinderGraph from "./fixtures/emitter-cylinder-npe.json";
 import cylinderStates from "./fixtures/emitter-cylinder-states.json";
+import meshGraph from "./fixtures/emitter-mesh-npe.json";
+import meshStates from "./fixtures/emitter-mesh-states.json";
 import { parseNodeParticleSource } from "../../../packages/babylon-lite/src/particle/node/npe-parser";
 import { buildNodeParticleSet } from "../../../packages/babylon-lite/src/particle/node/npe-build";
 import { startParticleSystem, animateParticleSystem } from "../../../packages/babylon-lite/src/particle/particle-system";
@@ -29,13 +31,15 @@ const CASES: { name: string; graph: unknown; truth: StatesFixture }[] = [
     { name: "point", graph: pointGraph, truth: pointStates as StatesFixture },
     { name: "cone", graph: coneGraph, truth: coneStates as StatesFixture },
     { name: "cylinder", graph: cylinderGraph, truth: cylinderStates as StatesFixture },
+    { name: "mesh", graph: meshGraph, truth: meshStates as StatesFixture },
 ];
 
 /**
  * CPU determinism test for the emitter shape blocks (`PointShapeBlock`, `ConeShapeBlock`,
- * `CylinderShapeBlock`). For each emitter, builds the graph converted from the classic `createXEmitter`
- * system, seeds Math.random like the Babylon.js oracle, steps the simulation, and asserts every particle's
- * state matches the committed Babylon.js ground truth to 1e-6 — proving the shape-specific position/direction
+ * `CylinderShapeBlock`, `MeshShapeBlock`). For each emitter, builds the graph converted from the classic
+ * `createXEmitter` system (the mesh graph carries baked `cachedVertexData`, as the NPE editor produces),
+ * seeds Math.random like the Babylon.js oracle, steps the simulation, and asserts every particle's state
+ * matches the committed Babylon.js ground truth to 1e-6 — proving the shape-specific position/direction
  * random-draw sequence matches BJS. (Box + Sphere are covered by Scenes 262/263.)
  */
 describe("NPE emitter shapes — deterministic parity with Babylon.js", () => {
