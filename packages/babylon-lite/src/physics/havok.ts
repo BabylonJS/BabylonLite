@@ -16,7 +16,6 @@ import type { SceneNode } from "../scene/scene-node.js";
 import type { SceneContext } from "../scene/scene-core.js";
 import type { Mesh } from "../mesh/mesh.js";
 import type { HavokFloatingOriginContext, WorldRegion } from "./havok-floating-origin.js";
-import { onBeforeRender } from "../scene/scene-core.js";
 import { mat4Invert } from "../math/mat4-invert.js";
 import { mat4Multiply } from "../math/mat4-multiply.js";
 import { mat4Scale } from "../math/mat4-scale.js";
@@ -204,6 +203,8 @@ export interface PhysicsWorld {
     _afterStep?: ((timestep: number) => void)[];
     /** @internal Lazily-created Havok query collector, cached by the standalone `physics/havok-queries.ts` module. */
     _queryCollector?: any;
+    /** @internal Removes the per-frame step callback from the scene; called by `disposePhysics` before the native world is released. */
+    _stopStep?: () => void;
 }
 
 // ─── Factory ─────────────────────────────────────────────────────────
@@ -235,10 +236,20 @@ export function createHavokWorld(scene: SceneContext, hknp: any, gravity?: Vec3)
         _gravity: [g.x, g.y, g.z],
     };
 
-    // Register per-frame physics step
-    onBeforeRender(scene, (deltaMs: number) => {
+    // Register the per-frame physics step directly on the scene (mirror of
+    // physics-viewer.ts). Keep a remover so disposePhysics can stop stepping
+    // before the native world is released — otherwise a still-running step
+    // would step a freed world (use-after-free in Havok WASM).
+    const stepCb = (deltaMs: number): void => {
         _stepWorld(world, deltaMs);
-    });
+    };
+    scene._beforeRender.unshift(stepCb);
+    world._stopStep = () => {
+        const i = scene._beforeRender.indexOf(stepCb);
+        if (i >= 0) {
+            scene._beforeRender.splice(i, 1);
+        }
+    };
 
     return world;
 }
@@ -1270,6 +1281,16 @@ export function getPhysicsBodyDebugGeometry(world: PhysicsWorld, body: PhysicsBo
  * @param world - The physics world to dispose.
  */
 export function disposePhysics(world: PhysicsWorld): void {
+    // Stop per-frame stepping before any native world is released so a still-queued
+    // _beforeRender callback can't step a freed world (use-after-free in Havok WASM).
+    world._stopStep?.();
+    world._stopStep = undefined;
+
+    // Drop after-step hooks (e.g. the collision-event drain registered by
+    // onPhysicsCollision). They read the native world via HP_World_GetCollisionEvents,
+    // so they must not survive it — clear them alongside the step callback.
+    world._afterStep = undefined;
+
     if (world._fo) {
         world._fo.dispose(world);
         return;
