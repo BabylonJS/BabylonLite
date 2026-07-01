@@ -29,74 +29,62 @@ export function removeFromScene(scene: SceneContext, entity: Mesh | LightBase | 
         const groups = container.animationGroups;
         if (groups?.length) {
             for (const g of groups) {
-                const gi = scene.animationGroups.indexOf(g);
-                if (gi >= 0) {
-                    scene.animationGroups.splice(gi, 1);
-                }
+                spliceOut(scene.animationGroups, g);
             }
         }
         const hook = container._beforeRenderHook;
         if (hook) {
-            const hi = scene._beforeRender.indexOf(hook);
-            if (hi >= 0) {
-                scene._beforeRender.splice(hi, 1);
-            }
+            spliceOut(scene._beforeRender, hook);
             container._beforeRenderHook = undefined;
         }
         return;
     }
-    // Mesh — carries GPU geometry + material.
+    // Mesh — carries GPU geometry + material. Owns the only heavy removal path.
     if ("_gpu" in entity && "material" in entity) {
         removeMeshFromScene(scene, entity as unknown as Mesh);
         removeChildren(scene, entity as unknown as SceneNode);
         return;
     }
-    // Shadow generator — drop from the scene list and dispose its task resources.
-    if ("_shadowType" in entity && "_light" in entity) {
-        const sg = entity as ShadowGenerator;
-        const si = scene.shadowGenerators.indexOf(sg);
-        if (si >= 0) {
-            scene.shadowGenerators.splice(si, 1);
-        }
-        // The disposable render task lives on the lazily-created task state, not on the
-        // generator itself. Dispose it (once) and drop the state so a repeat removal is a
-        // no-op, keeping the call idempotent.
-        if (sg._shadowTaskState) {
-            sg._shadowTaskState._task.dispose();
-            sg._shadowTaskState = undefined;
-        }
-        return;
-    }
-    // Light — drop from the scene list and remove its shadow generator with it.
+    // Non-mesh scene nodes (light, camera, shadow generator, transform node) share a
+    // detach-parent + unwind-children tail; only the scene-list bookkeeping differs.
     if ("lightType" in entity) {
-        const light = entity as LightBase;
-        const li = scene.lights.indexOf(light);
-        if (li >= 0) {
-            scene.lights.splice(li, 1);
+        // Light — drop from the scene list and remove its shadow generator with it.
+        spliceOut(scene.lights, entity as LightBase);
+        const sg = (entity as LightBase).shadowGenerator;
+        if (sg) {
+            disposeShadowGenerator(scene, sg);
         }
-        if (light.shadowGenerator) {
-            removeFromScene(scene, light.shadowGenerator);
-        }
-        // Detach from any parent so the push-based world-matrix registry stops
-        // retaining/traversing this removed light on every invalidation (mirrors the
-        // `mesh.parent = null` done in removeMeshFromScene).
-        detachParent(light);
-        removeChildren(scene, light);
-        return;
-    }
-    // Camera — clear the scene reference if this camera is the active one.
-    if ("fov" in entity && "nearPlane" in entity) {
+    } else if ("fov" in entity && "nearPlane" in entity) {
+        // Camera — clear the scene reference if this camera is the active one.
         if (scene.camera === (entity as Camera)) {
             scene.camera = null;
         }
-        detachParent(entity);
-        removeChildren(scene, entity as unknown as SceneNode);
-        return;
+    } else if ("_shadowType" in entity && "_light" in entity) {
+        // Shadow generator removed on its own (not via its light).
+        disposeShadowGenerator(scene, entity as ShadowGenerator);
     }
-    // TransformNode (or any other scene-graph node) — nothing to dispose itself; just
-    // detach from its parent and unwind children so a removed sub-tree is fully released.
+    // TransformNode / any other scene-graph node needs no bookkeeping of its own.
     detachParent(entity);
     removeChildren(scene, entity as unknown as SceneNode);
+}
+
+/** Drop a shadow generator from the scene and dispose its task resources exactly once.
+ *  The disposable render task lives on the lazily-created task state, not the generator
+ *  itself; nulling the state afterwards keeps repeat removals a safe no-op. */
+function disposeShadowGenerator(scene: SceneContext, sg: ShadowGenerator): void {
+    spliceOut(scene.shadowGenerators, sg);
+    if (sg._shadowTaskState) {
+        sg._shadowTaskState._task.dispose();
+        sg._shadowTaskState = undefined;
+    }
+}
+
+/** Remove the first occurrence of `item` from `arr` if present. */
+function spliceOut<T>(arr: T[], item: T): void {
+    const i = arr.indexOf(item);
+    if (i >= 0) {
+        arr.splice(i, 1);
+    }
 }
 
 /** Clear an entity's `parent` link when it has one, so the world-matrix child registry
