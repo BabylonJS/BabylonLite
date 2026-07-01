@@ -430,10 +430,10 @@ export function getPhysicsGravity(world: PhysicsWorld, worldPosition?: Vec3): Ve
  * Pass `0` to make the world step at the real per-frame delta instead of a fixed step.
  * See {@link setPhysicsTimestepMs} for the millisecond-based equivalent.
  * @param world - The physics world.
- * @param fixedTimestepSeconds - Fixed step in seconds (e.g. `1 / 60`), or `0` to use the frame delta.
+ * @param dt - Fixed step in seconds (e.g. `1 / 60`), or `0` to use the frame delta.
  */
-export function setPhysicsTimestep(world: PhysicsWorld, fixedTimestepSeconds: number): void {
-    world._fixedDeltaMs = fixedTimestepSeconds * 1000;
+export function setPhysicsTimestep(world: PhysicsWorld, dt: number): void {
+    world._fixedDeltaMs = dt * 1000;
 }
 
 /**
