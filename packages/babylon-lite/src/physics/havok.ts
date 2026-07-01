@@ -194,7 +194,15 @@ export interface PhysicsWorld {
     /** @internal */ readonly _hknp: any;
     /** @internal */ readonly _hkWorld: any;
     /** @internal */ readonly _bodies: PhysicsBody[];
-    /** @internal */ _timestep: number;
+    /** @internal Owning scene, retained so out-of-step callers (e.g. the character controller) can
+     *  read the current per-frame delta (`scene.fixedDeltaMs` / `engine._currentDelta`) when the
+     *  world has no fixed step configured. The world already captures the scene in its per-frame
+     *  step closure, so this adds no new lifetime coupling. */
+    readonly _scene: SceneContext;
+    /** @internal Fixed simulation step in **milliseconds**, matching {@link SceneContext.fixedDeltaMs}.
+     *  `0` means "use the real per-frame delta" (the value passed to the per-frame step). Seeded from
+     *  the scene's `fixedDeltaMs` at creation; override with {@link setPhysicsTimestep}. */
+    _fixedDeltaMs: number;
     /** @internal World-wide gravity `[x, y, z]` set at creation; used to seed floating-origin regions. */
     _gravity: number[];
     /** @internal Floating-origin runtime; present only after `enableHavokFloatingOrigin` is called. */
@@ -232,7 +240,8 @@ export function createHavokWorld(scene: SceneContext, hknp: any, gravity?: Vec3)
         _hknp: hknp,
         _hkWorld: hkWorld,
         _bodies: [],
-        _timestep: 1 / 60,
+        _scene: scene,
+        _fixedDeltaMs: scene.fixedDeltaMs,
         _gravity: [g.x, g.y, g.z],
     };
 
@@ -278,14 +287,23 @@ export async function enableHavokFloatingOrigin(world: PhysicsWorld, floatingOri
 
 function _stepWorld(world: PhysicsWorld, deltaMs: number): void {
     const { _hknp: hknp, _hkWorld: hkWorld, _bodies: bodies } = world;
-    const dt = Math.min(deltaMs / 1000, 0.1);
-    if (dt <= 0) {
+    // Step size in ms: the world's fixed step when set, otherwise the real per-frame delta
+    // (mirrors SceneContext.fixedDeltaMs `> 0 ? fixed : real`). Reject non-finite or non-positive
+    // steps up front — matching the animation/sprite managers — so a NaN/negative delta can never
+    // reach the solver (a NaN dt would poison every body's integration).
+    const stepMs = world._fixedDeltaMs > 0 ? world._fixedDeltaMs : deltaMs;
+    if (!Number.isFinite(stepMs) || stepMs <= 0) {
         return;
     }
+    // Clamp the step to 100 ms (a 10 fps floor). A long hitch — backgrounded tab, GC pause, hit
+    // breakpoint — otherwise hands Havok a huge dt, which tunnels fast bodies through thin geometry
+    // and can destabilise the constraint solver. Capping degrades a stall into a brief slow-motion
+    // rather than an explosion (Babylon.js caps its physics substep the same way).
+    const dt = Math.min(stepMs / 1000, 0.1);
 
     // Floating-origin worlds run a multi-region step (loaded on demand).
     if (world._fo) {
-        world._fo.step(world);
+        world._fo.step(world, dt);
         return;
     }
 
@@ -303,7 +321,7 @@ function _stepWorld(world: PhysicsWorld, deltaMs: number): void {
         }
     }
 
-    hknp.HP_World_Step(hkWorld, world._timestep);
+    hknp.HP_World_Step(hkWorld, dt);
 
     // Post-step: sync DYNAMIC bodies from Havok → node
     for (let i = 0; i < bodies.length; i++) {
@@ -319,7 +337,7 @@ function _stepWorld(world: PhysicsWorld, deltaMs: number): void {
     if (world._afterStep) {
         const cbs = world._afterStep;
         for (let i = 0; i < cbs.length; i++) {
-            cbs[i]!(world._timestep);
+            cbs[i]!(dt);
         }
     }
 }
@@ -404,20 +422,41 @@ export function getPhysicsGravity(world: PhysicsWorld, worldPosition?: Vec3): Ve
 
 /**
  * Sets the fixed simulation timestep used by each world step.
+ *
+ * The value is in **milliseconds**, matching {@link SceneContext.fixedDeltaMs}. Pass `0` to make the
+ * world step at the real per-frame delta instead of a fixed step.
  * @param world - The physics world.
- * @param dt - Timestep in seconds (e.g. `1 / 60`).
+ * @param fixedDeltaMs - Fixed step in milliseconds (e.g. `1000 / 60`), or `0` to use the frame delta.
  */
-export function setPhysicsTimestep(world: PhysicsWorld, dt: number): void {
-    world._timestep = dt;
+export function setPhysicsTimestep(world: PhysicsWorld, fixedDeltaMs: number): void {
+    world._fixedDeltaMs = fixedDeltaMs;
 }
 
 /**
- * Returns the world's fixed simulation timestep in seconds.
+ * Returns the world's fixed simulation timestep in milliseconds (`0` means the real per-frame delta
+ * is used).
  * @param world - The physics world.
- * @returns The timestep in seconds.
+ * @returns The fixed step in milliseconds.
  */
 export function getPhysicsTimestep(world: PhysicsWorld): number {
-    return world._timestep;
+    return world._fixedDeltaMs;
+}
+
+/**
+ * Effective physics step in **seconds** for callers that run outside the per-frame step loop
+ * (force→impulse application, the character controller): the world's fixed step when set, otherwise
+ * the owning scene's current per-frame delta — its own `fixedDeltaMs`, else the engine's real frame
+ * delta — mirroring how `_stepWorld` resolves the delta the scene feeds it. May be `0` on a frame
+ * with no delta yet (e.g. before the first render); callers guard against that.
+ * @internal
+ */
+export function worldStepSeconds(world: PhysicsWorld): number {
+    if (world._fixedDeltaMs > 0) {
+        return world._fixedDeltaMs / 1000;
+    }
+    const scene = world._scene;
+    const sceneMs = scene.fixedDeltaMs > 0 ? scene.fixedDeltaMs : scene.surface.engine._currentDelta;
+    return sceneMs / 1000;
 }
 
 // ─── Velocity limits ─────────────────────────────────────────────────
@@ -539,7 +578,10 @@ export function applyPhysicsBodyImpulse(body: PhysicsBody, impulse: Vec3, locati
  * @param location - World-space application point.
  */
 export function applyPhysicsBodyForce(world: PhysicsWorld, body: PhysicsBody, force: Vec3, location: Vec3): void {
-    applyPhysicsBodyImpulse(body, { x: force.x * world._timestep, y: force.y * world._timestep, z: force.z * world._timestep }, location);
+    // impulse = force × Δt (seconds). When the world has no fixed step, `worldStepSeconds` falls back
+    // to the scene's current per-frame delta (its `fixedDeltaMs`, else the engine's real frame delta).
+    const dt = worldStepSeconds(world);
+    applyPhysicsBodyImpulse(body, { x: force.x * dt, y: force.y * dt, z: force.z * dt }, location);
 }
 
 /**
