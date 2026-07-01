@@ -54,8 +54,9 @@ export interface GpuPicker {
     /** @internal Serializes picks. Every `pickAsync` waits on this before starting, then
      *  replaces it, so two picks on the same picker never overlap their `mapAsync` of the
      *  shared 1×1 staging buffers (a second map of an already-mapped buffer throws — #328).
-     *  Always resolves (never rejects), so a failed pick can't wedge the chain. */
-    _inflight: Promise<void>;
+     *  Always resolves (never rejects), so a failed pick can't wedge the chain. The resolved value
+     *  is irrelevant (the next pick ignores it), so it is typed `unknown`. */
+    _inflight: Promise<unknown>;
 }
 
 interface PickTargets1x1 {
@@ -217,12 +218,11 @@ function createPickDiscardBindGroup(engine: EngineContext, layout: GPUBindGroupL
  */
 export function pickAsync(picker: GpuPicker, x: number, y: number, options?: PickOptions): Promise<PickingInfo> {
     const run = picker._inflight.then(() => pickImpl(picker, x, y, options));
-    // The gate promise must never reject (that would poison every queued pick), and must resolve
-    // only after this pick settles — so the next pick starts strictly after this one's unmap.
-    picker._inflight = run.then(
-        () => undefined,
-        () => undefined
-    );
+    // The gate promise must never reject (that would poison every queued pick) and resolves only
+    // after this pick settles, so the next pick starts strictly after this one's unmap. `catch`
+    // swallows a rejection to `undefined`; the fulfilled value is irrelevant (the next pick ignores
+    // it), so we don't need a separate onFulfilled handler.
+    picker._inflight = run.catch(() => undefined);
     return run;
 }
 
@@ -408,21 +408,16 @@ async function pickImpl(picker: GpuPicker, x: number, y: number, options?: PickO
     encoder.copyTextureToBuffer({ texture: rt.depthColorTex }, { buffer: rt.depthStaging, bytesPerRow: 256 }, { width: 1, height: 1 });
     device.queue.submit([encoder.finish()]);
 
-    // Map → read → unmap so the shared staging buffers are ALWAYS unmapped, even if a read throws or
-    // one map settles while the other rejects. `Promise.allSettled` (not `Promise.all`) waits for BOTH
-    // maps to settle before we proceed: with `Promise.all`, a rejection would jump to `finally` while
-    // the other map is still pending, then fulfil later and leave its buffer mapped — permanently
-    // breaking picking ("already mapped") on the next pickAsync (see #328).
+    // Map → read → unmap so the shared staging buffers are ALWAYS unmapped, even if a read throws.
+    // The two maps run SEQUENTIALLY (not `Promise.all`): the second `mapAsync` only starts after the
+    // first resolves, so a rejection can never leave a still-pending map that fulfils later and leaves
+    // its buffer mapped — which would permanently break picking ("already mapped") on the next
+    // pickAsync (see #328). `finally` unmaps whichever buffer(s) actually mapped.
     let pickId: number;
     let depth: number;
-    const [colorMap, depthMap] = await Promise.allSettled([rt.colorStaging.mapAsync(GPUMapMode.READ), rt.depthStaging.mapAsync(GPUMapMode.READ)]);
     try {
-        if (colorMap.status === "rejected") {
-            throw colorMap.reason;
-        }
-        if (depthMap.status === "rejected") {
-            throw depthMap.reason;
-        }
+        await rt.colorStaging.mapAsync(GPUMapMode.READ);
+        await rt.depthStaging.mapAsync(GPUMapMode.READ);
         const colorData = new U8(rt.colorStaging.getMappedRange());
         pickId = (colorData[0]! << 16) | (colorData[1]! << 8) | colorData[2]!;
         depth = new F32(rt.depthStaging.getMappedRange())[0]!;
