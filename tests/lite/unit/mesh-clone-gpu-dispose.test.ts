@@ -95,8 +95,24 @@ describe("mesh clone GPU buffer ownership", () => {
 
         // Simulate device-lost recovery rebuilding EACH mesh independently (as it does for any mesh
         // with retained CPU geometry — a condition that is always symmetric between clone and source).
-        const newSrcGpu: MeshGPU = { ...gpu, positionBuffer: fakeBuffer(), normalBuffer: fakeBuffer(), uvBuffer: fakeBuffer(), indexBuffer: fakeBuffer() };
-        const newCloneGpu: MeshGPU = { ...gpu, positionBuffer: fakeBuffer(), normalBuffer: fakeBuffer(), uvBuffer: fakeBuffer(), indexBuffer: fakeBuffer() };
+        // Mirrors uploadRetainedMesh(): a brand-new object literal built from scratch, never a spread
+        // of the old shared object — so no stale `_refCount` from the old `_gpu` is ever copied over.
+        const newSrcGpu: MeshGPU = {
+            positionBuffer: fakeBuffer(),
+            normalBuffer: fakeBuffer(),
+            uvBuffer: fakeBuffer(),
+            indexBuffer: fakeBuffer(),
+            indexCount: 3,
+            indexFormat: "uint16",
+        };
+        const newCloneGpu: MeshGPU = {
+            positionBuffer: fakeBuffer(),
+            normalBuffer: fakeBuffer(),
+            uvBuffer: fakeBuffer(),
+            indexBuffer: fakeBuffer(),
+            indexCount: 3,
+            indexFormat: "uint16",
+        };
         src._gpu = newSrcGpu;
         clone._gpu = newCloneGpu;
 
