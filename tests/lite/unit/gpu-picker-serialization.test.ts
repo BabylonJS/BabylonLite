@@ -11,7 +11,7 @@
  *   - lets a failed pick be followed by a successful one (no poison / permanent lock),
  *   - never leaves the internal gate rejected.
  *
- * They drive the REAL `pickAsync` wrapper via `pickImpl`'s no-camera fast path (a scene
+ * They drive the REAL `pickAsync` wrapper via `pickAsyncImpl`'s no-camera fast path (a scene
  * with `camera: null` returns an empty `PickingInfo` immediately), so the serialization
  * logic is exercised without a WebGPU device.
  */
@@ -96,8 +96,8 @@ describe("gpu picker pick serialization", () => {
         const picker = createGpuPicker(throwingScene);
         await expect(pickAsync(picker, 0, 0)).rejects.toThrow("boom");
 
-        // The gate the next pick will wait on must be a resolved promise.
-        await expect((picker as unknown as { _inflight: Promise<void> })._inflight).resolves.toBeUndefined();
+        // The gate the next pick will wait on must be a resolved promise (never left rejected).
+        await expect((picker as unknown as { _pending: Promise<void> | null })._pending).resolves.toBeUndefined();
     });
 
     it("preserves submission order across serialized picks", async () => {

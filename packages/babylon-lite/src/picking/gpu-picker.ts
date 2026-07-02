@@ -28,15 +28,6 @@ const _tiUboScratch = new ArrayBuffer(PICK_TI_UBO_BYTES);
 const _tiUboU32 = new U32(_tiUboScratch);
 const _tiUboView = new U8(_tiUboScratch);
 
-/** Unmap a staging buffer only if it is currently mapped. Guarded by `mapState` (the
- *  spec-compliant check) so we never emit an "unmap of an unmapped buffer" validation
- *  error, while still cleaning up a buffer whose map succeeded on a path that later threw. */
-function unmapIfMapped(buffer: GPUBuffer): void {
-    if ((buffer as { mapState?: GPUBufferMapState }).mapState === "mapped") {
-        buffer.unmap();
-    }
-}
-
 /** GPU-based picker — pure state. Use pickAsync() and disposePicker() standalone functions. */
 export interface GpuPicker {
     /** @internal Optional hook for detailed picking (Phase 2). */
@@ -51,12 +42,8 @@ export interface GpuPicker {
     _sceneBG: GPUBindGroup | null;
     /** @internal Per-GS-mesh picking resources (created on demand). */
     _gsMeshResources: Map<GaussianSplattingMesh, GsPickingPipeline.GsPickMeshResources> | null;
-    /** @internal Serializes picks. Every `pickAsync` waits on this before starting, then
-     *  replaces it, so two picks on the same picker never overlap their `mapAsync` of the
-     *  shared 1×1 staging buffers (a second map of an already-mapped buffer throws — #328).
-     *  Always resolves (never rejects), so a failed pick can't wedge the chain. The resolved value
-     *  is irrelevant (the next pick ignores it), so it is typed `unknown`. */
-    _inflight: Promise<unknown>;
+    /** @internal Tail of the serialized pick queue for this picker — see pickAsync(). */
+    _pending: Promise<void> | null;
 }
 
 interface PickTargets1x1 {
@@ -79,7 +66,7 @@ export function createGpuPicker(scene: SceneContext): GpuPicker {
         _sceneUbo: null,
         _sceneBG: null,
         _gsMeshResources: null,
-        _inflight: Promise.resolve(),
+        _pending: null,
     };
 }
 
@@ -206,27 +193,10 @@ function createPickDiscardBindGroup(engine: EngineContext, layout: GPUBindGroupL
     });
 }
 
-/**
- * Pick the mesh at CSS-space canvas coordinates, matching Babylon.js Scene.pick. Returns a PickingInfo.
- *
- * Picks on a single picker are **serialized**: the shared 1×1 staging buffers can only be mapped
- * by one pick at a time, so a call started while another is in flight waits for it to finish first.
- * This prevents overlapping `mapAsync` on the same buffer (the "buffer already mapped" crash, #328)
- * regardless of who calls (gizmo hover, gizmo pointer-down, or user code). The chain always advances
- * because {@link pickImpl} settles on every path (its map/unmap is wrapped in try/finally), so a
- * failed or empty pick can never permanently block future picks.
- */
-export function pickAsync(picker: GpuPicker, x: number, y: number, options?: PickOptions): Promise<PickingInfo> {
-    const run = picker._inflight.then(() => pickImpl(picker, x, y, options));
-    // The gate promise must never reject (that would poison every queued pick) and resolves only
-    // after this pick settles, so the next pick starts strictly after this one's unmap. `catch`
-    // swallows a rejection to `undefined`; the fulfilled value is irrelevant (the next pick ignores
-    // it), so we don't need a separate onFulfilled handler.
-    picker._inflight = run.catch(() => undefined);
-    return run;
-}
-
-async function pickImpl(picker: GpuPicker, x: number, y: number, options?: PickOptions): Promise<PickingInfo> {
+/** Pick the mesh at CSS-space canvas coordinates, matching Babylon.js Scene.pick. Returns a PickingInfo.
+ *  Does the actual GPU render + readback for one pick — call `pickAsync` (below) instead; it serializes
+ *  concurrent calls on the same picker so their shared 1×1 staging buffers never race. */
+async function pickAsyncImpl(picker: GpuPicker, x: number, y: number, options?: PickOptions): Promise<PickingInfo> {
     const scene = picker._scene;
     const pickFilter = options?.filter ?? null;
     const pickDiscard = options?.discard ?? null;
@@ -408,23 +378,13 @@ async function pickImpl(picker: GpuPicker, x: number, y: number, options?: PickO
     encoder.copyTextureToBuffer({ texture: rt.depthColorTex }, { buffer: rt.depthStaging, bytesPerRow: 256 }, { width: 1, height: 1 });
     device.queue.submit([encoder.finish()]);
 
-    // Map → read → unmap so the shared staging buffers are ALWAYS unmapped, even if a read throws.
-    // The two maps run SEQUENTIALLY (not `Promise.all`): the second `mapAsync` only starts after the
-    // first resolves, so a rejection can never leave a still-pending map that fulfils later and leaves
-    // its buffer mapped — which would permanently break picking ("already mapped") on the next
-    // pickAsync (see #328). `finally` unmaps whichever buffer(s) actually mapped.
-    let pickId: number;
-    let depth: number;
-    try {
-        await rt.colorStaging.mapAsync(GPUMapMode.READ);
-        await rt.depthStaging.mapAsync(GPUMapMode.READ);
-        const colorData = new U8(rt.colorStaging.getMappedRange());
-        pickId = (colorData[0]! << 16) | (colorData[1]! << 8) | colorData[2]!;
-        depth = new F32(rt.depthStaging.getMappedRange())[0]!;
-    } finally {
-        unmapIfMapped(rt.colorStaging);
-        unmapIfMapped(rt.depthStaging);
-    }
+    await Promise.all([rt.colorStaging.mapAsync(GPUMapMode.READ), rt.depthStaging.mapAsync(GPUMapMode.READ)]);
+
+    const colorData = new U8(rt.colorStaging.getMappedRange());
+    const pickId = (colorData[0]! << 16) | (colorData[1]! << 8) | colorData[2]!;
+    const depth = new F32(rt.depthStaging.getMappedRange())[0]!;
+    rt.colorStaging.unmap();
+    rt.depthStaging.unmap();
 
     // Destroy temp per-mesh UBOs
     for (let i = 0; i < tempBuffers.length; i++) {
@@ -545,6 +505,32 @@ async function pickImpl(picker: GpuPicker, x: number, y: number, options?: PickO
     }
 
     return info;
+}
+
+/**
+ * Pick the mesh at CSS-space canvas coordinates, matching Babylon.js Scene.pick. Returns a PickingInfo.
+ *
+ * A picker's 1×1 readback targets (`PickTargets1x1.colorStaging`/`depthStaging`) are lazily created ONCE
+ * and reused for every pick — cheap, but it means two overlapping `pickAsync` calls on the SAME picker
+ * race `mapAsync` on those shared buffers ("Buffer already has an outstanding map pending", since a
+ * GPUBuffer allows only one pending map at a time). This is easy to trigger from a consumer: e.g. a
+ * cursor-following hover preview that GPU-picks on every pointermove, racing a pick fired by a click that
+ * lands before the hover's pick has unmapped. Queue concurrent calls per-picker instead of rejecting: each
+ * pick's full map/unmap cycle completes before the next one starts.
+ */
+export function pickAsync(picker: GpuPicker, x: number, y: number, options?: PickOptions): Promise<PickingInfo> {
+    const prior = picker._pending ?? Promise.resolve();
+    const run = prior.then(
+        () => pickAsyncImpl(picker, x, y, options),
+        () => pickAsyncImpl(picker, x, y, options) // a prior pick's rejection must not wedge the queue for this caller
+    );
+    // Swallow so a rejection here doesn't propagate into the NEXT caller's chain (each caller gets its own
+    // `run` promise and observes the real rejection via the returned promise, not via `_pending`).
+    picker._pending = run.then(
+        () => undefined,
+        () => undefined
+    );
+    return run;
 }
 
 /** Dispose GPU resources owned by this picker. */
