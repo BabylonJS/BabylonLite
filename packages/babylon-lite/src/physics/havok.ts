@@ -200,8 +200,10 @@ export interface PhysicsWorld {
      *  step closure, so this adds no new lifetime coupling. */
     readonly _scene: SceneContext;
     /** @internal Fixed simulation step in **milliseconds**, matching {@link SceneContext.fixedDeltaMs}.
-     *  `0` means "use the real per-frame delta" (the value passed to the per-frame step). Seeded from
-     *  the scene's `fixedDeltaMs` at creation; override with {@link setPhysicsTimestep}. */
+     *  Independent of the scene: defaults to `0` ("no world-level fixed step") and is only set by
+     *  {@link setPhysicsTimestep} / {@link setPhysicsTimestepMs}. When `0`, the step resolves the live
+     *  per-frame delta the scene feeds it (`scene.fixedDeltaMs` when running fixed, else the engine's
+     *  real frame delta), so runtime changes to `scene.fixedDeltaMs` are always respected. */
     _fixedDeltaMs: number;
     /** @internal World-wide gravity `[x, y, z]` set at creation; used to seed floating-origin regions. */
     _gravity: number[];
@@ -241,7 +243,7 @@ export function createHavokWorld(scene: SceneContext, hknp: any, gravity?: Vec3)
         _hkWorld: hkWorld,
         _bodies: [],
         _scene: scene,
-        _fixedDeltaMs: scene.fixedDeltaMs,
+        _fixedDeltaMs: 0,
         _gravity: [g.x, g.y, g.z],
     };
 
@@ -293,10 +295,12 @@ const MAX_STEP_MS = 100;
 
 function _stepWorld(world: PhysicsWorld, deltaMs: number): void {
     const { _hknp: hknp, _hkWorld: hkWorld, _bodies: bodies } = world;
-    // Step size in ms: the world's fixed step when set, otherwise the real per-frame delta
-    // (mirrors SceneContext.fixedDeltaMs `> 0 ? fixed : real`). Reject non-finite or non-positive
-    // steps up front — matching the animation/sprite managers — so a NaN/negative delta can never
-    // reach the solver (a NaN dt would poison every body's integration).
+    // Step size in ms: the world's own fixed step when set (`> 0`), otherwise the live per-frame delta
+    // the scene supplies — which the render loop already resolves as `scene.fixedDeltaMs > 0 ?
+    // scene.fixedDeltaMs : engine._currentDelta`, so runtime changes to `scene.fixedDeltaMs` flow
+    // through here every frame. Reject non-finite or non-positive steps up front — matching the
+    // animation/sprite managers — so a NaN/negative delta can never reach the solver (a NaN dt would
+    // poison every body's integration).
     const stepMs = world._fixedDeltaMs > 0 ? world._fixedDeltaMs : deltaMs;
     if (!Number.isFinite(stepMs) || stepMs <= 0) {
         return;

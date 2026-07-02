@@ -1,13 +1,14 @@
 /**
  * Physics world timestep tests.
  *
- * `createHavokWorld` seeds the world's fixed simulation step (`_fixedDeltaMs`, in milliseconds)
- * from the scene's `fixedDeltaMs`, so physics advances in lockstep with the scene's deterministic
- * clock. `_stepWorld` converts that to seconds for `HP_World_Step`, falling back to the real
- * per-frame delta when the world's step is `0` (frame-delta mode) — mirroring
- * `SceneContext.fixedDeltaMs` (`> 0 ? fixed : real`). {@link setPhysicsTimestepMs} /
- * {@link getPhysicsTimestepMs} let callers read and override the step after creation (with
- * seconds-based {@link setPhysicsTimestep} / {@link getPhysicsTimestep} retained for compatibility).
+ * The world's fixed simulation step (`_fixedDeltaMs`, in milliseconds) is **independent** of the
+ * scene: `createHavokWorld` leaves it at `0` ("no world-level fixed step"). `_stepWorld` converts
+ * it to seconds for `HP_World_Step`, and when it is `0` falls back to the live per-frame delta the
+ * scene feeds it (`scene.fixedDeltaMs` when running fixed, else the engine's real frame delta) —
+ * mirroring `SceneContext.fixedDeltaMs` (`> 0 ? fixed : real`) and always respecting runtime changes
+ * to `scene.fixedDeltaMs`. {@link setPhysicsTimestepMs} / {@link getPhysicsTimestepMs} let callers
+ * read and set the world step after creation (with seconds-based {@link setPhysicsTimestep} /
+ * {@link getPhysicsTimestep} retained for compatibility).
  *
  * These tests run against a minimal mock of the Havok (`hknp`) backend and a bare scene, so they
  * assert the timestep bookkeeping directly (in milliseconds) and the exact per-step value handed to
@@ -58,23 +59,24 @@ function lastStepSeconds(hknp: ReturnType<typeof makeMockHknp>): number {
 }
 
 describe("physics world timestep", () => {
-    it("seeds the world's fixed delta from the scene's fixedDeltaMs", () => {
+    it("leaves the world's fixed step at 0 (independent of the scene's fixedDeltaMs)", () => {
         const hknp = makeMockHknp();
         const scene = makeScene(1000 / 60);
 
         const world = createHavokWorld(scene, hknp);
 
-        // The accessor reports the scene's step (in milliseconds).
-        expect(getPhysicsTimestepMs(world)).toBe(1000 / 60);
+        // The world does NOT snapshot the scene's step at creation: it stays 0 until explicitly set,
+        // so later changes to scene.fixedDeltaMs are always respected via the per-frame fallback.
+        expect(getPhysicsTimestepMs(world)).toBe(0);
     });
 
-    it("steps the native world at the scene's fixed delta (converted to seconds)", () => {
+    it("steps the native world at the scene's fixed delta (via the per-frame fallback)", () => {
         const hknp = makeMockHknp();
         const scene = makeScene(1000 / 60);
         createHavokWorld(scene, hknp);
 
-        // The scene feeds its fixed delta to before-render callbacks; a mismatched frame delta
-        // must be ignored because the world has a fixed step configured.
+        // The scene feeds its resolved fixed delta to before-render callbacks; with no world step set,
+        // the world steps at exactly that delta.
         stepFrame(scene, 1000 / 60);
 
         expect(hknp.HP_World_Step).toHaveBeenCalledTimes(1);
@@ -94,12 +96,28 @@ describe("physics world timestep", () => {
         expect(lastStepSeconds(hknp)).toBeCloseTo(20 / 1000, 10);
     });
 
+    it("respects runtime changes to scene.fixedDeltaMs when no world step is set", () => {
+        const hknp = makeMockHknp();
+        const scene = makeScene(1000 / 60);
+        createHavokWorld(scene, hknp);
+
+        // Frame 1: scene runs at 1/60.
+        stepFrame(scene, 1000 / 60);
+        expect(lastStepSeconds(hknp)).toBeCloseTo(1 / 60, 10);
+
+        // The scene's clock is retuned to 1/30 at runtime; the render loop now feeds 1000/30 and the
+        // world follows it — proving the world does not cling to a construction-time snapshot.
+        scene.fixedDeltaMs = 1000 / 30;
+        stepFrame(scene, scene.fixedDeltaMs);
+        expect(lastStepSeconds(hknp)).toBeCloseTo(1 / 30, 10);
+    });
+
     it("can be overridden via setPhysicsTimestepMs after creation", () => {
         const hknp = makeMockHknp();
         const scene = makeScene(1000 / 60);
         const world = createHavokWorld(scene, hknp);
 
-        // Override the scene-seeded step with a coarser 30 fps step.
+        // Set a coarser 30 fps world step, independent of the scene's 1/60 clock.
         setPhysicsTimestepMs(world, 1000 / 30);
         expect(getPhysicsTimestepMs(world)).toBe(1000 / 30);
 
@@ -172,9 +190,11 @@ describe("applyPhysicsBodyForce timestep selection", () => {
 
     it("converts force with the world's fixed step (impulse = force × dt)", () => {
         const hknp = makeMockHknp();
-        const world = createHavokWorld(makeScene(1000 / 60), hknp);
+        const world = createHavokWorld(makeScene(0), hknp);
         const body = { _hkBody: { __body: true }, _world: world } as unknown as PhysicsBody;
 
+        // Give the world its own fixed step (independent of the scene).
+        setPhysicsTimestepMs(world, 1000 / 60);
         applyPhysicsBodyForce(world, body, FORCE, AT);
 
         // dt = (1000/60 ms)/1000 = 1/60 s → impulse.x = 10 × 1/60.
@@ -186,10 +206,9 @@ describe("applyPhysicsBodyForce timestep selection", () => {
         const world = createHavokWorld(makeScene(1000 / 30), hknp);
         const body = { _hkBody: { __body: true }, _world: world } as unknown as PhysicsBody;
 
-        setPhysicsTimestepMs(world, 0);
         applyPhysicsBodyForce(world, body, FORCE, AT);
 
-        // world step 0 → scene.fixedDeltaMs (1000/30 ms → 1/30 s) → impulse.x = 10 × 1/30.
+        // world step 0 (default) → scene.fixedDeltaMs (1000/30 ms → 1/30 s) → impulse.x = 10 × 1/30.
         expect(lastImpulseX(hknp)).toBeCloseTo(10 / 30, 10);
     });
 

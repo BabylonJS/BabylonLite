@@ -58,7 +58,7 @@ the caller and only referenced once `createHavokWorld` runs.
 import HavokPhysics from "@babylonjs/havok";
 
 const hknp = await HavokPhysics({ locateFile: () => "/HavokPhysics.wasm" });
-const world = createHavokWorld(scene, hknp);          // seeds step from scene.fixedDeltaMs
+const world = createHavokWorld(scene, hknp);          // world step defaults to 0 (follows the scene)
 // ... create bodies/aggregates ...
 disposePhysics(world);                                 // stops stepping, releases native world
 ```
@@ -95,10 +95,10 @@ use the real `requestAnimationFrame` delta (`engine._currentDelta`).
 
 ### Stage 2 — the world re-gates with its own fixed step
 
-The world stores its own **`_fixedDeltaMs` (milliseconds)**, seeded from
-`scene.fixedDeltaMs` at creation and overridable via the accessors. `_stepWorld`
-applies the identical `> 0 ? fixed : delta` rule the animation and sprite managers
-use:
+The world stores its own **`_fixedDeltaMs` (milliseconds)**, which is **independent
+of the scene** — it defaults to `0` at creation and is only set through the
+accessors. `_stepWorld` applies the identical `> 0 ? fixed : delta` rule the
+animation and sprite managers use:
 
 ```ts
 // havok.ts _stepWorld(world, deltaMs)
@@ -108,10 +108,14 @@ const dt = Math.min(stepMs / 1000, 0.1);               // → seconds, clamped (
 hknp.HP_World_Step(hkWorld, dt);
 ```
 
-Because `_fixedDeltaMs` is seeded from `scene.fixedDeltaMs`, in the common case
-(no override) physics steps in **lockstep with animation**: both resolve to the
-same fixed value when the scene is deterministic, or both fall back to the real
-frame delta when it is not.
+Because the world step defaults to `0`, in the common case (no override) the world
+**follows the scene**: the `deltaMs` it receives each frame is the value the render
+loop already resolved as `scene.fixedDeltaMs > 0 ? scene.fixedDeltaMs :
+engine._currentDelta` (Stage 1). Physics therefore steps in **lockstep with
+animation** — both resolve to the same fixed value when the scene is deterministic,
+or both fall back to the real frame delta when it is not — and any **runtime change
+to `scene.fixedDeltaMs` is picked up on the next frame** (no construction-time
+snapshot to go stale).
 
 ### Units
 
@@ -125,11 +129,12 @@ after-step callbacks (`onPhysicsAfterStep`) receive this per-step `dt` in second
 
 `setPhysicsTimestepMs(world, fixedDeltaMs)` / `getPhysicsTimestepMs(world)` read and
 write `_fixedDeltaMs` in **milliseconds**, matching `SceneContext.fixedDeltaMs`. Pass
-`0` to detach physics from a fixed step and follow the real frame delta:
+`0` (the default) to detach physics from a world-level fixed step and follow the
+scene's per-frame delta:
 
 ```ts
 setPhysicsTimestepMs(world, 1000 / 30);   // force a 30 fps physics step
-setPhysicsTimestepMs(world, 0);           // back to real per-frame delta
+setPhysicsTimestepMs(world, 0);           // back to following the scene's delta
 ```
 
 `setPhysicsTimestep(world, seconds)` / `getPhysicsTimestep(world)` are the equivalent
@@ -206,8 +211,9 @@ steps matches the animation and sprite managers.
 
 - `tests/lite/unit/physics-dispose.test.ts` — the step / after-step callbacks are
   registered on creation and fully torn down on dispose (no leak, no use-after-free).
-- `tests/lite/unit/physics-timestep.test.ts` — the world's step is seeded from
-  `scene.fixedDeltaMs`, converted to seconds for `HP_World_Step`, falls back to the
-  frame delta when `0`, and is overridable via `setPhysicsTimestep`.
+- `tests/lite/unit/physics-timestep.test.ts` — the world's step defaults to `0`
+  (independent of `scene.fixedDeltaMs`), follows the scene's per-frame delta when
+  unset (respecting runtime changes), is converted to seconds for `HP_World_Step`,
+  and is settable via `setPhysicsTimestep` / `setPhysicsTimestepMs`.
 - Parity scenes (physics drop/stack/constraint scenes) set
   `scene.fixedDeltaMs = 1000 / 60` so Lite and Babylon.js step identically.
