@@ -642,6 +642,11 @@ if (!embedMode) {
             if (fromPath) {
                 if (await loadSnippetInto(fromPath.id, fromPath.version, false)) {
                     void run();
+                } else {
+                    // Load failed: the browser already moved the address bar to the
+                    // target path, but state still reflects the previously loaded
+                    // snippet. Restore the URL so URL and state stay in sync.
+                    history.replaceState(null, "", currentSnippetId ? snippetPath(currentSnippetId, currentSnippetVersion) : "/");
                 }
                 return;
             }
