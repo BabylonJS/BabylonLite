@@ -124,14 +124,21 @@ describe("build/package.json", () => {
         //     Lite never imports it. The peer entry only advertises the supported range.
         //   - @webgpu/types: ambient/global types referenced by the public .d.ts;
         //     TypeScript consumers need them at compile time.
-        // Every declared peer MUST be marked optional. Keep this allowlist in sync
+        // Every allowlisted peer MUST be marked optional. Keep this allowlist in sync
         // with `emitPackageJson()` in packages/babylon-lite/vite.config.ts.
         const ALLOWED_OPTIONAL_PEERS = ["@babylonjs/havok", "@webgpu/types"];
         const peers = (pkg.peerDependencies ?? {}) as Record<string, string>;
         const peerMeta = (pkg.peerDependenciesMeta ?? {}) as Record<string, { optional?: boolean }>;
 
-        for (const name of Object.keys(peers)) {
-            expect(ALLOWED_OPTIONAL_PEERS, `unexpected peer dependency '${name}' in dist/package.json`).toContain(name);
+        // The declared peers must be EXACTLY the allowlist: no unexpected peer may
+        // leak in, and — just as importantly — the whole `peerDependencies` block
+        // must not be accidentally dropped from `emitPackageJson()`, which would
+        // silently regress the feature while still passing a subset check.
+        expect(Object.keys(peers).sort()).toEqual([...ALLOWED_OPTIONAL_PEERS].sort());
+
+        // ...and every one of them must be strictly optional so no package manager
+        // errors or auto-installs when the corresponding feature is unused.
+        for (const name of ALLOWED_OPTIONAL_PEERS) {
             expect(peerMeta[name]?.optional, `peer dependency '${name}' must be marked optional in peerDependenciesMeta`).toBe(true);
         }
     });
