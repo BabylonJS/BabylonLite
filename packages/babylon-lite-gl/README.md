@@ -91,8 +91,7 @@ use.
   `GLTexture` + optional depth / stencil renderbuffer), `createFloatRenderTarget`
   (float / half-float HDR opt-in), `bindRenderTarget` (cached, null = the canvas),
   `resizeRenderTarget`, `generateRenderTargetMipMaps`, `readRenderTargetPixels`,
-  `disposeRenderTarget`, plus the `createPingPong` / `resizePingPong` /
-  `disposePingPong` feedback helper.
+  `disposeRenderTarget`.
 - **Meshes / buffers** — `createVertexBuffer`, `updateVertexBuffer`,
   `createIndexBuffer`, `bindAttributes`, `drawIndexed` (instanced), `disposeBuffer`.
 - **Depth / stencil / scissor** — `setDepthState`, `setStencilState`,

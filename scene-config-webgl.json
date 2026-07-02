@@ -91,7 +91,7 @@
         "id": 9,
         "slug": "gl-ping-pong-feedback",
         "name": "Scene 9 — Ping-Pong Feedback",
-        "description": "A radial pattern evolved through 6 fixed ping-pong feedback iterations on a pair of offscreen render targets (createPingPong + swap from @babylonjs/lite-gl), then composited fullscreen with an aspect-corrected vignette — a deterministic frame-feedback round-trip.",
+        "description": "A radial pattern evolved through 6 fixed ping-pong feedback iterations on a pair of offscreen render targets (a ping-pong pair of render targets), then composited fullscreen with an aspect-corrected vignette — a deterministic frame-feedback round-trip.",
         "tags": ["texture", "rtt"],
         "maxMad": 2.0,
         "maxRawKB": 18.5,

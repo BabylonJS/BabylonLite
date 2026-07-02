@@ -89,11 +89,8 @@ export {
     resizeRenderTarget,
     readRenderTargetPixels,
     disposeRenderTarget,
-    createPingPong,
-    resizePingPong,
-    disposePingPong,
 } from "./render-target.js";
-export type { GLRenderTarget, GLRenderTargetOptions, GLFloatRenderTargetOptions, GLPingPong } from "./render-target.js";
+export type { GLRenderTarget, GLRenderTargetOptions, GLFloatRenderTargetOptions } from "./render-target.js";
 
 // ─── Meshes / buffers / instancing ───────────────────────────────────
 export {

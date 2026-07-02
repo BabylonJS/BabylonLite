@@ -47,7 +47,7 @@ export { setSubtreeVisible } from "./scene/visibility.js";
 // RenderTask, and user tasks can render offscreen RTTs, overlays, etc.
 export { getFrameGraph } from "./scene/scene.js";
 export type { FrameGraph } from "./frame-graph/frame-graph.js";
-export { addRenderPass, addTask, addTaskAtStart, addTaskBefore } from "./frame-graph/frame-graph-actions.js";
+export { addRenderPass, addTask, addTaskAtStart, addTaskBefore, addTaskAfter } from "./frame-graph/frame-graph-actions.js";
 export { createFrameGraphContext, registerFrameGraphContext, unregisterFrameGraphContext, disposeFrameGraphContext } from "./frame-graph/frame-graph-context.js";
 export type { FrameGraphContext, FrameGraphContextOptions } from "./frame-graph/frame-graph-context.js";
 export type { Task } from "./frame-graph/task.js";
@@ -56,11 +56,15 @@ export { addPassDependencies } from "./frame-graph/pass.js";
 export type { RenderPass } from "./frame-graph/render-pass.js";
 export type { RenderTask, RenderTaskConfig } from "./frame-graph/render-task.js";
 export { createRenderTask, removeMeshFromTask } from "./frame-graph/render-task.js";
+export type { DepthPyramid, DepthPyramidOptions, DepthPyramidReduce, DepthPyramidTaskOptions } from "./frame-graph/depth-pyramid.js";
+export { createDepthPyramid, createDepthPyramidTask } from "./frame-graph/depth-pyramid.js";
 export { createImageProcessingTask } from "./frame-graph/image-processing-task.js";
 export type { ImageProcessingSource, ImageProcessingTaskConfig } from "./frame-graph/image-processing-task.js";
 export type { PostProcessTask, PostProcessTaskSettings, PostProcessAlphaMode, PostProcessSamplingMode } from "./frame-graph/post-process-task.js";
 export { createCopyToTextureTask } from "./frame-graph/copy-to-texture-task.js";
 export type { CopyToTextureTask, CopyToTextureTaskConfig } from "./frame-graph/copy-to-texture-task.js";
+export { createDepthResolveTask } from "./frame-graph/depth-resolve-task.js";
+export type { DepthResolveTaskConfig } from "./frame-graph/depth-resolve-task.js";
 export { createGeometryRendererTask } from "./frame-graph/geometry-renderer-task.js";
 export type { GeometryRendererTask, GeometryRendererTaskConfig, GeometryRendererTextureDescription } from "./frame-graph/geometry-renderer-task.js";
 export { GeometryTextureType } from "./frame-graph/geometry-types.js";
@@ -295,7 +299,7 @@ export type { AnimationTask, AnimationTaskCategoryHandler, AnimationTaskOptions,
 export { createMorphTargets, setMorphTargetWeights } from "./morph/create-morph-targets.js";
 export type { MorphTargetData } from "./animation/types.js";
 export { bakeVat, attachVat } from "./vat/vat-baker.js";
-export type { VatBakeResult, VatClip, VatHandle } from "./vat/vat-baker.js";
+export type { VatBakeResult, VatBakeOptions, VatClip, VatHandle } from "./vat/vat-baker.js";
 
 // ─── Math ────────────────────────────────────────────────────────────
 export { normalizeVec3 } from "./math/normalize-vec3.js";
@@ -359,6 +363,7 @@ export {
     setThinInstanceColors,
     setThinInstanceColor,
     enableThinInstanceGpuCulling,
+    setThinInstanceCullBoundsPad,
 } from "./mesh/thin-instance.js";
 export {
     addHierarchyInstance,
@@ -502,9 +507,10 @@ export {
     clearSprite2DLayer,
     setSprite2DFrameIndex,
     setSprite2DShaderParams,
-    setSprite2DUvOffset,
 } from "./sprite/sprite-2d.js";
 export type { CustomShaderTexture } from "./sprite/custom-shader-core.js";
+export { setSprite2DCoverageGamma } from "./sprite/sprite-2d-coverage-gamma.js";
+export { setSprite2DUvOffset } from "./sprite/sprite-2d-uvscroll.js";
 export type { Sprite2DCustomShader, Sprite2DCustomShaderOptions, Sprite2DCustomTexture } from "./sprite/sprite-custom-shader.js";
 export { createSprite2DCustomShader } from "./sprite/sprite-custom-shader.js";
 export type { Sprite2DHandle } from "./sprite/sprite-2d-handle.js";

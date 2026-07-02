@@ -12,15 +12,15 @@ import {
     setEffectTexture,
     stopRenderLoop,
     bindRenderTarget,
-    createPingPong,
 } from "babylon-lite-gl";
+import { createPingPong } from "./ping-pong";
 
 /**
  * Scene 9 — Ping-Pong Feedback.
  *
- * Exercises render targets' CONVERGED feedback
- * API — `createPingPong` + `swap` — which scene8 (single-RTT round-trip) does not
- * cover:
+ * Exercises a ping-pong feedback pair (a lab helper composed from render
+ * targets) — `createPingPong` + `swap` — which scene8 (single-RTT round-trip)
+ * does not cover:
  *   - SEED: render a procedural radial pattern P0 into the ping-pong's `write`
  *     target, then `swap()` so it becomes `read`.
  *   - FEEDBACK: run N=6 FIXED iterations. Each binds the `write` target, samples

@@ -40,6 +40,22 @@ export interface ShaderPacket {
      *  splice this packet out and stop retaining/iterating dead chunk state every
      *  frame (set only for merged opaque renderables). */
     _owner?: ShaderPacket[];
+    /** @internal Inputs of the last system-UBO write, used to skip redundant recompute + writeBuffer
+     *  (see updatePacket). Undefined until the first per-pass update. */
+    _lastCamera?: Camera | null;
+    /** @internal */
+    _lastCameraVersion?: number;
+    /** @internal */
+    _lastMeshWmVersion?: number;
+    /** @internal */
+    _lastTargetWidth?: number;
+    /** @internal */
+    _lastTargetHeight?: number;
+    /** @internal Effective camera aspect (getEffectiveAspectRatio) at the last write — a `camera.viewport`
+     *  change can alter the aspect (hence projection/viewProjection) while target size stays the same. */
+    _lastAspect?: number;
+    /** @internal */
+    _lastAlphaCutoff?: number;
 }
 
 interface ShaderMaterialRenderState extends ShaderMaterial {
@@ -112,7 +128,10 @@ function buildMaterialRenderables(scene: SceneContext, material: ShaderMaterial,
     const engine = scene.surface.engine;
     const bindings = getOrCreateShaderPipelineBindings(engine, material);
     ensureCustomUbo(engine, material, bindings.customSpec);
-    const packets = meshes.map((mesh) => createPacket(scene, material, bindings.systemSpec, mesh));
+    // `isOverride` marks an AUX view packet (a material-override registered into an explicit task, e.g. a
+    // depth/SSAO no-colour view) — route its disposer to `_meshAuxDisposables` so a MAIN-material swap of this
+    // same mesh does not tear it down out from under that task.
+    const packets = meshes.map((mesh) => createPacket(scene, material, bindings.systemSpec, mesh, isOverride));
     const isTransparent = material.needAlphaBlending;
     if (isTransparent) {
         return packets.map((packet) => createTransparentRenderable(scene, material, packet, isOverride));
@@ -120,7 +139,7 @@ function buildMaterialRenderables(scene: SceneContext, material: ShaderMaterial,
     return [createOpaqueRenderable(scene, material, packets, isOverride)];
 }
 
-function createPacket(scene: SceneContext, material: ShaderMaterial, systemSpec: UboSpec, mesh: Mesh): ShaderPacket {
+function createPacket(scene: SceneContext, material: ShaderMaterial, systemSpec: UboSpec, mesh: Mesh, aux = false): ShaderPacket {
     const engine = scene.surface.engine;
     const systemUBO = createEmptyUniformBuffer(engine, systemSpec._totalBytes, "shader-system-ubo");
     const systemData = new F32(systemSpec._totalBytes / 4);
@@ -138,7 +157,7 @@ function createPacket(scene: SceneContext, material: ShaderMaterial, systemSpec:
     for (const tex of packet._boundTextures) {
         acquireTexture(tex);
     }
-    registerMeshTextureDisposer(scene, mesh, packet);
+    registerMeshTextureDisposer(scene, mesh, packet, aux);
     return packet;
 }
 
@@ -232,18 +251,57 @@ function createTransparentRenderable(scene: SceneContext, material: ShaderMateri
 function updatePacket(scene: SceneContext, material: ShaderMaterial, packet: ShaderPacket, context: DrawUpdateContext): void {
     const engine = scene.surface.engine;
     const state = material as ShaderMaterialRenderState;
-    writeSystemUniforms(packet.systemData, state._shaderBindings!.systemSpec, material, packet.mesh, context._camera ?? scene.camera, context.targetWidth, context.targetHeight);
-    engine._device.queue.writeBuffer(packet.systemUBO, 0, packet.systemData as Float32Array<ArrayBuffer>);
+    // Skip the system-UBO recompute + writeBuffer when EVERY input is unchanged since this packet's last
+    // write: same camera (identity + worldMatrixVersion — the same change key the view/projection caches
+    // already rely on), same mesh world-matrix version, same target size and same material uniform version
+    // (alphaCutoff). A packet is updated once per PASS per frame, and most packets are static meshes under
+    // a camera that only moves some frames — these per-packet writeBuffers dominate CPU frame time in
+    // large scenes, and the skipped ones are byte-identical rewrites of what the UBO already holds.
+    const camera = context._camera ?? scene.camera;
+    const cameraVersion = camera ? camera.worldMatrixVersion : -1;
+    const meshWmVersion = packet.mesh.worldMatrixVersion;
+    // alphaCutoff is compared by VALUE, not by the material's uniform version: animated materials bump
+    // that version every frame (time uniforms and the like live in the CUSTOM ubo, which has its own
+    // version gate), and keying on it would defeat this skip for exactly the materials that dominate.
+    const alphaCutoff = material._uniformValues.get("alphaCutoff")?.value[0] ?? 0.4;
+    // Effective aspect keys the view/projection uniforms: getEffectiveAspectRatio folds in the camera's
+    // normalized viewport, which can change (altering projection) with target size and worldMatrixVersion
+    // both unchanged, so targetWidth/Height alone would not catch it.
+    const aspect = camera ? getEffectiveAspectRatio(camera, context.targetWidth, context.targetHeight) : 1;
+    if (
+        packet._lastCamera !== camera ||
+        packet._lastCameraVersion !== cameraVersion ||
+        packet._lastMeshWmVersion !== meshWmVersion ||
+        packet._lastTargetWidth !== context.targetWidth ||
+        packet._lastTargetHeight !== context.targetHeight ||
+        packet._lastAspect !== aspect ||
+        packet._lastAlphaCutoff !== alphaCutoff
+    ) {
+        writeSystemUniforms(packet.systemData, state._shaderBindings!.systemSpec, material, packet.mesh, camera, context.targetWidth, context.targetHeight);
+        engine._device.queue.writeBuffer(packet.systemUBO, 0, packet.systemData as Float32Array<ArrayBuffer>);
+        packet._lastCamera = camera;
+        packet._lastCameraVersion = cameraVersion;
+        packet._lastMeshWmVersion = meshWmVersion;
+        packet._lastTargetWidth = context.targetWidth;
+        packet._lastTargetHeight = context.targetHeight;
+        packet._lastAspect = aspect;
+        packet._lastAlphaCutoff = alphaCutoff;
+    }
     if (packet._lastResourceVersion !== material._resourceVersion) {
+        // Acquire the NEW bound textures BEFORE releasing the old set: a texture present in both (e.g. a material
+        // that only swapped ONE of its textures) must never transiently drop to ref-count 0, or releaseTexture
+        // would destroy a GPUTexture that the new bind group still uses. (Releasing first destroys a unique
+        // ref-count-1 texture — exposed by a custom material binding a per-material texture nothing else shares.)
+        const newTextures = collectShaderTextures(material);
+        for (const tex of newTextures) {
+            acquireTexture(tex);
+        }
         for (const tex of packet._boundTextures) {
             releaseTexture(tex);
         }
         packet._bindGroup = createShaderBindGroup(engine, material, packet.systemUBO);
-        packet._boundTextures = collectShaderTextures(material);
+        packet._boundTextures = newTextures;
         packet._boundStorageBuffers = collectShaderStorageBuffers(material);
-        for (const tex of packet._boundTextures) {
-            acquireTexture(tex);
-        }
         packet._lastResourceVersion = material._resourceVersion;
     }
 }
@@ -251,7 +309,7 @@ function updatePacket(scene: SceneContext, material: ShaderMaterial, packet: Sha
 function drawPacket(pass: ShaderRenderPass, engine: EngineContext, material: ShaderMaterial, packet: ShaderPacket): void {
     const gpu = packet.mesh._gpu;
     for (let i = 0; i < material.attributes.length; i++) {
-        pass.setVertexBuffer(i, getAttrBuffer(engine, gpu, material.attributes[i]!));
+        pass.setVertexBuffer(i, getAttrBuffer(engine, packet.mesh, material.attributes[i]!));
     }
     pass.setIndexBuffer(gpu.indexBuffer, gpu.indexFormat);
     pass.setBindGroup(1, packet._bindGroup);
@@ -358,8 +416,11 @@ function collectShaderStorageBuffers(material: ShaderMaterial): GPUBuffer[] {
     return buffers;
 }
 
-function registerMeshTextureDisposer(scene: SceneContext, mesh: Mesh, packet: ShaderPacket): void {
-    const list = scene._meshDisposables.get(mesh) ?? [];
+function registerMeshTextureDisposer(scene: SceneContext, mesh: Mesh, packet: ShaderPacket, aux = false): void {
+    // Aux (override) view packets go in `_meshAuxDisposables` so a main-material swap leaves them alone; main
+    // packets stay in `_meshDisposables` (torn down + rebuilt by the swap drain). Both are drained on real removal.
+    const map = aux ? scene._meshAuxDisposables : scene._meshDisposables;
+    const list = map.get(mesh) ?? [];
     list.push(() => {
         packet._disposed = true;
         if (packet._owner) {
@@ -376,7 +437,7 @@ function registerMeshTextureDisposer(scene: SceneContext, mesh: Mesh, packet: Sh
         packet._boundTextures = [];
         packet._boundStorageBuffers = [];
     });
-    scene._meshDisposables.set(mesh, list);
+    map.set(mesh, list);
 }
 
 function writeSystemUniforms(data: Float32Array, spec: UboSpec, material: ShaderMaterial, mesh: Mesh, camera: Camera | null, targetWidth: number, targetHeight: number): void {
@@ -465,7 +526,14 @@ function getZeroAttrBuffer(engine: EngineContext, gpu: MeshGPU, name: string): G
     return buffer;
 }
 
-function getAttrBuffer(engine: EngineContext, gpu: MeshGPU, name: ShaderAttributeName): GPUBuffer {
+/** Skinning vertex buffers live on the mesh's `skeleton` (live skinning) or `vat` (baked vertex
+ *  animation, which moves them off the dropped skeleton) — not on `MeshGPU`. */
+function getSkinBuffer(mesh: Mesh, field: "jointsBuffer" | "weightsBuffer" | "joints1Buffer" | "weights1Buffer"): GPUBuffer | null {
+    return mesh.vat?.[field] ?? mesh.skeleton?.[field] ?? null;
+}
+
+function getAttrBuffer(engine: EngineContext, mesh: Mesh, name: ShaderAttributeName): GPUBuffer {
+    const gpu = mesh._gpu;
     switch (name) {
         case "position":
             return gpu.positionBuffer;
@@ -479,5 +547,13 @@ function getAttrBuffer(engine: EngineContext, gpu: MeshGPU, name: ShaderAttribut
             return gpu.tangentBuffer ?? getZeroAttrBuffer(engine, gpu, "tangent");
         case "color":
             return gpu.colorBuffer ?? getZeroAttrBuffer(engine, gpu, "color");
+        case "joints":
+            return getSkinBuffer(mesh, "jointsBuffer") ?? getZeroAttrBuffer(engine, gpu, "joints");
+        case "weights":
+            return getSkinBuffer(mesh, "weightsBuffer") ?? getZeroAttrBuffer(engine, gpu, "weights");
+        case "joints1":
+            return getSkinBuffer(mesh, "joints1Buffer") ?? getZeroAttrBuffer(engine, gpu, "joints1");
+        case "weights1":
+            return getSkinBuffer(mesh, "weights1Buffer") ?? getZeroAttrBuffer(engine, gpu, "weights1");
     }
 }

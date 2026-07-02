@@ -8,6 +8,7 @@ import { disposeMeshGpu } from "../mesh/mesh-dispose.js";
 import { registerMeshScene, unregisterMeshScene, enqueueMaterialSwap } from "./mesh-scene-registry.js";
 import { processMaterialSwaps } from "./scene-material-swap.js";
 import type { AnimationGroup } from "../animation/animation-group.js";
+import { tickAnimation } from "../animation/animation-tick.js";
 import type { ShadowGenerator } from "../shadow/shadow-generator.js";
 import type { FogConfig } from "../material/standard/standard-material.js";
 import type { Renderable, PrePassRenderable, SceneUniformUpdater, MeshGroupBuilder } from "../render/renderable.js";
@@ -101,6 +102,13 @@ export interface SceneContext extends RenderingContext {
     _disposables: (() => void)[];
     /** @internal Per-mesh cleanup callbacks (mesh UBOs, bind groups). For material swap + dispose. */
     _meshDisposables: Map<Mesh, (() => void)[]>;
+    /** @internal Per-mesh cleanup callbacks for AUX (material-OVERRIDE) view packets that an explicit render
+     *  task registered on a mesh it does not own — e.g. a depth-prepass / SSAO no-colour view of a wall. Kept
+     *  SEPARATE from `_meshDisposables` because a MAIN-material swap (`processMaterialSwaps`, which rebuilds
+     *  only the main renderable) must NOT tear these down: they belong to another task, whose cached bundle
+     *  would then replay a destroyed system UBO ("used in submit while destroyed"). Drained only on a real mesh
+     *  removal (`removeFromScene`) and scene dispose, exactly like `_meshDisposables` minus the swap path. */
+    _meshAuxDisposables: Map<Mesh, (() => void)[]>;
     /** @internal Meshes whose material was changed via setter — drained before each render frame. */
     _materialSwapQueue: Mesh[];
     /** @internal Monotonic counter bumped when the renderable list changes (add/remove/rebuild). */
@@ -116,6 +124,12 @@ export interface SceneContext extends RenderingContext {
      *  boot-only deferred-builder path. */
     /** @internal */
     _built: boolean;
+    /** Builders whose deferred group build has COMPLETED. A mesh that joins one of these groups after the fact
+     *  (post-boot, or a glTF prop whose async load resolves DURING buildScene's drain and joins an already-built
+     *  group) is materialized via the per-frame swap drain: its group builder has already run and won't see it,
+     *  so without this it would cast shadows (it's in ctx.meshes) but never be drawn in the color pass. */
+    /** @internal */
+    _builtGroups: Set<MeshGroupBuilder>;
 
     // ─── Stashed internal state (typed to avoid `as any` casts) ────
     /** @internal */
@@ -171,10 +185,12 @@ export function createSceneContext(surface: SurfaceContext, options?: SceneConte
         _groups: new Map(),
         _disposables: [],
         _meshDisposables: new Map(),
+        _meshAuxDisposables: new Map(),
         _materialSwapQueue: [],
         _renderableVersion: 0,
         _materialEpoch: 0,
         _built: false,
+        _builtGroups: new Set(),
         _drawCallsPre: 0,
 
         _update(): void {
@@ -303,9 +319,7 @@ export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camer
             ctx.animationGroups.push(...groups);
             ctx._beforeRender.push((deltaMs: number) => {
                 for (const g of groups) {
-                    if (!g._stopped && g._ctrl) {
-                        g._ctrl.tick(deltaMs, engine);
-                    }
+                    tickAnimation(g, deltaMs, engine);
                 }
             });
         }
@@ -327,13 +341,19 @@ export function addToScene(scene: SceneContext, entity: Mesh | LightBase | Camer
                     if (result.updater) {
                         ctx._uniformUpdaters.push(result.updater);
                     }
+                    // This group's meshes now have renderables; a mesh that joins it LATER (post-boot or
+                    // mid-drain) won't be seen by this builder and must be materialized via a swap instead.
+                    ctx._builtGroups.add(build);
                 });
             }
             group.push(mesh);
-            // Added after the initial build: the deferred builder for this group has
-            // already run (and only runs at boot), so materialize this mesh's renderable
-            // through the per-frame material-swap drain instead.
-            if (ctx._built) {
+            // Materialize this mesh's renderable through the per-frame material-swap drain when the boot-only
+            // deferred builder won't cover it: either after the initial build (`_built`), or when joining a group
+            // whose builder has ALREADY completed (`_builtGroups`) — e.g. a glTF prop whose async load resolves
+            // mid-drain and joins an already-built group. A mesh joining a group whose builder has NOT yet run (a
+            // brand-new group, or one still pending in the drain) is built by that builder, so it must NOT enqueue
+            // here — that would insert a SECOND renderable for it. buildScene drains the queue at the end.
+            if (ctx._built || ctx._builtGroups.has(build)) {
                 enqueueMaterialSwap(ctx, mesh);
             }
         }
@@ -363,6 +383,12 @@ export function disposeScene(scene: SceneContext): void {
         }
     }
     ctx._meshDisposables.clear();
+    for (const fns of ctx._meshAuxDisposables.values()) {
+        for (const fn of fns) {
+            fn();
+        }
+    }
+    ctx._meshAuxDisposables.clear();
     for (const mesh of ctx.meshes) {
         // Free the mesh's shared GPU buffers only when this was its LAST owning scene.
         if (unregisterMeshScene(ctx, mesh)) {
@@ -387,12 +413,20 @@ export function disposeScene(scene: SceneContext): void {
 /** @internal Run all deferred builders (called by registerScene's boot step before the first frame). */
 export async function buildScene(scene: SceneContext): Promise<void> {
     const ctx = scene as SceneContext;
+    // Discard material-swap requests enqueued during scene SETUP — a mesh added, then re-materialed before boot
+    // via the mesh.material setter (e.g. scene12 assigns each row's material AFTER addToScene). The deferred
+    // builders below build every group's meshes fresh with their FINAL material, so those swaps are redundant;
+    // processing them would insert a SECOND renderable per mesh (double-draw). Only swaps enqueued DURING the
+    // drain below — an async mesh that joins an already-built group (see addToScene/_builtGroups) — must survive.
+    ctx._materialSwapQueue.length = 0;
     while (ctx._deferredBuilders.length > 0) {
         const builders = [...ctx._deferredBuilders];
         ctx._deferredBuilders = [];
         await Promise.all(builders.map(async (b) => b()));
     }
-    ctx._materialSwapQueue.length = 0;
+    // Build the renderables for any meshes that joined an already-built group mid-drain (queued above) before
+    // the first frame, instead of leaving them casting shadows but invisible in the color pass.
+    processMaterialSwaps(ctx);
     ctx._renderableVersion++;
     ctx._built = true;
 }
