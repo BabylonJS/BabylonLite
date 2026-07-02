@@ -115,11 +115,115 @@ The upshot: the Playground is a real, self-contained Babylon Lite app builder th
 
 The Playground can be embedded in another page — docs, a blog, or the classic Babylon Playground — as an iframe, and driven over a small `postMessage` API to load code and run it. This is how live, editable Lite demos are hosted inside written content.
 
+### 1. Drop in the iframe
+
 ```html
 <iframe src="https://liteplayground.babylonjs.com/?embed=runner" title="Babylon Lite Playground" style="width: 100%; height: 480px; border: 0"></iframe>
 ```
 
-`?embed=runner` shows just the canvas and console (best for demos); `?embed=split` shows a compact editor beside the canvas so readers can tweak the code themselves.
+Pick an embed mode with `?embed=`:
+
+- **`runner`** — canvas + console only, no editor. Best for docs and demos.
+- **`split`** (also `?embed` or `?embed=1`) — a compact editor beside the canvas so readers can tweak the code themselves.
+
+Optionally add `?embedOrigin=https://your-site.example` to restrict which origin the embed accepts messages from and posts events to (defaults to `*`). Set it to your own origin in production so only your page can drive the frame.
+
+### 2. Talk to it over `postMessage`
+
+The host page and the embed communicate with `window.postMessage`. **Every message carries `channel: "babylon-lite-playground"`** — check it on both ends so messages don't collide with other frames on the page.
+
+**Commands the host sends to the embed:**
+
+| `type`     | fields         | effect                                                 |
+| ---------- | -------------- | ------------------------------------------------------ |
+| `loadCode` | `code`, `run?` | replace the entry file's content; run it if `run` is true |
+| `run`      | —              | run the current code                                   |
+| `dispose`  | —              | tear down the running scene                            |
+| `getCode`  | —              | request the entry file's content (replies with a `code` event) |
+
+**Events the embed sends back to the host:**
+
+| `type`    | fields          | when                               |
+| --------- | --------------- | ---------------------------------- |
+| `ready`   | `mode`          | the embed is wired up and bootable |
+| `console` | `level`, `text` | a `console.*` line from the snippet |
+| `error`   | `text`          | an uncaught runtime error          |
+| `stats`   | `fps`           | ~once a second while running       |
+| `ran`     | —               | a run finished importing           |
+| `code`    | `code`          | reply to a `getCode` request       |
+
+> **Wait for `ready` before sending anything.** The embed can't accept commands until it has booted and emitted `ready`. Sending `loadCode` earlier is dropped.
+
+### 3. A complete host example
+
+This loads your own code into the embed and runs it as soon as the frame is ready, then mirrors the snippet's console output and FPS onto the host page:
+
+```html
+<iframe id="pg" src="https://liteplayground.babylonjs.com/?embed=runner&embedOrigin=https://your-site.example"
+        title="Babylon Lite Playground" style="width: 100%; height: 480px; border: 0"></iframe>
+
+<script type="module">
+    const frame = document.getElementById("pg");
+    const channel = "babylon-lite-playground";
+
+    const myCode = `import { createEngine, createSceneContext, createArcRotateCamera, attachControl,
+    createHemisphericLight, createSphere, createPbrMaterial, addToScene,
+    registerScene, startEngine } from "@babylonjs/lite";
+
+async function main() {
+    const canvas = document.getElementById("renderCanvas");
+    const engine = await createEngine(canvas);
+    const scene = createSceneContext(engine);
+
+    const camera = createArcRotateCamera(-Math.PI / 2, Math.PI / 2.5, 4, { x: 0, y: 0, z: 0 });
+    scene.camera = camera;
+    attachControl(camera, canvas, scene);
+
+    addToScene(scene, createHemisphericLight([0, 1, 0], 1.0));
+
+    const sphere = createSphere(engine, { segments: 16, diameter: 2 });
+    sphere.material = createPbrMaterial({ baseColorFactor: [0.9, 0.1, 0.1, 1], roughnessFactor: 0.4 });
+    addToScene(scene, sphere);
+
+    await registerScene(scene);
+    await startEngine(engine);
+}
+main().catch((err) => console.error(err));`;
+
+    // Send a command to the embed.
+    function post(msg) {
+        frame.contentWindow.postMessage({ channel, ...msg }, "*");
+    }
+
+    // Listen for events coming back from the embed.
+    window.addEventListener("message", (e) => {
+        if (e.data?.channel !== channel) return;
+        switch (e.data.type) {
+            case "ready":
+                post({ type: "loadCode", code: myCode, run: true });
+                break;
+            case "console":
+                console.log(`[playground:${e.data.level}]`, e.data.text);
+                break;
+            case "error":
+                console.error("[playground error]", e.data.text);
+                break;
+            case "stats":
+                // e.data.fps — e.g. update an on-page FPS badge
+                break;
+        }
+    });
+</script>
+```
+
+To re-run after editing, send `{ type: "run" }`; to stop the scene, send `{ type: "dispose" }`; to read back what the user typed in `split` mode, send `{ type: "getCode" }` and handle the `code` reply.
+
+### Multi-file projects
+
+`loadCode`/`getCode` are **single-file** — they only touch the entry file. To hand a full multi-file project to the standalone Playground, use the embed's **Open in Lite Playground** button, which carries every file via a deep link:
+
+- `/snippet/<id>/v/<rev>` — a saved snippet (the canonical permalink).
+- `#code=<base64url>` — an inline project (base64url of the project JSON), used when nothing is saved yet.
 
 ---
 
