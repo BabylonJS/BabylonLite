@@ -9,7 +9,11 @@ import { BoundingInfo } from "../src/culling/bounding";
  * can be exercised by invoking the prototype against a minimal fake `_lite`.
  */
 describe("AbstractMesh.getBoundingInfo", () => {
-    const getBounds = (lite: unknown): BoundingInfo => AbstractMesh.prototype.getBoundingInfo.call({ _lite: lite });
+    const getBounds = (lite: unknown): BoundingInfo => {
+        const mesh = Object.create(AbstractMesh.prototype) as AbstractMesh;
+        (mesh as unknown as { _lite: unknown })._lite = lite;
+        return mesh.getBoundingInfo();
+    };
 
     it("uses Lite boundMin/boundMax when present", () => {
         const info = getBounds({ boundMin: [-1, -2, -3], boundMax: [1, 2, 3] });
