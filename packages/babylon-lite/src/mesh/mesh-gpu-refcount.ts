@@ -16,7 +16,14 @@
  *  anything up front. `retainGpuResource` is called once per EXTRA owner (i.e. once per
  *  clone); `releaseGpuResource` is called once per owner that goes away and reports
  *  whether it was the last one. Lazily-allocated WeakMap (pillar 4: no module-level
- *  side effects), mirrors the pattern used by `mesh-scene-registry.ts`. */
+ *  side effects), mirrors the pattern used by `mesh-scene-registry.ts`.
+ *
+ *  INVARIANT: any code path that reassigns one of these tracked fields away from its
+ *  current value (e.g. `mesh.skeleton = null`) OUTSIDE of `disposeMeshGpu` MUST call
+ *  `releaseGpuResource` on the OLD value first — otherwise that mesh's claim is silently
+ *  dropped without ever being released, permanently pinning the refcount above zero and
+ *  leaking the resource forever (no remaining owner can ever be seen as "last"). See
+ *  `vat/vat-baker.ts::attachVat`, which drops `mesh.skeleton` when baking a VAT. */
 let _gpuRefCounts: WeakMap<object, number> | null = null;
 
 /** @internal Register an additional owner of a shared GPU resource (called when a mesh

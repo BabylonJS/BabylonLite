@@ -2,12 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 
 import { cloneTransformNode } from "../../../packages/babylon-lite/src/scene/transform-node";
 import { disposeMeshGpu } from "../../../packages/babylon-lite/src/mesh/mesh-dispose";
+import { releaseGpuResource } from "../../../packages/babylon-lite/src/mesh/mesh-gpu-refcount";
 import type { Mesh, MeshGPU } from "../../../packages/babylon-lite/src/mesh/mesh";
+import type { SkeletonData } from "../../../packages/babylon-lite/src/animation/types";
 import { ObservableVec3 } from "../../../packages/babylon-lite/src/math/observable-vec3";
 import { ObservableQuat } from "../../../packages/babylon-lite/src/math/observable-quat";
 
 function fakeBuffer(): GPUBuffer {
     return { destroy: vi.fn() } as unknown as GPUBuffer;
+}
+
+function fakeTexture(): GPUTexture {
+    return { destroy: vi.fn() } as unknown as GPUTexture;
 }
 
 function makeMesh(gpu: MeshGPU): Mesh {
@@ -107,5 +113,56 @@ describe("mesh clone GPU buffer ownership", () => {
 
         disposeMeshGpu(clone);
         expect(newCloneGpu.positionBuffer.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    it("attachVat releasing a clone's claim on a shared skeleton (mirrors vat-baker.ts::attachVat dropping `mesh.skeleton`) does not leak or double-free the skeleton buffers", () => {
+        // Regression test for a Copilot review finding on PR #353: `attachVat` silently sets
+        // `mesh.skeleton = null` after reusing its buffers into `mesh.vat`. If it did so WITHOUT
+        // releasing its ref-count claim first, a clone/source pair sharing a skeleton would
+        // permanently leak the skeleton's GPU buffers (the refcount could never reach zero).
+        const gpu: MeshGPU = {
+            positionBuffer: fakeBuffer(),
+            normalBuffer: fakeBuffer(),
+            uvBuffer: fakeBuffer(),
+            indexBuffer: fakeBuffer(),
+            indexCount: 3,
+            indexFormat: "uint16",
+        };
+        const skel = {
+            boneTexture: fakeTexture(),
+            boneCount: 1,
+            jointsBuffer: fakeBuffer(),
+            weightsBuffer: fakeBuffer(),
+        } as unknown as SkeletonData;
+
+        const src = makeMesh(gpu);
+        src.skeleton = skel;
+        const clone = cloneTransformNode(src) as Mesh;
+        expect(clone.skeleton).toBe(skel);
+
+        // Simulate `attachVat(engine, clone, baked)`: release this mesh's claim on the shared
+        // skeleton, destroy `boneTexture` only if that made it the last owner (it isn't here —
+        // `src` still holds a claim), then drop the reference.
+        const wasLastOwner = releaseGpuResource(skel);
+        expect(wasLastOwner).toBe(false); // src is still a live owner, so nothing should be destroyed yet
+        if (wasLastOwner) {
+            skel.boneTexture.destroy();
+        }
+        clone.skeleton = null;
+        expect(skel.boneTexture.destroy).not.toHaveBeenCalled();
+        expect(skel.jointsBuffer.destroy).not.toHaveBeenCalled();
+
+        // `src` disposing normally afterwards must now see itself as the LAST owner (the clone's
+        // claim was already released above) and correctly destroy the skeleton's buffers exactly
+        // once — no permanent leak, no double-free.
+        disposeMeshGpu(src);
+        expect(skel.boneTexture.destroy).toHaveBeenCalledTimes(1);
+        expect(skel.jointsBuffer.destroy).toHaveBeenCalledTimes(1);
+        expect(skel.weightsBuffer.destroy).toHaveBeenCalledTimes(1);
+
+        // Disposing the clone afterwards is a no-op for the skeleton (it already nulled it out
+        // when attachVat ran) — must not throw or double-free anything.
+        expect(() => disposeMeshGpu(clone)).not.toThrow();
+        expect(skel.boneTexture.destroy).toHaveBeenCalledTimes(1);
     });
 });
